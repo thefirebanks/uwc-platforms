@@ -1,13 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const supabaseSecretKey = process.env.SUPABASE_SECRET_KEY;
 
-if (!supabaseUrl || !serviceRoleKey) {
-  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+if (!supabaseUrl || !supabaseSecretKey) {
+  throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY");
 }
 
-const supabase = createClient(supabaseUrl, serviceRoleKey, {
+const supabase = createClient(supabaseUrl, supabaseSecretKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
@@ -63,6 +63,16 @@ async function createOrLoadUser({
 
   if (!user) {
     throw new Error(`Could not create or load user ${email}`);
+  }
+
+  const { error: resetPasswordError } = await supabase.auth.admin.updateUserById(user.id, {
+    password: DEFAULT_PASSWORD,
+    email_confirm: true,
+    user_metadata: { fullName, role },
+  });
+
+  if (resetPasswordError) {
+    throw resetPasswordError;
   }
 
   const { error: upsertError } = await supabase.from("profiles").upsert(

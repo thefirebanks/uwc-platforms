@@ -26,7 +26,7 @@ Before merge:
 ## Security and Runtime
 - OAuth is Google-only in production path.
 - Dev bypass auth must remain opt-in and disabled in production.
-- Keep service-role key usage out of runtime request paths.
+- Keep Supabase secret-key usage out of client code and runtime request paths.
 
 ## Supabase CLI Usage
 - For this repository, always use UWC Supabase profile commands (`sbu`).

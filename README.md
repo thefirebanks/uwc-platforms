@@ -58,11 +58,11 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
 ```bash
 sbu db push
 ```
-6. Create fake accounts (requires `SUPABASE_SERVICE_ROLE_KEY`):
+6. Create fake accounts (requires `SUPABASE_SECRET_KEY`):
 ```bash
 bun run seed:fake-users
 ```
-If seeding fails, verify `SUPABASE_SERVICE_ROLE_KEY` is set in `.env.local`.
+If seeding fails, verify `SUPABASE_SECRET_KEY` is set in `.env.local`.
 7. Start app:
 ```bash
 bun run dev

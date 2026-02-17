@@ -31,7 +31,7 @@ sbu db push
   - `NEXT_PUBLIC_DEMO_ADMIN_EMAIL`
   - `NEXT_PUBLIC_DEMO_APPLICANT_EMAIL`
   - `NEXT_PUBLIC_DEMO_PASSWORD`
-- To generate demo users quickly, set `SUPABASE_SERVICE_ROLE_KEY` and run:
+- To generate demo users quickly, set `SUPABASE_SECRET_KEY` and run:
 ```bash
 bun run seed:fake-users
 ```
