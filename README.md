@@ -62,6 +62,7 @@ sbu db push
 ```bash
 bun run seed:fake-users
 ```
+If seeding fails, verify `SUPABASE_SERVICE_ROLE_KEY` is set in `.env.local`.
 7. Start app:
 ```bash
 bun run dev

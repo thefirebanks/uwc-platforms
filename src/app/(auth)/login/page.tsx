@@ -68,7 +68,9 @@ export default function LoginPage() {
       });
 
       if (signInError) {
-        setError("No se pudo iniciar sesión en bypass. Verifica usuarios demo.");
+        setError(
+          `No se pudo iniciar sesión en bypass. Verifica usuarios demo. (${signInError.code ?? "auth_error"}: ${signInError.message})`,
+        );
         return;
       }
 

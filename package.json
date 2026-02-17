@@ -12,7 +12,7 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "seed:fake-users": "bun scripts/create-fake-users.ts"
+    "seed:fake-users": "bun --env-file=.env.local scripts/create-fake-users.ts"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
