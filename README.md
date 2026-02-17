@@ -47,17 +47,37 @@ bun install
 cp .env.example .env.local
 ```
 3. Fill env variables in `.env.local`.
-4. Run DB migrations in Supabase SQL editor (or via Supabase CLI):
+4. Use UWC Supabase profile commands for this repo:
+```bash
+sbu link --project-ref lnuugnvwjyndvxhzbuib
+```
+5. Run DB migrations in Supabase SQL editor (or via Supabase CLI):
 - `supabase/migrations/20260217001000_init_mvp.sql`
 - `supabase/migrations/20260217002000_storage_policies.sql`
 - `supabase/migrations/20260217013000_add_profiles_insert_policy.sql`
-5. Create fake accounts (requires `SUPABASE_SERVICE_ROLE_KEY`):
+```bash
+sbu db push
+```
+6. Create fake accounts (requires `SUPABASE_SERVICE_ROLE_KEY`):
 ```bash
 bun run seed:fake-users
 ```
-6. Start app:
+7. Start app:
 ```bash
 bun run dev
+```
+
+## Supabase CLI Profiles
+This project should always use the UWC Supabase profile.
+
+- `sbu` = `supabase --profile /Users/dafirebanks/.config/supabase/uwc.toml`
+- `sbp` = `supabase --profile /Users/dafirebanks/.config/supabase/personal.toml`
+
+Examples:
+```bash
+sbu projects list
+sbu migration list
+sbu db push
 ```
 
 ## OAuth Configuration

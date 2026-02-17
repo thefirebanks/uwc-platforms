@@ -27,3 +27,11 @@ Before merge:
 - OAuth is Google-only in production path.
 - Dev bypass auth must remain opt-in and disabled in production.
 - Keep service-role key usage out of runtime request paths.
+
+## Supabase CLI Usage
+- For this repository, always use UWC Supabase profile commands (`sbu`).
+- Do not run plain `supabase ...` commands in this repo unless you intentionally override profile.
+- Required baseline commands:
+  - `sbu link --project-ref lnuugnvwjyndvxhzbuib`
+  - `sbu migration list`
+  - `sbu db push`

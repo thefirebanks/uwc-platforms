@@ -1,13 +1,24 @@
 # Setup Processes You Need To Configure
 
 ## 1) Supabase Project
+- This repository is pinned to UWC Supabase project:
+  - project ref: `lnuugnvwjyndvxhzbuib`
+  - CLI profile: `/Users/dafirebanks/.config/supabase/uwc.toml`
 - Keep these in `.env.local`:
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- Use UWC profile shortcut for all project Supabase commands:
+```bash
+sbu projects list
+sbu link --project-ref lnuugnvwjyndvxhzbuib
+```
 - Run SQL migrations in order:
   - `supabase/migrations/20260217001000_init_mvp.sql`
   - `supabase/migrations/20260217002000_storage_policies.sql`
   - `supabase/migrations/20260217013000_add_profiles_insert_policy.sql`
+```bash
+sbu db push
+```
 - Configure Google OAuth provider in Supabase Auth.
 - Add callback URLs:
   - `http://localhost:3000/auth/callback`
@@ -24,6 +35,11 @@
 ```bash
 bun run seed:fake-users
 ```
+
+## 2.1) Supabase Profile Shortcuts
+- `sbu` (UWC): `supabase --profile /Users/dafirebanks/.config/supabase/uwc.toml`
+- `sbp` (personal): `supabase --profile /Users/dafirebanks/.config/supabase/personal.toml`
+- Always use `sbu` for this repository unless explicitly working on a different project.
 
 ## 3) Cloudflare Hosting
 - Create a Cloudflare Pages project connected to this repo.

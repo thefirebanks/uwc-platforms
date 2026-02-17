@@ -16,3 +16,7 @@ This folder contains the shared product and engineering source of truth for the 
 
 ## Maintenance Rule
 Whenever requirements, architecture, auth flow, or workflows change, update the corresponding file(s) in `docs/` in the same PR.
+
+## Repo Defaults
+- Supabase operations for this project must use the UWC profile (`sbu`).
+- UWC project ref for this repository: `lnuugnvwjyndvxhzbuib`.
