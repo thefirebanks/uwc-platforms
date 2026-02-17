@@ -3,7 +3,6 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { transitionApplication } from "@/lib/server/application-service";
 import { recordAuditEvent } from "@/lib/logging/audit";
 
@@ -17,7 +16,7 @@ export async function POST(
   context: { params: Promise<{ id: string }> },
 ) {
   return withErrorHandling(async (requestId) => {
-    const { profile } = await requireAuth(["admin"]);
+    const { profile, supabase } = await requireAuth(["admin"]);
     const { id } = await context.params;
     const body = await request.json();
     const parsed = schema.safeParse(body);
@@ -31,7 +30,6 @@ export async function POST(
       });
     }
 
-    const supabase = getSupabaseAdminClient();
     const application = await transitionApplication({
       supabase,
       applicationId: id,

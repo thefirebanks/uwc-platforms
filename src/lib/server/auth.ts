@@ -46,5 +46,5 @@ export async function requireAuth(allowedRoles?: AppRole[]) {
     });
   }
 
-  return { user, profile };
+  return { user, profile, supabase };
 }

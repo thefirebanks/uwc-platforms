@@ -3,7 +3,6 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { importExamCsv } from "@/lib/server/application-service";
 import { recordAuditEvent } from "@/lib/logging/audit";
 
@@ -13,7 +12,7 @@ const schema = z.object({
 
 export async function POST(request: NextRequest) {
   return withErrorHandling(async (requestId) => {
-    const { profile } = await requireAuth(["admin"]);
+    const { profile, supabase } = await requireAuth(["admin"]);
     const body = await request.json();
     const parsed = schema.safeParse(body);
 
@@ -25,7 +24,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const supabase = getSupabaseAdminClient();
     const result = await importExamCsv({
       supabase,
       csv: parsed.data.csv,

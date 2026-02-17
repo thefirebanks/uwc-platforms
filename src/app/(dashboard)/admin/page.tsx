@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { Application } from "@/types/domain";
 
 export default async function AdminPage() {
@@ -11,7 +11,7 @@ export default async function AdminPage() {
     redirect("/applicant");
   }
 
-  const supabase = getSupabaseAdminClient();
+  const supabase = await getSupabaseServerClient();
   const { data: applications } = await supabase
     .from("applications")
     .select("*")

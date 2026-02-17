@@ -3,7 +3,6 @@ import { applicationSchema } from "@/lib/validation/application";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   getApplicantApplication,
   getApplicationsForAdmin,
@@ -13,8 +12,7 @@ import { recordAuditEvent } from "@/lib/logging/audit";
 
 export async function GET() {
   return withErrorHandling(async () => {
-    const { profile } = await requireAuth(["admin", "applicant"]);
-    const supabase = getSupabaseAdminClient();
+    const { profile, supabase } = await requireAuth(["admin", "applicant"]);
 
     if (profile.role === "admin") {
       const applications = await getApplicationsForAdmin(supabase);
@@ -28,7 +26,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   return withErrorHandling(async (requestId) => {
-    const { profile } = await requireAuth(["applicant"]);
+    const { profile, supabase } = await requireAuth(["applicant"]);
     const body = await request.json();
 
     const parsed = applicationSchema.safeParse(body);
@@ -41,7 +39,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const supabase = getSupabaseAdminClient();
     const application = await upsertApplicantApplication({
       supabase,
       applicantId: profile.id,

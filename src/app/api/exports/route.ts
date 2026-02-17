@@ -1,12 +1,10 @@
 import { NextResponse } from "next/server";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { requireAuth } from "@/lib/server/auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 export async function GET() {
   return withErrorHandling(async () => {
-    await requireAuth(["admin"]);
-    const supabase = getSupabaseAdminClient();
+    const { supabase } = await requireAuth(["admin"]);
     const { data: applications } = await supabase
       .from("applications")
       .select("id, applicant_id, stage_code, status, updated_at");

@@ -15,17 +15,3 @@ export function getSupabaseEnv() {
 
   return { url, anonKey };
 }
-
-export function getServiceRoleKey() {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!serviceRoleKey) {
-    throw new AppError({
-      message: "SUPABASE_SERVICE_ROLE_KEY missing",
-      userMessage: "No se pudo ejecutar esta operación administrativa.",
-      status: 500,
-    });
-  }
-
-  return serviceRoleKey;
-}

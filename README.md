@@ -9,12 +9,16 @@ Spanish-first MVP for UWC Peru selection management with:
 ## Tech Stack
 - Next.js 16 + TypeScript + Tailwind
 - Material UI (hybrid custom look)
-- Supabase (Auth, Postgres, Storage)
+- Supabase (Google OAuth, Postgres, Storage)
 - Cloudflare deployment target
+- Bun runtime/package manager
 - Vitest + Testing Library + Playwright
 
 ## MVP Features Implemented
 - Role-based login (`admin`, `applicant`)
+- Google OAuth sign-in via Supabase
+- OAuth callback profile provisioning with admin allowlist support
+- Optional temporary dev bypass mode (off by default)
 - Applicant form draft/save/submit
 - Applicant document upload (signed upload URL)
 - Recommendation request registration
@@ -32,7 +36,7 @@ Spanish-first MVP for UWC Peru selection management with:
 ## Local Setup
 1. Install dependencies:
 ```bash
-npm install
+bun install
 ```
 2. Create env file:
 ```bash
@@ -42,25 +46,37 @@ cp .env.example .env.local
 4. Run DB migrations in Supabase SQL editor (or via Supabase CLI):
 - `supabase/migrations/20260217001000_init_mvp.sql`
 - `supabase/migrations/20260217002000_storage_policies.sql`
-5. Create fake accounts and seed a demo application:
+- `supabase/migrations/20260217013000_add_profiles_insert_policy.sql`
+5. Create fake accounts (requires `SUPABASE_SERVICE_ROLE_KEY`):
 ```bash
-npm run seed:fake-users
+bun run seed:fake-users
 ```
 6. Start app:
 ```bash
-npm run dev
+bun run dev
 ```
 
-## Fake Accounts (created by seeding script)
-- Admin: `admin.demo@uwcperu.org` / `ChangeMe123!`
-- Applicant: `applicant.demo@uwcperu.org` / `ChangeMe123!`
+## OAuth Configuration
+- Enable Google provider in Supabase Auth.
+- Set redirect URL to:
+- `http://localhost:3000/auth/callback`
+- Add production callback URL once deployed.
+
+## Optional Dev Bypass
+If OAuth keys are not ready yet:
+- Set `NEXT_PUBLIC_ENABLE_DEV_BYPASS=true`
+- Set demo env vars:
+- `NEXT_PUBLIC_DEMO_ADMIN_EMAIL`
+- `NEXT_PUBLIC_DEMO_APPLICANT_EMAIL`
+- `NEXT_PUBLIC_DEMO_PASSWORD`
 
 ## Test Commands
 ```bash
-npm run lint
-npm run typecheck
-npm run test
-npm run test:e2e
+bun run lint
+bun run typecheck
+bun run test
+bun run test:e2e
+bun run build
 ```
 
 ## Important Endpoints

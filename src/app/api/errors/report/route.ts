@@ -3,7 +3,6 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { recordAuditEvent } from "@/lib/logging/audit";
 
 const schema = z.object({
@@ -14,7 +13,7 @@ const schema = z.object({
 
 export async function POST(request: NextRequest) {
   return withErrorHandling(async (requestId) => {
-    const { profile } = await requireAuth(["admin", "applicant"]);
+    const { profile, supabase } = await requireAuth(["admin", "applicant"]);
     const body = await request.json();
     const parsed = schema.safeParse(body);
 
@@ -25,8 +24,6 @@ export async function POST(request: NextRequest) {
         status: 400,
       });
     }
-
-    const supabase = getSupabaseAdminClient();
 
     const { error } = await supabase.from("bug_reports").insert({
       reporter_id: profile.id,
