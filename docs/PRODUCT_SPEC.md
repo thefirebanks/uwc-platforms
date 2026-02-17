@@ -1,0 +1,39 @@
+# Product Specification (MVP)
+
+## Goal
+Build a faster, cleaner, easier-to-use platform for UWC Peru selection process management, replacing spreadsheet-heavy workflows and reducing operational friction.
+
+## MVP Scope
+- Roles:
+  - `admin`
+  - `applicant`
+- Stage model:
+  - `documents` (Stage 1, full flow)
+  - `exam_placeholder` (Stage 2, external-exam placeholder)
+- Key capabilities:
+  - Applicant profile and application form submission
+  - Document upload and file association
+  - Recommendation request registration
+  - Admin validation (`eligible`, `ineligible`)
+  - Admin stage transitions
+  - Exam CSV import
+  - CSV export
+  - Communication queue logging
+  - Friendly errors with reportable `Error ID`
+  - Structured audit trail
+
+## Authentication
+- Primary: Google OAuth via Supabase.
+- Temporary dev-only fallback: demo bypass login when explicitly enabled via env.
+
+## Non-Functional Requirements
+- Fast and responsive UI.
+- Spanish-first UX text.
+- Material-design principles with polished, modern visual treatment.
+- Clear, actionable error messages for non-technical users.
+- Traceable logging for developer debugging.
+
+## Out of Scope (Current MVP)
+- Evaluator/reviewer portal.
+- Live collaborative docs/sheets editor.
+- In-platform written exam engine.

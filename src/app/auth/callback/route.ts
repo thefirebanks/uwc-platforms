@@ -1,18 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-
-function resolveRole(email: string | undefined) {
-  const allowlist = (process.env.ADMIN_EMAIL_ALLOWLIST ?? "")
-    .split(",")
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-
-  if (!email) {
-    return "applicant" as const;
-  }
-
-  return allowlist.includes(email.toLowerCase()) ? ("admin" as const) : ("applicant" as const);
-}
+import { resolveRoleFromEmail } from "@/lib/auth/role-resolution";
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
@@ -47,7 +35,10 @@ export async function GET(request: NextRequest) {
         (user.user_metadata.full_name as string | undefined) ??
         (user.user_metadata.name as string | undefined) ??
         "Usuario UWC",
-      role: resolveRole(user.email),
+      role: resolveRoleFromEmail({
+        email: user.email,
+        allowlist: process.env.ADMIN_EMAIL_ALLOWLIST ?? "",
+      }),
     });
   }
 

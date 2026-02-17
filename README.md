@@ -14,6 +14,10 @@ Spanish-first MVP for UWC Peru selection management with:
 - Bun runtime/package manager
 - Vitest + Testing Library + Playwright
 
+## Documentation
+- Canonical project docs live in `/Users/dafirebanks/Projects/uwc-platforms/docs/`.
+- Start at `/Users/dafirebanks/Projects/uwc-platforms/docs/README.md`.
+
 ## MVP Features Implemented
 - Role-based login (`admin`, `applicant`)
 - Google OAuth sign-in via Supabase
@@ -75,6 +79,7 @@ If OAuth keys are not ready yet:
 bun run lint
 bun run typecheck
 bun run test
+bun run test:coverage
 bun run test:e2e
 bun run build
 ```
