@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
   Button,
@@ -13,7 +13,11 @@ import {
   Typography,
 } from "@mui/material";
 import GoogleIcon from "@mui/icons-material/Google";
-import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import {
+  clearSupabaseBrowserSessionCache,
+  getSupabaseBrowserClient,
+  resetSupabaseBrowserClient,
+} from "@/lib/supabase/browser";
 
 const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
 const demoAdminEmail = process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL;
@@ -22,8 +26,10 @@ const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
 
 export default function LoginPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const modeHint = searchParams.get("mode");
 
   async function loginWithGoogle() {
     setError(null);
@@ -60,14 +66,17 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const supabase = getSupabaseBrowserClient();
+      clearSupabaseBrowserSessionCache();
+      resetSupabaseBrowserClient();
+      const supabase = getSupabaseBrowserClient({ forceNew: true });
+      await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
       const email = role === "admin" ? demoAdminEmail : demoApplicantEmail;
-      const { error: signInError } = await supabase.auth.signInWithPassword({
+      const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password: demoPassword,
       });
 
-      if (signInError) {
+      if (signInError && !signInData?.session) {
         setError(
           `No se pudo iniciar sesión en bypass. Verifica usuarios demo. (${signInError.code ?? "auth_error"}: ${signInError.message})`,
         );
@@ -92,6 +101,11 @@ export default function LoginPage() {
             <Typography color="text.secondary">
               Autenticación oficial del MVP: Google OAuth con Supabase.
             </Typography>
+            {modeHint === "admin" || modeHint === "applicant" ? (
+              <Typography variant="body2" color="text.secondary">
+                Modo sugerido: {modeHint === "admin" ? "admin" : "postulante"}.
+              </Typography>
+            ) : null}
 
             {error ? <Alert severity="error">{error}</Alert> : null}
 

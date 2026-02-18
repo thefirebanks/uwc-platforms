@@ -23,16 +23,18 @@ export default async function AdminProcessPage({
     redirect("/admin");
   }
 
-  const { data: applications } = await supabase
-    .from("applications")
-    .select("*")
-    .eq("cycle_id", cycleId)
-    .order("updated_at", { ascending: false });
-  const { data: templates } = await supabase
-    .from("cycle_stage_templates")
-    .select("*")
-    .eq("cycle_id", cycleId)
-    .order("sort_order", { ascending: true });
+  const [{ data: applications }, { data: templates }] = await Promise.all([
+    supabase
+      .from("applications")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .order("updated_at", { ascending: false }),
+    supabase
+      .from("cycle_stage_templates")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .order("sort_order", { ascending: true }),
+  ]);
 
   return (
     <AdminDashboard

@@ -77,6 +77,9 @@
   - generated `errorId`
 - Users can submit bug reports using that `errorId`.
 - Admin/engineering can correlate logs + audit events via request identifiers.
+- Application submission is resilient to outbound email queue failures:
+  - application status still transitions to `submitted`
+  - queue failures are logged as warnings and tracked in audit metadata (`automationQueueFailed`)
 
 ## OAuth Provisioning
 - OAuth callback exchanges code for session.

@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { submitApplication } from "@/lib/server/application-service";
 import { recordAuditEvent } from "@/lib/logging/audit";
+import { logger } from "@/lib/logging/logger";
 import {
   queueApplicationAutomationIfEnabled,
   validateApplicationBeforeSubmit,
@@ -45,12 +46,31 @@ export async function POST(
       applicationId: id,
     });
 
-    const automationResult = await queueApplicationAutomationIfEnabled({
-      supabase,
-      application: submitted,
-      triggerEvent: "application_submitted",
-      actorId: profile.id,
-    });
+    let automationResult: Awaited<ReturnType<typeof queueApplicationAutomationIfEnabled>> = {
+      queued: false,
+      automationTemplateId: null,
+    };
+    let automationQueueFailed = false;
+
+    try {
+      automationResult = await queueApplicationAutomationIfEnabled({
+        supabase,
+        application: submitted,
+        triggerEvent: "application_submitted",
+        actorId: profile.id,
+      });
+    } catch (error) {
+      automationQueueFailed = true;
+      logger.warn(
+        {
+          requestId,
+          applicationId: id,
+          actorId: profile.id,
+          error,
+        },
+        "Failed queueing application_submitted automation",
+      );
+    }
 
     await recordAuditEvent({
       supabase,
@@ -61,6 +81,7 @@ export async function POST(
         status: submitted.status,
         automationQueued: automationResult.queued,
         automationTemplateId: automationResult.automationTemplateId,
+        automationQueueFailed,
       },
       requestId,
     });

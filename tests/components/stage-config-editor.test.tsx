@@ -85,7 +85,7 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Agregar campo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Agregar campo al final" }));
     fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
 
     await waitFor(() => {

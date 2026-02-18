@@ -21,6 +21,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
   - `supabase/migrations/20260218004000_add_stage_form_and_automation_configs.sql`
   - `supabase/migrations/20260218005000_add_communications_lifecycle_and_ocr_checks.sql`
+  - `supabase/migrations/20260218008000_fix_current_user_role_security_definer.sql`
 ```bash
 sbu db push
 ```

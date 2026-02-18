@@ -40,26 +40,26 @@ export default async function StageConfigPage({
     redirect("/admin");
   }
 
-  const { data: templateData } = await supabase
-    .from("cycle_stage_templates")
-    .select("*")
-    .eq("cycle_id", cycleId)
-    .eq("stage_code", parsedStageCode)
-    .maybeSingle();
-
-  const { data: fieldsData } = await supabase
-    .from("cycle_stage_fields")
-    .select("*")
-    .eq("cycle_id", cycleId)
-    .eq("stage_code", parsedStageCode)
-    .order("sort_order", { ascending: true });
-
-  const { data: automationsData } = await supabase
-    .from("stage_automation_templates")
-    .select("*")
-    .eq("cycle_id", cycleId)
-    .eq("stage_code", parsedStageCode)
-    .order("created_at", { ascending: true });
+  const [{ data: templateData }, { data: fieldsData }, { data: automationsData }] = await Promise.all([
+    supabase
+      .from("cycle_stage_templates")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", parsedStageCode)
+      .maybeSingle(),
+    supabase
+      .from("cycle_stage_fields")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", parsedStageCode)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("stage_automation_templates")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", parsedStageCode)
+      .order("created_at", { ascending: true }),
+  ]);
 
   const fallbackFields =
     parsedStageCode === "documents"

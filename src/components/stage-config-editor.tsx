@@ -180,11 +180,6 @@ export function StageConfigEditor({
     setFields(nextFields.map((field, index) => ({ ...field, sort_order: index + 1 })));
   }
 
-  function addField() {
-    const nextIndex = orderedFields.length + 1;
-    applyOrderedFields([...orderedFields, createNewField(nextIndex)]);
-  }
-
   function insertFieldAt(position: number) {
     const safePosition = Math.max(0, Math.min(position, orderedFields.length));
     const nextIndex = orderedFields.length + 1;
@@ -349,9 +344,6 @@ export function StageConfigEditor({
         <CardContent>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
             <Typography variant="h6">Campos requeridos</Typography>
-            <Button variant="outlined" size="small" onClick={addField}>
-              Agregar campo
-            </Button>
           </Stack>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
             Solo mostramos y pedimos lo estrictamente necesario para esta etapa.
@@ -389,8 +381,20 @@ export function StageConfigEditor({
                   }}
                 >
                   <Stack direction={{ xs: "column", md: "row" }} spacing={1.2}>
-                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 120 }}>
-                      <DragIndicatorIcon fontSize="small" color="action" />
+                    <Stack
+                      direction="row"
+                      spacing={0.5}
+                      alignItems="center"
+                      sx={{
+                        minWidth: 120,
+                        cursor: draggedFieldId === field.localId ? "grabbing" : "grab",
+                      }}
+                    >
+                      <DragIndicatorIcon
+                        fontSize="small"
+                        color="action"
+                        sx={{ cursor: draggedFieldId === field.localId ? "grabbing" : "grab" }}
+                      />
                       <IconButton
                         size="small"
                         aria-label={`Mover arriba ${field.field_label}`}
@@ -491,6 +495,7 @@ export function StageConfigEditor({
                         )
                       }
                       fullWidth
+                      InputLabelProps={{ shrink: true }}
                     />
                     <TextField
                       label="Ayuda"
@@ -503,6 +508,7 @@ export function StageConfigEditor({
                         )
                       }
                       fullWidth
+                      InputLabelProps={{ shrink: true }}
                     />
                     <FormControlLabel
                       control={

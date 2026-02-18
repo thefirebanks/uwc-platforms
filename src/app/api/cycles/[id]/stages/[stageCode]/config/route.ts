@@ -174,148 +174,157 @@ export async function PATCH(
       });
     }
 
-    const { data: existingFieldsData } = await supabase
-      .from("cycle_stage_fields")
-      .select("id")
-      .eq("cycle_id", cycleId)
-      .eq("stage_code", stageCode);
-    const existingFieldIds = new Set((existingFieldsData ?? []).map((row) => row.id));
+    const [{ data: existingFieldsData }, { data: existingAutomationsData }] = await Promise.all([
+      supabase
+        .from("cycle_stage_fields")
+        .select("id")
+        .eq("cycle_id", cycleId)
+        .eq("stage_code", stageCode),
+      supabase
+        .from("stage_automation_templates")
+        .select("id")
+        .eq("cycle_id", cycleId)
+        .eq("stage_code", stageCode),
+    ]);
 
-    const savedFields: StageFieldRow[] = [];
-    for (const field of parsed.data.fields) {
-      if (field.id) {
-        const { data, error } = await supabase
+    const incomingFieldIds = new Set(parsed.data.fields.map((field) => field.id).filter(Boolean));
+    const incomingAutomationIds = new Set(
+      parsed.data.automations.map((automation) => automation.id).filter(Boolean),
+    );
+
+    const fieldIdsToDelete = (existingFieldsData ?? [])
+      .map((row) => row.id)
+      .filter((id) => !incomingFieldIds.has(id));
+    const automationIdsToDelete = (existingAutomationsData ?? [])
+      .map((row) => row.id)
+      .filter((id) => !incomingAutomationIds.has(id));
+
+    const [deleteFieldsResult, deleteAutomationsResult] = await Promise.all([
+      fieldIdsToDelete.length > 0
+        ? supabase
+            .from("cycle_stage_fields")
+            .delete()
+            .in("id", fieldIdsToDelete)
+        : Promise.resolve({ error: null }),
+      automationIdsToDelete.length > 0
+        ? supabase
+            .from("stage_automation_templates")
+            .delete()
+            .in("id", automationIdsToDelete)
+        : Promise.resolve({ error: null }),
+    ]);
+
+    if (deleteFieldsResult.error) {
+      throw new AppError({
+        message: "Failed deleting removed stage fields",
+        userMessage: "No se pudieron guardar los campos de la etapa.",
+        status: 500,
+        details: deleteFieldsResult.error,
+      });
+    }
+
+    if (deleteAutomationsResult.error) {
+      throw new AppError({
+        message: "Failed deleting removed stage automations",
+        userMessage: "No se pudieron guardar las automatizaciones de la etapa.",
+        status: 500,
+        details: deleteAutomationsResult.error,
+      });
+    }
+
+    const fieldRows = parsed.data.fields.map((field) => ({
+      ...(field.id ? { id: field.id } : {}),
+      cycle_id: cycleId,
+      stage_code: stageCode,
+      field_key: field.fieldKey.trim(),
+      field_label: field.fieldLabel.trim(),
+      field_type: field.fieldType,
+      is_required: field.isRequired,
+      placeholder: field.placeholder ?? null,
+      help_text: field.helpText ?? null,
+      sort_order: field.sortOrder,
+      is_active: field.isActive,
+    }));
+
+    const automationRows = parsed.data.automations.map((automation) => ({
+      ...(automation.id ? { id: automation.id } : {}),
+      cycle_id: cycleId,
+      stage_code: stageCode,
+      trigger_event: automation.triggerEvent,
+      channel: automation.channel,
+      is_enabled: automation.isEnabled,
+      template_subject: automation.templateSubject,
+      template_body: automation.templateBody,
+      updated_at: new Date().toISOString(),
+    }));
+
+    const [upsertFieldsResult, upsertAutomationsResult] = await Promise.all([
+      fieldRows.length > 0
+        ? supabase
+            .from("cycle_stage_fields")
+            .upsert(fieldRows, { onConflict: "id" })
+        : Promise.resolve({ error: null }),
+      automationRows.length > 0
+        ? supabase
+            .from("stage_automation_templates")
+            .upsert(automationRows, { onConflict: "id" })
+        : Promise.resolve({ error: null }),
+    ]);
+
+    if (upsertFieldsResult.error) {
+      throw new AppError({
+        message: "Failed upserting stage fields",
+        userMessage: "No se pudieron guardar los campos de la etapa.",
+        status: 500,
+        details: upsertFieldsResult.error,
+      });
+    }
+
+    if (upsertAutomationsResult.error) {
+      throw new AppError({
+        message: "Failed upserting stage automations",
+        userMessage: "No se pudieron guardar las automatizaciones de la etapa.",
+        status: 500,
+        details: upsertAutomationsResult.error,
+      });
+    }
+
+    const [{ data: savedFieldsData, error: savedFieldsError }, { data: savedAutomationsData, error: savedAutomationsError }] =
+      await Promise.all([
+        supabase
           .from("cycle_stage_fields")
-          .update({
-            field_key: field.fieldKey.trim(),
-            field_label: field.fieldLabel.trim(),
-            field_type: field.fieldType,
-            is_required: field.isRequired,
-            placeholder: field.placeholder ?? null,
-            help_text: field.helpText ?? null,
-            sort_order: field.sortOrder,
-            is_active: field.isActive,
-          })
-          .eq("id", field.id)
+          .select("*")
           .eq("cycle_id", cycleId)
           .eq("stage_code", stageCode)
-          .select("*")
-          .single();
-
-        const saved = (data as StageFieldRow | null) ?? null;
-        if (error || !saved) {
-          throw new AppError({
-            message: "Failed updating stage field",
-            userMessage: "No se pudieron guardar los campos de la etapa.",
-            status: 500,
-            details: error,
-          });
-        }
-        savedFields.push(saved);
-        existingFieldIds.delete(field.id);
-      } else {
-        const { data, error } = await supabase
-          .from("cycle_stage_fields")
-          .insert({
-            cycle_id: cycleId,
-            stage_code: stageCode,
-            field_key: field.fieldKey.trim(),
-            field_label: field.fieldLabel.trim(),
-            field_type: field.fieldType,
-            is_required: field.isRequired,
-            placeholder: field.placeholder ?? null,
-            help_text: field.helpText ?? null,
-            sort_order: field.sortOrder,
-            is_active: field.isActive,
-          })
-          .select("*")
-          .single();
-
-        const saved = (data as StageFieldRow | null) ?? null;
-        if (error || !saved) {
-          throw new AppError({
-            message: "Failed creating stage field",
-            userMessage: "No se pudieron guardar los campos de la etapa.",
-            status: 500,
-            details: error,
-          });
-        }
-        savedFields.push(saved);
-      }
-    }
-
-    if (existingFieldIds.size > 0) {
-      await supabase.from("cycle_stage_fields").delete().in("id", [...existingFieldIds]);
-    }
-
-    const { data: existingAutomationsData } = await supabase
-      .from("stage_automation_templates")
-      .select("id")
-      .eq("cycle_id", cycleId)
-      .eq("stage_code", stageCode);
-    const existingAutomationIds = new Set((existingAutomationsData ?? []).map((row) => row.id));
-
-    const savedAutomations: StageAutomationRow[] = [];
-    for (const automation of parsed.data.automations) {
-      if (automation.id) {
-        const { data, error } = await supabase
+          .order("sort_order", { ascending: true }),
+        supabase
           .from("stage_automation_templates")
-          .update({
-            trigger_event: automation.triggerEvent,
-            channel: automation.channel,
-            is_enabled: automation.isEnabled,
-            template_subject: automation.templateSubject,
-            template_body: automation.templateBody,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", automation.id)
+          .select("*")
           .eq("cycle_id", cycleId)
           .eq("stage_code", stageCode)
-          .select("*")
-          .single();
+          .order("created_at", { ascending: true }),
+      ]);
 
-        const saved = (data as StageAutomationRow | null) ?? null;
-        if (error || !saved) {
-          throw new AppError({
-            message: "Failed updating stage automation",
-            userMessage: "No se pudieron guardar las automatizaciones de la etapa.",
-            status: 500,
-            details: error,
-          });
-        }
-        savedAutomations.push(saved);
-        existingAutomationIds.delete(automation.id);
-      } else {
-        const { data, error } = await supabase
-          .from("stage_automation_templates")
-          .insert({
-            cycle_id: cycleId,
-            stage_code: stageCode,
-            trigger_event: automation.triggerEvent,
-            channel: automation.channel,
-            is_enabled: automation.isEnabled,
-            template_subject: automation.templateSubject,
-            template_body: automation.templateBody,
-          })
-          .select("*")
-          .single();
-
-        const saved = (data as StageAutomationRow | null) ?? null;
-        if (error || !saved) {
-          throw new AppError({
-            message: "Failed creating stage automation",
-            userMessage: "No se pudieron guardar las automatizaciones de la etapa.",
-            status: 500,
-            details: error,
-          });
-        }
-        savedAutomations.push(saved);
-      }
+    if (savedFieldsError) {
+      throw new AppError({
+        message: "Failed loading saved stage fields",
+        userMessage: "No se pudieron guardar los campos de la etapa.",
+        status: 500,
+        details: savedFieldsError,
+      });
     }
 
-    if (existingAutomationIds.size > 0) {
-      await supabase.from("stage_automation_templates").delete().in("id", [...existingAutomationIds]);
+    if (savedAutomationsError) {
+      throw new AppError({
+        message: "Failed loading saved stage automations",
+        userMessage: "No se pudieron guardar las automatizaciones de la etapa.",
+        status: 500,
+        details: savedAutomationsError,
+      });
     }
+
+    const savedFields = (savedFieldsData as StageFieldRow[] | null) ?? [];
+    const savedAutomations = (savedAutomationsData as StageAutomationRow[] | null) ?? [];
 
     await recordAuditEvent({
       supabase,

@@ -29,6 +29,7 @@ export const appTheme = createTheme({
       main: colors.uwcMaroon,
       light: colors.uwcMaroonSoft,
       dark: colors.uwcMaroonDark,
+      contrastText: "#FFFFFF",
     },
     secondary: {
       main: colors.uwcBlue,
@@ -128,12 +129,18 @@ export const appTheme = createTheme({
       },
     },
     MuiButton: {
+      defaultProps: {
+        color: "primary",
+      },
       styleOverrides: {
         root: {
           borderRadius: borderRadius,
           padding: "10px 20px",
           fontWeight: 500,
           minWidth: "auto",
+          "&.MuiButton-contained": {
+            color: "#FFFFFF",
+          },
         },
         sizeSmall: {
           padding: "6px 14px",
@@ -143,9 +150,13 @@ export const appTheme = createTheme({
           padding: "14px 28px",
         },
         containedPrimary: {
+          color: "#FFFFFF",
           "&:hover": {
             backgroundColor: colors.uwcMaroonDark,
           },
+        },
+        contained: {
+          color: "#FFFFFF",
         },
         outlined: {
           borderColor: colors.sand,

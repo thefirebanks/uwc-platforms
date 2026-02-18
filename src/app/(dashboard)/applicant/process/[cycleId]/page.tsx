@@ -5,7 +5,6 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   Application,
   CycleStageField,
-  CycleStageTemplate,
   SelectionProcess,
 } from "@/types/domain";
 
@@ -22,39 +21,51 @@ export default async function ApplicantProcessPage({
 
   const { cycleId } = await params;
   const supabase = await getSupabaseServerClient();
-
-  const { data: cycle } = await supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle();
+  const [{ data: cycle }, { data: application }, { data: stageFields }] = await Promise.all([
+    supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle(),
+    supabase
+      .from("applications")
+      .select("*")
+      .eq("applicant_id", profile.id)
+      .eq("cycle_id", cycleId)
+      .maybeSingle(),
+    supabase
+      .from("cycle_stage_fields")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", "documents")
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+  ]);
 
   if (!cycle) {
     redirect("/applicant");
   }
 
-  const { data: application } = await supabase
-    .from("applications")
-    .select("*")
-    .eq("applicant_id", profile.id)
-    .eq("cycle_id", cycleId)
-    .maybeSingle();
-  const { data: templates } = await supabase
-    .from("cycle_stage_templates")
-    .select("*")
-    .eq("cycle_id", cycleId)
-    .order("sort_order", { ascending: true });
-  const { data: stageFields } = await supabase
-    .from("cycle_stage_fields")
-    .select("*")
-    .eq("cycle_id", cycleId)
-    .eq("stage_code", "documents")
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
+  const existingApplication = (application as Application | null) ?? null;
+  const { data: recommenderRows } = existingApplication?.id
+    ? await supabase
+        .from("recommendation_requests")
+        .select("recommender_email")
+        .eq("application_id", existingApplication.id)
+    : { data: [] as Array<{ recommender_email: string | null }> };
+
+  const initialRecommenders = Array.from(
+    new Set(
+      (recommenderRows ?? [])
+        .map((row) => row.recommender_email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email)),
+    ),
+  );
 
   return (
     <ApplicantApplicationForm
-      existingApplication={(application as Application | null) ?? null}
+      existingApplication={existingApplication}
       cycleId={cycleId}
       cycleName={(cycle as SelectionProcess).name}
-      cycleTemplates={(templates as CycleStageTemplate[] | null) ?? []}
       stageFields={(stageFields as CycleStageField[] | null) ?? []}
+      stageCloseAt={(cycle as SelectionProcess).stage1_close_at ?? null}
+      initialRecommenders={initialRecommenders}
     />
   );
 }

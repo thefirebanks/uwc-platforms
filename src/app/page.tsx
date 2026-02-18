@@ -14,13 +14,18 @@ export default function HomePage() {
             etapas del comité nacional de UWC Perú.
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <Button component={Link} href="/login" variant="contained">
+            <Button
+              component={Link}
+              href="/login"
+              variant="contained"
+              sx={{ color: "#FFFFFF !important", "&:hover": { color: "#FFFFFF !important" } }}
+            >
               Iniciar sesión
             </Button>
-            <Button component={Link} href="/applicant" variant="outlined">
+            <Button component={Link} href="/login?mode=applicant" variant="outlined">
               Ir a modo postulante
             </Button>
-            <Button component={Link} href="/admin" variant="outlined">
+            <Button component={Link} href="/login?mode=admin" variant="outlined">
               Ir a modo admin
             </Button>
           </Stack>

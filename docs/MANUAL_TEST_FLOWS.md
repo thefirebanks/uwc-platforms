@@ -144,22 +144,23 @@ Expected:
 1. Login as admin and create a new process from `/admin`.
 2. Open that process (`Gestionar proceso`).
 3. Verify `Plantillas de etapas` shows Stage 1 and Stage 2 preloaded.
-4. Edit `Nombre de etapa`, `Hito`, and `Fecha objetivo`.
+4. Edit `Nombre de etapa` and `Hito`.
 5. Click `Guardar plantillas`.
 
 Expected:
 - New processes auto-generate two stage templates.
 - Edited template fields persist after page refresh.
 - Audit log records `cycle.templates_updated`.
+- Date edits are handled only in `Configuración de etapas` (no duplicated date input in template rows).
 
-## Flow 15: Applicant Process Timeline View
+## Flow 15: Applicant Stage Context View
 1. Login as applicant and open `/applicant/process/:cycleId`.
-2. Locate card `Ruta del proceso`.
-3. Confirm stage labels, milestones, and target dates match admin edits.
+2. Confirm page header shows `Cierre de etapa` date for current stage.
+3. Confirm no extra full-process timeline card is rendered.
 
 Expected:
-- Applicant can view process milestones without admin access.
-- Timeline reflects latest admin template configuration.
+- Applicant sees only current-stage context (minimal information principle).
+- Stage close date reflects process configuration from admin.
 
 ## Flow 16: Admin Stage Field Builder
 1. Login as admin and open `/admin/process/:cycleId`.
@@ -196,6 +197,7 @@ Expected:
 Expected:
 - Automation template edits persist.
 - Submit trigger queues communication log using configured template.
+- If queueing fails, submission still completes and audit metadata includes `automationQueueFailed=true`.
 
 ## Flow 19: Communication Queue Lifecycle
 1. Login as admin and open `/admin/process/:cycleId`.

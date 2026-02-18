@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -14,7 +14,7 @@ import {
   Typography,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
-import type { Application, CycleStageField, CycleStageTemplate } from "@/types/domain";
+import type { Application, CycleStageField } from "@/types/domain";
 import { StageBadge, StatusBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
 import { validateStagePayload } from "@/lib/stages/form-schema";
@@ -26,7 +26,6 @@ interface ApiError {
 }
 
 const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
-const EMPTY_STAGE_TEMPLATES: CycleStageTemplate[] = [];
 type ProgressState = "complete" | "in_progress" | "not_started";
 
 function getPayloadValue(payload: Application["payload"], key: string) {
@@ -79,14 +78,16 @@ export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
   cycleName,
-  cycleTemplates,
   stageFields,
+  stageCloseAt,
+  initialRecommenders = [],
 }: {
   existingApplication: Application | null;
   cycleId: string;
   cycleName?: string;
-  cycleTemplates?: CycleStageTemplate[];
   stageFields?: CycleStageField[];
+  stageCloseAt?: string | null;
+  initialRecommenders?: string[];
 }) {
   const LOCKED_STATUSES = new Set<Application["status"]>([
     "submitted",
@@ -98,8 +99,8 @@ export function ApplicantApplicationForm({
   const [application, setApplication] = useState<Application | null>(existingApplication);
   const [error, setError] = useState<ApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [recommendationEmails, setRecommendationEmails] = useState("mentor@example.com, amigo@example.com");
-  const [registeredRecommenders, setRegisteredRecommenders] = useState<string[]>([]);
+  const [recommendationEmails, setRecommendationEmails] = useState("");
+  const [registeredRecommenders, setRegisteredRecommenders] = useState<string[]>(initialRecommenders);
   const [loadingRecommenders, setLoadingRecommenders] = useState(false);
   const [uploadingFieldKey, setUploadingFieldKey] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -110,7 +111,8 @@ export function ApplicantApplicationForm({
   const isLocked = application ? LOCKED_STATUSES.has(application.status) : false;
   const isEditingEnabled = !isLocked || isEditMode;
   const providedStageFields = stageFields ?? EMPTY_STAGE_FIELDS;
-  const providedCycleTemplates = cycleTemplates ?? EMPTY_STAGE_TEMPLATES;
+  const initialApplicationIdRef = useRef<string | null>(existingApplication?.id ?? null);
+  const skippedInitialRecommenderFetchRef = useRef(false);
 
   const effectiveStageFields = useMemo(() => {
     if (providedStageFields.length > 0) {
@@ -213,10 +215,19 @@ export function ApplicantApplicationForm({
   useEffect(() => {
     if (!application?.id) {
       setRegisteredRecommenders([]);
+      skippedInitialRecommenderFetchRef.current = false;
       return;
     }
 
     const applicationId = application.id;
+    if (
+      !skippedInitialRecommenderFetchRef.current &&
+      initialApplicationIdRef.current === applicationId
+    ) {
+      skippedInitialRecommenderFetchRef.current = true;
+      return;
+    }
+
     let isMounted = true;
 
     async function loadRecommenders() {
@@ -453,6 +464,11 @@ export function ApplicantApplicationForm({
               <Typography sx={{ mt: 1 }} color="text.secondary">
                 Completa solo la información requerida para esta etapa.
               </Typography>
+              {stageCloseAt ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  Cierre de etapa: {new Date(stageCloseAt).toLocaleDateString()}
+                </Typography>
+              ) : null}
             </Box>
             <StageBadge stage={application?.stage_code ?? "documents"} />
           </Stack>
@@ -569,28 +585,6 @@ export function ApplicantApplicationForm({
         </Stack>
       </Box>
 
-      {providedCycleTemplates.length > 0 ? (
-        <Card>
-          <CardContent>
-            <Typography variant="h6">Ruta del proceso</Typography>
-            <Typography color="text.secondary" sx={{ mb: 1.5 }}>
-              Hitos y fechas referenciales de este proceso de selección.
-            </Typography>
-            <Stack spacing={1.2}>
-              {providedCycleTemplates.map((template) => (
-                <Box key={template.id} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 1.5 }}>
-                  <Typography fontWeight={700}>{template.stage_label}</Typography>
-                  <Typography color="text.secondary">{template.milestone_label}</Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Fecha objetivo: {template.due_at ? new Date(template.due_at).toLocaleDateString() : "No configurada"}
-                  </Typography>
-                </Box>
-              ))}
-            </Stack>
-          </CardContent>
-        </Card>
-      ) : null}
-
       {error ? <ErrorCallout message={error.message} errorId={error.errorId} context="applicant_form" /> : null}
 
       {successMessage ? (
@@ -634,7 +628,7 @@ export function ApplicantApplicationForm({
                   placeholder={field.placeholder ?? undefined}
                   helperText={fieldErrors[field.field_key] ?? field.help_text}
                   error={Boolean(fieldErrors[field.field_key])}
-                  InputLabelProps={field.field_type === "date" ? { shrink: true } : undefined}
+                  InputLabelProps={{ shrink: true }}
                 />
               </Grid>
             ))}
@@ -651,6 +645,9 @@ export function ApplicantApplicationForm({
             </Stack>
             <Typography color="text.secondary" sx={{ mb: 1.5 }}>
               Sube únicamente los archivos solicitados para esta etapa.
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+              La validación OCR se ejecuta desde el panel de admin, no automáticamente al subir.
             </Typography>
             <Stack spacing={2}>
               {fileStageFields.map((field) => {
