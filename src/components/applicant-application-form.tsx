@@ -13,8 +13,9 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import CheckIcon from "@mui/icons-material/Check";
 import type { Application, CycleStageField, CycleStageTemplate } from "@/types/domain";
-import { StageBadge } from "@/components/stage-badge";
+import { StageBadge, StatusBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
 import { validateStagePayload } from "@/lib/stages/form-schema";
 import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
@@ -26,6 +27,7 @@ interface ApiError {
 
 const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
 const EMPTY_STAGE_TEMPLATES: CycleStageTemplate[] = [];
+type ProgressState = "complete" | "in_progress" | "not_started";
 
 function getPayloadValue(payload: Application["payload"], key: string) {
   const raw = payload?.[key];
@@ -33,6 +35,44 @@ function getPayloadValue(payload: Application["payload"], key: string) {
     return "";
   }
   return String(raw);
+}
+
+function isMeaningfulValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+
+  if (typeof value === "boolean") {
+    return true;
+  }
+
+  return false;
+}
+
+function getStepState({
+  complete,
+  inProgress,
+}: {
+  complete: boolean;
+  inProgress: boolean;
+}): ProgressState {
+  if (complete) {
+    return "complete";
+  }
+
+  if (inProgress) {
+    return "in_progress";
+  }
+
+  return "not_started";
 }
 
 export function ApplicantApplicationForm({
@@ -94,6 +134,70 @@ export function ApplicantApplicationForm({
     () => orderedStageFields.filter((field) => field.is_active && field.field_type === "file"),
     [orderedStageFields],
   );
+
+  const personalFieldsStatus = useMemo(() => {
+    const requiredFormFields = formStageFields.filter((field) => field.is_required);
+    const payload = application?.payload ?? {};
+    const completedCount = requiredFormFields.filter((field) =>
+      isMeaningfulValue((payload as Record<string, unknown>)[field.field_key]),
+    ).length;
+    const hasAnyFieldValue = formStageFields.some((field) =>
+      isMeaningfulValue((payload as Record<string, unknown>)[field.field_key]),
+    );
+
+    return getStepState({
+      complete: requiredFormFields.length === 0 || completedCount === requiredFormFields.length,
+      inProgress: hasAnyFieldValue || Boolean(application?.id),
+    });
+  }, [application?.id, application?.payload, formStageFields]);
+
+  const documentsStatus = useMemo(() => {
+    const requiredFileFields = fileStageFields.filter((field) => field.is_required);
+    const files = (application?.files as Record<string, string> | undefined) ?? {};
+    const completedCount = requiredFileFields.filter((field) =>
+      isMeaningfulValue(files[field.field_key]),
+    ).length;
+    const hasAnyFile = fileStageFields.some((field) => isMeaningfulValue(files[field.field_key]));
+
+    return getStepState({
+      complete: requiredFileFields.length === 0 || completedCount === requiredFileFields.length,
+      inProgress: hasAnyFile || Boolean(application?.id),
+    });
+  }, [application?.files, application?.id, fileStageFields]);
+
+  const recommenderStatus = useMemo(
+    () =>
+      getStepState({
+        complete: registeredRecommenders.length > 0,
+        inProgress: Boolean(application?.id),
+      }),
+    [application?.id, registeredRecommenders.length],
+  );
+
+  const submissionStatus = useMemo(
+    () =>
+      getStepState({
+        complete: Boolean(
+          application &&
+            ["submitted", "eligible", "ineligible", "advanced"].includes(application.status),
+        ),
+        inProgress: Boolean(application?.id),
+      }),
+    [application],
+  );
+
+  const progressSteps = useMemo(
+    () => [
+      { key: "personal", label: "Información personal", status: personalFieldsStatus },
+      { key: "documents", label: "Documentos", status: documentsStatus },
+      { key: "recommenders", label: "Recomendadores", status: recommenderStatus },
+      { key: "submit", label: "Enviar postulación", status: submissionStatus },
+    ],
+    [documentsStatus, personalFieldsStatus, recommenderStatus, submissionStatus],
+  );
+
+  const completedSteps = progressSteps.filter((step) => step.status === "complete").length;
+  const progressPercent = Math.round((completedSteps / progressSteps.length) * 100);
 
   useEffect(() => {
     const payload = application?.payload ?? {};
@@ -335,21 +439,23 @@ export function ApplicantApplicationForm({
   }
 
   return (
-    <Stack spacing={3}>
-      <Card>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="center">
-            <Typography variant="h5">Tu postulación UWC Perú</Typography>
-            {cycleName ? (
-              <Typography color="text.secondary" variant="body2">
-                {cycleName}
+    <Box sx={{ maxWidth: 840, width: "100%", mx: "auto" }}>
+      <Stack spacing={3}>
+        <Box className="page-header" sx={{ mb: 0 }}>
+          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+            <Box>
+              {cycleName ? (
+                <Typography className="eyebrow" sx={{ mb: 1 }}>
+                  {cycleName}
+                </Typography>
+              ) : null}
+              <Typography variant="h3">Tu postulación</Typography>
+              <Typography sx={{ mt: 1 }} color="text.secondary">
+                Completa solo la información requerida para esta etapa.
               </Typography>
-            ) : null}
+            </Box>
             <StageBadge stage={application?.stage_code ?? "documents"} />
           </Stack>
-          <Typography sx={{ mt: 1 }} color="text.secondary">
-            Completa solo la información requerida para esta etapa.
-          </Typography>
           {isLocked && !isEditMode ? (
             <Stack spacing={1} sx={{ mt: 2 }}>
               <Typography color="text.secondary">
@@ -382,8 +488,86 @@ export function ApplicantApplicationForm({
               </Button>
             </Box>
           ) : null}
-        </CardContent>
-      </Card>
+        </Box>
+
+      <Box className="progress-section">
+        <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1.5 }}>
+          <Typography variant="body2" color="text.secondary">
+            Progreso de postulación
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>
+            {completedSteps} de {progressSteps.length} completado
+          </Typography>
+        </Stack>
+        <Box
+          sx={{
+            height: 4,
+            bgcolor: "var(--sand)",
+            mb: 2.5,
+          }}
+        >
+          <Box
+            sx={{
+              height: 4,
+              width: `${progressPercent}%`,
+              transition: "width 240ms ease-out",
+              background: "linear-gradient(90deg, var(--uwc-maroon) 0%, var(--uwc-blue) 100%)",
+            }}
+          />
+        </Box>
+        <Stack spacing={0}>
+          {progressSteps.map((step, index) => (
+            <Stack
+              key={step.key}
+              direction="row"
+              spacing={1.5}
+              alignItems="center"
+              sx={{
+                py: 1.2,
+                borderBottom:
+                  index < progressSteps.length - 1 ? "1px solid var(--sand)" : "none",
+              }}
+            >
+              <Box
+                sx={{
+                  width: 24,
+                  height: 24,
+                  borderRadius: "50%",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "0.72rem",
+                  fontWeight: 700,
+                  bgcolor:
+                    step.status === "complete"
+                      ? "var(--success)"
+                      : step.status === "in_progress"
+                        ? "var(--uwc-maroon)"
+                        : "var(--paper)",
+                  color:
+                    step.status === "not_started" ? "var(--muted)" : "#FFFFFF",
+                  border:
+                    step.status === "not_started"
+                      ? "1.5px solid var(--sand)"
+                      : "1.5px solid transparent",
+                }}
+              >
+                {step.status === "complete" ? <CheckIcon sx={{ fontSize: 14 }} /> : index + 1}
+              </Box>
+              <Typography
+                sx={{
+                  flex: 1,
+                  fontWeight: step.status === "not_started" ? 400 : 500,
+                  color: step.status === "not_started" ? "var(--muted)" : "var(--ink)",
+                }}
+              >
+                {step.label}
+              </Typography>
+              <StatusBadge status={step.status} />
+            </Stack>
+          ))}
+        </Stack>
+      </Box>
 
       {providedCycleTemplates.length > 0 ? (
         <Card>
@@ -417,9 +601,10 @@ export function ApplicantApplicationForm({
 
       <Card>
         <CardContent>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            Formulario de etapa
-          </Typography>
+          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+            <Typography variant="h6">Formulario de etapa</Typography>
+            <StatusBadge status={personalFieldsStatus} />
+          </Stack>
           <Grid container spacing={2}>
             {formStageFields.map((field) => (
               <Grid key={field.id} size={field.field_type === "long_text" ? 12 : { xs: 12, md: 6 }}>
@@ -460,7 +645,10 @@ export function ApplicantApplicationForm({
       {fileStageFields.length > 0 ? (
         <Card>
           <CardContent>
-            <Typography variant="h6">Documentos</Typography>
+            <Stack direction="row" justifyContent="space-between" alignItems="center">
+              <Typography variant="h6">Documentos</Typography>
+              <StatusBadge status={documentsStatus} />
+            </Stack>
             <Typography color="text.secondary" sx={{ mb: 1.5 }}>
               Sube únicamente los archivos solicitados para esta etapa.
             </Typography>
@@ -512,7 +700,10 @@ export function ApplicantApplicationForm({
 
       <Card>
         <CardContent>
-          <Typography variant="h6">Recomendadores</Typography>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">Recomendadores</Typography>
+            <StatusBadge status={recommenderStatus} />
+          </Stack>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
             Ingresa correos separados por coma para generar links de recomendación.
           </Typography>
@@ -554,7 +745,10 @@ export function ApplicantApplicationForm({
 
       <Card>
         <CardContent>
-          <Typography variant="h6">Acciones de postulación</Typography>
+          <Stack direction="row" justifyContent="space-between" alignItems="center">
+            <Typography variant="h6">Acciones de postulación</Typography>
+            <StatusBadge status={submissionStatus} />
+          </Stack>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
             Guarda cambios y envía solo cuando estés listo.
           </Typography>
@@ -572,6 +766,7 @@ export function ApplicantApplicationForm({
           </Stack>
         </CardContent>
       </Card>
-    </Stack>
+      </Stack>
+    </Box>
   );
 }

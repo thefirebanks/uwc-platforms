@@ -3,6 +3,7 @@ export type AppRole = "admin" | "applicant";
 export type StageCode = "documents" | "exam_placeholder";
 export type StageFieldType = "short_text" | "long_text" | "number" | "date" | "email" | "file";
 export type StageAutomationTrigger = "application_submitted" | "stage_result";
+export type CommunicationStatus = "queued" | "processing" | "sent" | "failed";
 
 export type ApplicationStatus =
   | "draft"
@@ -92,6 +93,36 @@ export interface StageAutomationTemplate {
   template_body: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface CommunicationLog {
+  id: string;
+  application_id: string;
+  template_key: string;
+  trigger_event: string | null;
+  subject: string | null;
+  body: string | null;
+  automation_template_id: string | null;
+  recipient_email: string;
+  status: CommunicationStatus;
+  error_message: string | null;
+  sent_by: string;
+  attempt_count: number;
+  last_attempt_at: string | null;
+  delivered_at: string | null;
+  provider_message_id: string | null;
+  created_at: string;
+}
+
+export interface ApplicationOcrCheck {
+  id: string;
+  application_id: string;
+  actor_id: string | null;
+  file_key: string;
+  summary: string;
+  confidence: number;
+  raw_response: Record<string, unknown>;
+  created_at: string;
 }
 
 export interface StageTransition {

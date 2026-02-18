@@ -20,6 +20,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260218002000_add_cycle_stage_configuration.sql`
   - `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
   - `supabase/migrations/20260218004000_add_stage_form_and_automation_configs.sql`
+  - `supabase/migrations/20260218005000_add_communications_lifecycle_and_ocr_checks.sql`
 ```bash
 sbu db push
 ```
@@ -55,6 +56,9 @@ bun run seed:fake-users
   - `ADMIN_EMAIL_ALLOWLIST`
   - `LOG_LEVEL` (optional, default `info`)
   - `GEMINI_API_KEY` (optional)
+  - `RESEND_API_KEY` (required for real email delivery)
+  - `RESEND_FROM_EMAIL` (required for real email delivery)
+  - `RESEND_FROM_NAME` (optional)
 
 ## 4) Cloudflare Observability (Recommended)
 - Use Cloudflare Logs / Log Explorer as the single runtime log destination.
@@ -71,17 +75,32 @@ bun run dev
 ## 5) Gemini API (Optional for OCR)
 - Create Google AI Studio API key.
 - Set `GEMINI_API_KEY`.
-- Endpoint using it: `POST /api/applications/:id/ocr-check`.
+- Model used by app: `gemini-3-flash-preview`.
+- Endpoints using it:
+  - `POST /api/applications/:id/ocr-check`
+  - `GET /api/applications/:id/ocr-check` (history view)
 
-## 6) GitHub Repository + Secrets
+## 6) Resend (Required for Real Email Sending)
+- Create a Resend account and API key.
+- Verify a sending domain in Resend (production), then define:
+  - `RESEND_API_KEY`
+  - `RESEND_FROM_EMAIL` (example: `noreply@tudominio.org`)
+  - `RESEND_FROM_NAME` (optional, example: `UWC Peru`)
+- Communication queue processing endpoint that sends real emails:
+  - `POST /api/communications/process`
+
+## 7) GitHub Repository + Secrets
 - Recommended repo secrets:
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - `ADMIN_EMAIL_ALLOWLIST`
   - `LOG_LEVEL` (optional)
   - `GEMINI_API_KEY` (optional)
+  - `RESEND_API_KEY`
+  - `RESEND_FROM_EMAIL`
+  - `RESEND_FROM_NAME` (optional)
 
-## 7) Feature Branch + PR Process
+## 8) Feature Branch + PR Process
 - Always branch from `main` with `codex/` prefix.
 - Open PR for each feature branch.
 - Suggested branch names:

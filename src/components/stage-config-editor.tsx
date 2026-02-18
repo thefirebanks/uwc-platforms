@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type DragEvent } from "react";
 import {
   Accordion,
   AccordionDetails,
@@ -20,6 +20,10 @@ import {
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import type { CycleStageField, StageAutomationTemplate, StageCode } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
@@ -57,6 +61,40 @@ function isUuid(value: string) {
   );
 }
 
+const REQUIRED_SWITCH_SX = {
+  "& .MuiSwitch-switchBase.Mui-checked": {
+    color: "#FFFFFF",
+    "& + .MuiSwitch-track": {
+      backgroundColor: "#B42346",
+      opacity: 1,
+    },
+  },
+  "& .MuiSwitch-switchBase": {
+    color: "#9CA3AF",
+  },
+  "& .MuiSwitch-track": {
+    backgroundColor: "#D1D5DB",
+    opacity: 1,
+  },
+};
+
+const VISIBLE_SWITCH_SX = {
+  "& .MuiSwitch-switchBase.Mui-checked": {
+    color: "#FFFFFF",
+    "& + .MuiSwitch-track": {
+      backgroundColor: "#1D4ED8",
+      opacity: 1,
+    },
+  },
+  "& .MuiSwitch-switchBase": {
+    color: "#9CA3AF",
+  },
+  "& .MuiSwitch-track": {
+    backgroundColor: "#D1D5DB",
+    opacity: 1,
+  },
+};
+
 export function StageConfigEditor({
   cycleId,
   cycleName,
@@ -79,32 +117,93 @@ export function StageConfigEditor({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
 
   const orderedFields = useMemo(
     () => [...fields].sort((a, b) => a.sort_order - b.sort_order),
     [fields],
   );
 
+  function createNewField(nextIndex: number): EditableField {
+    const localId = `new-${crypto.randomUUID()}`;
+
+    return {
+      id: localId,
+      localId,
+      cycle_id: cycleId,
+      stage_code: stageCode,
+      field_key: `nuevoCampo${nextIndex}`,
+      field_label: `Nuevo campo ${nextIndex}`,
+      field_type: "short_text",
+      is_required: false,
+      placeholder: "",
+      help_text: "",
+      sort_order: nextIndex,
+      is_active: true,
+      created_at: new Date().toISOString(),
+    };
+  }
+
+  function applyOrderedFields(nextFields: EditableField[]) {
+    setFields(nextFields.map((field, index) => ({ ...field, sort_order: index + 1 })));
+  }
+
   function addField() {
-    const nextIndex = fields.length + 1;
-    setFields((current) => [
-      ...current,
-      {
-        id: `new-${crypto.randomUUID()}`,
-        localId: `new-${crypto.randomUUID()}`,
-        cycle_id: cycleId,
-        stage_code: stageCode,
-        field_key: `nuevoCampo${nextIndex}`,
-        field_label: `Nuevo campo ${nextIndex}`,
-        field_type: "short_text",
-        is_required: false,
-        placeholder: "",
-        help_text: "",
-        sort_order: nextIndex,
-        is_active: true,
-        created_at: new Date().toISOString(),
-      },
-    ]);
+    const nextIndex = orderedFields.length + 1;
+    applyOrderedFields([...orderedFields, createNewField(nextIndex)]);
+  }
+
+  function insertFieldAt(position: number) {
+    const safePosition = Math.max(0, Math.min(position, orderedFields.length));
+    const nextIndex = orderedFields.length + 1;
+    const nextFields = [
+      ...orderedFields.slice(0, safePosition),
+      createNewField(nextIndex),
+      ...orderedFields.slice(safePosition),
+    ];
+
+    applyOrderedFields(nextFields);
+  }
+
+  function moveField(localId: string, direction: "up" | "down") {
+    const currentIndex = orderedFields.findIndex((field) => field.localId === localId);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= orderedFields.length) {
+      return;
+    }
+
+    const nextFields = [...orderedFields];
+    const [moved] = nextFields.splice(currentIndex, 1);
+    nextFields.splice(nextIndex, 0, moved);
+    applyOrderedFields(nextFields);
+  }
+
+  function reorderDraggedField(targetLocalId: string) {
+    if (!draggedFieldId || draggedFieldId === targetLocalId) {
+      return;
+    }
+
+    const draggingIndex = orderedFields.findIndex((field) => field.localId === draggedFieldId);
+    const targetIndex = orderedFields.findIndex((field) => field.localId === targetLocalId);
+
+    if (draggingIndex < 0 || targetIndex < 0) {
+      return;
+    }
+
+    const nextFields = [...orderedFields];
+    const [draggingField] = nextFields.splice(draggingIndex, 1);
+    nextFields.splice(targetIndex, 0, draggingField);
+    applyOrderedFields(nextFields);
+  }
+
+  function handleFieldDrop(event: DragEvent<HTMLDivElement>, targetLocalId: string) {
+    event.preventDefault();
+    reorderDraggedField(targetLocalId);
+    setDraggedFieldId(null);
   }
 
   function addAutomation() {
@@ -130,11 +229,7 @@ export function StageConfigEditor({
   }
 
   function removeField(localId: string) {
-    setFields((current) =>
-      current
-        .filter((field) => field.localId !== localId)
-        .map((field, index) => ({ ...field, sort_order: index + 1 })),
-    );
+    applyOrderedFields(orderedFields.filter((field) => field.localId !== localId));
   }
 
   function removeAutomation(localId: string) {
@@ -229,9 +324,51 @@ export function StageConfigEditor({
             Solo mostramos y pedimos lo estrictamente necesario para esta etapa.
           </Typography>
           <Stack spacing={2}>
-            {orderedFields.map((field) => (
-              <Box key={field.localId} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 2 }}>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={1.2}>
+            {orderedFields.map((field, index) => (
+              <Box key={field.localId}>
+                <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
+                  <Button
+                    size="small"
+                    variant="text"
+                    startIcon={<AddCircleOutlineIcon fontSize="small" />}
+                    onClick={() => insertFieldAt(index)}
+                  >
+                    Insertar campo aquí
+                  </Button>
+                </Box>
+                <Box
+                  sx={{
+                    border: "1px solid #E5E7EB",
+                    borderRadius: 2,
+                    p: 2,
+                    bgcolor: draggedFieldId === field.localId ? "#F9FAFB" : "transparent",
+                  }}
+                  draggable
+                  onDragStart={() => setDraggedFieldId(field.localId)}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => handleFieldDrop(event, field.localId)}
+                  onDragEnd={() => setDraggedFieldId(null)}
+                >
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1.2}>
+                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 120 }}>
+                      <DragIndicatorIcon fontSize="small" color="action" />
+                      <IconButton
+                        size="small"
+                        aria-label={`Mover arriba ${field.field_label}`}
+                        onClick={() => moveField(field.localId, "up")}
+                        disabled={index === 0}
+                      >
+                        <KeyboardArrowUpIcon />
+                      </IconButton>
+                      <IconButton
+                        size="small"
+                        aria-label={`Mover abajo ${field.field_label}`}
+                        onClick={() => moveField(field.localId, "down")}
+                        disabled={index === orderedFields.length - 1}
+                      >
+                        <KeyboardArrowDownIcon />
+                      </IconButton>
+                    </Stack>
                   <TextField
                     label="Título"
                     value={field.field_label}
@@ -329,6 +466,7 @@ export function StageConfigEditor({
                     control={
                       <Switch
                         checked={field.is_required}
+                        sx={REQUIRED_SWITCH_SX}
                         onChange={(event) =>
                           setFields((current) =>
                             current.map((item) =>
@@ -343,12 +481,13 @@ export function StageConfigEditor({
                         }
                       />
                     }
-                    label="Obligatorio"
+                    label={`Obligatorio: ${field.is_required ? "Sí" : "No"}`}
                   />
                   <FormControlLabel
                     control={
                       <Switch
                         checked={field.is_active}
+                        sx={VISIBLE_SWITCH_SX}
                         onChange={(event) =>
                           setFields((current) =>
                             current.map((item) =>
@@ -363,11 +502,22 @@ export function StageConfigEditor({
                         }
                       />
                     }
-                    label="Visible"
+                    label={`Visible: ${field.is_active ? "Sí" : "No"}`}
                   />
                 </Stack>
               </Box>
+              </Box>
             ))}
+            <Box sx={{ display: "flex", justifyContent: "center" }}>
+              <Button
+                size="small"
+                variant="text"
+                startIcon={<AddCircleOutlineIcon fontSize="small" />}
+                onClick={() => insertFieldAt(orderedFields.length)}
+              >
+                Insertar campo al final
+              </Button>
+            </Box>
           </Stack>
         </CardContent>
       </Card>

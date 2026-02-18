@@ -34,7 +34,7 @@ export async function getApplicationsForAdmin(
 ) {
   let query = supabase
     .from("applications")
-    .select("id, applicant_id, cycle_id, stage_code, status, payload, validation_notes, updated_at")
+    .select("id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, updated_at")
     .order("updated_at", { ascending: false });
 
   if (cycleId) {

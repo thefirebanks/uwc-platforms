@@ -29,7 +29,9 @@ Build a faster, cleaner, easier-to-use platform for UWC Peru selection process m
   - Admin stage transitions
   - Exam CSV import
   - CSV export
-  - Communication queue logging
+  - Communication queue lifecycle controls (queue, process, retry, status visibility)
+  - Real email sending from queue via provider integration
+  - OCR validation execution + confidence/history visibility per application
   - Friendly errors with reportable `Error ID`
   - Structured audit trail
 

@@ -1,13 +1,82 @@
 import { AppError } from "@/lib/errors/app-error";
 
 const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
+
+function clampConfidence(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return null;
+  }
+
+  if (value < 0) {
+    return 0;
+  }
+
+  if (value > 1) {
+    return 1;
+  }
+
+  return value;
+}
+
+function extractJsonCandidate(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(trimmed) as Record<string, unknown>;
+  } catch {
+    // continue parsing
+  }
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced?.[1]) {
+    try {
+      return JSON.parse(fenced[1]) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) {
+    try {
+      return JSON.parse(trimmed.slice(start, end + 1)) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}
+
+export function parseOcrModelOutput(outputText: string) {
+  const parsed = extractJsonCandidate(outputText);
+  const parsedSummary = typeof parsed?.summary === "string" ? parsed.summary.trim() : "";
+  const summaryFallback = outputText.trim();
+  const summary =
+    parsedSummary ||
+    summaryFallback ||
+    "OCR completado sin detalles estructurados.";
+
+  return {
+    summary,
+    confidence:
+      clampConfidence(parsed?.confidence) ??
+      clampConfidence(parsed?.score) ??
+      0.6,
+    parsedJson: parsed,
+  };
+}
 
 export async function runOcrCheck({
   fileUrl,
 }: {
   fileUrl: string;
-}): Promise<{ summary: string; confidence: number }> {
+}): Promise<{ summary: string; confidence: number; rawResponse: Record<string, unknown> }> {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
@@ -21,6 +90,7 @@ export async function runOcrCheck({
   const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
     method: "POST",
     headers: {
+      "x-goog-api-key": apiKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -29,7 +99,13 @@ export async function runOcrCheck({
           role: "user",
           parts: [
             {
-              text: `Analiza este documento: ${fileUrl}. Devuelve un breve resumen y confianza entre 0 y 1.`,
+              text: [
+                "Analiza este documento y evalúa si parece válido para etapa documental.",
+                `URL temporal del archivo: ${fileUrl}`,
+                "Responde SOLO JSON con este formato:",
+                '{"summary":"resumen breve","confidence":0.0}',
+                "confidence debe ir entre 0 y 1.",
+              ].join("\n"),
             },
           ],
         },
@@ -49,13 +125,23 @@ export async function runOcrCheck({
     });
   }
 
-  const body = await response.json();
-  const summary =
-    body?.candidates?.[0]?.content?.parts?.[0]?.text ??
-    "OCR completado sin detalles estructurados.";
+  const modelResponse = (await response.json()) as Record<string, unknown>;
+  const outputText =
+    (modelResponse?.candidates as Array<{ content?: { parts?: Array<{ text?: string }> } }> | undefined)?.[0]
+      ?.content?.parts?.map((part) => part.text ?? "")
+      .join("\n")
+      .trim() ?? "";
+
+  const parsed = parseOcrModelOutput(outputText);
 
   return {
-    summary,
-    confidence: 0.75,
+    summary: parsed.summary,
+    confidence: parsed.confidence,
+    rawResponse: {
+      outputText,
+      parsed: parsed.parsedJson,
+      provider: "gemini-3-flash-preview",
+      source: modelResponse,
+    },
   };
 }

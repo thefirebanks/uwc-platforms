@@ -65,6 +65,8 @@ const actionOptions = [
   "application.ocr_checked",
   "recommendations.requested",
   "communications.queued",
+  "communications.processed",
+  "communications.retried",
   "bug.reported",
   "exam.imported",
   "exam.import.simulated",

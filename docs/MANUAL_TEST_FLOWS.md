@@ -22,6 +22,8 @@ Expected:
 6. Submit application.
 
 Expected:
+- Progress panel (`Progreso de postulación`) is visible and updates section statuses.
+- Applicant page keeps maroon mockup hierarchy: eyebrow cycle label, large serif title, and left-accent progress block.
 - Draft save success message appears.
 - Submit success message appears.
 - Record status changes in `applications`.
@@ -163,11 +165,14 @@ Expected:
 1. Login as admin and open `/admin/process/:cycleId`.
 2. In `Plantillas de etapas`, click `Editar campos` for Stage 1.
 3. Add one field, edit one existing label, mark one field optional/required, and remove one field.
-4. Click `Guardar configuración`.
-5. Refresh page and verify edits persist.
+4. Reorder fields (drag and drop or `mover arriba/abajo` buttons).
+5. Use `Insertar campo aquí` between two existing fields.
+6. Click `Guardar configuración`.
+7. Refresh page and verify edits persist.
 
 Expected:
 - Stage field list supports add/remove/edit and required toggle.
+- Stage field list supports ordering (drag/move controls) and insertion between rows.
 - Save succeeds with visible success message.
 - Audit includes `cycle.stage_config_updated`.
 
@@ -191,3 +196,36 @@ Expected:
 Expected:
 - Automation template edits persist.
 - Submit trigger queues communication log using configured template.
+
+## Flow 19: Communication Queue Lifecycle
+1. Login as admin and open `/admin/process/:cycleId`.
+2. In `Comunicaciones`, click `Actualizar estado`.
+3. Verify at least one queued row appears when automations were triggered.
+4. Click `Procesar cola`.
+5. Verify counters and table status update (`queued -> sent` or `failed`).
+6. Confirm the destination inbox received the email when status is `sent`.
+7. Click `Reintentar fallidas`.
+
+Expected:
+- Summary chips reflect queue lifecycle counts.
+- Process action shows processed/sent/failed totals.
+- `provider_message_id` is stored for delivered emails.
+- Failed rows can be retried without page errors.
+- If `RESEND_API_KEY`/`RESEND_FROM_EMAIL` are missing, UI shows a clear configuration error.
+
+## Flow 20: OCR Validation and History
+1. Ensure applicant has at least one uploaded document.
+2. Login as admin and open `/admin/process/:cycleId`.
+3. In `Postulaciones`, click `OCR` for that application.
+4. Confirm success feedback includes confidence percentage.
+5. Confirm `Historial OCR` panel appears and includes:
+- timestamp
+- file key
+- confidence chip
+- OCR summary text
+6. Refresh page and click `Ver OCR`.
+
+Expected:
+- OCR run persists a history row per execution.
+- OCR history remains visible after refresh.
+- Admin can use OCR output for quick document triage/debugging.

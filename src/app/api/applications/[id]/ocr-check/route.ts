@@ -5,10 +5,72 @@ import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { runOcrCheck } from "@/lib/server/ocr";
 import { recordAuditEvent } from "@/lib/logging/audit";
+import type { Database, Json } from "@/types/supabase";
 
 const schema = z.object({
   fileKey: z.string().min(2),
 });
+
+const querySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(30).default(10),
+});
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  return withErrorHandling(async () => {
+    const { supabase } = await requireAuth(["admin"]);
+    const { id } = await context.params;
+
+    const parsed = querySchema.safeParse({
+      limit: request.nextUrl.searchParams.get("limit") ?? undefined,
+    });
+
+    if (!parsed.success) {
+      throw new AppError({
+        message: "Invalid OCR history query",
+        userMessage: "No se pudo cargar el historial OCR.",
+        status: 400,
+        details: parsed.error.flatten(),
+      });
+    }
+
+    const { data: application } = await supabase
+      .from("applications")
+      .select("id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (!application) {
+      throw new AppError({
+        message: "Application not found for OCR history",
+        userMessage: "No se encontró la postulación.",
+        status: 404,
+      });
+    }
+
+    const { data, error } = await supabase
+      .from("application_ocr_checks")
+      .select("*")
+      .eq("application_id", id)
+      .order("created_at", { ascending: false })
+      .limit(parsed.data.limit);
+
+    if (error) {
+      throw new AppError({
+        message: "Failed loading OCR history",
+        userMessage: "No se pudo cargar el historial OCR.",
+        status: 500,
+        details: error,
+      });
+    }
+
+    return NextResponse.json({
+      checks: data ?? [],
+    });
+  }, { operation: "applications.ocr_history" });
+}
 
 export async function POST(
   request: NextRequest,
@@ -67,15 +129,47 @@ export async function POST(
 
     const result = await runOcrCheck({ fileUrl: signedUrlData.signedUrl });
 
+    const { data: insertedData, error: insertError } = await supabase
+      .from("application_ocr_checks")
+      .insert({
+        application_id: id,
+        actor_id: profile.id,
+        file_key: parsed.data.fileKey,
+        summary: result.summary,
+        confidence: result.confidence,
+        raw_response: result.rawResponse as Json,
+      })
+      .select("*")
+      .single();
+    const insertedCheck =
+      (insertedData as Database["public"]["Tables"]["application_ocr_checks"]["Row"] | null) ?? null;
+
+    if (insertError || !insertedCheck) {
+      throw new AppError({
+        message: "Failed saving OCR check",
+        userMessage: "No se pudo guardar el resultado OCR.",
+        status: 500,
+        details: insertError,
+      });
+    }
+
     await recordAuditEvent({
       supabase,
       actorId: profile.id,
       applicationId: id,
       action: "application.ocr_checked",
-      metadata: result,
+      metadata: {
+        fileKey: parsed.data.fileKey,
+        confidence: result.confidence,
+        checkId: insertedCheck.id,
+      },
       requestId,
     });
 
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      checkId: insertedCheck.id,
+      createdAt: insertedCheck.created_at,
+    });
   }, { operation: "applications.ocr_check" });
 }

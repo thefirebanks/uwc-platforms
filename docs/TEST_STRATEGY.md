@@ -10,13 +10,16 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - cycle stage template bootstrap rules
   - stage dynamic form validation rules
   - automation pre-submit checks
+  - communication queue lifecycle and provider delivery handling
+  - OCR parsing and confidence normalization
   - role resolution logic
   - centralized error handling
 - Component tests:
   - applicant form behavior
   - applicant process dashboard behavior
-  - admin stage config editor behavior
+  - admin stage config editor behavior (add/edit/remove/reorder/insert)
   - admin dashboard actions
+  - admin communication queue controls and OCR actions
   - admin process dashboard behavior
   - error callout/reporting UI
   - stage badges and key UI primitives
@@ -37,6 +40,10 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/unit/stage-form-schema.test.ts`
 - Automation pre-submit checks:
   - `tests/unit/automation-service.test.ts`
+- Communication lifecycle:
+  - `tests/unit/communications-service.test.ts`
+- OCR parser/service:
+  - `tests/unit/ocr.test.ts`
 - Stage transitions:
   - `tests/unit/stage-transition.test.ts`
   - `tests/integration/transition-application.test.ts`

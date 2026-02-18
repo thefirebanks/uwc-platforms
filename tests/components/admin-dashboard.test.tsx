@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminDashboard } from "@/components/admin-dashboard";
 
 const cycle = {
@@ -37,6 +37,28 @@ const cycleTemplates = [
   },
 ] as const;
 
+const applications = [
+  {
+    id: "app-1",
+    applicant_id: "applicant-1",
+    cycle_id: "cycle-1",
+    stage_code: "documents",
+    status: "submitted",
+    payload: {},
+    files: {
+      identificationDocument: "app-1/identification.pdf",
+    },
+    validation_notes: null,
+    error_report_count: 0,
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-02T00:00:00.000Z",
+  },
+] as const;
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe("AdminDashboard", () => {
   it("triggers exam import endpoint", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
@@ -59,8 +81,6 @@ describe("AdminDashboard", () => {
       "/api/exam-imports",
       expect.objectContaining({ method: "POST" }),
     );
-
-    fetchMock.mockRestore();
   });
 
   it("saves stage templates via API", async () => {
@@ -89,7 +109,96 @@ describe("AdminDashboard", () => {
       "/api/cycles/cycle-1/templates",
       expect.objectContaining({ method: "PATCH" }),
     );
+  });
 
-    fetchMock.mockRestore();
+  it("processes communication queue and refreshes communication status", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            processed: 1,
+            sent: 1,
+            failed: 0,
+            skipped: 0,
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            logs: [],
+            summary: { queued: 0, processing: 0, sent: 1, failed: 0, total: 1 },
+          }),
+          { status: 200 },
+        ),
+      );
+
+    render(
+      <AdminDashboard
+        initialApplications={[]}
+        cycle={cycle}
+        cycleTemplates={[...cycleTemplates]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Procesar cola" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/communications/process",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/communications?cycleId=cycle-1&limit=8",
+      );
+    });
+  });
+
+  it("runs OCR validation for an application with files", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            confidence: 0.9,
+            summary: "Documento válido",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            checks: [],
+          }),
+          { status: 200 },
+        ),
+      );
+
+    render(
+      <AdminDashboard
+        initialApplications={[...applications]}
+        cycle={cycle}
+        cycleTemplates={[...cycleTemplates]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "OCR" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/applications/app-1/ocr-check",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/api/applications/app-1/ocr-check?limit=10");
+    });
   });
 });

@@ -20,6 +20,7 @@
     "@hookform/resolvers": "^5.2.2",
     "@mui/icons-material": "^7.3.8",
     "@mui/material": "^7.3.8",
+    "@mui/material-nextjs": "^7.3.8",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.3",
     "clsx": "^2.1.1",

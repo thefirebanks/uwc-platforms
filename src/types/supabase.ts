@@ -1,6 +1,7 @@
 import type {
   ApplicationStatus,
   AppRole,
+  CommunicationStatus,
   StageAutomationTrigger,
   StageCode,
   StageFieldType,
@@ -218,9 +219,13 @@ export interface Database {
           body: string | null;
           automation_template_id: string | null;
           recipient_email: string;
-          status: string;
+          status: CommunicationStatus;
           error_message: string | null;
           sent_by: string;
+          attempt_count: number;
+          last_attempt_at: string | null;
+          delivered_at: string | null;
+          provider_message_id: string | null;
           created_at: string;
         },
         {
@@ -232,12 +237,23 @@ export interface Database {
           body?: string | null;
           automation_template_id?: string | null;
           recipient_email: string;
-          status: string;
+          status: CommunicationStatus;
           error_message?: string | null;
           sent_by: string;
+          attempt_count?: number;
+          last_attempt_at?: string | null;
+          delivered_at?: string | null;
+          provider_message_id?: string | null;
           created_at?: string;
         },
-        never
+        {
+          status?: CommunicationStatus;
+          error_message?: string | null;
+          attempt_count?: number;
+          last_attempt_at?: string | null;
+          delivered_at?: string | null;
+          provider_message_id?: string | null;
+        }
       >;
       cycle_stage_fields: TableDef<
         {
@@ -311,6 +327,29 @@ export interface Database {
           template_body?: string;
           updated_at?: string;
         }
+      >;
+      application_ocr_checks: TableDef<
+        {
+          id: string;
+          application_id: string;
+          actor_id: string | null;
+          file_key: string;
+          summary: string;
+          confidence: number;
+          raw_response: Json;
+          created_at: string;
+        },
+        {
+          id?: string;
+          application_id: string;
+          actor_id?: string | null;
+          file_key: string;
+          summary: string;
+          confidence: number;
+          raw_response?: Json;
+          created_at?: string;
+        },
+        never
       >;
       audit_events: TableDef<
         {
