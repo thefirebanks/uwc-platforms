@@ -9,6 +9,7 @@ import {
   getSupabaseBrowserClient,
   resetSupabaseBrowserClient,
 } from "@/lib/supabase/browser";
+import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 
 export function TopNav({ role }: { role: AppRole }) {
   const router = useRouter();
@@ -54,6 +55,9 @@ export function TopNav({ role }: { role: AppRole }) {
           ) : (
             <NavLink href="/applicant" label="Procesos" />
           )}
+        </Box>
+        <Box sx={{ mr: 1.5 }}>
+          <ThemeModeToggle />
         </Box>
         <Typography
           variant="body2"

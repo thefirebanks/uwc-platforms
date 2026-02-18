@@ -29,6 +29,25 @@
   --radius: 6px;
 }
 
+:root[data-theme="dark"] {
+  --uwc-maroon: #C14A6B;
+  --uwc-maroon-soft: rgba(193, 74, 107, 0.18);
+  --uwc-maroon-dark: #A33656;
+  --uwc-blue: #5C9DD2;
+  --uwc-blue-soft: rgba(92, 157, 210, 0.18);
+
+  --ink: #F2ECE7;
+  --paper: #141313;
+  --cream: #23201E;
+  --sand: #3B3532;
+  --muted: #B8AEA8;
+
+  --success: #56B589;
+  --success-soft: rgba(86, 181, 137, 0.16);
+  --warning: #E6A65C;
+  --warning-soft: rgba(230, 166, 92, 0.18);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -42,6 +61,7 @@ body {
   background-color: var(--paper);
   color: var(--ink);
   line-height: 1.6;
+  transition: background-color 160ms ease, color 160ms ease;
 }
 
 a {

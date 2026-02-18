@@ -18,6 +18,7 @@ import {
   getSupabaseBrowserClient,
   resetSupabaseBrowserClient,
 } from "@/lib/supabase/browser";
+import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 
 const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
 const demoAdminEmail = process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL;
@@ -99,6 +100,9 @@ export default function LoginPage() {
 
   return (
     <Container maxWidth="sm" sx={{ py: 10 }}>
+      <Stack direction="row" justifyContent="flex-end" sx={{ mb: 2 }}>
+        <ThemeModeToggle />
+      </Stack>
       <Card>
         <CardContent>
           <Stack spacing={2.5}>

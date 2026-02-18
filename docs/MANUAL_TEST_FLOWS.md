@@ -231,3 +231,15 @@ Expected:
 - OCR run persists a history row per execution.
 - OCR history remains visible after refresh.
 - Admin can use OCR output for quick document triage/debugging.
+
+## Flow 21: Dark Mode Toggle
+1. Open `/`, `/login`, or any dashboard page.
+2. Click `Alternar modo oscuro`.
+3. Verify colors switch immediately.
+4. Reload page and confirm selected mode persists.
+5. Navigate between home/login/admin/applicant and confirm mode remains consistent.
+
+Expected:
+- Toggle is always available (public pages + dashboard nav).
+- Theme persists across reloads via local storage.
+- No hydration or console errors when mode changes and page reloads.

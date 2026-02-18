@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { Box, Button, Container, Paper, Stack, Typography } from "@mui/material";
+import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 
 export default function HomePage() {
   return (
     <Container maxWidth="lg" sx={{ py: 10 }}>
+      <Stack direction="row" justifyContent="flex-end" sx={{ mb: 2 }}>
+        <ThemeModeToggle />
+      </Stack>
       <Paper sx={{ p: { xs: 3, md: 6 } }}>
         <Stack spacing={3}>
           <Typography variant="h2">UWC Peru Selection Platform</Typography>
