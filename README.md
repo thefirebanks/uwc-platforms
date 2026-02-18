@@ -23,9 +23,14 @@ Spanish-first MVP for UWC Peru selection management with:
 - Google OAuth sign-in via Supabase
 - OAuth callback profile provisioning with admin allowlist support
 - Optional temporary dev bypass mode (off by default)
+- Process-first dashboards:
+  - admin process dashboard (`/admin`)
+  - applicant process dashboard (`/applicant`)
+  - process detail pages (`/admin/process/:cycleId`, `/applicant/process/:cycleId`)
+- Process management (`cycles`): create yearly process, activate process, configure Stage 1/2 dates
 - Applicant form draft/save/submit
 - Applicant document upload (signed upload URL)
-- Recommendation request registration
+- Recommendation request registration + persisted recommender list display
 - Admin queue for applications
 - Admin validation (`eligible` / `ineligible`)
 - Stage management for 2 stages (Stage 2 is placeholder)
@@ -56,6 +61,8 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
 - `supabase/migrations/20260217001000_init_mvp.sql`
 - `supabase/migrations/20260217002000_storage_policies.sql`
 - `supabase/migrations/20260217013000_add_profiles_insert_policy.sql`
+- `supabase/migrations/20260218001000_add_audit_events_indexes.sql`
+- `supabase/migrations/20260218002000_add_cycle_stage_configuration.sql`
 ```bash
 sbu db push
 ```
@@ -123,7 +130,9 @@ bun run build
 - `POST /api/applications/:id/upload-url`
 - `POST /api/applications/:id/files`
 - `POST /api/applications/:id/ocr-check`
-- `POST /api/recommendations`
+- `GET/POST /api/recommendations`
+- `GET/POST /api/cycles`
+- `PATCH /api/cycles/:id`
 - `POST /api/exam-imports`
 - `POST /api/communications/send`
 - `POST /api/errors/report`

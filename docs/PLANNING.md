@@ -12,13 +12,18 @@
 - Bun migration end-to-end
 - Docs consolidation under `docs/`
 - Stronger test coverage for auth/error/stage transitions
+- Selection-process abstraction (`Proceso de Selección` per year)
+  - Admin dashboard is process-first (create/activate process + per-process management)
+  - Applicant dashboard is process-first (see all years before entering a form)
+  - Per-process stage date configuration (Stage 1 / Stage 2 dates)
+  - Applicant cap enforced (max 3 applications across processes)
 
 ## Phase 3 (Next)
 - Improve UX polish and performance on heavy forms
-- Introduce selection-process abstraction (`Proceso de Selección` per year)
-  - Admin dashboard becomes process-first (create/edit yearly process, stage dates, templates)
-  - Applicant dashboard becomes process-first (history across years, max 3 applications)
-  - Role home pages become dashboard views before entering a specific process
+- Add process templates and yearly process bootstrap
+  - initialize stage templates automatically when creating the new yearly process
+  - configurable milestones and labels per stage
+  - process-level reporting rollups
 - Expand communication reliability (delivery status lifecycle)
 - OCR workflow hardening and confidence scoring visibility
 

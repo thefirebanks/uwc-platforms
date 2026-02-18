@@ -16,9 +16,10 @@ Expected:
 ## Flow 2: Applicant Draft + Submit
 1. Login as applicant.
 2. Open `/applicant`.
-3. Fill required form fields.
-4. Save draft.
-5. Submit application.
+3. Select a process and click `Iniciar postulación` or `Abrir postulación`.
+4. Fill required form fields.
+5. Save draft.
+6. Submit application.
 
 Expected:
 - Draft save success message appears.
@@ -47,8 +48,9 @@ Expected:
 ## Flow 5: Admin Validation + Stage Transition
 1. Login as admin.
 2. Open `/admin`.
-3. Mark one application as `eligible`.
-4. Move stage from `documents` to `exam_placeholder`.
+3. Enter one process via `Gestionar proceso`.
+4. Mark one application as `eligible`.
+5. Move stage from `documents` to `exam_placeholder`.
 
 Expected:
 - Status and stage updates are visible.
@@ -104,11 +106,34 @@ Expected:
 
 ## Flow 11: Applicant Lock/Unlock Editing
 1. Login as applicant.
-2. Submit the application.
-3. Verify form fields are disabled.
-4. Click `Editar respuesta`.
-5. Verify fields become editable again.
+2. Open a process in `/applicant/process/:cycleId`.
+3. Submit the application.
+4. Verify form fields are disabled.
+5. Click `Editar respuesta`.
+6. Verify fields become editable again.
 
 Expected:
 - Applicant cannot accidentally edit right after submitting.
 - Explicit edit action is required before any changes can be made.
+
+## Flow 12: Admin Process Dashboard + Stage Date Config
+1. Login as admin and open `/admin`.
+2. Create a process with `Crear proceso`.
+3. Open `Gestionar proceso`.
+4. Update Stage 1/Stage 2 dates and click `Guardar fechas`.
+5. Return to `/admin` and verify process summary dates changed.
+6. Use `Marcar activo` on a different process.
+
+Expected:
+- New process appears in process list with zero applications.
+- Date updates persist after refresh.
+- Only one process remains active at a time.
+
+## Flow 13: Applicant Process Dashboard Limits
+1. Login as applicant and open `/applicant`.
+2. Verify existing applications show `Abrir postulación`.
+3. After reaching 3 total applications, verify a process without application shows `Límite alcanzado`.
+
+Expected:
+- Applicant sees process-level status before entering forms.
+- Max-3 rule is visible and enforced in UI.

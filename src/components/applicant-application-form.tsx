@@ -27,8 +27,12 @@ interface ApiError {
 
 export function ApplicantApplicationForm({
   existingApplication,
+  cycleId,
+  cycleName,
 }: {
   existingApplication: Application | null;
+  cycleId: string;
+  cycleName?: string;
 }) {
   const LOCKED_STATUSES = new Set<Application["status"]>([
     "submitted",
@@ -127,7 +131,10 @@ export function ApplicantApplicationForm({
     const response = await fetch("/api/applications", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
+      body: JSON.stringify({
+        ...values,
+        cycleId,
+      }),
     });
 
     const body = await response.json();
@@ -297,6 +304,11 @@ export function ApplicantApplicationForm({
         <CardContent>
           <Stack direction="row" justifyContent="space-between" alignItems="center">
             <Typography variant="h5">Tu postulación UWC Perú</Typography>
+            {cycleName ? (
+              <Typography color="text.secondary" variant="body2">
+                {cycleName}
+              </Typography>
+            ) : null}
             <StageBadge stage={application?.stage_code ?? "documents"} />
           </Stack>
             <Typography sx={{ mt: 1 }} color="text.secondary">

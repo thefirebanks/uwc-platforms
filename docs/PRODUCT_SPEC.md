@@ -7,13 +7,18 @@ Build a faster, cleaner, easier-to-use platform for UWC Peru selection process m
 - Roles:
   - `admin`
   - `applicant`
+- Process model:
+  - yearly `Proceso de Selección` object (`cycles`)
+  - process-first dashboards for both roles before entering a specific application
+  - max 3 applications per applicant across processes
 - Stage model:
   - `documents` (Stage 1, full flow)
   - `exam_placeholder` (Stage 2, external-exam placeholder)
 - Key capabilities:
   - Applicant profile and application form submission
+  - Admin process creation/activation and stage date configuration
   - Document upload and file association
-  - Recommendation request registration
+  - Recommendation request registration with persisted recommender visibility
   - Admin validation (`eligible`, `ineligible`)
   - Admin stage transitions
   - Exam CSV import

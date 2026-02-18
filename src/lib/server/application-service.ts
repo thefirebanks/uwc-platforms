@@ -28,11 +28,20 @@ async function getActiveCycleId(supabase: SupabaseClient<Database>) {
   return data.id;
 }
 
-export async function getApplicationsForAdmin(supabase: SupabaseClient<Database>) {
-  const { data, error } = await supabase
+export async function getApplicationsForAdmin(
+  supabase: SupabaseClient<Database>,
+  cycleId?: string,
+) {
+  let query = supabase
     .from("applications")
-    .select("id, applicant_id, stage_code, status, payload, validation_notes, updated_at")
+    .select("id, applicant_id, cycle_id, stage_code, status, payload, validation_notes, updated_at")
     .order("updated_at", { ascending: false });
+
+  if (cycleId) {
+    query = query.eq("cycle_id", cycleId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     throw new AppError({
@@ -49,11 +58,15 @@ export async function getApplicationsForAdmin(supabase: SupabaseClient<Database>
 export async function getApplicantApplication(
   supabase: SupabaseClient<Database>,
   applicantId: string,
+  cycleId?: string,
 ): Promise<ApplicationRow | null> {
+  const targetCycleId = cycleId ?? (await getActiveCycleId(supabase));
+
   const { data, error } = await supabase
     .from("applications")
     .select("*")
     .eq("applicant_id", applicantId)
+    .eq("cycle_id", targetCycleId)
     .maybeSingle();
 
   if (error) {
@@ -72,21 +85,60 @@ export async function upsertApplicantApplication({
   supabase,
   applicantId,
   payload,
+  cycleId,
 }: {
   supabase: SupabaseClient<Database>;
   applicantId: string;
   payload: ApplicationInput;
+  cycleId?: string;
 }): Promise<ApplicationRow> {
-  const cycleId = await getActiveCycleId(supabase);
+  const targetCycleId = cycleId ?? (await getActiveCycleId(supabase));
 
-  const existing = await getApplicantApplication(supabase, applicantId);
+  const { data: cycleExists, error: cycleError } = await supabase
+    .from("cycles")
+    .select("id")
+    .eq("id", targetCycleId)
+    .maybeSingle();
+
+  if (cycleError || !cycleExists) {
+    throw new AppError({
+      message: "Cycle not found",
+      userMessage: "No se encontró el proceso de selección elegido.",
+      status: 404,
+      details: cycleError,
+    });
+  }
+
+  const existing = await getApplicantApplication(supabase, applicantId, targetCycleId);
 
   if (!existing) {
+    const { count, error: countError } = await supabase
+      .from("applications")
+      .select("id", { count: "exact", head: true })
+      .eq("applicant_id", applicantId);
+
+    if (countError) {
+      throw new AppError({
+        message: "Failed to check applicant application limit",
+        userMessage: "No se pudo validar tu límite de postulaciones.",
+        status: 500,
+        details: countError,
+      });
+    }
+
+    if ((count ?? 0) >= 3) {
+      throw new AppError({
+        message: "Applicant application limit reached",
+        userMessage: "Solo puedes tener hasta 3 postulaciones en distintos procesos.",
+        status: 422,
+      });
+    }
+
     const { data, error } = await supabase
       .from("applications")
       .insert({
         applicant_id: applicantId,
-        cycle_id: cycleId,
+        cycle_id: targetCycleId,
         payload,
       })
       .select("*")

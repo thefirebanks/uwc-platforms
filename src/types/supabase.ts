@@ -44,17 +44,32 @@ export interface Database {
           id: string;
           name: string;
           is_active: boolean;
+          stage1_open_at: string | null;
+          stage1_close_at: string | null;
+          stage2_open_at: string | null;
+          stage2_close_at: string | null;
+          max_applications_per_user: number;
           created_at: string;
         },
         {
           id?: string;
           name: string;
           is_active?: boolean;
+          stage1_open_at?: string | null;
+          stage1_close_at?: string | null;
+          stage2_open_at?: string | null;
+          stage2_close_at?: string | null;
+          max_applications_per_user?: number;
           created_at?: string;
         },
         {
           name?: string;
           is_active?: boolean;
+          stage1_open_at?: string | null;
+          stage1_close_at?: string | null;
+          stage2_open_at?: string | null;
+          stage2_close_at?: string | null;
+          max_applications_per_user?: number;
         }
       >;
       applications: TableDef<

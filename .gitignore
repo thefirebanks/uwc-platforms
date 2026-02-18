@@ -42,5 +42,7 @@ next-env.d.ts
 
 # local automation artifacts
 .playwright-cli/
+test-results/
+playwright-report/
 output/
 supabase/.temp/

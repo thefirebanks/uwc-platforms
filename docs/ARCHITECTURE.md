@@ -12,10 +12,14 @@
 1. Web app
 - Public landing page
 - Login page (Google OAuth + optional dev bypass)
-- Role-gated dashboards (`/admin`, `/applicant`)
+- Role-gated process dashboards (`/admin`, `/applicant`)
+- Process detail pages:
+  - admin: `/admin/process/:cycleId`
+  - applicant: `/applicant/process/:cycleId`
 - Admin audit dashboard (`/admin/audit`) with filtering and CSV export
 
 2. API layer
+- Selection process management (`GET/POST /api/cycles`, `PATCH /api/cycles/:id`)
 - Application CRUD and submit
 - Validation and stage transition
 - Recommendation request registration
@@ -25,6 +29,7 @@
 
 3. Supabase data layer
 - Auth users + `profiles`
+- `cycles` (selection process per year + stage date config + per-user cap)
 - `applications`, `recommendation_requests`, `stage_transitions`
 - `exam_imports`, `communication_logs`, `audit_events`, `bug_reports`
 - Storage bucket `application-documents`
@@ -41,6 +46,11 @@
 - Transition guard:
   - `documents -> exam_placeholder` only when eligible/advanced state
   - rollback supported for admin correction
+- Process-level configuration:
+  - each process has `stage1_open_at`, `stage1_close_at`, `stage2_open_at`, `stage2_close_at`
+  - date order validation is enforced on update
+  - only one active process at a time
+  - applicant cap is enforced (max 3 applications across processes for now)
 
 ## Error and Observability Model
 - API handlers are wrapped with centralized error handling.

@@ -68,6 +68,8 @@ const actionOptions = [
   "bug.reported",
   "exam.imported",
   "exam.import.simulated",
+  "cycle.created",
+  "cycle.updated",
 ];
 
 function buildQuery(filters: AppliedFilters, includePagination: boolean) {

@@ -29,13 +29,17 @@ export function TopNav({ role }: { role: AppRole }) {
         {role === "admin" ? (
           <>
             <Button component={Link} href="/admin" variant="text" sx={{ mr: 1 }}>
-              Postulaciones
+              Procesos
             </Button>
             <Button component={Link} href="/admin/audit" variant="text" sx={{ mr: 2 }}>
               Auditoría
             </Button>
           </>
-        ) : null}
+        ) : (
+          <Button component={Link} href="/applicant" variant="text" sx={{ mr: 2 }}>
+            Procesos
+          </Button>
+        )}
         <Button variant="outlined" onClick={logout}>
           Cerrar sesión
         </Button>

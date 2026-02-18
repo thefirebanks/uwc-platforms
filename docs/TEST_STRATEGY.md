@@ -11,7 +11,9 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - centralized error handling
 - Component tests:
   - applicant form behavior
+  - applicant process dashboard behavior
   - admin dashboard actions
+  - admin process dashboard behavior
   - error callout/reporting UI
   - stage badges and key UI primitives
 - Integration tests:
@@ -34,8 +36,10 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/integration/import-exam-csv.test.ts`
 - Applicant UI:
   - `tests/components/applicant-form.test.tsx`
+  - `tests/components/applicant-processes-dashboard.test.tsx`
 - Admin UI:
   - `tests/components/admin-dashboard.test.tsx`
+  - `tests/components/admin-processes-dashboard.test.tsx`
   - `tests/components/admin-audit-log.test.tsx`
 - Error UI:
   - `tests/components/error-callout.test.tsx`

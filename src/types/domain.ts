@@ -41,6 +41,18 @@ export interface RecommendationRequest {
   created_at: string;
 }
 
+export interface SelectionProcess {
+  id: string;
+  name: string;
+  is_active: boolean;
+  stage1_open_at: string | null;
+  stage1_close_at: string | null;
+  stage2_open_at: string | null;
+  stage2_close_at: string | null;
+  max_applications_per_user: number;
+  created_at: string;
+}
+
 export interface StageTransition {
   id: string;
   application_id: string;

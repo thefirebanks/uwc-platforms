@@ -17,7 +17,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import type { Application, StageCode } from "@/types/domain";
+import type { Application, SelectionProcess, StageCode } from "@/types/domain";
 import { StageBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
 import { canTransition } from "@/lib/stages/transition";
@@ -27,11 +27,33 @@ interface ApiError {
   errorId?: string;
 }
 
-export function AdminDashboard({ initialApplications }: { initialApplications: Application[] }) {
+function toDateInputValue(value: string | null) {
+  if (!value) {
+    return "";
+  }
+
+  return new Date(value).toISOString().slice(0, 10);
+}
+
+function toIsoDate(value: string) {
+  return value ? new Date(`${value}T00:00:00.000Z`).toISOString() : undefined;
+}
+
+export function AdminDashboard({
+  initialApplications,
+  cycle,
+}: {
+  initialApplications: Application[];
+  cycle: SelectionProcess;
+}) {
   const [applications, setApplications] = useState(initialApplications);
   const [error, setError] = useState<ApiError | null>(null);
   const [csvData, setCsvData] = useState("applicant_email,score,passed\napplicant.demo@uwcperu.org,15.7,true");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [stage1OpenAt, setStage1OpenAt] = useState(toDateInputValue(cycle.stage1_open_at));
+  const [stage1CloseAt, setStage1CloseAt] = useState(toDateInputValue(cycle.stage1_close_at));
+  const [stage2OpenAt, setStage2OpenAt] = useState(toDateInputValue(cycle.stage2_open_at));
+  const [stage2CloseAt, setStage2CloseAt] = useState(toDateInputValue(cycle.stage2_close_at));
 
   const orderedApplications = useMemo(
     () => [...applications].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
@@ -39,7 +61,7 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
   );
 
   async function refreshData() {
-    const response = await fetch("/api/applications");
+    const response = await fetch(`/api/applications?cycleId=${cycle.id}`);
     const body = await response.json();
 
     if (!response.ok) {
@@ -48,6 +70,31 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
     }
 
     setApplications(body.applications ?? []);
+  }
+
+  async function saveStageConfiguration() {
+    setError(null);
+    setStatusMessage(null);
+
+    const response = await fetch(`/api/cycles/${cycle.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        stage1OpenAt: toIsoDate(stage1OpenAt),
+        stage1CloseAt: toIsoDate(stage1CloseAt),
+        stage2OpenAt: toIsoDate(stage2OpenAt),
+        stage2CloseAt: toIsoDate(stage2CloseAt),
+      }),
+    });
+
+    const body = await response.json();
+
+    if (!response.ok) {
+      setError(body);
+      return;
+    }
+
+    setStatusMessage("Fechas del proceso actualizadas.");
   }
 
   async function validateApplication(applicationId: string, status: "eligible" | "ineligible") {
@@ -142,15 +189,23 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
       <Card>
         <CardContent>
           <Typography variant="h5">Panel de administración</Typography>
+          <Typography sx={{ mt: 1 }} fontWeight={700}>
+            {cycle.name}
+          </Typography>
           <Typography color="text.secondary">
             Gestiona validaciones, transición de etapas (2 etapas MVP) e importación de examen externo.
           </Typography>
           <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
             `Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1.
           </Typography>
-          <Button component={Link} href="/admin/audit" variant="text" sx={{ mt: 1, px: 0 }}>
-            Ver auditoría del proceso
-          </Button>
+          <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
+            <Button component={Link} href="/admin" variant="text" sx={{ px: 0 }}>
+              Volver al dashboard de procesos
+            </Button>
+            <Button component={Link} href="/admin/audit" variant="text" sx={{ px: 0 }}>
+              Ver auditoría del proceso
+            </Button>
+          </Stack>
         </CardContent>
       </Card>
 
@@ -163,6 +218,48 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
           <Typography color="#1D4ED8">{statusMessage}</Typography>
         </Box>
       ) : null}
+
+      <Card>
+        <CardContent>
+          <Typography variant="h6">Configuración de etapas</Typography>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            Define fechas base para Stage 1 y Stage 2 del proceso.
+          </Typography>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
+            <TextField
+              label="Stage 1 inicio"
+              type="date"
+              value={stage1OpenAt}
+              onChange={(event) => setStage1OpenAt(event.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label="Stage 1 cierre"
+              type="date"
+              value={stage1CloseAt}
+              onChange={(event) => setStage1CloseAt(event.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label="Stage 2 inicio"
+              type="date"
+              value={stage2OpenAt}
+              onChange={(event) => setStage2OpenAt(event.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+            <TextField
+              label="Stage 2 cierre"
+              type="date"
+              value={stage2CloseAt}
+              onChange={(event) => setStage2CloseAt(event.target.value)}
+              InputLabelProps={{ shrink: true }}
+            />
+            <Button variant="outlined" onClick={saveStageConfiguration}>
+              Guardar fechas
+            </Button>
+          </Stack>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent>

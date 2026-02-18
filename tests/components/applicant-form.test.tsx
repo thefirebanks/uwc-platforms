@@ -8,7 +8,7 @@ describe("ApplicantApplicationForm", () => {
   });
 
   it("keeps submit disabled until a draft exists", async () => {
-    render(<ApplicantApplicationForm existingApplication={null} />);
+    render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-1" />);
 
     expect(screen.getByRole("button", { name: "Enviar postulación" })).toBeDisabled();
     expect(screen.getByText("Guarda primero un borrador para habilitar la subida.")).toBeInTheDocument();
@@ -21,6 +21,7 @@ describe("ApplicantApplicationForm", () => {
 
     render(
       <ApplicantApplicationForm
+        cycleId="cycle-1"
         existingApplication={{
           id: "app-1",
           applicant_id: "user-1",
@@ -68,6 +69,7 @@ describe("ApplicantApplicationForm", () => {
 
     render(
       <ApplicantApplicationForm
+        cycleId="cycle-2"
         existingApplication={{
           id: "app-2",
           applicant_id: "user-1",
