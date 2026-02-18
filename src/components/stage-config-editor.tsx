@@ -95,6 +95,37 @@ const VISIBLE_SWITCH_SX = {
   },
 };
 
+function InsertFieldControl({
+  onInsert,
+  ariaLabel,
+}: {
+  onInsert: () => void;
+  ariaLabel: string;
+}) {
+  return (
+    <Stack direction="row" alignItems="center" spacing={1}>
+      <Box sx={{ flex: 1, height: 1, bgcolor: "var(--sand)" }} />
+      <IconButton
+        size="small"
+        color="primary"
+        aria-label={ariaLabel}
+        onClick={onInsert}
+        sx={{
+          border: "1px dashed var(--sand)",
+          bgcolor: "var(--paper)",
+          "&:hover": {
+            bgcolor: "var(--cream)",
+            borderColor: "var(--uwc-maroon)",
+          },
+        }}
+      >
+        <AddCircleOutlineIcon fontSize="small" />
+      </IconButton>
+      <Box sx={{ flex: 1, height: 1, bgcolor: "var(--sand)" }} />
+    </Stack>
+  );
+}
+
 export function StageConfigEditor({
   cycleId,
   cycleName,
@@ -118,6 +149,7 @@ export function StageConfigEditor({
   const [error, setError] = useState<ApiError | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
+  const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
 
   const orderedFields = useMemo(
     () => [...fields].sort((a, b) => a.sort_order - b.sort_order),
@@ -203,6 +235,7 @@ export function StageConfigEditor({
   function handleFieldDrop(event: DragEvent<HTMLDivElement>, targetLocalId: string) {
     event.preventDefault();
     reorderDraggedField(targetLocalId);
+    setDragOverFieldId(null);
     setDraggedFieldId(null);
   }
 
@@ -326,28 +359,34 @@ export function StageConfigEditor({
           <Stack spacing={2}>
             {orderedFields.map((field, index) => (
               <Box key={field.localId}>
-                <Box sx={{ display: "flex", justifyContent: "center", mb: 1 }}>
-                  <Button
-                    size="small"
-                    variant="text"
-                    startIcon={<AddCircleOutlineIcon fontSize="small" />}
-                    onClick={() => insertFieldAt(index)}
-                  >
-                    Insertar campo aquí
-                  </Button>
-                </Box>
+                <InsertFieldControl
+                  ariaLabel={`Agregar campo en posición ${index + 1}`}
+                  onInsert={() => insertFieldAt(index)}
+                />
                 <Box
                   sx={{
                     border: "1px solid #E5E7EB",
                     borderRadius: 2,
                     p: 2,
+                    mt: 1,
                     bgcolor: draggedFieldId === field.localId ? "#F9FAFB" : "transparent",
+                    borderColor:
+                      dragOverFieldId === field.localId ? "var(--uwc-maroon)" : "#E5E7EB",
                   }}
                   draggable
                   onDragStart={() => setDraggedFieldId(field.localId)}
-                  onDragOver={(event) => event.preventDefault()}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDragOverFieldId(field.localId);
+                  }}
+                  onDragLeave={() => {
+                    setDragOverFieldId((current) => (current === field.localId ? null : current));
+                  }}
                   onDrop={(event) => handleFieldDrop(event, field.localId)}
-                  onDragEnd={() => setDraggedFieldId(null)}
+                  onDragEnd={() => {
+                    setDraggedFieldId(null);
+                    setDragOverFieldId(null);
+                  }}
                 >
                   <Stack direction={{ xs: "column", md: "row" }} spacing={1.2}>
                     <Stack direction="row" spacing={0.5} alignItems="center" sx={{ minWidth: 120 }}>
@@ -369,155 +408,152 @@ export function StageConfigEditor({
                         <KeyboardArrowDownIcon />
                       </IconButton>
                     </Stack>
-                  <TextField
-                    label="Título"
-                    value={field.field_label}
-                    onChange={(event) => {
-                      const value = event.target.value;
-                      setFields((current) =>
-                        current.map((item) =>
-                          item.localId === field.localId
-                            ? {
-                                ...item,
-                                field_label: value,
-                                field_key:
-                                  item.id.startsWith("new-") || item.field_key.startsWith("nuevoCampo")
-                                    ? normalizeFieldKey(value)
-                                    : item.field_key,
-                              }
-                            : item,
-                        ),
-                      );
-                    }}
-                    fullWidth
-                  />
-                  <TextField
-                    select
-                    label="Tipo"
-                    value={field.field_type}
-                    onChange={(event) =>
-                      setFields((current) =>
-                        current.map((item) =>
-                          item.localId === field.localId
-                            ? {
-                                ...item,
-                                field_type: event.target.value as CycleStageField["field_type"],
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                    sx={{ minWidth: 180 }}
-                  >
-                    <MenuItem value="short_text">Texto corto</MenuItem>
-                    <MenuItem value="long_text">Texto largo</MenuItem>
-                    <MenuItem value="number">Número</MenuItem>
-                    <MenuItem value="date">Fecha</MenuItem>
-                    <MenuItem value="email">Correo</MenuItem>
-                    <MenuItem value="file">Archivo</MenuItem>
-                  </TextField>
-                  <TextField
-                    label="Clave"
-                    value={field.field_key}
-                    onChange={(event) =>
-                      setFields((current) =>
-                        current.map((item) =>
-                          item.localId === field.localId
-                            ? {
-                                ...item,
-                                field_key: normalizeFieldKey(event.target.value),
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                    sx={{ minWidth: 180 }}
-                  />
-                  <IconButton aria-label={`Eliminar ${field.field_label}`} onClick={() => removeField(field.localId)}>
-                    <DeleteOutlineIcon />
-                  </IconButton>
-                </Stack>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={1.2} sx={{ mt: 1.2 }}>
-                  <TextField
-                    label="Placeholder"
-                    value={field.placeholder ?? ""}
-                    onChange={(event) =>
-                      setFields((current) =>
-                        current.map((item) =>
-                          item.localId === field.localId ? { ...item, placeholder: event.target.value } : item,
-                        ),
-                      )
-                    }
-                    fullWidth
-                  />
-                  <TextField
-                    label="Ayuda"
-                    value={field.help_text ?? ""}
-                    onChange={(event) =>
-                      setFields((current) =>
-                        current.map((item) =>
-                          item.localId === field.localId ? { ...item, help_text: event.target.value } : item,
-                        ),
-                      )
-                    }
-                    fullWidth
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={field.is_required}
-                        sx={REQUIRED_SWITCH_SX}
-                        onChange={(event) =>
-                          setFields((current) =>
-                            current.map((item) =>
-                              item.localId === field.localId
-                                ? {
-                                    ...item,
-                                    is_required: event.target.checked,
-                                  }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    }
-                    label={`Obligatorio: ${field.is_required ? "Sí" : "No"}`}
-                  />
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={field.is_active}
-                        sx={VISIBLE_SWITCH_SX}
-                        onChange={(event) =>
-                          setFields((current) =>
-                            current.map((item) =>
-                              item.localId === field.localId
-                                ? {
-                                    ...item,
-                                    is_active: event.target.checked,
-                                  }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    }
-                    label={`Visible: ${field.is_active ? "Sí" : "No"}`}
-                  />
-                </Stack>
-              </Box>
+                    <TextField
+                      label="Título"
+                      value={field.field_label}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        setFields((current) =>
+                          current.map((item) =>
+                            item.localId === field.localId
+                              ? {
+                                  ...item,
+                                  field_label: value,
+                                  field_key:
+                                    item.id.startsWith("new-") || item.field_key.startsWith("nuevoCampo")
+                                      ? normalizeFieldKey(value)
+                                      : item.field_key,
+                                }
+                              : item,
+                          ),
+                        );
+                      }}
+                      fullWidth
+                    />
+                    <TextField
+                      select
+                      label="Tipo"
+                      value={field.field_type}
+                      onChange={(event) =>
+                        setFields((current) =>
+                          current.map((item) =>
+                            item.localId === field.localId
+                              ? {
+                                  ...item,
+                                  field_type: event.target.value as CycleStageField["field_type"],
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                      sx={{ minWidth: 180 }}
+                    >
+                      <MenuItem value="short_text">Texto corto</MenuItem>
+                      <MenuItem value="long_text">Texto largo</MenuItem>
+                      <MenuItem value="number">Número</MenuItem>
+                      <MenuItem value="date">Fecha</MenuItem>
+                      <MenuItem value="email">Correo</MenuItem>
+                      <MenuItem value="file">Archivo</MenuItem>
+                    </TextField>
+                    <TextField
+                      label="Clave"
+                      value={field.field_key}
+                      onChange={(event) =>
+                        setFields((current) =>
+                          current.map((item) =>
+                            item.localId === field.localId
+                              ? {
+                                  ...item,
+                                  field_key: normalizeFieldKey(event.target.value),
+                                }
+                              : item,
+                          ),
+                        )
+                      }
+                      sx={{ minWidth: 180 }}
+                    />
+                    <IconButton
+                      aria-label={`Eliminar ${field.field_label}`}
+                      onClick={() => removeField(field.localId)}
+                    >
+                      <DeleteOutlineIcon />
+                    </IconButton>
+                  </Stack>
+                  <Stack direction={{ xs: "column", md: "row" }} spacing={1.2} sx={{ mt: 1.2 }}>
+                    <TextField
+                      label="Placeholder"
+                      value={field.placeholder ?? ""}
+                      onChange={(event) =>
+                        setFields((current) =>
+                          current.map((item) =>
+                            item.localId === field.localId ? { ...item, placeholder: event.target.value } : item,
+                          ),
+                        )
+                      }
+                      fullWidth
+                    />
+                    <TextField
+                      label="Ayuda"
+                      value={field.help_text ?? ""}
+                      onChange={(event) =>
+                        setFields((current) =>
+                          current.map((item) =>
+                            item.localId === field.localId ? { ...item, help_text: event.target.value } : item,
+                          ),
+                        )
+                      }
+                      fullWidth
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={field.is_required}
+                          sx={REQUIRED_SWITCH_SX}
+                          onChange={(event) =>
+                            setFields((current) =>
+                              current.map((item) =>
+                                item.localId === field.localId
+                                  ? {
+                                      ...item,
+                                      is_required: event.target.checked,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                      }
+                      label={`Obligatorio: ${field.is_required ? "Sí" : "No"}`}
+                    />
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={field.is_active}
+                          sx={VISIBLE_SWITCH_SX}
+                          onChange={(event) =>
+                            setFields((current) =>
+                              current.map((item) =>
+                                item.localId === field.localId
+                                  ? {
+                                      ...item,
+                                      is_active: event.target.checked,
+                                    }
+                                  : item,
+                              ),
+                            )
+                          }
+                        />
+                      }
+                      label={`Visible: ${field.is_active ? "Sí" : "No"}`}
+                    />
+                  </Stack>
+                </Box>
               </Box>
             ))}
-            <Box sx={{ display: "flex", justifyContent: "center" }}>
-              <Button
-                size="small"
-                variant="text"
-                startIcon={<AddCircleOutlineIcon fontSize="small" />}
-                onClick={() => insertFieldAt(orderedFields.length)}
-              >
-                Insertar campo al final
-              </Button>
-            </Box>
+            <InsertFieldControl
+              ariaLabel="Agregar campo al final"
+              onInsert={() => insertFieldAt(orderedFields.length)}
+            />
           </Stack>
         </CardContent>
       </Card>

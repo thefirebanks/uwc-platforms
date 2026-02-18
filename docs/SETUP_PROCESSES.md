@@ -108,3 +108,15 @@ bun run dev
   - `codex/mvp-applicant-flow`
   - `codex/mvp-admin-stage-management`
   - `codex/mvp-observability-hardening`
+
+## 9) Test Runner Baseline
+- Keep Vitest stack on:
+  - `vitest@2.1.8`
+  - `@vitest/ui@2.1.8`
+  - `@vitest/coverage-v8@2.1.8`
+- Reason:
+  - `vitest@3.x` pulls `vite@7.x` and `esbuild@0.27.3`; in this project environment that esbuild binary can hang, which blocks all tests.
+- Verification command:
+```bash
+bun run test
+```

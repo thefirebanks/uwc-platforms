@@ -166,13 +166,13 @@ Expected:
 2. In `Plantillas de etapas`, click `Editar campos` for Stage 1.
 3. Add one field, edit one existing label, mark one field optional/required, and remove one field.
 4. Reorder fields (drag and drop or `mover arriba/abajo` buttons).
-5. Use `Insertar campo aquí` between two existing fields.
+5. Use `+` controls (`Agregar campo en posición ...`) between two existing fields.
 6. Click `Guardar configuración`.
 7. Refresh page and verify edits persist.
 
 Expected:
 - Stage field list supports add/remove/edit and required toggle.
-- Stage field list supports ordering (drag/move controls) and insertion between rows.
+- Stage field list supports ordering (drag/move controls) and insertion between rows with explicit `+` controls.
 - Save succeeds with visible success message.
 - Audit includes `cycle.stage_config_updated`.
 
