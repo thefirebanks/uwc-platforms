@@ -238,7 +238,11 @@ export function AdminDashboard({
     const response = await fetch("/api/communications/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ templateKey: "stage_result" }),
+      body: JSON.stringify({
+        cycleId: cycle.id,
+        stageCode: "documents",
+        triggerEvent: "stage_result",
+      }),
     });
 
     const body = await response.json();
@@ -392,6 +396,13 @@ export function AdminDashboard({
                   onChange={(event) => updateTemplate(template.id, "due_at", event.target.value)}
                   InputLabelProps={{ shrink: true }}
                 />
+                <Button
+                  component={Link}
+                  href={`/admin/process/${cycle.id}/stage/${template.stage_code}`}
+                  variant="outlined"
+                >
+                  Editar campos
+                </Button>
               </Stack>
             ))}
           </Stack>
@@ -525,6 +536,7 @@ export function AdminDashboard({
           <Typography variant="h6">Comunicaciones</Typography>
           <Typography color="text.secondary">
             MVP actual: registra la cola de comunicaciones en base de datos, sin envío real de correo.
+            Activa y edita la automatización `stage_result` desde `Editar campos` para habilitar este envío.
           </Typography>
           <Button variant="contained" sx={{ mt: 2 }} onClick={sendStatusEmails}>
             Enviar resultados

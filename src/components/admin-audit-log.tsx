@@ -71,6 +71,7 @@ const actionOptions = [
   "cycle.created",
   "cycle.updated",
   "cycle.templates_updated",
+  "cycle.stage_config_updated",
 ];
 
 function buildQuery(filters: AppliedFilters, includePagination: boolean) {

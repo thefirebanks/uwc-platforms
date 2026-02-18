@@ -1,4 +1,10 @@
-import type { ApplicationStatus, AppRole, StageCode } from "@/types/domain";
+import type {
+  ApplicationStatus,
+  AppRole,
+  StageAutomationTrigger,
+  StageCode,
+  StageFieldType,
+} from "@/types/domain";
 
 export type Json =
   | string
@@ -207,6 +213,10 @@ export interface Database {
           id: string;
           application_id: string;
           template_key: string;
+          trigger_event: string | null;
+          subject: string | null;
+          body: string | null;
+          automation_template_id: string | null;
           recipient_email: string;
           status: string;
           error_message: string | null;
@@ -217,6 +227,10 @@ export interface Database {
           id?: string;
           application_id: string;
           template_key: string;
+          trigger_event?: string | null;
+          subject?: string | null;
+          body?: string | null;
+          automation_template_id?: string | null;
           recipient_email: string;
           status: string;
           error_message?: string | null;
@@ -224,6 +238,79 @@ export interface Database {
           created_at?: string;
         },
         never
+      >;
+      cycle_stage_fields: TableDef<
+        {
+          id: string;
+          cycle_id: string;
+          stage_code: StageCode;
+          field_key: string;
+          field_label: string;
+          field_type: StageFieldType;
+          is_required: boolean;
+          placeholder: string | null;
+          help_text: string | null;
+          sort_order: number;
+          is_active: boolean;
+          created_at: string;
+        },
+        {
+          id?: string;
+          cycle_id: string;
+          stage_code: StageCode;
+          field_key: string;
+          field_label: string;
+          field_type: StageFieldType;
+          is_required?: boolean;
+          placeholder?: string | null;
+          help_text?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+          created_at?: string;
+        },
+        {
+          field_key?: string;
+          field_label?: string;
+          field_type?: StageFieldType;
+          is_required?: boolean;
+          placeholder?: string | null;
+          help_text?: string | null;
+          sort_order?: number;
+          is_active?: boolean;
+        }
+      >;
+      stage_automation_templates: TableDef<
+        {
+          id: string;
+          cycle_id: string;
+          stage_code: StageCode;
+          trigger_event: StageAutomationTrigger;
+          channel: "email";
+          is_enabled: boolean;
+          template_subject: string;
+          template_body: string;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          cycle_id: string;
+          stage_code: StageCode;
+          trigger_event: StageAutomationTrigger;
+          channel?: "email";
+          is_enabled?: boolean;
+          template_subject: string;
+          template_body: string;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          trigger_event?: StageAutomationTrigger;
+          is_enabled?: boolean;
+          template_subject?: string;
+          template_body?: string;
+          updated_at?: string;
+        }
       >;
       audit_events: TableDef<
         {

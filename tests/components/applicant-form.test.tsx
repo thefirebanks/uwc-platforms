@@ -45,13 +45,13 @@ describe("ApplicantApplicationForm", () => {
       />,
     );
 
-    const fullNameInput = screen.getByLabelText("Nombre completo");
+    const fullNameInput = screen.getByLabelText(/Nombre completo/i);
     expect(fullNameInput).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Editar respuesta" }));
 
     expect(await screen.findByText("Edición habilitada. Guarda cambios y vuelve a enviar.")).toBeInTheDocument();
-    expect(screen.getByLabelText("Nombre completo")).not.toBeDisabled();
+    expect(screen.getByLabelText(/Nombre completo/i)).not.toBeDisabled();
   });
 
   it("shows previously registered recommenders from API", async () => {

@@ -4,9 +4,13 @@ import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
+import { queueStageResultAutomations } from "@/lib/server/automation-service";
 
 const schema = z.object({
-  templateKey: z.string().min(3),
+  templateKey: z.string().min(3).optional(),
+  cycleId: z.string().uuid().optional(),
+  stageCode: z.enum(["documents", "exam_placeholder"]).optional(),
+  triggerEvent: z.enum(["stage_result"]).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -19,6 +23,39 @@ export async function POST(request: NextRequest) {
       throw new AppError({
         message: "Invalid communication payload",
         userMessage: "No se pudo procesar el envío de comunicaciones.",
+        status: 400,
+      });
+    }
+
+    if (parsed.data.cycleId && parsed.data.stageCode && parsed.data.triggerEvent === "stage_result") {
+      const queued = await queueStageResultAutomations({
+        supabase,
+        cycleId: parsed.data.cycleId,
+        stageCode: parsed.data.stageCode,
+        actorId: profile.id,
+      });
+
+      await recordAuditEvent({
+        supabase,
+        actorId: profile.id,
+        action: "communications.queued",
+        metadata: {
+          triggerEvent: "stage_result",
+          cycleId: parsed.data.cycleId,
+          stageCode: parsed.data.stageCode,
+          sent: queued.sent,
+          automationTemplateId: queued.automationTemplateId,
+        },
+        requestId,
+      });
+
+      return NextResponse.json({ sent: queued.sent });
+    }
+
+    if (!parsed.data.templateKey) {
+      throw new AppError({
+        message: "Missing template key or automation context",
+        userMessage: "Falta indicar la plantilla o automatización de envío.",
         status: 400,
       });
     }

@@ -32,6 +32,14 @@ Spanish-first MVP for UWC Peru selection management with:
   - new yearly process auto-creates stage templates for Stage 1 and Stage 2
   - admin can edit stage labels, milestones, and target dates per process
   - applicant can view process timeline/hitos inside each process
+- Stage configuration builder:
+  - admin can edit fields per stage (add/remove/edit/reorder required data)
+  - dedicated editor route: `/admin/process/:cycleId/stage/:stageCode`
+  - applicant form renders dynamically from stage field configuration
+- Stage automation templates:
+  - admin can edit email automation subject/body per stage trigger
+  - `application_submitted` automation queues automatically on submit
+  - `stage_result` automation can be queued from admin communications
 - Applicant form draft/save/submit
 - Applicant document upload (signed upload URL)
 - Recommendation request registration + persisted recommender list display
@@ -68,6 +76,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
 - `supabase/migrations/20260218001000_add_audit_events_indexes.sql`
 - `supabase/migrations/20260218002000_add_cycle_stage_configuration.sql`
 - `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
+- `supabase/migrations/20260218004000_add_stage_form_and_automation_configs.sql`
 ```bash
 sbu db push
 ```
@@ -139,6 +148,7 @@ bun run build
 - `GET/POST /api/cycles`
 - `PATCH /api/cycles/:id`
 - `GET/PATCH /api/cycles/:id/templates`
+- `GET/PATCH /api/cycles/:id/stages/:stageCode/config`
 - `POST /api/exam-imports`
 - `POST /api/communications/send`
 - `POST /api/errors/report`

@@ -1,10 +1,10 @@
 import Papa from "papaparse";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ApplicationInput } from "@/lib/validation/application";
 import { canTransition } from "@/lib/stages/transition";
 import { AppError } from "@/lib/errors/app-error";
 import type { Database } from "@/types/supabase";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
+import type { StagePayload } from "@/lib/stages/form-schema";
 
 type ApplicationRow = Database["public"]["Tables"]["applications"]["Row"];
 type RecommendationRow = Database["public"]["Tables"]["recommendation_requests"]["Row"];
@@ -89,7 +89,7 @@ export async function upsertApplicantApplication({
 }: {
   supabase: SupabaseClient<Database>;
   applicantId: string;
-  payload: ApplicationInput;
+  payload: StagePayload;
   cycleId?: string;
 }): Promise<ApplicationRow> {
   const targetCycleId = cycleId ?? (await getActiveCycleId(supabase));
