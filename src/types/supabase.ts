@@ -109,6 +109,34 @@ export interface Database {
           updated_at?: string;
         }
       >;
+      cycle_stage_templates: TableDef<
+        {
+          id: string;
+          cycle_id: string;
+          stage_code: StageCode;
+          stage_label: string;
+          milestone_label: string;
+          due_at: string | null;
+          sort_order: number;
+          created_at: string;
+        },
+        {
+          id?: string;
+          cycle_id: string;
+          stage_code: StageCode;
+          stage_label: string;
+          milestone_label: string;
+          due_at?: string | null;
+          sort_order?: number;
+          created_at?: string;
+        },
+        {
+          stage_label?: string;
+          milestone_label?: string;
+          due_at?: string | null;
+          sort_order?: number;
+        }
+      >;
       recommendation_requests: TableDef<
         {
           id: string;

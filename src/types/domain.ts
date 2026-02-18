@@ -53,6 +53,17 @@ export interface SelectionProcess {
   created_at: string;
 }
 
+export interface CycleStageTemplate {
+  id: string;
+  cycle_id: string;
+  stage_code: StageCode;
+  stage_label: string;
+  milestone_label: string;
+  due_at: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
 export interface StageTransition {
   id: string;
   application_id: string;

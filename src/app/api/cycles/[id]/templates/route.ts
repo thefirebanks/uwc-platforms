@@ -1,0 +1,164 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { withErrorHandling } from "@/lib/errors/with-error-handling";
+import { AppError } from "@/lib/errors/app-error";
+import { requireAuth } from "@/lib/server/auth";
+import type { Database } from "@/types/supabase";
+import { recordAuditEvent } from "@/lib/logging/audit";
+
+type CycleTemplateRow = Database["public"]["Tables"]["cycle_stage_templates"]["Row"];
+
+const patchTemplatesSchema = z.object({
+  templates: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        stageLabel: z.string().min(3).max(120),
+        milestoneLabel: z.string().min(3).max(180),
+        dueAt: z.string().datetime().nullable().optional(),
+        sortOrder: z.number().int().min(0).max(99).optional(),
+      }),
+    )
+    .min(1),
+});
+const cycleIdSchema = z.string().uuid();
+
+async function ensureCycleExists({
+  cycleId,
+  supabase,
+}: {
+  cycleId: string;
+  supabase: Awaited<ReturnType<typeof requireAuth>>["supabase"];
+}) {
+  const { data, error } = await supabase.from("cycles").select("id").eq("id", cycleId).maybeSingle();
+
+  if (error || !data) {
+    throw new AppError({
+      message: "Cycle not found",
+      userMessage: "No se encontró el proceso de selección.",
+      status: 404,
+      details: error,
+    });
+  }
+}
+
+export async function GET(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  return withErrorHandling(async () => {
+    const { supabase } = await requireAuth(["admin", "applicant"]);
+    const { id: rawId } = await context.params;
+    const idParsed = cycleIdSchema.safeParse(rawId);
+
+    if (!idParsed.success) {
+      throw new AppError({
+        message: "Invalid cycle id",
+        userMessage: "El proceso seleccionado no es válido.",
+        status: 400,
+      });
+    }
+    const id = idParsed.data;
+
+    await ensureCycleExists({ cycleId: id, supabase });
+
+    const { data, error } = await supabase
+      .from("cycle_stage_templates")
+      .select("*")
+      .eq("cycle_id", id)
+      .order("sort_order", { ascending: true });
+
+    if (error) {
+      throw new AppError({
+        message: "Failed loading cycle templates",
+        userMessage: "No se pudieron cargar las etapas del proceso.",
+        status: 500,
+        details: error,
+      });
+    }
+
+    return NextResponse.json({
+      templates: ((data as CycleTemplateRow[] | null) ?? []).sort(
+        (a, b) => a.sort_order - b.sort_order,
+      ),
+    });
+  }, { operation: "cycles.templates.list" });
+}
+
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  return withErrorHandling(async (requestId) => {
+    const { profile, supabase } = await requireAuth(["admin"]);
+    const { id: rawId } = await context.params;
+    const idParsed = cycleIdSchema.safeParse(rawId);
+
+    if (!idParsed.success) {
+      throw new AppError({
+        message: "Invalid cycle id",
+        userMessage: "El proceso seleccionado no es válido.",
+        status: 400,
+      });
+    }
+    const id = idParsed.data;
+    const body = await request.json();
+    const parsed = patchTemplatesSchema.safeParse(body);
+
+    if (!parsed.success) {
+      throw new AppError({
+        message: "Invalid cycle templates patch payload",
+        userMessage: "No se pudieron guardar las plantillas de etapa.",
+        status: 400,
+        details: parsed.error.flatten(),
+      });
+    }
+
+    await ensureCycleExists({ cycleId: id, supabase });
+
+    const updatedTemplates: CycleTemplateRow[] = [];
+
+    for (const template of parsed.data.templates) {
+      const { data, error } = await supabase
+        .from("cycle_stage_templates")
+        .update({
+          stage_label: template.stageLabel,
+          milestone_label: template.milestoneLabel,
+          due_at: template.dueAt ?? null,
+          sort_order: template.sortOrder,
+        })
+        .eq("id", template.id)
+        .eq("cycle_id", id)
+        .select("*")
+        .single();
+
+      const updated = (data as CycleTemplateRow | null) ?? null;
+
+      if (error || !updated) {
+        throw new AppError({
+          message: "Failed updating cycle stage template",
+          userMessage: "No se pudieron guardar las plantillas de etapa.",
+          status: 500,
+          details: error,
+        });
+      }
+
+      updatedTemplates.push(updated);
+    }
+
+    await recordAuditEvent({
+      supabase,
+      actorId: profile.id,
+      action: "cycle.templates_updated",
+      metadata: {
+        cycleId: id,
+        updatedCount: updatedTemplates.length,
+      },
+      requestId,
+    });
+
+    return NextResponse.json({
+      templates: updatedTemplates.sort((a, b) => a.sort_order - b.sort_order),
+    });
+  }, { operation: "cycles.templates.update" });
+}

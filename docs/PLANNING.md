@@ -21,8 +21,9 @@
 ## Phase 3 (Next)
 - Improve UX polish and performance on heavy forms
 - Add process templates and yearly process bootstrap
-  - initialize stage templates automatically when creating the new yearly process
-  - configurable milestones and labels per stage
+  - initialize stage templates automatically when creating the new yearly process ✅
+  - configurable milestones and labels per stage ✅
+  - applicant-facing process timeline visibility ✅
   - process-level reporting rollups
 - Expand communication reliability (delivery status lifecycle)
 - OCR workflow hardening and confidence scoring visibility

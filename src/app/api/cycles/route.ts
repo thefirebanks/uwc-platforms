@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import type { Database } from "@/types/supabase";
+import { buildDefaultCycleStageTemplates } from "@/lib/stages/templates";
 
 type CycleRow = Database["public"]["Tables"]["cycles"]["Row"];
 type ApplicationCycleRow = Pick<Database["public"]["Tables"]["applications"]["Row"], "cycle_id">;
@@ -136,6 +137,24 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      const defaultTemplates = buildDefaultCycleStageTemplates({
+        cycleId: cycle.id,
+        stage1CloseAt: cycle.stage1_close_at,
+        stage2CloseAt: cycle.stage2_close_at,
+      });
+      const { error: templatesError } = await supabase
+        .from("cycle_stage_templates")
+        .insert(defaultTemplates);
+
+      if (templatesError) {
+        throw new AppError({
+          message: "Failed creating default stage templates",
+          userMessage: "El proceso se creó sin plantilla de etapas. Intenta nuevamente.",
+          status: 500,
+          details: templatesError,
+        });
+      }
+
       if (parsed.data.isActive) {
         await supabase.from("cycles").update({ is_active: false }).neq("id", cycle.id);
         await supabase.from("cycles").update({ is_active: true }).eq("id", cycle.id);
@@ -150,6 +169,7 @@ export async function POST(request: NextRequest) {
           name: cycle.name,
           year: parsed.data.year,
           isActive: parsed.data.isActive,
+          templatesCreated: defaultTemplates.length,
         },
         requestId,
       });

@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { AdminDashboard } from "@/components/admin-dashboard";
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { Application, SelectionProcess } from "@/types/domain";
+import type { Application, CycleStageTemplate, SelectionProcess } from "@/types/domain";
 
 export default async function AdminProcessPage({
   params,
@@ -28,10 +28,16 @@ export default async function AdminProcessPage({
     .select("*")
     .eq("cycle_id", cycleId)
     .order("updated_at", { ascending: false });
+  const { data: templates } = await supabase
+    .from("cycle_stage_templates")
+    .select("*")
+    .eq("cycle_id", cycleId)
+    .order("sort_order", { ascending: true });
 
   return (
     <AdminDashboard
       initialApplications={(applications as Application[] | null) ?? []}
+      cycleTemplates={(templates as CycleStageTemplate[] | null) ?? []}
       cycle={cycle as SelectionProcess}
     />
   );

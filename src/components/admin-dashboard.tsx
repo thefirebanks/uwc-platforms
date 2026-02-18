@@ -7,6 +7,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   MenuItem,
   Stack,
   Table,
@@ -17,7 +18,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import type { Application, SelectionProcess, StageCode } from "@/types/domain";
+import type { Application, CycleStageTemplate, SelectionProcess, StageCode } from "@/types/domain";
 import { StageBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
 import { canTransition } from "@/lib/stages/transition";
@@ -39,14 +40,25 @@ function toIsoDate(value: string) {
   return value ? new Date(`${value}T00:00:00.000Z`).toISOString() : undefined;
 }
 
+function formatDate(value: string | null) {
+  if (!value) {
+    return "No configurada";
+  }
+
+  return new Date(value).toLocaleDateString();
+}
+
 export function AdminDashboard({
   initialApplications,
+  cycleTemplates,
   cycle,
 }: {
   initialApplications: Application[];
+  cycleTemplates: CycleStageTemplate[];
   cycle: SelectionProcess;
 }) {
   const [applications, setApplications] = useState(initialApplications);
+  const [templates, setTemplates] = useState(cycleTemplates);
   const [error, setError] = useState<ApiError | null>(null);
   const [csvData, setCsvData] = useState("applicant_email,score,passed\napplicant.demo@uwcperu.org,15.7,true");
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -59,6 +71,33 @@ export function AdminDashboard({
     () => [...applications].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
     [applications],
   );
+  const statusRollup = useMemo(() => {
+    const counts: Record<Application["status"], number> = {
+      draft: 0,
+      submitted: 0,
+      eligible: 0,
+      ineligible: 0,
+      advanced: 0,
+    };
+
+    for (const application of applications) {
+      counts[application.status] += 1;
+    }
+
+    return counts;
+  }, [applications]);
+  const stageRollup = useMemo(() => {
+    const counts: Record<StageCode, number> = {
+      documents: 0,
+      exam_placeholder: 0,
+    };
+
+    for (const application of applications) {
+      counts[application.stage_code] += 1;
+    }
+
+    return counts;
+  }, [applications]);
 
   async function refreshData() {
     const response = await fetch(`/api/applications?cycleId=${cycle.id}`);
@@ -70,6 +109,34 @@ export function AdminDashboard({
     }
 
     setApplications(body.applications ?? []);
+  }
+
+  async function saveStageTemplates() {
+    setError(null);
+    setStatusMessage(null);
+
+    const response = await fetch(`/api/cycles/${cycle.id}/templates`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        templates: templates.map((template) => ({
+          id: template.id,
+          stageLabel: template.stage_label,
+          milestoneLabel: template.milestone_label,
+          dueAt: toIsoDate(toDateInputValue(template.due_at)) ?? null,
+          sortOrder: template.sort_order,
+        })),
+      }),
+    });
+    const body = await response.json();
+
+    if (!response.ok) {
+      setError(body);
+      return;
+    }
+
+    setTemplates(body.templates ?? []);
+    setStatusMessage("Plantillas de etapa actualizadas.");
   }
 
   async function saveStageConfiguration() {
@@ -184,6 +251,32 @@ export function AdminDashboard({
     setStatusMessage(`Comunicaciones registradas: ${body.sent}.`);
   }
 
+  function updateTemplate(
+    templateId: string,
+    field: "stage_label" | "milestone_label" | "due_at",
+    value: string,
+  ) {
+    setTemplates((current) =>
+      current.map((template) => {
+        if (template.id !== templateId) {
+          return template;
+        }
+
+        if (field === "due_at") {
+          return {
+            ...template,
+            due_at: value ? `${value}T00:00:00.000Z` : null,
+          };
+        }
+
+        return {
+          ...template,
+          [field]: value,
+        };
+      }),
+    );
+  }
+
   return (
     <Stack spacing={3}>
       <Card>
@@ -258,6 +351,74 @@ export function AdminDashboard({
               Guardar fechas
             </Button>
           </Stack>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Typography variant="h6">Plantillas de etapas</Typography>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            Personaliza etiquetas y hitos por etapa para este proceso anual.
+          </Typography>
+          <Stack spacing={2}>
+            {templates.map((template) => (
+              <Stack
+                key={template.id}
+                direction={{ xs: "column", md: "row" }}
+                spacing={1.5}
+                alignItems={{ md: "center" }}
+              >
+                <Chip
+                  label={template.stage_code === "documents" ? "Stage 1" : "Stage 2"}
+                  color={template.stage_code === "documents" ? "primary" : "default"}
+                  sx={{ width: 110 }}
+                />
+                <TextField
+                  label="Nombre de etapa"
+                  value={template.stage_label}
+                  onChange={(event) => updateTemplate(template.id, "stage_label", event.target.value)}
+                  fullWidth
+                />
+                <TextField
+                  label="Hito"
+                  value={template.milestone_label}
+                  onChange={(event) => updateTemplate(template.id, "milestone_label", event.target.value)}
+                  fullWidth
+                />
+                <TextField
+                  label="Fecha objetivo"
+                  type="date"
+                  value={toDateInputValue(template.due_at)}
+                  onChange={(event) => updateTemplate(template.id, "due_at", event.target.value)}
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Stack>
+            ))}
+          </Stack>
+          <Button variant="outlined" sx={{ mt: 2 }} onClick={saveStageTemplates}>
+            Guardar plantillas
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Typography variant="h6">Resumen del proceso</Typography>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ mt: 1.5 }} useFlexGap flexWrap="wrap">
+            <Chip label={`Total: ${applications.length}`} />
+            <Chip label={`Draft: ${statusRollup.draft}`} />
+            <Chip label={`Enviadas: ${statusRollup.submitted}`} />
+            <Chip label={`Elegibles: ${statusRollup.eligible}`} color="success" />
+            <Chip label={`No elegibles: ${statusRollup.ineligible}`} color="warning" />
+            <Chip label={`Avanzadas: ${statusRollup.advanced}`} color="primary" />
+          </Stack>
+          <Typography color="text.secondary" sx={{ mt: 2 }}>
+            Stage 1 (Documentos): {stageRollup.documents} · Stage 2 (Placeholder): {stageRollup.exam_placeholder}
+          </Typography>
+          <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
+            Fechas de referencia: Stage 1 cierra {formatDate(cycle.stage1_close_at)}; Stage 2 cierra{" "}
+            {formatDate(cycle.stage2_close_at)}.
+          </Typography>
         </CardContent>
       </Card>
 
