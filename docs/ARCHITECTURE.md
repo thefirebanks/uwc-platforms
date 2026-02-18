@@ -20,6 +20,7 @@
 
 2. API layer
 - Selection process management (`GET/POST /api/cycles`, `PATCH /api/cycles/:id`)
+- Selection process stage templates (`GET/PATCH /api/cycles/:id/templates`)
 - Application CRUD and submit
 - Validation and stage transition
 - Recommendation request registration
@@ -30,6 +31,7 @@
 3. Supabase data layer
 - Auth users + `profiles`
 - `cycles` (selection process per year + stage date config + per-user cap)
+- `cycle_stage_templates` (stage labels, milestones, and due dates per process)
 - `applications`, `recommendation_requests`, `stage_transitions`
 - `exam_imports`, `communication_logs`, `audit_events`, `bug_reports`
 - Storage bucket `application-documents`
@@ -51,6 +53,7 @@
   - date order validation is enforced on update
   - only one active process at a time
   - applicant cap is enforced (max 3 applications across processes for now)
+  - stage templates are auto-bootstrapped when creating a process and then editable by admin
 
 ## Error and Observability Model
 - API handlers are wrapped with centralized error handling.

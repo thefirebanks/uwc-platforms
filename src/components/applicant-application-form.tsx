@@ -16,7 +16,7 @@ import {
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
 import { applicationSchema, type ApplicationInput } from "@/lib/validation/application";
-import type { Application } from "@/types/domain";
+import type { Application, CycleStageTemplate } from "@/types/domain";
 import { StageBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
 
@@ -29,10 +29,12 @@ export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
   cycleName,
+  cycleTemplates = [],
 }: {
   existingApplication: Application | null;
   cycleId: string;
   cycleName?: string;
+  cycleTemplates?: CycleStageTemplate[];
 }) {
   const LOCKED_STATUSES = new Set<Application["status"]>([
     "submitted",
@@ -346,8 +348,34 @@ export function ApplicantApplicationForm({
                 </Button>
               </Box>
             ) : null}
+        </CardContent>
+      </Card>
+
+      {cycleTemplates.length > 0 ? (
+        <Card>
+          <CardContent>
+            <Typography variant="h6">Ruta del proceso</Typography>
+            <Typography color="text.secondary" sx={{ mb: 1.5 }}>
+              Hitos y fechas referenciales de este proceso de selección.
+            </Typography>
+            <Stack spacing={1.2}>
+              {cycleTemplates.map((template) => (
+                <Box
+                  key={template.id}
+                  sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 1.5 }}
+                >
+                  <Typography fontWeight={700}>{template.stage_label}</Typography>
+                  <Typography color="text.secondary">{template.milestone_label}</Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Fecha objetivo:{" "}
+                    {template.due_at ? new Date(template.due_at).toLocaleDateString() : "No configurada"}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
           </CardContent>
         </Card>
+      ) : null}
 
       {error ? (
         <ErrorCallout message={error.message} errorId={error.errorId} context="applicant_form" />

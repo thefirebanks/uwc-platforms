@@ -7,6 +7,7 @@ Every feature ships with tests at the most appropriate level. No feature is cons
 - Unit tests:
   - validation rules
   - stage transition logic
+  - cycle stage template bootstrap rules
   - role resolution logic
   - centralized error handling
 - Component tests:
@@ -27,6 +28,8 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/unit/role-resolution.test.ts`
 - Application schema:
   - `tests/unit/application-validation.test.ts`
+- Stage template bootstrap:
+  - `tests/unit/stage-templates.test.ts`
 - Stage transitions:
   - `tests/unit/stage-transition.test.ts`
   - `tests/integration/transition-application.test.ts`

@@ -18,6 +18,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260217013000_add_profiles_insert_policy.sql`
   - `supabase/migrations/20260218001000_add_audit_events_indexes.sql`
   - `supabase/migrations/20260218002000_add_cycle_stage_configuration.sql`
+  - `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
 ```bash
 sbu db push
 ```

@@ -137,3 +137,24 @@ Expected:
 Expected:
 - Applicant sees process-level status before entering forms.
 - Max-3 rule is visible and enforced in UI.
+
+## Flow 14: Process Templates Bootstrap + Edit
+1. Login as admin and create a new process from `/admin`.
+2. Open that process (`Gestionar proceso`).
+3. Verify `Plantillas de etapas` shows Stage 1 and Stage 2 preloaded.
+4. Edit `Nombre de etapa`, `Hito`, and `Fecha objetivo`.
+5. Click `Guardar plantillas`.
+
+Expected:
+- New processes auto-generate two stage templates.
+- Edited template fields persist after page refresh.
+- Audit log records `cycle.templates_updated`.
+
+## Flow 15: Applicant Process Timeline View
+1. Login as applicant and open `/applicant/process/:cycleId`.
+2. Locate card `Ruta del proceso`.
+3. Confirm stage labels, milestones, and target dates match admin edits.
+
+Expected:
+- Applicant can view process milestones without admin access.
+- Timeline reflects latest admin template configuration.

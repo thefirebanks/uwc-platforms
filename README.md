@@ -28,6 +28,10 @@ Spanish-first MVP for UWC Peru selection management with:
   - applicant process dashboard (`/applicant`)
   - process detail pages (`/admin/process/:cycleId`, `/applicant/process/:cycleId`)
 - Process management (`cycles`): create yearly process, activate process, configure Stage 1/2 dates
+- Process templates bootstrap:
+  - new yearly process auto-creates stage templates for Stage 1 and Stage 2
+  - admin can edit stage labels, milestones, and target dates per process
+  - applicant can view process timeline/hitos inside each process
 - Applicant form draft/save/submit
 - Applicant document upload (signed upload URL)
 - Recommendation request registration + persisted recommender list display
@@ -63,6 +67,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
 - `supabase/migrations/20260217013000_add_profiles_insert_policy.sql`
 - `supabase/migrations/20260218001000_add_audit_events_indexes.sql`
 - `supabase/migrations/20260218002000_add_cycle_stage_configuration.sql`
+- `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
 ```bash
 sbu db push
 ```
@@ -133,6 +138,7 @@ bun run build
 - `GET/POST /api/recommendations`
 - `GET/POST /api/cycles`
 - `PATCH /api/cycles/:id`
+- `GET/PATCH /api/cycles/:id/templates`
 - `POST /api/exam-imports`
 - `POST /api/communications/send`
 - `POST /api/errors/report`

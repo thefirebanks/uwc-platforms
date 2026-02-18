@@ -70,6 +70,7 @@ const actionOptions = [
   "exam.import.simulated",
   "cycle.created",
   "cycle.updated",
+  "cycle.templates_updated",
 ];
 
 function buildQuery(filters: AppliedFilters, includePagination: boolean) {
