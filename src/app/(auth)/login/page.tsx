@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Alert,
   Button,
@@ -26,10 +26,15 @@ const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const modeHint = searchParams.get("mode");
+  const [modeHint, setModeHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    const search = typeof window === "undefined" ? "" : window.location.search;
+    const mode = new URLSearchParams(search).get("mode");
+    setModeHint(mode);
+  }, []);
 
   async function loginWithGoogle() {
     setError(null);
