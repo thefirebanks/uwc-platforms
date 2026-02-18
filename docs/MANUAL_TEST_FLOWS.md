@@ -90,3 +90,14 @@ Expected:
 - Terminal shows structured `info` log with `operation`, `status`, and `durationMs`.
 - Terminal shows structured `warn`/`error` log for failing flow with `requestId`.
 - Returned UI error includes `Error ID` that matches the same `requestId` in logs.
+
+## Flow 10: Admin Audit Viewer
+1. Login as admin and open `/admin/audit`.
+2. Verify recent actions are listed.
+3. Filter by `Request ID` and click `Buscar`.
+4. Click `Exportar CSV`.
+
+Expected:
+- Table updates with filtered results.
+- Actor name/email are visible when available.
+- CSV download contains filtered audit rows.

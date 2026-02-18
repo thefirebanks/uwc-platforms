@@ -16,6 +16,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260217001000_init_mvp.sql`
   - `supabase/migrations/20260217002000_storage_policies.sql`
   - `supabase/migrations/20260217013000_add_profiles_insert_policy.sql`
+  - `supabase/migrations/20260218001000_add_audit_events_indexes.sql`
 ```bash
 sbu db push
 ```

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Box,
   Button,
@@ -141,6 +142,9 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
           <Typography color="text.secondary">
             Gestiona validaciones, transición de etapas (2 etapas MVP) e importación de examen externo.
           </Typography>
+          <Button component={Link} href="/admin/audit" variant="text" sx={{ mt: 1, px: 0 }}>
+            Ver auditoría del proceso
+          </Button>
         </CardContent>
       </Card>
 

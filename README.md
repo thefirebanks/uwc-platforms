@@ -29,6 +29,7 @@ Spanish-first MVP for UWC Peru selection management with:
 - Admin queue for applications
 - Admin validation (`eligible` / `ineligible`)
 - Stage management for 2 stages (Stage 2 is placeholder)
+- Admin audit viewer with filters + CSV export (`/admin/audit`)
 - External exam CSV import
 - CSV export endpoint
 - Communication queue logging endpoint
@@ -127,6 +128,8 @@ bun run build
 - `POST /api/communications/send`
 - `POST /api/errors/report`
 - `GET /api/exports`
+- `GET /api/audit`
+- `GET /api/audit/export`
 
 ## Git Workflow (Feature Branch + PR)
 - Main branch: `main`

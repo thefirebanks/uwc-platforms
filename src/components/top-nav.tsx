@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppBar, Box, Button, Toolbar, Typography } from "@mui/material";
 import type { AppRole } from "@/types/domain";
@@ -25,6 +26,16 @@ export function TopNav({ role }: { role: AppRole }) {
         <Typography variant="body2" sx={{ mr: 2 }}>
           Modo: {role === "admin" ? "Admin" : "Postulante"}
         </Typography>
+        {role === "admin" ? (
+          <>
+            <Button component={Link} href="/admin" variant="text" sx={{ mr: 1 }}>
+              Postulaciones
+            </Button>
+            <Button component={Link} href="/admin/audit" variant="text" sx={{ mr: 2 }}>
+              Auditoría
+            </Button>
+          </>
+        ) : null}
         <Button variant="outlined" onClick={logout}>
           Cerrar sesión
         </Button>

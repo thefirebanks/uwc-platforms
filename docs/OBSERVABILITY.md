@@ -13,6 +13,7 @@
 - Business audit events:
   - Stored in `audit_events` table in Supabase.
   - Used for accountability (stage changes, validations, submissions, imports).
+  - Viewed by committee in `/admin/audit` and exported via `GET /api/audit/export`.
 
 ## Runtime Log Shape
 - `requestId`: correlation id returned as `errorId` on API failures.

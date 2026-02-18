@@ -13,12 +13,14 @@
 - Public landing page
 - Login page (Google OAuth + optional dev bypass)
 - Role-gated dashboards (`/admin`, `/applicant`)
+- Admin audit dashboard (`/admin/audit`) with filtering and CSV export
 
 2. API layer
 - Application CRUD and submit
 - Validation and stage transition
 - Recommendation request registration
 - Exam import and export
+- Audit listing and export
 - Bug reporting endpoint
 
 3. Supabase data layer

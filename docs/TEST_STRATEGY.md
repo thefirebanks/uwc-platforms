@@ -36,8 +36,11 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/components/applicant-form.test.tsx`
 - Admin UI:
   - `tests/components/admin-dashboard.test.tsx`
+  - `tests/components/admin-audit-log.test.tsx`
 - Error UI:
   - `tests/components/error-callout.test.tsx`
+- Audit filtering/export helpers:
+  - `tests/unit/audit-service.test.ts`
 - Smoke E2E:
   - `tests/e2e/home.spec.ts`
 
