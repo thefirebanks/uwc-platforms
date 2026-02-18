@@ -49,6 +49,13 @@
 - Supabase RLS enforces role/data access boundaries.
 - Applicant sees and edits own data only.
 - Admin can review all applications and operate stage transitions/import/export.
+- Defense in depth for admin protection:
+  - API routes use server-side `requireAuth(["admin"])` checks (client role tampering is ignored).
+  - Dashboard pages gate by server session role before render.
+  - Database RLS enforces admin-only writes for admin resources (`cycles`, transitions, imports, communications, stage configs).
+  - Applicant-side direct table writes are guarded to prevent privilege escalation (no self role promotion, no applicant stage/status/admin-note mutations).
+  - CI regression tests fail if admin route guards are removed (`tests/security/access-control-regressions.test.ts`).
+  - E2E browser tampering test verifies applicant receives `403` on admin API attempts (`tests/e2e/access-control.spec.ts`).
 
 ## Stage Management Model
 - Current MVP allowed stages:

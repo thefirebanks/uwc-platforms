@@ -22,6 +22,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260218004000_add_stage_form_and_automation_configs.sql`
   - `supabase/migrations/20260218005000_add_communications_lifecycle_and_ocr_checks.sql`
   - `supabase/migrations/20260218008000_fix_current_user_role_security_definer.sql`
+  - `supabase/migrations/20260218009000_harden_rbac_and_applicant_write_guards.sql`
 ```bash
 sbu db push
 ```
@@ -120,4 +121,8 @@ bun run dev
 - Verification command:
 ```bash
 bun run test
+```
+- Security E2E verification (requires app running on `http://localhost:3000`):
+```bash
+bun run test:e2e tests/e2e/access-control.spec.ts
 ```

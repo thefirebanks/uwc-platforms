@@ -239,7 +239,48 @@ Expected:
 4. Reload page and confirm selected mode persists.
 5. Navigate between home/login/admin/applicant and confirm mode remains consistent.
 
+## Flow 22: Applicant Browser Tampering Attempt
+1. Login as applicant demo.
+2. Open browser console and run:
+```js
+await fetch("/api/audit");
+await fetch("/api/communications/process", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({})
+});
+await fetch("/api/applications/00000000-0000-0000-0000-000000000000/validate", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ status: "eligible", notes: "test" })
+});
+```
+3. Verify all responses are `403`.
+4. Verify terminal logs contain matching `requestId` for each denied attempt.
+
+Expected:
+- Applicant cannot trigger admin actions via direct API calls.
+- Response includes clear permission-safe error message.
+- Denied attempts are observable in structured logs.
+
 Expected:
 - Toggle is always available (public pages + dashboard nav).
 - Theme persists across reloads via local storage.
 - No hydration or console errors when mode changes and page reloads.
+
+## Flow 22: Privilege Escalation Attempts (Applicant)
+1. Login as applicant.
+2. From browser console, try calling admin API endpoints directly:
+- `POST /api/applications/:id/transition`
+- `PATCH /api/cycles/:id`
+- `PATCH /api/cycles/:id/stages/documents/config`
+3. Using Supabase JS in console, attempt direct table mutations:
+- update own `profiles.role` to `admin`
+- update own `applications.stage_code` or `applications.validation_notes`
+- insert `recommendation_requests` for an application that is not yours
+
+Expected:
+- Admin endpoints return `403`.
+- Direct profile role change is rejected by RLS (`profiles_update_self` guard).
+- Applicant direct application privilege fields are blocked by trigger/RLS guards.
+- Cross-application recommendation inserts are rejected by RLS ownership check.
