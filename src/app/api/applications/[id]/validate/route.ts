@@ -47,5 +47,5 @@ export async function POST(
     });
 
     return NextResponse.json({ application });
-  });
+  }, { operation: "applications.validate" });
 }

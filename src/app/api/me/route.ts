@@ -11,5 +11,5 @@ export async function GET() {
       role: profile.role,
       fullName: profile.full_name,
     });
-  });
+  }, { operation: "me.get" });
 }

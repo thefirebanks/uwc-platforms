@@ -80,3 +80,13 @@ Expected:
 Expected:
 - Redirect to login when unauthenticated.
 - Admin-only actions return permission-safe errors.
+
+## Flow 9: Runtime Logging Visibility
+1. Run `bun run dev`.
+2. Execute one successful API flow (e.g., save applicant draft).
+3. Execute one failing API flow (e.g., invalid payload).
+
+Expected:
+- Terminal shows structured `info` log with `operation`, `status`, and `durationMs`.
+- Terminal shows structured `warn`/`error` log for failing flow with `requestId`.
+- Returned UI error includes `Error ID` that matches the same `requestId` in logs.

@@ -42,5 +42,5 @@ export async function POST(
     });
 
     return NextResponse.json({ application: submitted });
-  });
+  }, { operation: "applications.submit" });
 }

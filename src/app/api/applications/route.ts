@@ -21,7 +21,7 @@ export async function GET() {
 
     const application = await getApplicantApplication(supabase, profile.id);
     return NextResponse.json({ application });
-  });
+  }, { operation: "applications.get" });
 }
 
 export async function POST(request: NextRequest) {
@@ -55,5 +55,5 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ application });
-  });
+  }, { operation: "applications.upsert" });
 }

@@ -62,5 +62,5 @@ export async function POST(
     }
 
     return NextResponse.json({ application: data });
-  });
+  }, { operation: "applications.files.save" });
 }

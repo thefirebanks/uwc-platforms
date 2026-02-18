@@ -27,6 +27,7 @@ Before merge:
 - OAuth is Google-only in production path.
 - Dev bypass auth must remain opt-in and disabled in production.
 - Keep Supabase secret-key usage out of client code and runtime request paths.
+- Keep Cloudflare as the primary runtime log destination; keep Supabase logging limited to business audit events.
 
 ## Supabase CLI Usage
 - For this repository, always use UWC Supabase profile commands (`sbu`).

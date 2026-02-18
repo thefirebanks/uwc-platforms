@@ -49,16 +49,20 @@ bun run seed:fake-users
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - `ADMIN_EMAIL_ALLOWLIST`
-  - `NEXT_PUBLIC_SENTRY_DSN` (optional)
+  - `LOG_LEVEL` (optional, default `info`)
   - `GEMINI_API_KEY` (optional)
 
-## 4) Sentry (Recommended)
-- Create Sentry project for Next.js.
-- Add DSN in env (`NEXT_PUBLIC_SENTRY_DSN`).
-- Optional CI release/source map vars:
-  - `SENTRY_AUTH_TOKEN`
-  - `SENTRY_ORG`
-  - `SENTRY_PROJECT`
+## 4) Cloudflare Observability (Recommended)
+- Use Cloudflare Logs / Log Explorer as the single runtime log destination.
+- Runtime logs are emitted as structured stdout JSON from the app and are collected by Cloudflare in deployed environments.
+- For live stream debugging:
+```bash
+wrangler tail
+```
+- Keep local debugging on terminal with:
+```bash
+bun run dev
+```
 
 ## 5) Gemini API (Optional for OCR)
 - Create Google AI Studio API key.
@@ -70,8 +74,7 @@ bun run seed:fake-users
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
   - `ADMIN_EMAIL_ALLOWLIST`
-  - `NEXT_PUBLIC_SENTRY_DSN` (optional)
-  - `SENTRY_AUTH_TOKEN` (optional)
+  - `LOG_LEVEL` (optional)
   - `GEMINI_API_KEY` (optional)
 
 ## 7) Feature Branch + PR Process

@@ -59,5 +59,5 @@ export async function POST(request: NextRequest) {
     });
 
     return NextResponse.json({ count: rows.length });
-  });
+  }, { operation: "recommendations.request" });
 }

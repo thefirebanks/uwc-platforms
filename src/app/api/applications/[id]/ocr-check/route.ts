@@ -77,5 +77,5 @@ export async function POST(
     });
 
     return NextResponse.json(result);
-  });
+  }, { operation: "applications.ocr_check" });
 }

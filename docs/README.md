@@ -8,6 +8,7 @@ This folder contains the shared product and engineering source of truth for the 
 - `docs/ARCHITECTURE.md`: Technical architecture, system boundaries, and major design decisions.
 - `docs/PLANNING.md`: Iterative rollout plan and release milestones.
 - `docs/SETUP_PROCESSES.md`: Environment setup for Supabase, Cloudflare, OAuth, CI secrets.
+- `docs/OBSERVABILITY.md`: Runtime logging strategy (Cloudflare), audit boundaries, and debug commands.
 
 ## Quality and Execution
 - `docs/MANUAL_TEST_FLOWS.md`: Manual end-to-end test flows for smoke/UAT.

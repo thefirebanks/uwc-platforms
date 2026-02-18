@@ -1,23 +1,43 @@
 import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
-import * as Sentry from "@sentry/nextjs";
 import { AppError } from "@/lib/errors/app-error";
 import { logger } from "@/lib/logging/logger";
 
 type RouteHandler = (requestId: string) => Promise<NextResponse>;
 
-export async function withErrorHandling(handler: RouteHandler) {
+export async function withErrorHandling(
+  handler: RouteHandler,
+  options?: { operation?: string },
+) {
   const requestId = randomUUID();
+  const startedAt = Date.now();
+  const operation = options?.operation ?? "api.request";
 
   try {
-    return await handler(requestId);
+    const response = await handler(requestId);
+    logger.info(
+      {
+        requestId,
+        operation,
+        status: response.status,
+        durationMs: Date.now() - startedAt,
+      },
+      "Request completed",
+    );
+    return response;
   } catch (error) {
     if (error instanceof AppError) {
-      Sentry.captureMessage(error.message, {
-        level: "warning",
-        extra: { requestId, details: error.details },
-      });
-      logger.warn({ requestId, error: error.message, details: error.details }, "Request failed");
+      logger.warn(
+        {
+          requestId,
+          operation,
+          error: error.message,
+          details: error.details,
+          status: error.status,
+          durationMs: Date.now() - startedAt,
+        },
+        "Request failed",
+      );
       return NextResponse.json(
         {
           errorId: requestId,
@@ -27,10 +47,15 @@ export async function withErrorHandling(handler: RouteHandler) {
       );
     }
 
-    Sentry.captureException(error, {
-      extra: { requestId },
-    });
-    logger.error({ requestId, error }, "Unhandled request error");
+    logger.error(
+      {
+        requestId,
+        operation,
+        error,
+        durationMs: Date.now() - startedAt,
+      },
+      "Unhandled request error",
+    );
     return NextResponse.json(
       {
         errorId: requestId,

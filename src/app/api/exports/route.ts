@@ -22,5 +22,5 @@ export async function GET() {
         "Content-Disposition": 'attachment; filename="applications-export.csv"',
       },
     });
-  });
+  }, { operation: "exports.applications_csv" });
 }

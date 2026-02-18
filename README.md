@@ -4,7 +4,7 @@ Spanish-first MVP for UWC Peru selection management with:
 - Applicant mode (Stage 1 document submission)
 - Admin mode (validation + stage management)
 - Two-stage flow (`documents` -> `exam_placeholder`)
-- Structured logs, audit trail, Sentry hooks, and reportable error IDs
+- Structured runtime logs (Cloudflare-ready), audit trail, and reportable error IDs
 
 ## Tech Stack
 - Next.js 16 + TypeScript + Tailwind
@@ -94,6 +94,14 @@ If OAuth keys are not ready yet:
 - `NEXT_PUBLIC_DEMO_ADMIN_EMAIL`
 - `NEXT_PUBLIC_DEMO_APPLICANT_EMAIL`
 - `NEXT_PUBLIC_DEMO_PASSWORD`
+
+## Observability
+- Runtime logs:
+  - Local development: emitted to terminal (`bun run dev`).
+  - Cloudflare environments: same structured logs are captured in Cloudflare Logs / Log Explorer.
+- Business audit:
+  - Critical actions are stored in `audit_events` in Supabase for process accountability.
+- See `/Users/dafirebanks/Projects/uwc-platforms/docs/OBSERVABILITY.md` for commands and retention guidance.
 
 ## Test Commands
 ```bash

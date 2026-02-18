@@ -60,5 +60,5 @@ export async function POST(
       token: data.token,
       signedUrl: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/upload/sign/application-documents/${objectPath}?token=${data.token}`,
     });
-  });
+  }, { operation: "applications.upload_url.create" });
 }

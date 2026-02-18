@@ -4,8 +4,8 @@
 - Frontend/API: Next.js App Router (TypeScript)
 - UI: Material UI + custom theme layer
 - Auth/DB/Storage: Supabase
-- Error tracking: Sentry
-- Logging: structured server logs + `audit_events` table
+- Runtime logging: structured server logs to stdout (local terminal + Cloudflare Logs)
+- Audit logging: `audit_events` table for business-critical actions
 - Runtime/package manager: Bun
 
 ## High-Level Components
