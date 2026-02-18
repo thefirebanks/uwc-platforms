@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { Button, Card, CardContent, Stack, Typography } from "@mui/material";
 import type { Application, SelectionProcess } from "@/types/domain";
 import { StageBadge } from "@/components/stage-badge";
@@ -75,7 +74,7 @@ export function ApplicantProcessesDashboard({
 
                       <Stack direction="row" spacing={1}>
                         {application ? (
-                          <Button component={Link} href={`/applicant/process/${process.id}`} variant="contained">
+                          <Button href={`/applicant/process/${process.id}`} variant="contained">
                             Abrir postulación
                           </Button>
                         ) : reachedLimit ? (
@@ -83,7 +82,7 @@ export function ApplicantProcessesDashboard({
                             Límite alcanzado
                           </Button>
                         ) : (
-                          <Button component={Link} href={`/applicant/process/${process.id}`} variant="contained">
+                          <Button href={`/applicant/process/${process.id}`} variant="contained">
                             Iniciar postulación
                           </Button>
                         )}
