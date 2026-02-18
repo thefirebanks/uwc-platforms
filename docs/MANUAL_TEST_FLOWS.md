@@ -144,35 +144,36 @@ Expected:
 1. Login as admin and create a new process from `/admin`.
 2. Open that process (`Gestionar proceso`).
 3. Verify `Plantillas de etapas` shows Stage 1 and Stage 2 preloaded.
-4. Edit `Nombre de etapa`, `Hito`, and `Fecha objetivo`.
+4. Edit `Nombre de etapa` and `Hito`.
 5. Click `Guardar plantillas`.
 
 Expected:
 - New processes auto-generate two stage templates.
 - Edited template fields persist after page refresh.
 - Audit log records `cycle.templates_updated`.
+- Date edits are handled only in `Configuración de etapas` (no duplicated date input in template rows).
 
-## Flow 15: Applicant Process Timeline View
+## Flow 15: Applicant Stage Context View
 1. Login as applicant and open `/applicant/process/:cycleId`.
-2. Locate card `Ruta del proceso`.
-3. Confirm stage labels, milestones, and target dates match admin edits.
+2. Confirm page header shows `Cierre de etapa` date for current stage.
+3. Confirm no extra full-process timeline card is rendered.
 
 Expected:
-- Applicant can view process milestones without admin access.
-- Timeline reflects latest admin template configuration.
+- Applicant sees only current-stage context (minimal information principle).
+- Stage close date reflects process configuration from admin.
 
 ## Flow 16: Admin Stage Field Builder
 1. Login as admin and open `/admin/process/:cycleId`.
 2. In `Plantillas de etapas`, click `Editar campos` for Stage 1.
 3. Add one field, edit one existing label, mark one field optional/required, and remove one field.
 4. Reorder fields (drag and drop or `mover arriba/abajo` buttons).
-5. Use `Insertar campo aquí` between two existing fields.
+5. Use `+` controls (`Agregar campo en posición ...`) between two existing fields.
 6. Click `Guardar configuración`.
 7. Refresh page and verify edits persist.
 
 Expected:
 - Stage field list supports add/remove/edit and required toggle.
-- Stage field list supports ordering (drag/move controls) and insertion between rows.
+- Stage field list supports ordering (drag/move controls) and insertion between rows with explicit `+` controls.
 - Save succeeds with visible success message.
 - Audit includes `cycle.stage_config_updated`.
 
@@ -196,6 +197,7 @@ Expected:
 Expected:
 - Automation template edits persist.
 - Submit trigger queues communication log using configured template.
+- If queueing fails, submission still completes and audit metadata includes `automationQueueFailed=true`.
 
 ## Flow 19: Communication Queue Lifecycle
 1. Login as admin and open `/admin/process/:cycleId`.
@@ -229,3 +231,56 @@ Expected:
 - OCR run persists a history row per execution.
 - OCR history remains visible after refresh.
 - Admin can use OCR output for quick document triage/debugging.
+
+## Flow 21: Dark Mode Toggle
+1. Open `/`, `/login`, or any dashboard page.
+2. Click `Alternar modo oscuro`.
+3. Verify colors switch immediately.
+4. Reload page and confirm selected mode persists.
+5. Navigate between home/login/admin/applicant and confirm mode remains consistent.
+
+## Flow 22: Applicant Browser Tampering Attempt
+1. Login as applicant demo.
+2. Open browser console and run:
+```js
+await fetch("/api/audit");
+await fetch("/api/communications/process", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({})
+});
+await fetch("/api/applications/00000000-0000-0000-0000-000000000000/validate", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ status: "eligible", notes: "test" })
+});
+```
+3. Verify all responses are `403`.
+4. Verify terminal logs contain matching `requestId` for each denied attempt.
+
+Expected:
+- Applicant cannot trigger admin actions via direct API calls.
+- Response includes clear permission-safe error message.
+- Denied attempts are observable in structured logs.
+
+Expected:
+- Toggle is always available (public pages + dashboard nav).
+- Theme persists across reloads via local storage.
+- No hydration or console errors when mode changes and page reloads.
+
+## Flow 22: Privilege Escalation Attempts (Applicant)
+1. Login as applicant.
+2. From browser console, try calling admin API endpoints directly:
+- `POST /api/applications/:id/transition`
+- `PATCH /api/cycles/:id`
+- `PATCH /api/cycles/:id/stages/documents/config`
+3. Using Supabase JS in console, attempt direct table mutations:
+- update own `profiles.role` to `admin`
+- update own `applications.stage_code` or `applications.validation_notes`
+- insert `recommendation_requests` for an application that is not yours
+
+Expected:
+- Admin endpoints return `403`.
+- Direct profile role change is rejected by RLS (`profiles_update_self` guard).
+- Applicant direct application privilege fields are blocked by trigger/RLS guards.
+- Cross-application recommendation inserts are rejected by RLS ownership check.

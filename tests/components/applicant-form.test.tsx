@@ -56,21 +56,10 @@ describe("ApplicantApplicationForm", () => {
   });
 
   it("shows previously registered recommenders from API", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          recommenders: [
-            { email: "mentor@example.com" },
-            { email: "amigo@example.com" },
-          ],
-        }),
-        { status: 200 },
-      ),
-    );
-
     render(
       <ApplicantApplicationForm
         cycleId="cycle-2"
+        initialRecommenders={["mentor@example.com", "amigo@example.com"]}
         existingApplication={{
           id: "app-2",
           applicant_id: "user-1",

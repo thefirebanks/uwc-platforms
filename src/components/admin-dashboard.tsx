@@ -183,7 +183,7 @@ export function AdminDashboard({
           id: template.id,
           stageLabel: template.stage_label,
           milestoneLabel: template.milestone_label,
-          dueAt: toIsoDate(toDateInputValue(template.due_at)) ?? null,
+          dueAt: template.due_at,
           sortOrder: template.sort_order,
         })),
       }),
@@ -413,20 +413,13 @@ export function AdminDashboard({
 
   function updateTemplate(
     templateId: string,
-    field: "stage_label" | "milestone_label" | "due_at",
+    field: "stage_label" | "milestone_label",
     value: string,
   ) {
     setTemplates((current) =>
       current.map((template) => {
         if (template.id !== templateId) {
           return template;
-        }
-
-        if (field === "due_at") {
-          return {
-            ...template,
-            due_at: value ? `${value}T00:00:00.000Z` : null,
-          };
         }
 
         return {
@@ -518,16 +511,13 @@ export function AdminDashboard({
         <CardContent>
           <Typography variant="h6">Plantillas de etapas</Typography>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Personaliza etiquetas y hitos por etapa para este proceso anual.
+            Personaliza etiquetas e hitos por etapa. Las fechas se gestionan en la sección
+            `Configuración de etapas`.
           </Typography>
           <Stack spacing={2}>
             {templates.map((template) => (
-              <Stack
-                key={template.id}
-                direction={{ xs: "column", md: "row" }}
-                spacing={1.5}
-                alignItems={{ md: "center" }}
-              >
+              <Box key={template.id} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 1.5 }}>
+                <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
                 <Chip
                   label={template.stage_code === "documents" ? "Stage 1" : "Stage 2"}
                   color={template.stage_code === "documents" ? "primary" : "default"}
@@ -545,21 +535,17 @@ export function AdminDashboard({
                   onChange={(event) => updateTemplate(template.id, "milestone_label", event.target.value)}
                   fullWidth
                 />
-                <TextField
-                  label="Fecha objetivo"
-                  type="date"
-                  value={toDateInputValue(template.due_at)}
-                  onChange={(event) => updateTemplate(template.id, "due_at", event.target.value)}
-                  InputLabelProps={{ shrink: true }}
-                />
                 <Button
                   component={Link}
                   href={`/admin/process/${cycle.id}/stage/${template.stage_code}`}
                   variant="outlined"
+                  prefetch
+                  sx={{ minWidth: 132 }}
                 >
                   Editar campos
                 </Button>
-              </Stack>
+                </Stack>
+              </Box>
             ))}
           </Stack>
           <Button variant="outlined" sx={{ mt: 2 }} onClick={saveStageTemplates}>

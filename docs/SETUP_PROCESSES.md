@@ -21,6 +21,8 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
   - `supabase/migrations/20260218004000_add_stage_form_and_automation_configs.sql`
   - `supabase/migrations/20260218005000_add_communications_lifecycle_and_ocr_checks.sql`
+  - `supabase/migrations/20260218008000_fix_current_user_role_security_definer.sql`
+  - `supabase/migrations/20260218009000_harden_rbac_and_applicant_write_guards.sql`
 ```bash
 sbu db push
 ```
@@ -108,3 +110,19 @@ bun run dev
   - `codex/mvp-applicant-flow`
   - `codex/mvp-admin-stage-management`
   - `codex/mvp-observability-hardening`
+
+## 9) Test Runner Baseline
+- Keep Vitest stack on:
+  - `vitest@2.1.8`
+  - `@vitest/ui@2.1.8`
+  - `@vitest/coverage-v8@2.1.8`
+- Reason:
+  - `vitest@3.x` pulls `vite@7.x` and `esbuild@0.27.3`; in this project environment that esbuild binary can hang, which blocks all tests.
+- Verification command:
+```bash
+bun run test
+```
+- Security E2E verification (requires app running on `http://localhost:3000`):
+```bash
+bun run test:e2e tests/e2e/access-control.spec.ts
+```

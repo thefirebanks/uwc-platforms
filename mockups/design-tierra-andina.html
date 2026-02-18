@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tierra Andina - Applicant Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&family=Source+Sans+3:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --sienna: #A0522D;
+      --sienna-light: #CD853F;
+      --sienna-dark: #7A3B1D;
+      --slate: #2F4F4F;
+      --parchment: #FAF8F5;
+      --cream: #F5F0E8;
+      --paper: #FFFFFF;
+      --ink: #1C1410;
+      --muted: #5C4F47;
+      --success: #2D5A27;
+      --warning: #B8860B;
+    }
+
+    body {
+      font-family: 'Source Sans 3', -apple-system, sans-serif;
+      background: linear-gradient(135deg, var(--parchment) 0%, var(--cream) 100%);
+      color: var(--ink);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* Navigation */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 48px;
+      background: var(--paper);
+      border-bottom: 1px solid rgba(28, 20, 16, 0.08);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      font-family: 'Libre Baskerville', serif;
+      font-size: 1.375rem;
+      color: var(--sienna);
+      letter-spacing: -0.01em;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 32px;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 0.8125rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding-bottom: 4px;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .nav-links a:hover {
+      color: var(--ink);
+    }
+
+    .nav-links a.active {
+      color: var(--sienna);
+      border-bottom-color: var(--sienna);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 4px;
+      background: var(--sienna);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: white;
+    }
+
+    /* Main Content */
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 56px 24px;
+    }
+
+    .page-header {
+      margin-bottom: 48px;
+    }
+
+    .page-header h1 {
+      font-family: 'Libre Baskerville', serif;
+      font-size: 2.25rem;
+      font-weight: 400;
+      margin-bottom: 6px;
+      color: var(--ink);
+    }
+
+    .page-header h1::after {
+      content: '';
+      display: block;
+      width: 48px;
+      height: 3px;
+      background: var(--sienna);
+      margin-top: 12px;
+    }
+
+    .page-header p {
+      color: var(--muted);
+      font-size: 1rem;
+      margin-top: 16px;
+    }
+
+    /* Status Banner */
+    .status-banner {
+      background: var(--cream);
+      border-left: 3px solid var(--sienna);
+      padding: 18px 24px;
+      margin-bottom: 40px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .status-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2px solid var(--sienna);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .status-icon::after {
+      content: '';
+      width: 8px;
+      height: 8px;
+      background: var(--sienna);
+      border-radius: 50%;
+    }
+
+    .status-banner span {
+      font-size: 0.9375rem;
+      color: var(--ink);
+    }
+
+    /* Progress Steps */
+    .progress-steps {
+      display: flex;
+      margin-bottom: 48px;
+      border: 1px solid rgba(28, 20, 16, 0.08);
+      background: var(--paper);
+    }
+
+    .step {
+      flex: 1;
+      padding: 20px 24px;
+      border-right: 1px solid rgba(28, 20, 16, 0.08);
+      position: relative;
+    }
+
+    .step:last-child {
+      border-right: none;
+    }
+
+    .step.completed {
+      background: var(--cream);
+    }
+
+    .step.current {
+      border-left: 3px solid var(--sienna);
+    }
+
+    .step-number {
+      font-family: 'Libre Baskerville', serif;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+      letter-spacing: 0.05em;
+    }
+
+    .step.current .step-number {
+      color: var(--sienna);
+    }
+
+    .step-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    /* Cards */
+    .card {
+      background: var(--paper);
+      border: 1px solid rgba(28, 20, 16, 0.08);
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(28, 20, 16, 0.04);
+    }
+
+    .card-header {
+      padding: 20px 28px;
+      border-bottom: 1px solid rgba(28, 20, 16, 0.06);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-header h2 {
+      font-family: 'Libre Baskerville', serif;
+      font-size: 1.125rem;
+      font-weight: 400;
+    }
+
+    .card-content {
+      padding: 28px;
+    }
+
+    /* Form Grid */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .form-group.full-width {
+      grid-column: span 2;
+    }
+
+    .form-group label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      padding: 14px 16px;
+      border: 1.5px solid rgba(28, 20, 16, 0.12);
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 1rem;
+      background: var(--paper);
+      transition: all 0.2s;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--sienna);
+      box-shadow: 0 0 0 3px rgba(160, 82, 45, 0.08);
+    }
+
+    .form-group textarea {
+      min-height: 140px;
+      resize: vertical;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 12px 24px;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      letter-spacing: 0.02em;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--sienna);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: var(--sienna-dark);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1.5px solid rgba(28, 20, 16, 0.15);
+      color: var(--ink);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--sienna);
+      color: var(--sienna);
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      padding: 20px 28px;
+      background: var(--cream);
+      border-top: 1px solid rgba(28, 20, 16, 0.06);
+    }
+
+    /* Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 5px 12px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-radius: 3px;
+    }
+
+    .badge.complete {
+      background: rgba(45, 90, 39, 0.1);
+      color: var(--success);
+    }
+
+    .badge.progress {
+      background: rgba(160, 82, 45, 0.1);
+      color: var(--sienna);
+    }
+
+    .badge.pending {
+      background: var(--cream);
+      color: var(--muted);
+    }
+
+    /* File Upload */
+    .file-upload {
+      border: 2px dashed rgba(28, 20, 16, 0.15);
+      border-radius: 4px;
+      padding: 40px;
+      text-align: center;
+      background: var(--parchment);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .file-upload:hover {
+      border-color: var(--sienna);
+      background: rgba(160, 82, 45, 0.04);
+    }
+
+    .file-upload-icon {
+      font-size: 1.5rem;
+      margin-bottom: 12px;
+      color: var(--muted);
+    }
+
+    .file-upload-text {
+      font-size: 0.9375rem;
+      color: var(--muted);
+    }
+
+    .file-upload-text strong {
+      color: var(--sienna);
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="logo">UWC Selection</div>
+    <div class="nav-links">
+      <a href="#" class="active">Applications</a>
+      <a href="#">Documents</a>
+      <a href="#">Messages</a>
+    </div>
+    <div class="nav-right">
+      <div class="avatar">MR</div>
+    </div>
+  </nav>
+
+  <main>
+    <div class="page-header">
+      <h1>Your Application</h1>
+      <p>Selection Cycle 2025 — Complete all sections to submit your application</p>
+    </div>
+
+    <div class="status-banner">
+      <div class="status-icon"></div>
+      <span>Application in progress — 2 of 4 sections completed</span>
+    </div>
+
+    <div class="progress-steps">
+      <div class="step completed">
+        <div class="step-number">Step I</div>
+        <div class="step-title">Personal Info</div>
+      </div>
+      <div class="step completed">
+        <div class="step-number">Step II</div>
+        <div class="step-title">Academic History</div>
+      </div>
+      <div class="step current">
+        <div class="step-number">Step III</div>
+        <div class="step-title">Essays</div>
+      </div>
+      <div class="step">
+        <div class="step-number">Step IV</div>
+        <div class="step-title">Documents</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Personal Information</h2>
+        <span class="badge complete">Completed</span>
+      </div>
+      <div class="card-content">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" value="María Rodriguez" />
+          </div>
+          <div class="form-group">
+            <label>Date of Birth</label>
+            <input type="date" value="2007-03-15" />
+          </div>
+          <div class="form-group">
+            <label>Nationality</label>
+            <input type="text" value="Peruvian" />
+          </div>
+          <div class="form-group">
+            <label>Current School</label>
+            <input type="text" value="Colegio San Agustín" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Essay Response</h2>
+        <span class="badge progress">In Progress</span>
+      </div>
+      <div class="card-content">
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>What drives your interest in becoming a UWC student?</label>
+            <textarea placeholder="Share your motivations, experiences, and aspirations..."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-secondary">Save Draft</button>
+        <button class="btn btn-primary">Continue</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Documents</h2>
+        <span class="badge pending">Not Started</span>
+      </div>
+      <div class="card-content">
+        <div class="file-upload">
+          <div class="file-upload-icon">↑</div>
+          <div class="file-upload-text">
+            <strong>Click to upload</strong> or drag and drop<br>
+            PDF, JPG, PNG up to 10MB
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

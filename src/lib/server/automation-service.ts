@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
 import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
 import { validateRequiredFiles, validateStagePayload } from "@/lib/stages/form-schema";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/supabase";
 import type { StageAutomationTrigger, StageCode } from "@/types/domain";
 
@@ -120,8 +121,9 @@ async function queueAutomationCommunication({
 
   const subject = renderTemplate(automation.template_subject, contextValues);
   const body = renderTemplate(automation.template_body, contextValues);
+  const adminSupabase = getSupabaseAdminClient();
 
-  const { error: insertError } = await supabase.from("communication_logs").insert({
+  const { error: insertError } = await adminSupabase.from("communication_logs").insert({
     application_id: application.id,
     template_key: `${automation.stage_code}.${automation.trigger_event}`,
     trigger_event: automation.trigger_event,

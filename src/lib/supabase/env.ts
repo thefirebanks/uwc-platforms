@@ -15,3 +15,19 @@ export function getSupabaseEnv() {
 
   return { url, anonKey };
 }
+
+export function getSupabaseAdminEnv() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const secretKey = process.env.SUPABASE_SECRET_KEY;
+
+  if (!url || !secretKey) {
+    throw new AppError({
+      message: "Supabase admin env vars missing",
+      userMessage:
+        "Falta configuración del servidor. Contacta al administrador con este error.",
+      status: 500,
+    });
+  }
+
+  return { url, secretKey };
+}

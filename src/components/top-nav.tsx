@@ -4,14 +4,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppBar, Box, Button, Toolbar, Typography } from "@mui/material";
 import type { AppRole } from "@/types/domain";
-import { getSupabaseBrowserClient } from "@/lib/supabase/browser";
+import {
+  clearSupabaseBrowserSessionCache,
+  getSupabaseBrowserClient,
+  resetSupabaseBrowserClient,
+} from "@/lib/supabase/browser";
+import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 
 export function TopNav({ role }: { role: AppRole }) {
   const router = useRouter();
 
   async function logout() {
     const supabase = getSupabaseBrowserClient();
-    await supabase.auth.signOut();
+    await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
+    clearSupabaseBrowserSessionCache();
+    resetSupabaseBrowserClient();
     router.push("/login");
     router.refresh();
   }
@@ -48,6 +55,9 @@ export function TopNav({ role }: { role: AppRole }) {
           ) : (
             <NavLink href="/applicant" label="Procesos" />
           )}
+        </Box>
+        <Box sx={{ mr: 1.5 }}>
+          <ThemeModeToggle />
         </Box>
         <Typography
           variant="body2"
