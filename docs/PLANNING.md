@@ -24,7 +24,11 @@
   - initialize stage templates automatically when creating the new yearly process ✅
   - configurable milestones and labels per stage ✅
   - applicant-facing process timeline visibility ✅
-  - process-level reporting rollups
+  - process-level reporting rollups ✅
+- Add admin stage builder + automation control
+  - configurable stage fields (add/remove/edit required fields) ✅
+  - dynamic applicant form rendering from stage schema ✅
+  - configurable stage email automations with trigger templates ✅
 - Expand communication reliability (delivery status lifecycle)
 - OCR workflow hardening and confidence scoring visibility
 

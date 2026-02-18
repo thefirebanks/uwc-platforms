@@ -5,7 +5,11 @@ import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import type { Database } from "@/types/supabase";
-import { buildDefaultCycleStageTemplates } from "@/lib/stages/templates";
+import {
+  buildDefaultCycleStageFields,
+  buildDefaultCycleStageTemplates,
+  buildDefaultStageAutomationTemplates,
+} from "@/lib/stages/templates";
 
 type CycleRow = Database["public"]["Tables"]["cycles"]["Row"];
 type ApplicationCycleRow = Pick<Database["public"]["Tables"]["applications"]["Row"], "cycle_id">;
@@ -155,6 +159,32 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      const { error: fieldsError } = await supabase
+        .from("cycle_stage_fields")
+        .insert(buildDefaultCycleStageFields({ cycleId: cycle.id }));
+
+      if (fieldsError) {
+        throw new AppError({
+          message: "Failed creating default stage fields",
+          userMessage: "El proceso se creó sin campos base. Intenta nuevamente.",
+          status: 500,
+          details: fieldsError,
+        });
+      }
+
+      const { error: automationsError } = await supabase
+        .from("stage_automation_templates")
+        .insert(buildDefaultStageAutomationTemplates({ cycleId: cycle.id }));
+
+      if (automationsError) {
+        throw new AppError({
+          message: "Failed creating default stage automations",
+          userMessage: "El proceso se creó sin automatizaciones base. Intenta nuevamente.",
+          status: 500,
+          details: automationsError,
+        });
+      }
+
       if (parsed.data.isActive) {
         await supabase.from("cycles").update({ is_active: false }).neq("id", cycle.id);
         await supabase.from("cycles").update({ is_active: true }).eq("id", cycle.id);
@@ -170,6 +200,8 @@ export async function POST(request: NextRequest) {
           year: parsed.data.year,
           isActive: parsed.data.isActive,
           templatesCreated: defaultTemplates.length,
+          fieldsCreated: 7,
+          automationsCreated: 2,
         },
         requestId,
       });

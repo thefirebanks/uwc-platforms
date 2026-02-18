@@ -8,11 +8,14 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - validation rules
   - stage transition logic
   - cycle stage template bootstrap rules
+  - stage dynamic form validation rules
+  - automation pre-submit checks
   - role resolution logic
   - centralized error handling
 - Component tests:
   - applicant form behavior
   - applicant process dashboard behavior
+  - admin stage config editor behavior
   - admin dashboard actions
   - admin process dashboard behavior
   - error callout/reporting UI
@@ -30,6 +33,10 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/unit/application-validation.test.ts`
 - Stage template bootstrap:
   - `tests/unit/stage-templates.test.ts`
+- Stage dynamic validation:
+  - `tests/unit/stage-form-schema.test.ts`
+- Automation pre-submit checks:
+  - `tests/unit/automation-service.test.ts`
 - Stage transitions:
   - `tests/unit/stage-transition.test.ts`
   - `tests/integration/transition-application.test.ts`
@@ -42,6 +49,7 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/components/applicant-processes-dashboard.test.tsx`
 - Admin UI:
   - `tests/components/admin-dashboard.test.tsx`
+  - `tests/components/stage-config-editor.test.tsx`
   - `tests/components/admin-processes-dashboard.test.tsx`
   - `tests/components/admin-audit-log.test.tsx`
 - Error UI:

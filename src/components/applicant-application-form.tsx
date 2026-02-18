@@ -13,28 +13,40 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
-import { applicationSchema, type ApplicationInput } from "@/lib/validation/application";
-import type { Application, CycleStageTemplate } from "@/types/domain";
+import type { Application, CycleStageField, CycleStageTemplate } from "@/types/domain";
 import { StageBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
+import { validateStagePayload } from "@/lib/stages/form-schema";
+import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
 
 interface ApiError {
   message: string;
   errorId?: string;
 }
 
+const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
+const EMPTY_STAGE_TEMPLATES: CycleStageTemplate[] = [];
+
+function getPayloadValue(payload: Application["payload"], key: string) {
+  const raw = payload?.[key];
+  if (raw === null || raw === undefined) {
+    return "";
+  }
+  return String(raw);
+}
+
 export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
   cycleName,
-  cycleTemplates = [],
+  cycleTemplates,
+  stageFields,
 }: {
   existingApplication: Application | null;
   cycleId: string;
   cycleName?: string;
   cycleTemplates?: CycleStageTemplate[];
+  stageFields?: CycleStageField[];
 }) {
   const LOCKED_STATUSES = new Set<Application["status"]>([
     "submitted",
@@ -42,53 +54,65 @@ export function ApplicantApplicationForm({
     "ineligible",
     "advanced",
   ]);
+
   const [application, setApplication] = useState<Application | null>(existingApplication);
   const [error, setError] = useState<ApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [recommendationEmails, setRecommendationEmails] = useState("mentor@example.com, amigo@example.com");
   const [registeredRecommenders, setRegisteredRecommenders] = useState<string[]>([]);
   const [loadingRecommenders, setLoadingRecommenders] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [uploadingFieldKey, setUploadingFieldKey] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(false);
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
 
   const isLocked = application ? LOCKED_STATUSES.has(application.status) : false;
   const isEditingEnabled = !isLocked || isEditMode;
-  const identificationPath =
-    ((application?.files as Record<string, string> | undefined)?.identificationDocument ?? null) as
-      | string
-      | null;
-  const identificationFileName = identificationPath
-    ? identificationPath.split("/").at(-1)?.replace(/^\d+-/, "") ?? identificationPath
-    : null;
+  const providedStageFields = stageFields ?? EMPTY_STAGE_FIELDS;
+  const providedCycleTemplates = cycleTemplates ?? EMPTY_STAGE_TEMPLATES;
 
-  const defaultValues = useMemo<ApplicationInput>(() => {
+  const effectiveStageFields = useMemo(() => {
+    if (providedStageFields.length > 0) {
+      return providedStageFields;
+    }
+
+    return buildFallbackStageFields(cycleId);
+  }, [cycleId, providedStageFields]);
+
+  const orderedStageFields = useMemo(
+    () => [...effectiveStageFields].sort((a, b) => a.sort_order - b.sort_order),
+    [effectiveStageFields],
+  );
+
+  const formStageFields = useMemo(
+    () => orderedStageFields.filter((field) => field.is_active && field.field_type !== "file"),
+    [orderedStageFields],
+  );
+
+  const fileStageFields = useMemo(
+    () => orderedStageFields.filter((field) => field.is_active && field.field_type === "file"),
+    [orderedStageFields],
+  );
+
+  useEffect(() => {
     const payload = application?.payload ?? {};
-    return {
-      fullName: String(payload.fullName ?? ""),
-      dateOfBirth: String(payload.dateOfBirth ?? ""),
-      nationality: String(payload.nationality ?? "Peruana"),
-      schoolName: String(payload.schoolName ?? ""),
-      gradeAverage: Number(payload.gradeAverage ?? 0),
-      essay: String(payload.essay ?? ""),
-    };
-  }, [application]);
+    const nextValues: Record<string, string> = {};
 
-  const {
-    control,
-    handleSubmit,
-    formState: { errors, isSubmitting },
-  } = useForm<ApplicationInput>({
-    resolver: zodResolver(applicationSchema),
-    defaultValues,
-  });
+    for (const field of formStageFields) {
+      nextValues[field.field_key] = getPayloadValue(payload, field.field_key);
+    }
+
+    setFormValues(nextValues);
+  }, [application?.id, application?.payload, formStageFields]);
 
   useEffect(() => {
     if (!application?.id) {
       setRegisteredRecommenders([]);
       return;
     }
-    const applicationId = application.id;
 
+    const applicationId = application.id;
     let isMounted = true;
 
     async function loadRecommenders() {
@@ -126,29 +150,49 @@ export function ApplicantApplicationForm({
     };
   }, [application?.id]);
 
-  async function save(values: ApplicationInput) {
+  async function saveDraft() {
     setError(null);
     setSuccessMessage(null);
 
-    const response = await fetch("/api/applications", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...values,
-        cycleId,
-      }),
+    const validation = validateStagePayload({
+      fields: formStageFields,
+      payload: formValues,
+      skipFileValidation: true,
     });
 
-    const body = await response.json();
-
-    if (!response.ok) {
-      setError(body);
+    if (!validation.isValid) {
+      setFieldErrors(validation.errors);
+      const firstError = Object.values(validation.errors)[0] ?? "Hay campos inválidos.";
+      setError({ message: firstError });
       return;
     }
 
-    setApplication(body.application);
-    setIsEditMode(false);
-    setSuccessMessage("Borrador guardado correctamente.");
+    setFieldErrors({});
+    setIsSavingDraft(true);
+
+    try {
+      const response = await fetch("/api/applications", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cycleId,
+          payload: validation.normalizedPayload,
+        }),
+      });
+
+      const body = await response.json();
+
+      if (!response.ok) {
+        setError(body);
+        return;
+      }
+
+      setApplication(body.application);
+      setIsEditMode(false);
+      setSuccessMessage("Borrador guardado correctamente.");
+    } finally {
+      setIsSavingDraft(false);
+    }
   }
 
   async function submitApplication() {
@@ -156,16 +200,13 @@ export function ApplicantApplicationForm({
     setSuccessMessage(null);
 
     if (!application?.id) {
-      setError({
-        message: "Primero guarda tu borrador antes de enviar.",
-      });
+      setError({ message: "Primero guarda tu borrador antes de enviar." });
       return;
     }
 
     const response = await fetch(`/api/applications/${application.id}/submit`, {
       method: "POST",
     });
-
     const body = await response.json();
 
     if (!response.ok) {
@@ -182,9 +223,7 @@ export function ApplicantApplicationForm({
     setSuccessMessage(null);
 
     if (!application?.id) {
-      setError({
-        message: "Guarda tu postulación antes de registrar recomendadores.",
-      });
+      setError({ message: "Guarda tu postulación antes de registrar recomendadores." });
       return;
     }
 
@@ -206,7 +245,6 @@ export function ApplicantApplicationForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ applicationId: application.id, emails }),
     });
-
     const body = await response.json();
 
     if (!response.ok) {
@@ -218,6 +256,7 @@ export function ApplicantApplicationForm({
       Array.isArray(body.emails) && body.emails.length > 0
         ? (body.emails as string[])
         : emails.map((email) => email.toLowerCase());
+
     setRegisteredRecommenders(Array.from(new Set(normalizedResponseEmails)));
     const noun = body.count === 1 ? "recomendador" : "recomendadores";
     setSuccessMessage(
@@ -225,12 +264,11 @@ export function ApplicantApplicationForm({
     );
   }
 
-  async function uploadDocument(event: ChangeEvent<HTMLInputElement>) {
+  async function uploadDocument(fieldKey: string, event: ChangeEvent<HTMLInputElement>) {
     setError(null);
     setSuccessMessage(null);
 
     const file = event.target.files?.[0];
-
     if (!file || !application?.id) {
       return;
     }
@@ -243,7 +281,7 @@ export function ApplicantApplicationForm({
       return;
     }
 
-    setUploading(true);
+    setUploadingFieldKey(fieldKey);
 
     try {
       const signedUrlResponse = await fetch(`/api/applications/${application.id}/upload-url`, {
@@ -254,7 +292,6 @@ export function ApplicantApplicationForm({
           mimeType: file.type || "application/octet-stream",
         }),
       });
-
       const signedUrlBody = await signedUrlResponse.json();
 
       if (!signedUrlResponse.ok) {
@@ -271,9 +308,7 @@ export function ApplicantApplicationForm({
       });
 
       if (!uploadResponse.ok) {
-        setError({
-          message: "No se pudo subir el archivo al almacenamiento.",
-        });
+        setError({ message: "No se pudo subir el archivo al almacenamiento." });
         return;
       }
 
@@ -281,11 +316,10 @@ export function ApplicantApplicationForm({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          key: "identificationDocument",
+          key: fieldKey,
           path: signedUrlBody.path,
         }),
       });
-
       const associateBody = await associateResponse.json();
 
       if (!associateResponse.ok) {
@@ -296,7 +330,7 @@ export function ApplicantApplicationForm({
       setApplication(associateBody.application);
       setSuccessMessage("Documento subido correctamente.");
     } finally {
-      setUploading(false);
+      setUploadingFieldKey(null);
     }
   }
 
@@ -313,45 +347,45 @@ export function ApplicantApplicationForm({
             ) : null}
             <StageBadge stage={application?.stage_code ?? "documents"} />
           </Stack>
-            <Typography sx={{ mt: 1 }} color="text.secondary">
-              Llena todos los campos y guarda borrador para evitar perder información.
-            </Typography>
-            {isLocked && !isEditMode ? (
-              <Stack spacing={1} sx={{ mt: 2 }}>
-                <Typography color="text.secondary">
-                  Tu postulación ya fue enviada. Para cambiar datos, habilita edición manual.
-                </Typography>
-                <Box>
-                  <Button
-                    variant="outlined"
-                    onClick={() => {
-                      setError(null);
-                      setSuccessMessage("Edición habilitada. Guarda cambios y vuelve a enviar.");
-                      setIsEditMode(true);
-                    }}
-                  >
-                    Editar respuesta
-                  </Button>
-                </Box>
-              </Stack>
-            ) : null}
-            {isLocked && isEditMode ? (
-              <Box sx={{ mt: 2 }}>
+          <Typography sx={{ mt: 1 }} color="text.secondary">
+            Completa solo la información requerida para esta etapa.
+          </Typography>
+          {isLocked && !isEditMode ? (
+            <Stack spacing={1} sx={{ mt: 2 }}>
+              <Typography color="text.secondary">
+                Tu postulación ya fue enviada. Para cambiar datos, habilita edición manual.
+              </Typography>
+              <Box>
                 <Button
-                  variant="text"
+                  variant="outlined"
                   onClick={() => {
-                    setIsEditMode(false);
-                    setSuccessMessage("Edición cancelada.");
+                    setError(null);
+                    setSuccessMessage("Edición habilitada. Guarda cambios y vuelve a enviar.");
+                    setIsEditMode(true);
                   }}
                 >
-                  Cancelar edición
+                  Editar respuesta
                 </Button>
               </Box>
-            ) : null}
+            </Stack>
+          ) : null}
+          {isLocked && isEditMode ? (
+            <Box sx={{ mt: 2 }}>
+              <Button
+                variant="text"
+                onClick={() => {
+                  setIsEditMode(false);
+                  setSuccessMessage("Edición cancelada.");
+                }}
+              >
+                Cancelar edición
+              </Button>
+            </Box>
+          ) : null}
         </CardContent>
       </Card>
 
-      {cycleTemplates.length > 0 ? (
+      {providedCycleTemplates.length > 0 ? (
         <Card>
           <CardContent>
             <Typography variant="h6">Ruta del proceso</Typography>
@@ -359,16 +393,12 @@ export function ApplicantApplicationForm({
               Hitos y fechas referenciales de este proceso de selección.
             </Typography>
             <Stack spacing={1.2}>
-              {cycleTemplates.map((template) => (
-                <Box
-                  key={template.id}
-                  sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 1.5 }}
-                >
+              {providedCycleTemplates.map((template) => (
+                <Box key={template.id} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 1.5 }}>
                   <Typography fontWeight={700}>{template.stage_label}</Typography>
                   <Typography color="text.secondary">{template.milestone_label}</Typography>
                   <Typography variant="body2" color="text.secondary">
-                    Fecha objetivo:{" "}
-                    {template.due_at ? new Date(template.due_at).toLocaleDateString() : "No configurada"}
+                    Fecha objetivo: {template.due_at ? new Date(template.due_at).toLocaleDateString() : "No configurada"}
                   </Typography>
                 </Box>
               ))}
@@ -377,9 +407,7 @@ export function ApplicantApplicationForm({
         </Card>
       ) : null}
 
-      {error ? (
-        <ErrorCallout message={error.message} errorId={error.errorId} context="applicant_form" />
-      ) : null}
+      {error ? <ErrorCallout message={error.message} errorId={error.errorId} context="applicant_form" /> : null}
 
       {successMessage ? (
         <Box sx={{ p: 2, borderRadius: 2, bgcolor: "#DCFCE7" }}>
@@ -389,148 +417,98 @@ export function ApplicantApplicationForm({
 
       <Card>
         <CardContent>
-          <form onSubmit={handleSubmit(save)}>
-            <Grid container spacing={2}>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Controller
-                  name="fullName"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Nombre completo"
-                      fullWidth
-                      disabled={!isEditingEnabled}
-                      error={Boolean(errors.fullName)}
-                      helperText={errors.fullName?.message}
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Controller
-                  name="dateOfBirth"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Fecha de nacimiento"
-                      type="date"
-                      fullWidth
-                      disabled={!isEditingEnabled}
-                      InputLabelProps={{ shrink: true }}
-                      error={Boolean(errors.dateOfBirth)}
-                      helperText={errors.dateOfBirth?.message}
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Controller
-                  name="nationality"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Nacionalidad"
-                      fullWidth
-                      disabled={!isEditingEnabled}
-                      error={Boolean(errors.nationality)}
-                      helperText={errors.nationality?.message}
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Controller
-                  name="schoolName"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Colegio"
-                      fullWidth
-                      disabled={!isEditingEnabled}
-                      error={Boolean(errors.schoolName)}
-                      helperText={errors.schoolName?.message}
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid size={{ xs: 12, md: 6 }}>
-                <Controller
-                  name="gradeAverage"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      type="number"
-                      label="Promedio (0-20)"
-                      fullWidth
-                      disabled={!isEditingEnabled}
-                      inputProps={{ step: "0.1", min: 0, max: 20 }}
-                      error={Boolean(errors.gradeAverage)}
-                      helperText={errors.gradeAverage?.message}
-                      onChange={(event) => field.onChange(Number(event.target.value))}
-                    />
-                  )}
-                />
-              </Grid>
-              <Grid size={12}>
-                <Controller
-                  name="essay"
-                  control={control}
-                  render={({ field }) => (
-                    <TextField
-                      {...field}
-                      label="Ensayo personal"
-                      multiline
-                      minRows={6}
-                      fullWidth
-                      disabled={!isEditingEnabled}
-                      error={Boolean(errors.essay)}
-                      helperText={errors.essay?.message}
-                    />
-                  )}
-                />
-              </Grid>
-            </Grid>
-
-          </form>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Typography variant="h6">Documentos</Typography>
-          <Typography color="text.secondary" sx={{ mb: 1.5 }}>
-            Sube documento de identificación para validación inicial.
+          <Typography variant="h6" sx={{ mb: 2 }}>
+            Formulario de etapa
           </Typography>
-          <Button
-            variant="outlined"
-            component="label"
-            disabled={!application?.id || uploading || !isEditingEnabled}
-          >
-            {uploading ? "Subiendo..." : "Subir identificación"}
-            <input type="file" hidden onChange={uploadDocument} />
-          </Button>
-          {!application?.id ? (
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-              Guarda primero un borrador para habilitar la subida.
-            </Typography>
-          ) : null}
-          {identificationPath ? (
-            <Box sx={{ mt: 1.5 }}>
-              <Typography variant="body2" fontWeight={600}>
-                Documento actual: {identificationFileName}
-              </Typography>
-              <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
-                Ruta: {identificationPath}
-              </Typography>
-            </Box>
-          ) : null}
+          <Grid container spacing={2}>
+            {formStageFields.map((field) => (
+              <Grid key={field.id} size={field.field_type === "long_text" ? 12 : { xs: 12, md: 6 }}>
+                <TextField
+                  label={field.is_required ? `${field.field_label} *` : field.field_label}
+                  value={formValues[field.field_key] ?? ""}
+                  onChange={(event) => {
+                    const nextValue = event.target.value;
+                    setFormValues((current) => ({
+                      ...current,
+                      [field.field_key]: nextValue,
+                    }));
+                  }}
+                  type={
+                    field.field_type === "date"
+                      ? "date"
+                      : field.field_type === "number"
+                        ? "number"
+                        : field.field_type === "email"
+                          ? "email"
+                          : "text"
+                  }
+                  multiline={field.field_type === "long_text"}
+                  minRows={field.field_type === "long_text" ? 6 : undefined}
+                  fullWidth
+                  disabled={!isEditingEnabled}
+                  placeholder={field.placeholder ?? undefined}
+                  helperText={fieldErrors[field.field_key] ?? field.help_text}
+                  error={Boolean(fieldErrors[field.field_key])}
+                  InputLabelProps={field.field_type === "date" ? { shrink: true } : undefined}
+                />
+              </Grid>
+            ))}
+          </Grid>
         </CardContent>
       </Card>
+
+      {fileStageFields.length > 0 ? (
+        <Card>
+          <CardContent>
+            <Typography variant="h6">Documentos</Typography>
+            <Typography color="text.secondary" sx={{ mb: 1.5 }}>
+              Sube únicamente los archivos solicitados para esta etapa.
+            </Typography>
+            <Stack spacing={2}>
+              {fileStageFields.map((field) => {
+                const filePath =
+                  ((application?.files as Record<string, string> | undefined)?.[field.field_key] ?? null) as
+                    | string
+                    | null;
+                const fileName = filePath
+                  ? filePath.split("/").at(-1)?.replace(/^\d+-/, "") ?? filePath
+                  : null;
+
+                return (
+                  <Box key={field.id} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 2 }}>
+                    <Typography fontWeight={700}>{field.field_label}</Typography>
+                    {field.help_text ? <Typography color="text.secondary">{field.help_text}</Typography> : null}
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      sx={{ mt: 1.2 }}
+                      disabled={!application?.id || uploadingFieldKey === field.field_key || !isEditingEnabled}
+                    >
+                      {uploadingFieldKey === field.field_key ? "Subiendo..." : `Subir ${field.field_label}`}
+                      <input type="file" hidden onChange={(event) => uploadDocument(field.field_key, event)} />
+                    </Button>
+                    {!application?.id ? (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                        Guarda primero un borrador para habilitar la subida.
+                      </Typography>
+                    ) : null}
+                    {fileName ? (
+                      <Box sx={{ mt: 1.5 }}>
+                        <Typography variant="body2" fontWeight={600}>
+                          Documento actual: {fileName}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
+                          Ruta: {filePath}
+                        </Typography>
+                      </Box>
+                    ) : null}
+                  </Box>
+                );
+              })}
+            </Stack>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardContent>
@@ -581,8 +559,8 @@ export function ApplicantApplicationForm({
             Guarda cambios y envía solo cuando estés listo.
           </Typography>
           <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-            <Button variant="contained" onClick={handleSubmit(save)} disabled={isSubmitting || !isEditingEnabled}>
-              {isSubmitting ? <CircularProgress size={18} color="inherit" /> : "Guardar borrador"}
+            <Button variant="contained" onClick={saveDraft} disabled={isSavingDraft || !isEditingEnabled}>
+              {isSavingDraft ? <CircularProgress size={18} color="inherit" /> : "Guardar borrador"}
             </Button>
             <Button
               variant="outlined"

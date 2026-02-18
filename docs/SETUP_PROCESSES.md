@@ -19,6 +19,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260218001000_add_audit_events_indexes.sql`
   - `supabase/migrations/20260218002000_add_cycle_stage_configuration.sql`
   - `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
+  - `supabase/migrations/20260218004000_add_stage_form_and_automation_configs.sql`
 ```bash
 sbu db push
 ```

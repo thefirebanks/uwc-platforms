@@ -1,6 +1,8 @@
 export type AppRole = "admin" | "applicant";
 
 export type StageCode = "documents" | "exam_placeholder";
+export type StageFieldType = "short_text" | "long_text" | "number" | "date" | "email" | "file";
+export type StageAutomationTrigger = "application_submitted" | "stage_result";
 
 export type ApplicationStatus =
   | "draft"
@@ -62,6 +64,34 @@ export interface CycleStageTemplate {
   due_at: string | null;
   sort_order: number;
   created_at: string;
+}
+
+export interface CycleStageField {
+  id: string;
+  cycle_id: string;
+  stage_code: StageCode;
+  field_key: string;
+  field_label: string;
+  field_type: StageFieldType;
+  is_required: boolean;
+  placeholder: string | null;
+  help_text: string | null;
+  sort_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface StageAutomationTemplate {
+  id: string;
+  cycle_id: string;
+  stage_code: StageCode;
+  trigger_event: StageAutomationTrigger;
+  channel: "email";
+  is_enabled: boolean;
+  template_subject: string;
+  template_body: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface StageTransition {

@@ -158,3 +158,36 @@ Expected:
 Expected:
 - Applicant can view process milestones without admin access.
 - Timeline reflects latest admin template configuration.
+
+## Flow 16: Admin Stage Field Builder
+1. Login as admin and open `/admin/process/:cycleId`.
+2. In `Plantillas de etapas`, click `Editar campos` for Stage 1.
+3. Add one field, edit one existing label, mark one field optional/required, and remove one field.
+4. Click `Guardar configuración`.
+5. Refresh page and verify edits persist.
+
+Expected:
+- Stage field list supports add/remove/edit and required toggle.
+- Save succeeds with visible success message.
+- Audit includes `cycle.stage_config_updated`.
+
+## Flow 17: Applicant Dynamic Form Rendering
+1. Login as admin and rename one Stage 1 field label from stage config page.
+2. Login as applicant and open `/applicant/process/:cycleId`.
+3. Verify the renamed field appears with updated label.
+4. Try saving with a required field empty and verify validation error.
+
+Expected:
+- Applicant sees form fields based on current stage configuration.
+- Required-field validation blocks invalid save attempts with clear messages.
+
+## Flow 18: Stage Automation Templates
+1. Login as admin and open `/admin/process/:cycleId/stage/documents`.
+2. Expand `Automatizaciones de correo (Avanzado)`.
+3. Enable `Postulación enviada` automation and edit subject/body with template variables.
+4. As applicant, submit a valid application.
+5. In Supabase, verify `communication_logs` row is queued with rendered subject/body.
+
+Expected:
+- Automation template edits persist.
+- Submit trigger queues communication log using configured template.
