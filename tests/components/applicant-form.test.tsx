@@ -1,8 +1,12 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApplicantApplicationForm } from "@/components/applicant-application-form";
 
 describe("ApplicantApplicationForm", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("keeps submit disabled until a draft exists", async () => {
     render(<ApplicantApplicationForm existingApplication={null} />);
 
@@ -11,6 +15,10 @@ describe("ApplicantApplicationForm", () => {
   });
 
   it("locks submitted forms until user enables edit mode", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ recommenders: [] }), { status: 200 }),
+    );
+
     render(
       <ApplicantApplicationForm
         existingApplication={{
@@ -43,5 +51,47 @@ describe("ApplicantApplicationForm", () => {
 
     expect(await screen.findByText("Edición habilitada. Guarda cambios y vuelve a enviar.")).toBeInTheDocument();
     expect(screen.getByLabelText("Nombre completo")).not.toBeDisabled();
+  });
+
+  it("shows previously registered recommenders from API", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          recommenders: [
+            { email: "mentor@example.com" },
+            { email: "amigo@example.com" },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <ApplicantApplicationForm
+        existingApplication={{
+          id: "app-2",
+          applicant_id: "user-1",
+          cycle_id: "cycle-1",
+          stage_code: "documents",
+          status: "draft",
+          payload: {
+            fullName: "Applicant Demo",
+            dateOfBirth: "2009-03-14",
+            nationality: "Peruana",
+            schoolName: "Colegio Demo",
+            gradeAverage: 16.2,
+            essay: "Este es un ensayo de prueba suficientemente largo para pasar la validación.",
+          },
+          files: {},
+          validation_notes: null,
+          error_report_count: 0,
+          created_at: "2026-02-18T20:00:00.000Z",
+          updated_at: "2026-02-18T20:00:00.000Z",
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("mentor@example.com")).toBeInTheDocument();
+    expect(screen.getByText("amigo@example.com")).toBeInTheDocument();
   });
 });

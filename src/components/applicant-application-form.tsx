@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Button,
@@ -41,6 +41,7 @@ export function ApplicantApplicationForm({
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [recommendationEmails, setRecommendationEmails] = useState("mentor@example.com, amigo@example.com");
   const [registeredRecommenders, setRegisteredRecommenders] = useState<string[]>([]);
+  const [loadingRecommenders, setLoadingRecommenders] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
 
@@ -74,6 +75,50 @@ export function ApplicantApplicationForm({
     resolver: zodResolver(applicationSchema),
     defaultValues,
   });
+
+  useEffect(() => {
+    if (!application?.id) {
+      setRegisteredRecommenders([]);
+      return;
+    }
+    const applicationId = application.id;
+
+    let isMounted = true;
+
+    async function loadRecommenders() {
+      setLoadingRecommenders(true);
+
+      try {
+        const response = await fetch(`/api/recommendations?applicationId=${applicationId}`);
+        const body = (await response.json()) as {
+          recommenders?: Array<{ email: string }>;
+        };
+
+        if (!isMounted || !response.ok) {
+          return;
+        }
+
+        const emails = Array.from(
+          new Set((body.recommenders ?? []).map((recommender) => recommender.email)),
+        );
+        setRegisteredRecommenders(emails);
+      } catch {
+        if (isMounted) {
+          setRegisteredRecommenders([]);
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingRecommenders(false);
+        }
+      }
+    }
+
+    void loadRecommenders();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [application?.id]);
 
   async function save(values: ApplicationInput) {
     setError(null);
@@ -160,7 +205,11 @@ export function ApplicantApplicationForm({
       return;
     }
 
-    setRegisteredRecommenders(emails);
+    const normalizedResponseEmails =
+      Array.isArray(body.emails) && body.emails.length > 0
+        ? (body.emails as string[])
+        : emails.map((email) => email.toLowerCase());
+    setRegisteredRecommenders(Array.from(new Set(normalizedResponseEmails)));
     const noun = body.count === 1 ? "recomendador" : "recomendadores";
     setSuccessMessage(
       `Se registraron ${body.count} ${noun}. Revisa la lista de correos confirmados abajo.`,
@@ -471,6 +520,16 @@ export function ApplicantApplicationForm({
                 <Chip key={email} label={email} />
               ))}
             </Stack>
+          ) : null}
+          {loadingRecommenders ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+              Cargando recomendadores guardados...
+            </Typography>
+          ) : null}
+          {!loadingRecommenders && application?.id && registeredRecommenders.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
+              Aún no hay recomendadores registrados para esta postulación.
+            </Typography>
           ) : null}
         </CardContent>
       </Card>
