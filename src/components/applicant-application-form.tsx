@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   CircularProgress,
   Grid,
   Stack,
@@ -29,11 +30,29 @@ export function ApplicantApplicationForm({
 }: {
   existingApplication: Application | null;
 }) {
+  const LOCKED_STATUSES = new Set<Application["status"]>([
+    "submitted",
+    "eligible",
+    "ineligible",
+    "advanced",
+  ]);
   const [application, setApplication] = useState<Application | null>(existingApplication);
   const [error, setError] = useState<ApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [recommendationEmails, setRecommendationEmails] = useState("mentor@example.com, amigo@example.com");
+  const [registeredRecommenders, setRegisteredRecommenders] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  const isLocked = application ? LOCKED_STATUSES.has(application.status) : false;
+  const isEditingEnabled = !isLocked || isEditMode;
+  const identificationPath =
+    ((application?.files as Record<string, string> | undefined)?.identificationDocument ?? null) as
+      | string
+      | null;
+  const identificationFileName = identificationPath
+    ? identificationPath.split("/").at(-1)?.replace(/^\d+-/, "") ?? identificationPath
+    : null;
 
   const defaultValues = useMemo<ApplicationInput>(() => {
     const payload = application?.payload ?? {};
@@ -74,6 +93,7 @@ export function ApplicantApplicationForm({
     }
 
     setApplication(body.application);
+    setIsEditMode(false);
     setSuccessMessage("Borrador guardado correctamente.");
   }
 
@@ -114,6 +134,14 @@ export function ApplicantApplicationForm({
       return;
     }
 
+    if (isLocked && !isEditMode) {
+      setError({
+        message:
+          "Tu postulación ya fue enviada. Haz clic en 'Editar respuesta' para habilitar cambios.",
+      });
+      return;
+    }
+
     const emails = recommendationEmails
       .split(",")
       .map((value) => value.trim())
@@ -132,8 +160,10 @@ export function ApplicantApplicationForm({
       return;
     }
 
+    setRegisteredRecommenders(emails);
+    const noun = body.count === 1 ? "recomendador" : "recomendadores";
     setSuccessMessage(
-      `Se registraron ${body.count} recomendadores. Usa tu proveedor de correo para enviar los links tokenizados.`,
+      `Se registraron ${body.count} ${noun}. Revisa la lista de correos confirmados abajo.`,
     );
   }
 
@@ -144,6 +174,14 @@ export function ApplicantApplicationForm({
     const file = event.target.files?.[0];
 
     if (!file || !application?.id) {
+      return;
+    }
+
+    if (isLocked && !isEditMode) {
+      setError({
+        message:
+          "Tu postulación ya fue enviada. Haz clic en 'Editar respuesta' para actualizar documentos.",
+      });
       return;
     }
 
@@ -212,11 +250,43 @@ export function ApplicantApplicationForm({
             <Typography variant="h5">Tu postulación UWC Perú</Typography>
             <StageBadge stage={application?.stage_code ?? "documents"} />
           </Stack>
-          <Typography sx={{ mt: 1 }} color="text.secondary">
-            Llena todos los campos y guarda borrador para evitar perder información.
-          </Typography>
-        </CardContent>
-      </Card>
+            <Typography sx={{ mt: 1 }} color="text.secondary">
+              Llena todos los campos y guarda borrador para evitar perder información.
+            </Typography>
+            {isLocked && !isEditMode ? (
+              <Stack spacing={1} sx={{ mt: 2 }}>
+                <Typography color="text.secondary">
+                  Tu postulación ya fue enviada. Para cambiar datos, habilita edición manual.
+                </Typography>
+                <Box>
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      setError(null);
+                      setSuccessMessage("Edición habilitada. Guarda cambios y vuelve a enviar.");
+                      setIsEditMode(true);
+                    }}
+                  >
+                    Editar respuesta
+                  </Button>
+                </Box>
+              </Stack>
+            ) : null}
+            {isLocked && isEditMode ? (
+              <Box sx={{ mt: 2 }}>
+                <Button
+                  variant="text"
+                  onClick={() => {
+                    setIsEditMode(false);
+                    setSuccessMessage("Edición cancelada.");
+                  }}
+                >
+                  Cancelar edición
+                </Button>
+              </Box>
+            ) : null}
+          </CardContent>
+        </Card>
 
       {error ? (
         <ErrorCallout message={error.message} errorId={error.errorId} context="applicant_form" />
@@ -241,6 +311,7 @@ export function ApplicantApplicationForm({
                       {...field}
                       label="Nombre completo"
                       fullWidth
+                      disabled={!isEditingEnabled}
                       error={Boolean(errors.fullName)}
                       helperText={errors.fullName?.message}
                     />
@@ -257,6 +328,7 @@ export function ApplicantApplicationForm({
                       label="Fecha de nacimiento"
                       type="date"
                       fullWidth
+                      disabled={!isEditingEnabled}
                       InputLabelProps={{ shrink: true }}
                       error={Boolean(errors.dateOfBirth)}
                       helperText={errors.dateOfBirth?.message}
@@ -273,6 +345,7 @@ export function ApplicantApplicationForm({
                       {...field}
                       label="Nacionalidad"
                       fullWidth
+                      disabled={!isEditingEnabled}
                       error={Boolean(errors.nationality)}
                       helperText={errors.nationality?.message}
                     />
@@ -288,6 +361,7 @@ export function ApplicantApplicationForm({
                       {...field}
                       label="Colegio"
                       fullWidth
+                      disabled={!isEditingEnabled}
                       error={Boolean(errors.schoolName)}
                       helperText={errors.schoolName?.message}
                     />
@@ -304,6 +378,7 @@ export function ApplicantApplicationForm({
                       type="number"
                       label="Promedio (0-20)"
                       fullWidth
+                      disabled={!isEditingEnabled}
                       inputProps={{ step: "0.1", min: 0, max: 20 }}
                       error={Boolean(errors.gradeAverage)}
                       helperText={errors.gradeAverage?.message}
@@ -323,6 +398,7 @@ export function ApplicantApplicationForm({
                       multiline
                       minRows={6}
                       fullWidth
+                      disabled={!isEditingEnabled}
                       error={Boolean(errors.essay)}
                       helperText={errors.essay?.message}
                     />
@@ -331,14 +407,6 @@ export function ApplicantApplicationForm({
               </Grid>
             </Grid>
 
-            <Stack direction="row" spacing={2} sx={{ mt: 3 }}>
-              <Button type="submit" variant="contained" disabled={isSubmitting}>
-                {isSubmitting ? <CircularProgress size={18} color="inherit" /> : "Guardar borrador"}
-              </Button>
-              <Button type="button" variant="outlined" onClick={submitApplication}>
-                Enviar postulación
-              </Button>
-            </Stack>
           </form>
         </CardContent>
       </Card>
@@ -349,7 +417,11 @@ export function ApplicantApplicationForm({
           <Typography color="text.secondary" sx={{ mb: 1.5 }}>
             Sube documento de identificación para validación inicial.
           </Typography>
-          <Button variant="outlined" component="label" disabled={!application?.id || uploading}>
+          <Button
+            variant="outlined"
+            component="label"
+            disabled={!application?.id || uploading || !isEditingEnabled}
+          >
             {uploading ? "Subiendo..." : "Subir identificación"}
             <input type="file" hidden onChange={uploadDocument} />
           </Button>
@@ -357,6 +429,16 @@ export function ApplicantApplicationForm({
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
               Guarda primero un borrador para habilitar la subida.
             </Typography>
+          ) : null}
+          {identificationPath ? (
+            <Box sx={{ mt: 1.5 }}>
+              <Typography variant="body2" fontWeight={600}>
+                Documento actual: {identificationFileName}
+              </Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
+                Ruta: {identificationPath}
+              </Typography>
+            </Box>
           ) : null}
         </CardContent>
       </Card>
@@ -373,10 +455,44 @@ export function ApplicantApplicationForm({
             fullWidth
             label="Correos"
             placeholder="mentor@colegio.edu.pe, amigo@gmail.com"
+            disabled={!isEditingEnabled}
           />
-          <Button sx={{ mt: 2 }} variant="outlined" onClick={createRecommendationRequests}>
+          <Button
+            sx={{ mt: 2 }}
+            variant="outlined"
+            onClick={createRecommendationRequests}
+            disabled={!isEditingEnabled}
+          >
             Registrar recomendadores
           </Button>
+          {registeredRecommenders.length > 0 ? (
+            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.5 }}>
+              {registeredRecommenders.map((email) => (
+                <Chip key={email} label={email} />
+              ))}
+            </Stack>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent>
+          <Typography variant="h6">Acciones de postulación</Typography>
+          <Typography color="text.secondary" sx={{ mb: 2 }}>
+            Guarda cambios y envía solo cuando estés listo.
+          </Typography>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+            <Button variant="contained" onClick={handleSubmit(save)} disabled={isSubmitting || !isEditingEnabled}>
+              {isSubmitting ? <CircularProgress size={18} color="inherit" /> : "Guardar borrador"}
+            </Button>
+            <Button
+              variant="outlined"
+              onClick={submitApplication}
+              disabled={!application?.id || (isLocked && !isEditMode)}
+            >
+              {isLocked && isEditMode ? "Reenviar postulación" : "Enviar postulación"}
+            </Button>
+          </Stack>
         </CardContent>
       </Card>
     </Stack>

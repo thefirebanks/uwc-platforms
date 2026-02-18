@@ -30,7 +30,7 @@ Spanish-first MVP for UWC Peru selection management with:
 - Admin validation (`eligible` / `ineligible`)
 - Stage management for 2 stages (Stage 2 is placeholder)
 - Admin audit viewer with filters + CSV export (`/admin/audit`)
-- External exam CSV import
+- External exam CSV import (modo simulación)
 - CSV export endpoint
 - Communication queue logging endpoint
 - OCR check endpoint (Gemini API key required)

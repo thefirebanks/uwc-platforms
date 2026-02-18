@@ -20,6 +20,7 @@ import {
 import type { Application, StageCode } from "@/types/domain";
 import { StageBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
+import { canTransition } from "@/lib/stages/transition";
 
 interface ApiError {
   message: string;
@@ -111,7 +112,9 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
       return;
     }
 
-    setStatusMessage(`Importación completada: ${body.imported} importados, ${body.skipped} omitidos.`);
+    setStatusMessage(
+      `Simulación completada: ${body.imported} filas válidas, ${body.skipped} omitidas (sin guardar).`,
+    );
   }
 
   async function sendStatusEmails() {
@@ -141,6 +144,9 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
           <Typography variant="h5">Panel de administración</Typography>
           <Typography color="text.secondary">
             Gestiona validaciones, transición de etapas (2 etapas MVP) e importación de examen externo.
+          </Typography>
+          <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
+            `Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1.
           </Typography>
           <Button component={Link} href="/admin/audit" variant="text" sx={{ mt: 1, px: 0 }}>
             Ver auditoría del proceso
@@ -203,13 +209,24 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
                       <TextField
                         select
                         size="small"
-                        defaultValue={application.stage_code}
+                        value={application.stage_code}
                         onChange={(event) =>
                           transition(application.id, event.target.value as StageCode)
                         }
                       >
                         <MenuItem value="documents">Stage 1</MenuItem>
-                        <MenuItem value="exam_placeholder">Stage 2 placeholder</MenuItem>
+                        <MenuItem
+                          value="exam_placeholder"
+                          disabled={
+                            !canTransition({
+                              fromStage: application.stage_code,
+                              toStage: "exam_placeholder",
+                              status: application.status,
+                            })
+                          }
+                        >
+                          Stage 2 placeholder
+                        </MenuItem>
                       </TextField>
                     </Stack>
                   </TableCell>
@@ -225,6 +242,9 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
           <Typography variant="h6">Importación de examen externo</Typography>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
             Pega tu CSV con columnas: applicant_email, score, passed.
+          </Typography>
+          <Typography color="text.secondary" variant="body2" sx={{ mb: 1.5 }}>
+            Este módulo está en modo demo: muestra resumen de importación sin persistir notas de examen.
           </Typography>
           <TextField
             value={csvData}
@@ -242,7 +262,9 @@ export function AdminDashboard({ initialApplications }: { initialApplications: A
       <Card>
         <CardContent>
           <Typography variant="h6">Comunicaciones</Typography>
-          <Typography color="text.secondary">Envía correos de resultado por lote.</Typography>
+          <Typography color="text.secondary">
+            MVP actual: registra la cola de comunicaciones en base de datos, sin envío real de correo.
+          </Typography>
           <Button variant="contained" sx={{ mt: 2 }} onClick={sendStatusEmails}>
             Enviar resultados
           </Button>

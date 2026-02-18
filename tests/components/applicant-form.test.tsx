@@ -3,13 +3,45 @@ import { describe, expect, it } from "vitest";
 import { ApplicantApplicationForm } from "@/components/applicant-application-form";
 
 describe("ApplicantApplicationForm", () => {
-  it("shows guidance when submit is attempted without draft", async () => {
+  it("keeps submit disabled until a draft exists", async () => {
     render(<ApplicantApplicationForm existingApplication={null} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Enviar postulación" }));
+    expect(screen.getByRole("button", { name: "Enviar postulación" })).toBeDisabled();
+    expect(screen.getByText("Guarda primero un borrador para habilitar la subida.")).toBeInTheDocument();
+  });
 
-    expect(
-      await screen.findByText("Primero guarda tu borrador antes de enviar."),
-    ).toBeInTheDocument();
+  it("locks submitted forms until user enables edit mode", async () => {
+    render(
+      <ApplicantApplicationForm
+        existingApplication={{
+          id: "app-1",
+          applicant_id: "user-1",
+          cycle_id: "cycle-1",
+          stage_code: "documents",
+          status: "submitted",
+          payload: {
+            fullName: "Applicant Demo",
+            dateOfBirth: "2009-03-14",
+            nationality: "Peruana",
+            schoolName: "Colegio Demo",
+            gradeAverage: 16.2,
+            essay: "Este es un ensayo de prueba suficientemente largo para pasar la validación.",
+          },
+          files: {},
+          validation_notes: null,
+          error_report_count: 0,
+          created_at: "2026-02-18T20:00:00.000Z",
+          updated_at: "2026-02-18T20:00:00.000Z",
+        }}
+      />,
+    );
+
+    const fullNameInput = screen.getByLabelText("Nombre completo");
+    expect(fullNameInput).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Editar respuesta" }));
+
+    expect(await screen.findByText("Edición habilitada. Guarda cambios y vuelve a enviar.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Nombre completo")).not.toBeDisabled();
   });
 });

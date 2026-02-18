@@ -33,11 +33,11 @@ export async function POST(request: NextRequest) {
     await recordAuditEvent({
       supabase,
       actorId: profile.id,
-      action: "exam.imported",
+      action: "exam.import.simulated",
       metadata: result,
       requestId,
     });
 
     return NextResponse.json(result);
-  }, { operation: "exam_imports.create" });
+  }, { operation: "exam_imports.simulate" });
 }

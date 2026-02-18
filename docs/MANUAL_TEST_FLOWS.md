@@ -62,7 +62,7 @@ Expected:
 
 Expected:
 - Imported/skipped summary shown.
-- Rows inserted in `exam_imports`.
+- No rows are persisted; this endpoint is in simulation mode.
 
 ## Flow 7: Error Reporting
 1. Trigger an error case (invalid action or malformed payload).
@@ -101,3 +101,14 @@ Expected:
 - Table updates with filtered results.
 - Actor name/email are visible when available.
 - CSV download contains filtered audit rows.
+
+## Flow 11: Applicant Lock/Unlock Editing
+1. Login as applicant.
+2. Submit the application.
+3. Verify form fields are disabled.
+4. Click `Editar respuesta`.
+5. Verify fields become editable again.
+
+Expected:
+- Applicant cannot accidentally edit right after submitting.
+- Explicit edit action is required before any changes can be made.

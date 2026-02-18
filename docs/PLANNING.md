@@ -15,6 +15,10 @@
 
 ## Phase 3 (Next)
 - Improve UX polish and performance on heavy forms
+- Introduce selection-process abstraction (`Proceso de Selección` per year)
+  - Admin dashboard becomes process-first (create/edit yearly process, stage dates, templates)
+  - Applicant dashboard becomes process-first (history across years, max 3 applications)
+  - Role home pages become dashboard views before entering a specific process
 - Expand communication reliability (delivery status lifecycle)
 - OCR workflow hardening and confidence scoring visibility
 

@@ -304,14 +304,17 @@ export async function createRecommendationRequests({
 }
 
 export async function importExamCsv({
-  supabase,
+  supabase: _supabase,
   csv,
-  actorId,
+  actorId: _actorId,
 }: {
   supabase: SupabaseClient<Database>;
   csv: string;
   actorId: string;
 }) {
+  void _supabase;
+  void _actorId;
+
   const parsed = Papa.parse<{ applicant_email: string; score: string; passed: string }>(csv, {
     header: true,
     skipEmptyLines: true,
@@ -331,46 +334,11 @@ export async function importExamCsv({
 
   for (const row of rows) {
     const email = row.applicant_email?.trim().toLowerCase();
-
-    if (!email) {
-      results.skipped += 1;
-      continue;
-    }
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("email", email)
-      .maybeSingle();
-
-    if (!profile) {
-      results.skipped += 1;
-      continue;
-    }
-
-    const { data: app } = await supabase
-      .from("applications")
-      .select("id")
-      .eq("applicant_id", profile.id)
-      .maybeSingle();
-
-    if (!app) {
-      results.skipped += 1;
-      continue;
-    }
-
     const score = Number(row.score);
-    const passed = row.passed?.trim().toLowerCase() === "true";
+    const passedRaw = row.passed?.trim().toLowerCase();
+    const hasValidPassedFlag = passedRaw === "true" || passedRaw === "false";
 
-    const { error } = await supabase.from("exam_imports").insert({
-      application_id: app.id,
-      applicant_email: email,
-      score,
-      passed,
-      imported_by: actorId,
-    });
-
-    if (error) {
+    if (!email || !Number.isFinite(score) || !hasValidPassedFlag) {
       results.skipped += 1;
       continue;
     }

@@ -56,6 +56,20 @@ const defaultFormFilters: AuditFiltersForm = {
   to: "",
 };
 
+const actionOptions = [
+  "",
+  "application.upserted",
+  "application.submitted",
+  "application.validated",
+  "application.stage_transitioned",
+  "application.ocr_checked",
+  "recommendations.requested",
+  "communications.queued",
+  "bug.reported",
+  "exam.imported",
+  "exam.import.simulated",
+];
+
 function buildQuery(filters: AppliedFilters, includePagination: boolean) {
   const params = new URLSearchParams();
 
@@ -202,12 +216,18 @@ export function AdminAuditLog() {
           <Stack spacing={2}>
             <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
               <TextField
+                select
                 label="Acción"
                 value={filters.action}
                 onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))}
                 size="small"
-                placeholder="application.validated"
-              />
+              >
+                {actionOptions.map((action) => (
+                  <MenuItem key={action || "all"} value={action}>
+                    {action || "Todas las acciones"}
+                  </MenuItem>
+                ))}
+              </TextField>
               <TextField
                 label="Request ID"
                 value={filters.requestId}
