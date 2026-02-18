@@ -19,31 +19,93 @@ export function TopNav({ role }: { role: AppRole }) {
   return (
     <AppBar position="sticky" color="inherit" elevation={0}>
       <Toolbar>
-        <Typography variant="h6" fontWeight={700}>
-          UWC Peru Selection Platform
+        <Typography
+          variant="h6"
+          sx={{
+            fontFamily: "var(--font-newsreader), 'Newsreader', Georgia, serif",
+            fontWeight: 500,
+            color: "var(--uwc-maroon)",
+            fontSize: "1.375rem",
+            letterSpacing: "-0.01em",
+          }}
+        >
+          UWC Selection
         </Typography>
         <Box sx={{ flexGrow: 1 }} />
-        <Typography variant="body2" sx={{ mr: 2 }}>
-          Modo: {role === "admin" ? "Admin" : "Postulante"}
+        <Box
+          component="nav"
+          sx={{
+            display: "flex",
+            gap: 1,
+            mr: 3,
+          }}
+        >
+          {role === "admin" ? (
+            <>
+              <NavLink href="/admin" label="Procesos" />
+              <NavLink href="/admin/audit" label="Auditoría" />
+            </>
+          ) : (
+            <NavLink href="/applicant" label="Procesos" />
+          )}
+        </Box>
+        <Typography
+          variant="body2"
+          sx={{
+            mr: 2,
+            px: 1.5,
+            py: 0.5,
+            color: "var(--muted)",
+            fontSize: "0.8125rem",
+            backgroundColor: "var(--cream)",
+            borderRadius: "4px",
+          }}
+        >
+          {role === "admin" ? "Admin" : "Postulante"}
         </Typography>
-        {role === "admin" ? (
-          <>
-            <Button component={Link} href="/admin" variant="text" sx={{ mr: 1 }}>
-              Procesos
-            </Button>
-            <Button component={Link} href="/admin/audit" variant="text" sx={{ mr: 2 }}>
-              Auditoría
-            </Button>
-          </>
-        ) : (
-          <Button component={Link} href="/applicant" variant="text" sx={{ mr: 2 }}>
-            Procesos
-          </Button>
-        )}
-        <Button variant="outlined" onClick={logout}>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={logout}
+          sx={{
+            borderColor: "var(--sand)",
+            color: "var(--ink)",
+            fontWeight: 500,
+            "&:hover": {
+              borderColor: "var(--muted)",
+              backgroundColor: "var(--cream)",
+            },
+          }}
+        >
           Cerrar sesión
         </Button>
       </Toolbar>
     </AppBar>
+  );
+}
+
+function NavLink({ href, label }: { href: string; label: string }) {
+  return (
+    <Button
+      component={Link}
+      href={href}
+      variant="text"
+      size="small"
+      sx={{
+        color: "var(--muted)",
+        fontWeight: 500,
+        px: 2,
+        "&:hover": {
+          color: "var(--ink)",
+          backgroundColor: "var(--cream)",
+        },
+        // Remove the underline from nav links
+        "&::after": {
+          display: "none",
+        },
+      }}
+    >
+      {label}
+    </Button>
   );
 }

@@ -198,11 +198,11 @@ export function AdminDashboard({
           <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
             `Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1.
           </Typography>
-          <Stack direction="row" spacing={2} sx={{ mt: 1 }}>
-            <Button component={Link} href="/admin" variant="text" sx={{ px: 0 }}>
+          <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+            <Button component={Link} href="/admin" variant="outlined" size="small">
               Volver al dashboard de procesos
             </Button>
-            <Button component={Link} href="/admin/audit" variant="text" sx={{ px: 0 }}>
+            <Button component={Link} href="/admin/audit" variant="outlined" size="small">
               Ver auditoría del proceso
             </Button>
           </Stack>
@@ -289,15 +289,18 @@ export function AdminDashboard({
                   <TableCell>{application.status}</TableCell>
                   <TableCell>{new Date(application.updated_at).toLocaleString()}</TableCell>
                   <TableCell>
-                    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
+                    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
                       <Button
-                        variant="text"
+                        variant="outlined"
+                        size="small"
+                        color="success"
                         onClick={() => validateApplication(application.id, "eligible")}
                       >
                         Elegible
                       </Button>
                       <Button
-                        variant="text"
+                        variant="outlined"
+                        size="small"
                         color="warning"
                         onClick={() => validateApplication(application.id, "ineligible")}
                       >
