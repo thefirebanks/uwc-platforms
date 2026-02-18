@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UWC Teal Studio - Applicant Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@400;500;600&family=Karla:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      /* UWC Teal/Green softened */
+      --uwc-teal: #007D6E;
+      --uwc-teal-soft: #EDF7F6;
+      --uwc-teal-muted: #4DA89D;
+
+      /* UWC Blue as accent */
+      --uwc-blue: #004E89;
+      --uwc-blue-soft: #EDF4F9;
+
+      /* Warm neutrals */
+      --ink: #1E2422;
+      --paper: #FAFBFA;
+      --cream: #F4F6F5;
+      --sand: #E0E4E2;
+      --muted: #687370;
+
+      /* Status */
+      --success: #007D6E;
+      --success-soft: #EDF7F6;
+      --warning: #B8860B;
+      --warning-soft: #FEF8E8;
+    }
+
+    body {
+      font-family: 'Karla', -apple-system, sans-serif;
+      background-color: var(--paper);
+      color: var(--ink);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* Navigation */
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 48px;
+      background: white;
+      border-bottom: 1px solid var(--sand);
+    }
+
+    .logo {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.375rem;
+      font-weight: 500;
+      color: var(--uwc-teal);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 32px;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--muted);
+      font-size: 0.875rem;
+      font-weight: 500;
+      transition: color 0.15s;
+    }
+
+    .nav-links a:hover {
+      color: var(--ink);
+    }
+
+    .nav-links a.active {
+      color: var(--uwc-teal);
+    }
+
+    .nav-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--uwc-teal);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: white;
+    }
+
+    /* Main Content */
+    main {
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 56px 24px;
+    }
+
+    .page-header {
+      margin-bottom: 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    .page-header-left h1 {
+      font-family: 'Crimson Pro', serif;
+      font-size: 2.25rem;
+      font-weight: 400;
+      letter-spacing: -0.01em;
+      margin-bottom: 6px;
+    }
+
+    .page-header-left p {
+      color: var(--muted);
+      font-size: 0.9375rem;
+    }
+
+    .deadline-badge {
+      background: var(--warning-soft);
+      color: var(--warning);
+      padding: 8px 14px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* Progress Bar */
+    .progress-container {
+      background: white;
+      border: 1px solid var(--sand);
+      padding: 24px 28px;
+      margin-bottom: 32px;
+    }
+
+    .progress-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .progress-label {
+      font-size: 0.9375rem;
+      font-weight: 600;
+    }
+
+    .progress-value {
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    .progress-bar {
+      height: 8px;
+      background: var(--cream);
+      border-radius: 4px;
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 50%;
+      background: var(--uwc-teal);
+      border-radius: 4px;
+    }
+
+    .steps-row {
+      display: flex;
+      gap: 16px;
+    }
+
+    .step-chip {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--cream);
+      border-radius: 4px;
+    }
+
+    .step-chip.complete {
+      background: var(--success-soft);
+    }
+
+    .step-chip.current {
+      background: var(--uwc-teal);
+      color: white;
+    }
+
+    .step-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .step-chip.complete .step-dot {
+      background: var(--uwc-teal);
+    }
+
+    .step-chip.current .step-dot {
+      background: white;
+    }
+
+    .step-chip-text {
+      font-size: 0.8125rem;
+      font-weight: 500;
+    }
+
+    /* Cards */
+    .card {
+      background: white;
+      border: 1px solid var(--sand);
+      margin-bottom: 20px;
+    }
+
+    .card-header {
+      padding: 20px 28px;
+      border-bottom: 1px solid var(--sand);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .card-header h2 {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1.1875rem;
+      font-weight: 500;
+    }
+
+    .card-content {
+      padding: 28px;
+    }
+
+    /* Form Grid */
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .form-group.full-width {
+      grid-column: span 2;
+    }
+
+    .form-group label {
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      padding: 14px 16px;
+      border: 1.5px solid var(--sand);
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 1rem;
+      background: white;
+      transition: all 0.15s;
+    }
+
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: var(--uwc-teal);
+      box-shadow: 0 0 0 3px rgba(0, 125, 110, 0.08);
+    }
+
+    .form-group textarea {
+      min-height: 140px;
+      resize: vertical;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 12px 24px;
+      font-family: inherit;
+      font-size: 0.875rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .btn-primary {
+      background: var(--uwc-teal);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: #006358;
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: 1.5px solid var(--sand);
+      color: var(--ink);
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--ink);
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      padding: 20px 28px;
+      background: var(--cream);
+      border-top: 1px solid var(--sand);
+    }
+
+    /* Badge */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-radius: 4px;
+    }
+
+    .badge .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    .badge.complete {
+      background: var(--success-soft);
+      color: var(--uwc-teal);
+    }
+
+    .badge.progress {
+      background: var(--uwc-blue-soft);
+      color: var(--uwc-blue);
+    }
+
+    .badge.pending {
+      background: var(--cream);
+      color: var(--muted);
+    }
+
+    /* File Upload */
+    .file-upload {
+      border: 2px dashed var(--sand);
+      border-radius: 4px;
+      padding: 40px;
+      text-align: center;
+      background: var(--cream);
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .file-upload:hover {
+      border-color: var(--uwc-teal);
+      background: var(--uwc-teal-soft);
+    }
+
+    .file-upload-icon {
+      width: 44px;
+      height: 44px;
+      margin: 0 auto 12px;
+      background: white;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      color: var(--muted);
+      border: 1px solid var(--sand);
+    }
+
+    .file-upload-text {
+      font-size: 0.9375rem;
+      color: var(--muted);
+    }
+
+    .file-upload-text strong {
+      color: var(--uwc-teal);
+    }
+  </style>
+</head>
+<body>
+  <nav>
+    <div class="logo">UWC Selection</div>
+    <div class="nav-links">
+      <a href="#" class="active">Applications</a>
+      <a href="#">Documents</a>
+      <a href="#">Messages</a>
+    </div>
+    <div class="nav-right">
+      <div class="avatar">MR</div>
+    </div>
+  </nav>
+
+  <main>
+    <div class="page-header">
+      <div class="page-header-left">
+        <h1>Your Application</h1>
+        <p>Selection Cycle 2025</p>
+      </div>
+      <div class="deadline-badge">
+        <span>⏰</span> Deadline: March 15
+      </div>
+    </div>
+
+    <div class="progress-container">
+      <div class="progress-row">
+        <span class="progress-label">Application Progress</span>
+        <span class="progress-value">50% complete</span>
+      </div>
+      <div class="progress-bar">
+        <div class="progress-fill"></div>
+      </div>
+      <div class="steps-row">
+        <div class="step-chip complete">
+          <div class="step-dot"></div>
+          <span class="step-chip-text">Personal</span>
+        </div>
+        <div class="step-chip complete">
+          <div class="step-dot"></div>
+          <span class="step-chip-text">Academic</span>
+        </div>
+        <div class="step-chip current">
+          <div class="step-dot"></div>
+          <span class="step-chip-text">Essays</span>
+        </div>
+        <div class="step-chip">
+          <div class="step-dot"></div>
+          <span class="step-chip-text">Documents</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Personal Information</h2>
+        <span class="badge complete"><span class="dot"></span> Complete</span>
+      </div>
+      <div class="card-content">
+        <div class="form-grid">
+          <div class="form-group">
+            <label>Full Name</label>
+            <input type="text" value="María Rodriguez" />
+          </div>
+          <div class="form-group">
+            <label>Date of Birth</label>
+            <input type="date" value="2007-03-15" />
+          </div>
+          <div class="form-group">
+            <label>Nationality</label>
+            <input type="text" value="Peruvian" />
+          </div>
+          <div class="form-group">
+            <label>Current School</label>
+            <input type="text" value="Colegio San Agustín" />
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Essay Response</h2>
+        <span class="badge progress"><span class="dot"></span> In Progress</span>
+      </div>
+      <div class="card-content">
+        <div class="form-grid">
+          <div class="form-group full-width">
+            <label>What drives your interest in becoming a UWC student?</label>
+            <textarea placeholder="Share your motivations, experiences, and aspirations..."></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-secondary">Save Draft</button>
+        <button class="btn btn-primary">Continue</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2>Documents</h2>
+        <span class="badge pending"><span class="dot"></span> Not Started</span>
+      </div>
+      <div class="card-content">
+        <div class="file-upload">
+          <div class="file-upload-icon">↑</div>
+          <div class="file-upload-text">
+            <strong>Click to upload</strong> or drag and drop<br>
+            PDF, JPG, PNG up to 10MB
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>
