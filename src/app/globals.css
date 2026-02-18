@@ -58,6 +58,18 @@ a {
   color: var(--uwc-maroon);
 }
 
+.page-header {
+  margin-bottom: 8px;
+}
+
+.page-header h1,
+.page-header h2,
+.page-header h3 {
+  font-size: clamp(2rem, 4.2vw, 3.1rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
 .progress-section {
   padding: 28px 32px;
   background: var(--cream);

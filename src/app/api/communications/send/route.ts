@@ -89,6 +89,8 @@ export async function POST(request: NextRequest) {
       const { error: insertError } = await supabase.from("communication_logs").insert({
         application_id: application.id,
         template_key: parsed.data.templateKey,
+        subject: "Actualización de postulación UWC Perú",
+        body: `Notificación automática para plantilla ${parsed.data.templateKey}.`,
         recipient_email: profileRow.email,
         status: "queued",
         sent_by: profile.id,

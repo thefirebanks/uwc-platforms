@@ -50,7 +50,9 @@ Spanish-first MVP for UWC Peru selection management with:
 - External exam CSV import (modo simulación)
 - CSV export endpoint
 - Communication queue logging endpoint
-- OCR check endpoint (Gemini API key required)
+- Communication queue lifecycle (`queued/processing/sent/failed`) with admin processing/retry controls
+- Real email delivery via Resend from queued communications
+- OCR check + OCR history endpoint (Gemini API key required)
 - Clear user-facing error handling with `Error ID`
 - Bug report endpoint for non-technical users
 - Audit logging for key actions
@@ -65,6 +67,10 @@ bun install
 cp .env.example .env.local
 ```
 3. Fill env variables in `.env.local`.
+   - Required for real email delivery:
+     - `RESEND_API_KEY`
+     - `RESEND_FROM_EMAIL`
+     - `RESEND_FROM_NAME` (optional, defaults to `UWC Peru`)
 4. Use UWC Supabase profile commands for this repo:
 ```bash
 sbu link --project-ref lnuugnvwjyndvxhzbuib
@@ -77,6 +83,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
 - `supabase/migrations/20260218002000_add_cycle_stage_configuration.sql`
 - `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
 - `supabase/migrations/20260218004000_add_stage_form_and_automation_configs.sql`
+- `supabase/migrations/20260218005000_add_communications_lifecycle_and_ocr_checks.sql`
 ```bash
 sbu db push
 ```
@@ -125,6 +132,10 @@ If OAuth keys are not ready yet:
   - Critical actions are stored in `audit_events` in Supabase for process accountability.
 - See `/Users/dafirebanks/Projects/uwc-platforms/docs/OBSERVABILITY.md` for commands and retention guidance.
 
+## Provider Notes
+- OCR provider: Gemini `gemini-3-flash-preview`.
+- Email provider: Resend API (real delivery when queue is processed).
+
 ## Test Commands
 ```bash
 bun run lint
@@ -144,12 +155,15 @@ bun run build
 - `POST /api/applications/:id/upload-url`
 - `POST /api/applications/:id/files`
 - `POST /api/applications/:id/ocr-check`
+- `GET /api/applications/:id/ocr-check`
 - `GET/POST /api/recommendations`
 - `GET/POST /api/cycles`
 - `PATCH /api/cycles/:id`
 - `GET/PATCH /api/cycles/:id/templates`
 - `GET/PATCH /api/cycles/:id/stages/:stageCode/config`
 - `POST /api/exam-imports`
+- `GET /api/communications`
+- `POST /api/communications/process`
 - `POST /api/communications/send`
 - `POST /api/errors/report`
 - `GET /api/exports`

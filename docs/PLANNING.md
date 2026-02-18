@@ -30,7 +30,13 @@
   - dynamic applicant form rendering from stage schema ✅
   - configurable stage email automations with trigger templates ✅
 - Expand communication reliability (delivery status lifecycle)
+  - queue status tracking (`queued/processing/sent/failed`) ✅
+  - manual queue processing + retry of failed rows ✅
+  - admin process-level communication status visibility ✅
 - OCR workflow hardening and confidence scoring visibility
+  - OCR results persisted per application ✅
+  - OCR confidence + summary visible in admin dashboard ✅
+  - OCR history endpoint for debugging and auditability ✅
 
 ## Phase 4 (Post-MVP)
 - Evaluator/reviewer portal

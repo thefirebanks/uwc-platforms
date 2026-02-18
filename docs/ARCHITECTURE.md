@@ -4,6 +4,8 @@
 - Frontend/API: Next.js App Router (TypeScript)
 - UI: Material UI + custom theme layer
 - Auth/DB/Storage: Supabase
+- OCR provider: Google Gemini (`gemini-3-flash-preview`)
+- Email delivery provider: Resend
 - Runtime logging: structured server logs to stdout (local terminal + Cloudflare Logs)
 - Audit logging: `audit_events` table for business-critical actions
 - Runtime/package manager: Bun
@@ -25,9 +27,11 @@
 - Selection process stage templates (`GET/PATCH /api/cycles/:id/templates`)
 - Stage form and automation config (`GET/PATCH /api/cycles/:id/stages/:stageCode/config`)
 - Application CRUD and submit
+- OCR check + OCR history (`POST/GET /api/applications/:id/ocr-check`)
 - Validation and stage transition
 - Recommendation request registration
 - Exam import and export
+- Communication queue listing and processing (`GET /api/communications`, `POST /api/communications/process`)
 - Audit listing and export
 - Bug reporting endpoint
 
@@ -38,7 +42,7 @@
 - `cycle_stage_fields` (stage field schema: key/label/type/required/order/visibility)
 - `stage_automation_templates` (triggered email templates per stage)
 - `applications`, `recommendation_requests`, `stage_transitions`
-- `exam_imports`, `communication_logs`, `audit_events`, `bug_reports`
+- `exam_imports`, `communication_logs`, `application_ocr_checks`, `audit_events`, `bug_reports`
 - Storage bucket `application-documents`
 
 ## Authorization Model
@@ -62,6 +66,9 @@
   - stage field schema is editable by admin and drives applicant form rendering
   - required file fields are validated before submit
   - stage automation templates can queue communication entries on trigger events
+  - communication queue rows support delivery lifecycle (`queued`, `processing`, `sent`, `failed`)
+  - admins can process queued deliveries and retry failed deliveries from process dashboard
+  - OCR checks are stored historically per application with confidence + summary for admin review
 
 ## Error and Observability Model
 - API handlers are wrapped with centralized error handling.

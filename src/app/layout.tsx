@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Newsreader, Inter } from "next/font/google";
+import { AppRouterCacheProvider } from "@mui/material-nextjs/v16-appRouter";
 import { AppThemeProvider } from "@/components/app-theme-provider";
 import "./globals.css";
 
@@ -25,7 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <body suppressHydrationWarning className={`${newsreader.variable} ${inter.variable}`}>
-        <AppThemeProvider>{children}</AppThemeProvider>
+        <AppRouterCacheProvider options={{ key: "mui", enableCssLayer: true }}>
+          <AppThemeProvider>{children}</AppThemeProvider>
+        </AppRouterCacheProvider>
       </body>
     </html>
   );
