@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
-import { submitApplication } from "@/lib/server/application-service";
+import { assertApplicantCanEditCycle, submitApplication } from "@/lib/server/application-service";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { logger } from "@/lib/logging/logger";
 import {
@@ -35,6 +35,11 @@ export async function POST(
         status: 403,
       });
     }
+
+    await assertApplicantCanEditCycle({
+      supabase,
+      cycleId: application.cycle_id,
+    });
 
     await validateApplicationBeforeSubmit({
       supabase,

@@ -48,6 +48,58 @@ async function getConfiguredStageFields({
       : [];
 }
 
+async function validateRecommendersBeforeSubmit({
+  supabase,
+  applicationId,
+}: {
+  supabase: SupabaseClient<Database>;
+  applicationId: string;
+}) {
+  void supabase;
+  const adminSupabase = getSupabaseAdminClient();
+  const { data, error } = await adminSupabase
+    .from("recommendation_requests")
+    .select("role, status, submitted_at, invalidated_at")
+    .eq("application_id", applicationId)
+    .is("invalidated_at", null);
+
+  if (error) {
+    throw new AppError({
+      message: "Failed loading recommendations before submit",
+      userMessage: "No se pudo validar el estado de recomendadores.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  const rows = (data ?? []) as Array<{
+    role: "mentor" | "friend";
+    status: string;
+    submitted_at: string | null;
+    invalidated_at: string | null;
+  }>;
+
+  const hasSubmittedMentor = rows.some(
+    (row) => row.role === "mentor" && (row.status === "submitted" || Boolean(row.submitted_at)),
+  );
+  const hasSubmittedFriend = rows.some(
+    (row) => row.role === "friend" && (row.status === "submitted" || Boolean(row.submitted_at)),
+  );
+
+  if (!hasSubmittedMentor || !hasSubmittedFriend) {
+    throw new AppError({
+      message: "Missing required submitted recommendation forms",
+      userMessage:
+        "Necesitas 2 recomendaciones completas (mentor y amigo) antes de enviar tu postulación.",
+      status: 422,
+      details: {
+        hasSubmittedMentor,
+        hasSubmittedFriend,
+      },
+    });
+  }
+}
+
 async function getEnabledAutomation({
   supabase,
   cycleId,
@@ -178,7 +230,7 @@ export async function validateApplicationBeforeSubmit({
 
   const fileValidation = validateRequiredFiles({
     fields,
-    files: (application.files as Record<string, string>) ?? {},
+    files: (application.files as Record<string, string | { path?: string }>) ?? {},
   });
 
   if (!fileValidation.isValid) {
@@ -190,6 +242,11 @@ export async function validateApplicationBeforeSubmit({
       details: fileValidation.missingFields.map((field) => field.field_key),
     });
   }
+
+  await validateRecommendersBeforeSubmit({
+    supabase,
+    applicationId: application.id,
+  });
 }
 
 export async function queueApplicationAutomationIfEnabled({

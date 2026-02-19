@@ -8,6 +8,7 @@ import type { Database } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
 type StageAutomationRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
+type StageTemplateRow = Database["public"]["Tables"]["cycle_stage_templates"]["Row"];
 
 const stageCodeSchema = z.enum(["documents", "exam_placeholder"]);
 
@@ -35,6 +36,7 @@ const automationSchema = z.object({
 const patchSchema = z.object({
   fields: z.array(fieldSchema),
   automations: z.array(automationSchema),
+  ocrPromptTemplate: z.string().max(5000).nullable().optional(),
 });
 
 const cycleIdSchema = z.string().uuid();
@@ -97,12 +99,21 @@ export async function GET(
       });
     }
 
-    const { data: automationsData, error: automationsError } = await supabase
-      .from("stage_automation_templates")
-      .select("*")
-      .eq("cycle_id", cycleId)
-      .eq("stage_code", stageCode)
-      .order("created_at", { ascending: true });
+    const [{ data: automationsData, error: automationsError }, { data: templateData, error: templateError }] =
+      await Promise.all([
+        supabase
+          .from("stage_automation_templates")
+          .select("*")
+          .eq("cycle_id", cycleId)
+          .eq("stage_code", stageCode)
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("cycle_stage_templates")
+          .select("id, ocr_prompt_template")
+          .eq("cycle_id", cycleId)
+          .eq("stage_code", stageCode)
+          .maybeSingle(),
+      ]);
 
     if (automationsError) {
       throw new AppError({
@@ -113,9 +124,20 @@ export async function GET(
       });
     }
 
+    if (templateError) {
+      throw new AppError({
+        message: "Failed loading stage template metadata",
+        userMessage: "No se pudo cargar la configuración OCR de la etapa.",
+        status: 500,
+        details: templateError,
+      });
+    }
+
     return NextResponse.json({
       fields: (fieldsData as StageFieldRow[] | null) ?? [],
       automations: (automationsData as StageAutomationRow[] | null) ?? [],
+      ocrPromptTemplate:
+        ((templateData as Pick<StageTemplateRow, "ocr_prompt_template"> | null)?.ocr_prompt_template ?? null),
     });
   }, { operation: "cycles.stage_config.get" });
 }
@@ -305,6 +327,19 @@ export async function PATCH(
           .order("created_at", { ascending: true }),
       ]);
 
+    const { data: savedTemplateData, error: savedTemplateError } = await supabase
+      .from("cycle_stage_templates")
+      .update({
+        ocr_prompt_template:
+          parsed.data.ocrPromptTemplate && parsed.data.ocrPromptTemplate.trim().length > 0
+            ? parsed.data.ocrPromptTemplate.trim()
+            : null,
+      })
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", stageCode)
+      .select("id, ocr_prompt_template")
+      .maybeSingle();
+
     if (savedFieldsError) {
       throw new AppError({
         message: "Failed loading saved stage fields",
@@ -323,8 +358,18 @@ export async function PATCH(
       });
     }
 
+    if (savedTemplateError) {
+      throw new AppError({
+        message: "Failed saving OCR prompt template",
+        userMessage: "No se pudo guardar el prompt OCR de la etapa.",
+        status: 500,
+        details: savedTemplateError,
+      });
+    }
+
     const savedFields = (savedFieldsData as StageFieldRow[] | null) ?? [];
     const savedAutomations = (savedAutomationsData as StageAutomationRow[] | null) ?? [];
+    const savedTemplate = (savedTemplateData as Pick<StageTemplateRow, "ocr_prompt_template"> | null) ?? null;
 
     await recordAuditEvent({
       supabase,
@@ -335,6 +380,7 @@ export async function PATCH(
         stageCode,
         fieldsSaved: savedFields.length,
         automationsSaved: savedAutomations.length,
+        hasOcrPromptTemplate: Boolean(savedTemplate?.ocr_prompt_template),
       },
       requestId,
     });
@@ -342,6 +388,7 @@ export async function PATCH(
     return NextResponse.json({
       fields: savedFields.sort((a, b) => a.sort_order - b.sort_order),
       automations: savedAutomations,
+      ocrPromptTemplate: savedTemplate?.ocr_prompt_template ?? null,
     });
   }, { operation: "cycles.stage_config.patch" });
 }

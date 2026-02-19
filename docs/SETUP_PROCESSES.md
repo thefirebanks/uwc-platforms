@@ -23,6 +23,7 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260218005000_add_communications_lifecycle_and_ocr_checks.sql`
   - `supabase/migrations/20260218008000_fix_current_user_role_security_definer.sql`
   - `supabase/migrations/20260218009000_harden_rbac_and_applicant_write_guards.sql`
+  - `supabase/migrations/20260219001000_recommender_otp_and_ocr_prompt.sql`
 ```bash
 sbu db push
 ```
@@ -61,6 +62,7 @@ bun run seed:fake-users
   - `RESEND_API_KEY` (required for real email delivery)
   - `RESEND_FROM_EMAIL` (required for real email delivery)
   - `RESEND_FROM_NAME` (optional)
+  - `RECOMMENDER_TOKEN_SALT` (recommended; extra hardening for OTP/session token hashing)
 
 ## 4) Cloudflare Observability (Recommended)
 - Use Cloudflare Logs / Log Explorer as the single runtime log destination.
@@ -90,6 +92,10 @@ bun run dev
   - `RESEND_FROM_NAME` (optional, example: `UWC Peru`)
 - Communication queue processing endpoint that sends real emails:
   - `POST /api/communications/process`
+- Recommender invite/reminder/OTP endpoints also depend on Resend:
+  - `PUT /api/recommendations`
+  - `POST /api/recommendations/:id/remind`
+  - `POST /api/recommendations/public/:token/otp`
 
 ## 7) GitHub Repository + Secrets
 - Recommended repo secrets:
@@ -101,6 +107,7 @@ bun run dev
   - `RESEND_API_KEY`
   - `RESEND_FROM_EMAIL`
   - `RESEND_FROM_NAME` (optional)
+  - `RECOMMENDER_TOKEN_SALT` (recommended)
 
 ## 8) Feature Branch + PR Process
 - Always branch from `main` with `codex/` prefix.

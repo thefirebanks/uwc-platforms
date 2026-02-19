@@ -133,6 +133,7 @@ export function StageConfigEditor({
   stageLabel,
   initialFields,
   initialAutomations,
+  initialOcrPromptTemplate,
 }: {
   cycleId: string;
   cycleName: string;
@@ -140,6 +141,7 @@ export function StageConfigEditor({
   stageLabel: string;
   initialFields: CycleStageField[];
   initialAutomations: StageAutomationTemplate[];
+  initialOcrPromptTemplate: string | null;
 }) {
   const [fields, setFields] = useState<EditableField[]>(mapFieldsWithLocalId(initialFields));
   const [automations, setAutomations] = useState<EditableAutomation[]>(
@@ -150,6 +152,10 @@ export function StageConfigEditor({
   const [isSaving, setIsSaving] = useState(false);
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
+  const [ocrPromptTemplate, setOcrPromptTemplate] = useState(
+    initialOcrPromptTemplate ??
+      "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.",
+  );
 
   const orderedFields = useMemo(
     () => [...fields].sort((a, b) => a.sort_order - b.sort_order),
@@ -293,6 +299,8 @@ export function StageConfigEditor({
             templateSubject: automation.template_subject,
             templateBody: automation.template_body,
           })),
+          ocrPromptTemplate:
+            ocrPromptTemplate.trim().length > 0 ? ocrPromptTemplate.trim() : null,
         }),
       });
       const body = await response.json();
@@ -304,6 +312,7 @@ export function StageConfigEditor({
 
       setFields(mapFieldsWithLocalId(body.fields ?? []));
       setAutomations(mapAutomationsWithLocalId(body.automations ?? []));
+      setOcrPromptTemplate(body.ocrPromptTemplate ?? "");
       setStatusMessage("Configuración de etapa guardada.");
     } finally {
       setIsSaving(false);
@@ -669,6 +678,30 @@ export function StageConfigEditor({
                 />
               </Box>
             ))}
+          </Stack>
+        </AccordionDetails>
+      </Accordion>
+
+      <Accordion defaultExpanded>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography variant="h6">Prompt OCR (Gemini)</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Stack spacing={1.5}>
+            <Typography color="text.secondary">
+              Define instrucciones para extraer señales útiles desde documentos. Mantén el prompt claro y en español.
+            </Typography>
+            <TextField
+              label="Prompt OCR de la etapa"
+              value={ocrPromptTemplate}
+              onChange={(event) => setOcrPromptTemplate(event.target.value)}
+              fullWidth
+              multiline
+              minRows={6}
+            />
+            <Typography variant="body2" color="text.secondary">
+              Nota: el sistema siempre fuerza salida JSON con `summary` y `confidence`.
+            </Typography>
           </Stack>
         </AccordionDetails>
       </Accordion>

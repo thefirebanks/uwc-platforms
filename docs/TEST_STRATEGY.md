@@ -12,6 +12,7 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - automation pre-submit checks
   - communication queue lifecycle and provider delivery handling
   - OCR parsing and confidence normalization
+  - recommender payload validation rules
   - role resolution logic
   - centralized error handling
 - Component tests:
@@ -28,6 +29,7 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - stage transition service behavior
 - E2E tests:
   - base UI smoke and navigation
+  - applicant anti-tampering access-control checks
 
 ## Current Coverage Matrix
 - Auth role mapping:
@@ -44,6 +46,8 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/unit/communications-service.test.ts`
 - OCR parser/service:
   - `tests/unit/ocr.test.ts`
+- Recommender validation:
+  - `tests/unit/recommendations-service.test.ts`
 - Stage transitions:
   - `tests/unit/stage-transition.test.ts`
   - `tests/integration/transition-application.test.ts`
@@ -65,6 +69,7 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/unit/audit-service.test.ts`
 - Smoke E2E:
   - `tests/e2e/home.spec.ts`
+  - `tests/e2e/access-control.spec.ts`
 
 ## Required Commands Before PR
 - `bun run lint`

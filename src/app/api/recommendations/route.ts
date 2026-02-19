@@ -3,12 +3,23 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
-import { createRecommendationRequests } from "@/lib/server/application-service";
 import { recordAuditEvent } from "@/lib/logging/audit";
+import {
+  listApplicantRecommendations,
+  upsertApplicantRecommendations,
+} from "@/lib/server/recommendations-service";
+import type { RecommenderRole } from "@/types/domain";
 
 const schema = z.object({
   applicationId: z.string().uuid(),
-  emails: z.array(z.string().email()).min(1),
+  recommenders: z
+    .array(
+      z.object({
+        role: z.enum(["mentor", "friend"]),
+        email: z.string().email(),
+      }),
+    )
+    .length(2),
 });
 
 const querySchema = z.object({
@@ -61,34 +72,21 @@ export async function GET(request: NextRequest) {
         applicantId: profile.id,
       });
 
-      const { data, error } = await supabase
-        .from("recommendation_requests")
-        .select("recommender_email, submitted_at, created_at")
-        .eq("application_id", parsed.data.applicationId)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        throw new AppError({
-          message: "Failed loading recommendation requests",
-          userMessage: "No se pudieron cargar los recomendadores.",
-          status: 500,
-          details: error,
-        });
-      }
+      const rows = await listApplicantRecommendations({
+        supabase,
+        applicationId: parsed.data.applicationId,
+        applicantId: profile.id,
+      });
 
       return NextResponse.json({
-        recommenders: (data ?? []).map((row) => ({
-          email: row.recommender_email,
-          submittedAt: row.submitted_at,
-          createdAt: row.created_at,
-        })),
+        recommenders: rows,
       });
     },
     { operation: "recommendations.list" },
   );
 }
 
-export async function POST(request: NextRequest) {
+export async function PUT(request: NextRequest) {
   return withErrorHandling(async (requestId) => {
     const { profile, supabase } = await requireAuth(["applicant"]);
     const body = await request.json();
@@ -109,27 +107,32 @@ export async function POST(request: NextRequest) {
       applicantId: profile.id,
     });
 
-    const rows = await createRecommendationRequests({
+    const result = await upsertApplicantRecommendations({
       supabase,
       applicationId: parsed.data.applicationId,
-      requesterId: profile.id,
-      emails: parsed.data.emails,
+      applicantId: profile.id,
+      recommenders: parsed.data.recommenders as Array<{ role: RecommenderRole; email: string }>,
+      origin: request.nextUrl.origin,
     });
 
     await recordAuditEvent({
       supabase,
       actorId: profile.id,
       applicationId: parsed.data.applicationId,
-      action: "recommendations.requested",
+      action: "recommendations.upserted",
       metadata: {
-        count: rows.length,
+        createdCount: result.createdCount,
+        replacedCount: result.replacedCount,
+        failedEmailCount: result.failedEmailCount,
       },
       requestId,
     });
 
     return NextResponse.json({
-      count: rows.length,
-      emails: rows.map((row) => row.recommender_email),
+      recommenders: result.rows,
+      createdCount: result.createdCount,
+      replacedCount: result.replacedCount,
+      failedEmailCount: result.failedEmailCount,
     });
-  }, { operation: "recommendations.request" });
+  }, { operation: "recommendations.upsert" });
 }

@@ -64,7 +64,21 @@ function formatDate(value: string | null) {
 }
 
 function getApplicationFiles(application: Application) {
-  return (application.files as Record<string, string> | undefined) ?? {};
+  const files = (application.files as Record<string, unknown> | undefined) ?? {};
+  const normalized: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(files)) {
+    if (typeof value === "string") {
+      normalized[key] = value;
+      continue;
+    }
+
+    if (value && typeof value === "object" && typeof (value as Record<string, unknown>).path === "string") {
+      normalized[key] = (value as Record<string, unknown>).path as string;
+    }
+  }
+
+  return normalized;
 }
 
 function getDefaultOcrFileKey(application: Application) {

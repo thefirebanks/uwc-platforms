@@ -8,13 +8,14 @@ import {
   CardContent,
   Chip,
   CircularProgress,
+  Divider,
   Grid,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
-import type { Application, CycleStageField } from "@/types/domain";
+import type { Application, CycleStageField, RecommendationStatus, RecommenderRole } from "@/types/domain";
 import { StageBadge, StatusBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
 import { validateStagePayload } from "@/lib/stages/form-schema";
@@ -24,6 +25,32 @@ interface ApiError {
   message: string;
   errorId?: string;
 }
+
+type RecommenderSummary = {
+  id: string;
+  role: RecommenderRole;
+  email: string;
+  status: RecommendationStatus;
+  submittedAt: string | null;
+  inviteSentAt: string | null;
+  openedAt: string | null;
+  startedAt: string | null;
+  reminderCount: number;
+  lastReminderAt: string | null;
+  invalidatedAt: string | null;
+  createdAt: string;
+};
+
+type ApplicationFileValue =
+  | string
+  | {
+      path: string;
+      title?: string;
+      original_name?: string;
+      mime_type?: string;
+      size_bytes?: number;
+      uploaded_at?: string;
+    };
 
 const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
 type ProgressState = "complete" | "in_progress" | "not_started";
@@ -74,6 +101,59 @@ function getStepState({
   return "not_started";
 }
 
+function parseFileEntry(value: ApplicationFileValue | undefined | null) {
+  if (!value) {
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const inferredName = value.split("/").at(-1)?.replace(/^\d+-/, "") ?? value;
+    return {
+      path: value,
+      title: inferredName,
+      original_name: inferredName,
+      mime_type: "application/octet-stream",
+      size_bytes: 0,
+      uploaded_at: null as string | null,
+    };
+  }
+
+  return {
+    path: value.path,
+    title: value.title ?? value.original_name ?? value.path,
+    original_name: value.original_name ?? value.path.split("/").at(-1) ?? value.path,
+    mime_type: value.mime_type ?? "application/octet-stream",
+    size_bytes: value.size_bytes ?? 0,
+    uploaded_at: value.uploaded_at ?? null,
+  };
+}
+
+function statusTone(status: RecommendationStatus) {
+  if (status === "submitted") {
+    return { label: "Enviado", color: "#166534", bg: "#DCFCE7" };
+  }
+  if (status === "in_progress") {
+    return { label: "En progreso", color: "#92400E", bg: "#FEF3C7" };
+  }
+  if (status === "opened") {
+    return { label: "Abierto", color: "#1D4ED8", bg: "#DBEAFE" };
+  }
+  if (status === "sent") {
+    return { label: "Invitación enviada", color: "#0F766E", bg: "#CCFBF1" };
+  }
+  if (status === "expired") {
+    return { label: "Vencido", color: "#991B1B", bg: "#FEE2E2" };
+  }
+  if (status === "invalidated") {
+    return { label: "Reemplazado", color: "#6B7280", bg: "#F3F4F6" };
+  }
+  return { label: "Pendiente", color: "#6B7280", bg: "#F3F4F6" };
+}
+
+function roleLabel(role: RecommenderRole) {
+  return role === "mentor" ? "Tutor/Profesor/Mentor" : "Amigo (no familiar)";
+}
+
 export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
@@ -87,7 +167,7 @@ export function ApplicantApplicationForm({
   cycleName?: string;
   stageFields?: CycleStageField[];
   stageCloseAt?: string | null;
-  initialRecommenders?: string[];
+  initialRecommenders?: RecommenderSummary[];
 }) {
   const LOCKED_STATUSES = new Set<Application["status"]>([
     "submitted",
@@ -99,17 +179,27 @@ export function ApplicantApplicationForm({
   const [application, setApplication] = useState<Application | null>(existingApplication);
   const [error, setError] = useState<ApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
-  const [recommendationEmails, setRecommendationEmails] = useState("");
-  const [registeredRecommenders, setRegisteredRecommenders] = useState<string[]>(initialRecommenders);
+  const [recommenders, setRecommenders] = useState<RecommenderSummary[]>(initialRecommenders);
+  const [recommenderInputs, setRecommenderInputs] = useState<{ mentor: string; friend: string }>({
+    mentor:
+      initialRecommenders.find((row) => row.role === "mentor" && !row.invalidatedAt)?.email ?? "",
+    friend:
+      initialRecommenders.find((row) => row.role === "friend" && !row.invalidatedAt)?.email ?? "",
+  });
   const [loadingRecommenders, setLoadingRecommenders] = useState(false);
+  const [savingRecommenders, setSavingRecommenders] = useState(false);
+  const [remindingId, setRemindingId] = useState<string | null>(null);
   const [uploadingFieldKey, setUploadingFieldKey] = useState<string | null>(null);
+  const [savingFileTitleKey, setSavingFileTitleKey] = useState<string | null>(null);
+  const [fileTitleEdits, setFileTitleEdits] = useState<Record<string, string>>({});
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formValues, setFormValues] = useState<Record<string, string>>({});
 
+  const isStageClosed = Boolean(stageCloseAt && Date.parse(stageCloseAt) < Date.now());
   const isLocked = application ? LOCKED_STATUSES.has(application.status) : false;
-  const isEditingEnabled = !isLocked || isEditMode;
+  const isEditingEnabled = !isStageClosed && (!isLocked || isEditMode);
   const providedStageFields = stageFields ?? EMPTY_STAGE_FIELDS;
   const initialApplicationIdRef = useRef<string | null>(existingApplication?.id ?? null);
   const skippedInitialRecommenderFetchRef = useRef(false);
@@ -155,11 +245,12 @@ export function ApplicantApplicationForm({
 
   const documentsStatus = useMemo(() => {
     const requiredFileFields = fileStageFields.filter((field) => field.is_required);
-    const files = (application?.files as Record<string, string> | undefined) ?? {};
-    const completedCount = requiredFileFields.filter((field) =>
-      isMeaningfulValue(files[field.field_key]),
-    ).length;
-    const hasAnyFile = fileStageFields.some((field) => isMeaningfulValue(files[field.field_key]));
+    const files = (application?.files as Record<string, ApplicationFileValue> | undefined) ?? {};
+    const completedCount = requiredFileFields.filter((field) => {
+      const entry = parseFileEntry(files[field.field_key]);
+      return isMeaningfulValue(entry?.path);
+    }).length;
+    const hasAnyFile = fileStageFields.some((field) => isMeaningfulValue(parseFileEntry(files[field.field_key])?.path));
 
     return getStepState({
       complete: requiredFileFields.length === 0 || completedCount === requiredFileFields.length,
@@ -167,13 +258,28 @@ export function ApplicantApplicationForm({
     });
   }, [application?.files, application?.id, fileStageFields]);
 
+  const activeRecommendersByRole = useMemo(() => {
+    const map = new Map<RecommenderRole, RecommenderSummary>();
+    for (const row of recommenders) {
+      if (row.invalidatedAt) {
+        continue;
+      }
+      if (!map.has(row.role)) {
+        map.set(row.role, row);
+      }
+    }
+    return map;
+  }, [recommenders]);
+
   const recommenderStatus = useMemo(
     () =>
       getStepState({
-        complete: registeredRecommenders.length > 0,
-        inProgress: Boolean(application?.id),
+        complete:
+          activeRecommendersByRole.get("mentor")?.status === "submitted" &&
+          activeRecommendersByRole.get("friend")?.status === "submitted",
+        inProgress: activeRecommendersByRole.size > 0 || Boolean(application?.id),
       }),
-    [application?.id, registeredRecommenders.length],
+    [activeRecommendersByRole, application?.id],
   );
 
   const submissionStatus = useMemo(
@@ -213,8 +319,21 @@ export function ApplicantApplicationForm({
   }, [application?.id, application?.payload, formStageFields]);
 
   useEffect(() => {
+    const nextTitles: Record<string, string> = {};
+    const files = (application?.files as Record<string, ApplicationFileValue> | undefined) ?? {};
+    for (const field of fileStageFields) {
+      const entry = parseFileEntry(files[field.field_key]);
+      if (entry) {
+        nextTitles[field.field_key] = entry.title;
+      }
+    }
+    setFileTitleEdits(nextTitles);
+  }, [application?.files, fileStageFields]);
+
+  useEffect(() => {
     if (!application?.id) {
-      setRegisteredRecommenders([]);
+      setRecommenders([]);
+      setRecommenderInputs({ mentor: "", friend: "" });
       skippedInitialRecommenderFetchRef.current = false;
       return;
     }
@@ -236,20 +355,21 @@ export function ApplicantApplicationForm({
       try {
         const response = await fetch(`/api/recommendations?applicationId=${applicationId}`);
         const body = (await response.json()) as {
-          recommenders?: Array<{ email: string }>;
+          recommenders?: RecommenderSummary[];
         };
 
         if (!isMounted || !response.ok) {
           return;
         }
 
-        const emails = Array.from(
-          new Set((body.recommenders ?? []).map((recommender) => recommender.email)),
-        );
-        setRegisteredRecommenders(emails);
+        const rows = body.recommenders ?? [];
+        setRecommenders(rows);
+        const mentor = rows.find((row) => row.role === "mentor" && !row.invalidatedAt)?.email ?? "";
+        const friend = rows.find((row) => row.role === "friend" && !row.invalidatedAt)?.email ?? "";
+        setRecommenderInputs({ mentor, friend });
       } catch {
         if (isMounted) {
-          setRegisteredRecommenders([]);
+          setRecommenders([]);
         }
       } finally {
         if (isMounted) {
@@ -319,6 +439,14 @@ export function ApplicantApplicationForm({
       return;
     }
 
+    if (isStageClosed) {
+      setError({
+        message:
+          "La etapa ya cerró y no puedes enviar o editar esta postulación. Contacta al comité.",
+      });
+      return;
+    }
+
     const response = await fetch(`/api/applications/${application.id}/submit`, {
       method: "POST",
     });
@@ -333,7 +461,7 @@ export function ApplicantApplicationForm({
     setSuccessMessage("Postulación enviada. El comité revisará tu información.");
   }
 
-  async function createRecommendationRequests() {
+  async function saveRecommenders() {
     setError(null);
     setSuccessMessage(null);
 
@@ -350,33 +478,129 @@ export function ApplicantApplicationForm({
       return;
     }
 
-    const emails = recommendationEmails
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
+    const mentorEmail = recommenderInputs.mentor.trim();
+    const friendEmail = recommenderInputs.friend.trim();
 
-    const response = await fetch("/api/recommendations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ applicationId: application.id, emails }),
-    });
-    const body = await response.json();
-
-    if (!response.ok) {
-      setError(body);
+    if (!mentorEmail || !friendEmail) {
+      setError({
+        message:
+          "Debes registrar 2 recomendadores: uno tutor/profesor/mentor y uno amigo.",
+      });
       return;
     }
 
-    const normalizedResponseEmails =
-      Array.isArray(body.emails) && body.emails.length > 0
-        ? (body.emails as string[])
-        : emails.map((email) => email.toLowerCase());
+    setSavingRecommenders(true);
+    try {
+      const response = await fetch("/api/recommendations", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          applicationId: application.id,
+          recommenders: [
+            { role: "mentor", email: mentorEmail },
+            { role: "friend", email: friendEmail },
+          ],
+        }),
+      });
+      const body = await response.json();
 
-    setRegisteredRecommenders(Array.from(new Set(normalizedResponseEmails)));
-    const noun = body.count === 1 ? "recomendador" : "recomendadores";
-    setSuccessMessage(
-      `Se registraron ${body.count} ${noun}. Revisa la lista de correos confirmados abajo.`,
-    );
+      if (!response.ok) {
+        setError(body);
+        return;
+      }
+
+      const rows = (body.recommenders as RecommenderSummary[] | undefined) ?? [];
+      setRecommenders(rows);
+
+      const createdCount = Number(body.createdCount ?? 0);
+      const replacedCount = Number(body.replacedCount ?? 0);
+      const failedEmailCount = Number(body.failedEmailCount ?? 0);
+
+      const chunks = [];
+      if (createdCount > 0) {
+        chunks.push(`${createdCount} invitación(es) enviada(s).`);
+      }
+      if (replacedCount > 0) {
+        chunks.push(`${replacedCount} recomendador(es) reemplazado(s) con token nuevo.`);
+      }
+      if (failedEmailCount > 0) {
+        chunks.push(`${failedEmailCount} correo(s) no se enviaron, usa "Enviar recordatorio".`);
+      }
+
+      setSuccessMessage(chunks.length > 0 ? chunks.join(" ") : "Recomendadores actualizados.");
+    } finally {
+      setSavingRecommenders(false);
+    }
+  }
+
+  async function sendReminder(recommendationId: string) {
+    setError(null);
+    setSuccessMessage(null);
+    setRemindingId(recommendationId);
+
+    try {
+      const response = await fetch(`/api/recommendations/${recommendationId}/remind`, {
+        method: "POST",
+      });
+      const body = await response.json();
+
+      if (!response.ok) {
+        setError(body);
+        return;
+      }
+
+      const updated = body.recommender as RecommenderSummary;
+      setRecommenders((current) =>
+        current.map((row) => (row.id === updated.id ? updated : row)),
+      );
+      setSuccessMessage("Recordatorio enviado al recomendador.");
+    } finally {
+      setRemindingId(null);
+    }
+  }
+
+  async function saveFileTitle(fieldKey: string) {
+    setError(null);
+    setSuccessMessage(null);
+
+    if (!application?.id) {
+      return;
+    }
+
+    const files = (application.files as Record<string, ApplicationFileValue> | undefined) ?? {};
+    const entry = parseFileEntry(files[fieldKey]);
+    const nextTitle = fileTitleEdits[fieldKey]?.trim();
+    if (!entry || !nextTitle) {
+      return;
+    }
+
+    setSavingFileTitleKey(fieldKey);
+    try {
+      const response = await fetch(`/api/applications/${application.id}/files`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          key: fieldKey,
+          path: entry.path,
+          title: nextTitle,
+          originalName: entry.original_name,
+          mimeType: entry.mime_type,
+          sizeBytes: entry.size_bytes,
+          uploadedAt: entry.uploaded_at ?? new Date().toISOString(),
+        }),
+      });
+      const body = await response.json();
+
+      if (!response.ok) {
+        setError(body);
+        return;
+      }
+
+      setApplication(body.application);
+      setSuccessMessage("Título del documento actualizado.");
+    } finally {
+      setSavingFileTitleKey(null);
+    }
   }
 
   async function uploadDocument(fieldKey: string, event: ChangeEvent<HTMLInputElement>) {
@@ -433,6 +657,11 @@ export function ApplicantApplicationForm({
         body: JSON.stringify({
           key: fieldKey,
           path: signedUrlBody.path,
+          title: fileTitleEdits[fieldKey]?.trim() || file.name,
+          originalName: file.name,
+          mimeType: file.type || "application/octet-stream",
+          sizeBytes: file.size,
+          uploadedAt: new Date().toISOString(),
         }),
       });
       const associateBody = await associateResponse.json();
@@ -443,6 +672,10 @@ export function ApplicantApplicationForm({
       }
 
       setApplication(associateBody.application);
+      setFileTitleEdits((current) => ({
+        ...current,
+        [fieldKey]: current[fieldKey]?.trim() || file.name,
+      }));
       setSuccessMessage("Documento subido correctamente.");
     } finally {
       setUploadingFieldKey(null);
@@ -469,6 +702,11 @@ export function ApplicantApplicationForm({
                   Cierre de etapa: {new Date(stageCloseAt).toLocaleDateString()}
                 </Typography>
               ) : null}
+              {isStageClosed ? (
+                <Typography variant="body2" color="error.main" sx={{ mt: 0.5 }}>
+                  Etapa cerrada: no se permiten nuevas ediciones del postulante.
+                </Typography>
+              ) : null}
             </Box>
             <StageBadge stage={application?.stage_code ?? "documents"} />
           </Stack>
@@ -477,18 +715,24 @@ export function ApplicantApplicationForm({
               <Typography color="text.secondary">
                 Tu postulación ya fue enviada. Para cambiar datos, habilita edición manual.
               </Typography>
-              <Box>
-                <Button
-                  variant="outlined"
-                  onClick={() => {
-                    setError(null);
-                    setSuccessMessage("Edición habilitada. Guarda cambios y vuelve a enviar.");
-                    setIsEditMode(true);
-                  }}
-                >
-                  Editar respuesta
-                </Button>
-              </Box>
+              {isStageClosed ? (
+                <Typography variant="body2" color="error.main">
+                  La etapa está cerrada. Solo el comité puede reabrir cambios.
+                </Typography>
+              ) : (
+                <Box>
+                  <Button
+                    variant="outlined"
+                    onClick={() => {
+                      setError(null);
+                      setSuccessMessage("Edición habilitada. Guarda cambios y vuelve a enviar.");
+                      setIsEditMode(true);
+                    }}
+                  >
+                    Editar respuesta
+                  </Button>
+                </Box>
+              )}
             </Stack>
           ) : null}
           {isLocked && isEditMode ? (
@@ -651,41 +895,81 @@ export function ApplicantApplicationForm({
             </Typography>
             <Stack spacing={2}>
               {fileStageFields.map((field) => {
-                const filePath =
-                  ((application?.files as Record<string, string> | undefined)?.[field.field_key] ?? null) as
-                    | string
-                    | null;
-                const fileName = filePath
-                  ? filePath.split("/").at(-1)?.replace(/^\d+-/, "") ?? filePath
-                  : null;
+                const rawValue =
+                  ((application?.files as Record<string, ApplicationFileValue> | undefined)?.[field.field_key] ??
+                    null) as ApplicationFileValue | null;
+                const fileEntry = parseFileEntry(rawValue);
+                const fileName = fileEntry?.original_name ?? null;
+                const currentTitle = fileTitleEdits[field.field_key] ?? fileEntry?.title ?? "";
 
                 return (
                   <Box key={field.id} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 2 }}>
                     <Typography fontWeight={700}>{field.field_label}</Typography>
                     {field.help_text ? <Typography color="text.secondary">{field.help_text}</Typography> : null}
-                    <Button
-                      variant="outlined"
-                      component="label"
-                      sx={{ mt: 1.2 }}
-                      disabled={!application?.id || uploadingFieldKey === field.field_key || !isEditingEnabled}
-                    >
-                      {uploadingFieldKey === field.field_key ? "Subiendo..." : `Subir ${field.field_label}`}
-                      <input type="file" hidden onChange={(event) => uploadDocument(field.field_key, event)} />
-                    </Button>
+                    <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} sx={{ mt: 1.2 }}>
+                      <Button
+                        variant="outlined"
+                        component="label"
+                        disabled={!application?.id || uploadingFieldKey === field.field_key || !isEditingEnabled}
+                      >
+                        {uploadingFieldKey === field.field_key
+                          ? "Subiendo..."
+                          : fileEntry
+                            ? "Reemplazar archivo"
+                            : `Subir ${field.field_label}`}
+                        <input
+                          type="file"
+                          accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif"
+                          hidden
+                          onChange={(event) => uploadDocument(field.field_key, event)}
+                        />
+                      </Button>
+                      {fileEntry ? (
+                        <>
+                          <TextField
+                            label="Título visible"
+                            value={currentTitle}
+                            onChange={(event) =>
+                              setFileTitleEdits((current) => ({
+                                ...current,
+                                [field.field_key]: event.target.value,
+                              }))
+                            }
+                            disabled={!isEditingEnabled}
+                            fullWidth
+                          />
+                          <Button
+                            variant="text"
+                            onClick={() => saveFileTitle(field.field_key)}
+                            disabled={!isEditingEnabled || savingFileTitleKey === field.field_key}
+                          >
+                            {savingFileTitleKey === field.field_key ? "Guardando..." : "Guardar título"}
+                          </Button>
+                        </>
+                      ) : null}
+                    </Stack>
                     {!application?.id ? (
                       <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
                         Guarda primero un borrador para habilitar la subida.
                       </Typography>
                     ) : null}
-                    {fileName ? (
-                      <Box sx={{ mt: 1.5 }}>
+                    {fileEntry && fileName ? (
+                      <Stack spacing={0.4} sx={{ mt: 1.5 }}>
                         <Typography variant="body2" fontWeight={600}>
                           Documento actual: {fileName}
                         </Typography>
-                        <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
-                          Ruta: {filePath}
+                        <Typography variant="caption" color="text.secondary">
+                          Título: {currentTitle}
                         </Typography>
-                      </Box>
+                        {fileEntry.uploaded_at ? (
+                          <Typography variant="caption" color="text.secondary">
+                            Subido: {new Date(fileEntry.uploaded_at).toLocaleString()}
+                          </Typography>
+                        ) : null}
+                        <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
+                          Ruta: {fileEntry.path}
+                        </Typography>
+                      </Stack>
                     ) : null}
                   </Box>
                 );
@@ -702,41 +986,99 @@ export function ApplicantApplicationForm({
             <StatusBadge status={recommenderStatus} />
           </Stack>
           <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Ingresa correos separados por coma para generar links de recomendación.
+            Debes registrar 2 recomendadores: un mentor y un amigo (no familiar). El enlace se envía por correo automáticamente.
           </Typography>
-          <TextField
-            value={recommendationEmails}
-            onChange={(event) => setRecommendationEmails(event.target.value)}
-            fullWidth
-            label="Correos"
-            placeholder="mentor@colegio.edu.pe, amigo@gmail.com"
-            disabled={!isEditingEnabled}
-          />
-          <Button
-            sx={{ mt: 2 }}
-            variant="outlined"
-            onClick={createRecommendationRequests}
-            disabled={!isEditingEnabled}
-          >
-            Registrar recomendadores
-          </Button>
-          {registeredRecommenders.length > 0 ? (
-            <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" sx={{ mt: 1.5 }}>
-              {registeredRecommenders.map((email) => (
-                <Chip key={email} label={email} />
-              ))}
-            </Stack>
-          ) : null}
+          <Stack spacing={2}>
+            {(["mentor", "friend"] as const).map((role) => {
+              const current = activeRecommendersByRole.get(role) ?? null;
+              const tone = current ? statusTone(current.status) : statusTone("invited");
+
+              return (
+                <Box key={role} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 2 }}>
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    alignItems={{ xs: "flex-start", sm: "center" }}
+                    justifyContent="space-between"
+                    spacing={1}
+                    sx={{ mb: 1.2 }}
+                  >
+                    <Typography fontWeight={700}>{roleLabel(role)}</Typography>
+                    {current ? (
+                      <Chip
+                        label={tone.label}
+                        sx={{ bgcolor: tone.bg, color: tone.color, fontWeight: 600 }}
+                      />
+                    ) : (
+                      <Chip label="Sin registrar" />
+                    )}
+                  </Stack>
+                  <TextField
+                    value={recommenderInputs[role]}
+                    onChange={(event) =>
+                      setRecommenderInputs((prev) => ({
+                        ...prev,
+                        [role]: event.target.value,
+                      }))
+                    }
+                    fullWidth
+                    type="email"
+                    label={`Correo (${roleLabel(role)})`}
+                    placeholder={role === "mentor" ? "mentor@colegio.edu.pe" : "amigo@gmail.com"}
+                    disabled={!isEditingEnabled || current?.status === "submitted"}
+                  />
+                  <Stack
+                    direction={{ xs: "column", sm: "row" }}
+                    spacing={1}
+                    alignItems={{ xs: "flex-start", sm: "center" }}
+                    sx={{ mt: 1.2 }}
+                  >
+                    {current?.inviteSentAt ? (
+                      <Typography variant="body2" color="text.secondary">
+                        Invitación: {new Date(current.inviteSentAt).toLocaleString()}
+                      </Typography>
+                    ) : null}
+                    {current?.submittedAt ? (
+                      <Typography variant="body2" color="success.main">
+                        Formulario enviado: {new Date(current.submittedAt).toLocaleString()}
+                      </Typography>
+                    ) : null}
+                    {current && current.status !== "submitted" ? (
+                      <Button
+                        variant="text"
+                        onClick={() => sendReminder(current.id)}
+                        disabled={remindingId === current.id || !isEditingEnabled}
+                      >
+                        {remindingId === current.id ? "Enviando..." : "Enviar recordatorio"}
+                      </Button>
+                    ) : null}
+                  </Stack>
+                </Box>
+              );
+            })}
+          </Stack>
+          <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 2 }}>
+            <Button
+              variant="outlined"
+              onClick={saveRecommenders}
+              disabled={!isEditingEnabled || savingRecommenders}
+            >
+              {savingRecommenders ? "Guardando..." : "Guardar recomendadores"}
+            </Button>
+          </Stack>
           {loadingRecommenders ? (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
               Cargando recomendadores guardados...
             </Typography>
           ) : null}
-          {!loadingRecommenders && application?.id && registeredRecommenders.length === 0 ? (
+          {!loadingRecommenders && application?.id && recommenders.length === 0 ? (
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
               Aún no hay recomendadores registrados para esta postulación.
             </Typography>
           ) : null}
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="body2" color="text.secondary">
+            El postulante no puede ver ni copiar los enlaces de recomendación. Solo se muestra estado de avance.
+          </Typography>
         </CardContent>
       </Card>
 
@@ -756,7 +1098,7 @@ export function ApplicantApplicationForm({
             <Button
               variant="outlined"
               onClick={submitApplication}
-              disabled={!application?.id || (isLocked && !isEditMode)}
+              disabled={!application?.id || (isLocked && !isEditMode) || isStageClosed}
             >
               {isLocked && isEditMode ? "Reenviar postulación" : "Enviar postulación"}
             </Button>

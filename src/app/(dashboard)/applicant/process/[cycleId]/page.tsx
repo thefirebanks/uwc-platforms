@@ -2,9 +2,11 @@ import { redirect } from "next/navigation";
 import { ApplicantApplicationForm } from "@/components/applicant-application-form";
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type {
   Application,
   CycleStageField,
+  RecommendationRequest,
   SelectionProcess,
 } from "@/types/domain";
 
@@ -43,20 +45,28 @@ export default async function ApplicantProcessPage({
   }
 
   const existingApplication = (application as Application | null) ?? null;
+  const adminSupabase = getSupabaseAdminClient();
   const { data: recommenderRows } = existingApplication?.id
-    ? await supabase
+    ? await adminSupabase
         .from("recommendation_requests")
-        .select("recommender_email")
+        .select("*")
         .eq("application_id", existingApplication.id)
-    : { data: [] as Array<{ recommender_email: string | null }> };
-
-  const initialRecommenders = Array.from(
-    new Set(
-      (recommenderRows ?? [])
-        .map((row) => row.recommender_email?.trim().toLowerCase())
-        .filter((email): email is string => Boolean(email)),
-    ),
-  );
+        .order("created_at", { ascending: false })
+    : { data: [] as RecommendationRequest[] };
+  const initialRecommenders = ((recommenderRows as RecommendationRequest[] | null) ?? []).map((row) => ({
+    id: row.id,
+    role: row.role,
+    email: row.recommender_email,
+    status: row.status,
+    submittedAt: row.submitted_at,
+    inviteSentAt: row.invite_sent_at,
+    openedAt: row.opened_at,
+    startedAt: row.started_at,
+    reminderCount: row.reminder_count,
+    lastReminderAt: row.last_reminder_at,
+    invalidatedAt: row.invalidated_at,
+    createdAt: row.created_at,
+  }));
 
   return (
     <ApplicantApplicationForm
