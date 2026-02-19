@@ -41,6 +41,7 @@ describe("StageConfigEditor", () => {
               updated_at: "2026-01-01T00:00:00.000Z",
             },
           ],
+          ocrPromptTemplate: "Prompt OCR",
         }),
         { status: 200 },
       ),
@@ -82,6 +83,7 @@ describe("StageConfigEditor", () => {
             updated_at: "2026-01-01T00:00:00.000Z",
           },
         ]}
+        initialOcrPromptTemplate="Prompt OCR"
       />,
     );
 
@@ -144,6 +146,7 @@ describe("StageConfigEditor", () => {
           },
         ]}
         initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
       />,
     );
 
@@ -201,6 +204,7 @@ describe("StageConfigEditor", () => {
           },
         ]}
         initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
       />,
     );
 

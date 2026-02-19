@@ -31,21 +31,27 @@ Expected:
 ## Flow 3: Applicant Document Upload
 1. Login as applicant with an existing application.
 2. Upload identification document.
-3. Save association.
+3. Edit `Título visible` and click `Guardar título`.
+4. Replace the same document once.
 
 Expected:
 - Upload succeeds.
-- File path stored in `applications.files`.
+- File metadata stored in `applications.files` (`path`, `title`, `original_name`, `mime_type`, `uploaded_at`).
+- UI shows upload timestamp and latest title immediately.
 - File appears in Supabase storage bucket.
 
 ## Flow 4: Recommendation Registration
 1. Login as applicant.
-2. Enter two recommender emails.
-3. Register recommenders.
+2. Enter one email for `Tutor/Profesor/Mentor` and one for `Amigo`.
+3. Click `Guardar recomendadores`.
+4. Replace one role email and click `Guardar recomendadores` again.
+5. Click `Enviar recordatorio` on one pending recommender.
 
 Expected:
-- Requests are created in `recommendation_requests`.
-- Success message displays request count.
+- Requests are created in `recommendation_requests` with role/status fields.
+- Same email cannot be reused across both roles.
+- Replacing a recommender invalidates prior token row (`status=invalidated`) and creates a new invite row.
+- Applicant can see status and reminder count, but never sees raw recommendation links.
 
 ## Flow 5: Admin Validation + Stage Transition
 1. Login as admin.
@@ -113,10 +119,13 @@ Expected:
 4. Verify form fields are disabled.
 5. Click `Editar respuesta`.
 6. Verify fields become editable again.
+7. Move stage close date to past in admin settings and refresh applicant page.
+8. Verify applicant cannot enable edit mode anymore.
 
 Expected:
 - Applicant cannot accidentally edit right after submitting.
 - Explicit edit action is required before any changes can be made.
+- After stage close date, applicant edits stay blocked and only admin intervention is possible.
 
 ## Flow 12: Admin Process Dashboard + Stage Date Config
 1. Login as admin and open `/admin`.
@@ -232,14 +241,24 @@ Expected:
 - OCR history remains visible after refresh.
 - Admin can use OCR output for quick document triage/debugging.
 
-## Flow 21: Dark Mode Toggle
+## Flow 21: OCR Prompt Editor
+1. Login as admin and open `/admin/process/:cycleId/stage/documents`.
+2. In `Prompt OCR (Gemini)`, edit prompt text and click `Guardar configuración`.
+3. Return to process dashboard and run OCR on one file.
+
+Expected:
+- Prompt text persists after refresh.
+- New OCR execution uses the updated prompt template.
+- Audit metadata includes stage config update event.
+
+## Flow 22: Dark Mode Toggle
 1. Open `/`, `/login`, or any dashboard page.
 2. Click `Alternar modo oscuro`.
 3. Verify colors switch immediately.
 4. Reload page and confirm selected mode persists.
 5. Navigate between home/login/admin/applicant and confirm mode remains consistent.
 
-## Flow 22: Applicant Browser Tampering Attempt
+## Flow 23: Applicant Browser Tampering Attempt
 1. Login as applicant demo.
 2. Open browser console and run:
 ```js
@@ -263,12 +282,7 @@ Expected:
 - Response includes clear permission-safe error message.
 - Denied attempts are observable in structured logs.
 
-Expected:
-- Toggle is always available (public pages + dashboard nav).
-- Theme persists across reloads via local storage.
-- No hydration or console errors when mode changes and page reloads.
-
-## Flow 22: Privilege Escalation Attempts (Applicant)
+## Flow 24: Privilege Escalation Attempts (Applicant)
 1. Login as applicant.
 2. From browser console, try calling admin API endpoints directly:
 - `POST /api/applications/:id/transition`
@@ -284,3 +298,18 @@ Expected:
 - Direct profile role change is rejected by RLS (`profiles_update_self` guard).
 - Applicant direct application privilege fields are blocked by trigger/RLS guards.
 - Cross-application recommendation inserts are rejected by RLS ownership check.
+
+## Flow 25: Public Recommender OTP + Draft + Submit
+1. Use a real recommendation link from email (`/recomendacion/:token`).
+2. Verify page shows masked email, role, and expiry.
+3. Click `Enviar OTP`, read code from email, and click `Validar OTP`.
+4. Fill form partially and click `Guardar borrador`.
+5. Reload page; verify draft is restored after session validation.
+6. Complete all required fields and click `Enviar recomendación`.
+7. Reopen the link and confirm form is locked as submitted.
+
+Expected:
+- OTP required before form access.
+- Draft saves and resumes within active session.
+- Final submit is one-way (`status=submitted` + immutable for recommender).
+- Friend role requires non-family confirmation checkbox.

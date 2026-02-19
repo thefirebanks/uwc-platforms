@@ -98,6 +98,8 @@ export function buildDefaultCycleStageTemplates({
       stage_label: "Stage 1: Documentos",
       milestone_label: "Recepción y validación documental",
       due_at: stage1CloseAt,
+      ocr_prompt_template:
+        "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.",
       sort_order: 1,
     },
     {

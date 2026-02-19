@@ -15,6 +15,22 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(30).default(10),
 });
 
+function resolveFilePath(value: unknown) {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof (value as Record<string, unknown>).path === "string"
+  ) {
+    return (value as Record<string, unknown>).path as string;
+  }
+
+  return null;
+}
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -92,7 +108,7 @@ export async function POST(
 
     const { data: application } = await supabase
       .from("applications")
-      .select("files")
+      .select("files, cycle_id, stage_code")
       .eq("id", id)
       .maybeSingle();
 
@@ -104,8 +120,8 @@ export async function POST(
       });
     }
 
-    const files = application.files as Record<string, string>;
-    const filePath = files[parsed.data.fileKey];
+    const files = application.files as Record<string, unknown>;
+    const filePath = resolveFilePath(files[parsed.data.fileKey]);
 
     if (!filePath) {
       throw new AppError({
@@ -127,7 +143,18 @@ export async function POST(
       });
     }
 
-    const result = await runOcrCheck({ fileUrl: signedUrlData.signedUrl });
+    const { data: templateData } = await supabase
+      .from("cycle_stage_templates")
+      .select("ocr_prompt_template")
+      .eq("cycle_id", application.cycle_id)
+      .eq("stage_code", application.stage_code)
+      .maybeSingle();
+
+    const result = await runOcrCheck({
+      fileUrl: signedUrlData.signedUrl,
+      promptTemplate:
+        (templateData as { ocr_prompt_template: string | null } | null)?.ocr_prompt_template ?? null,
+    });
 
     const { data: insertedData, error: insertError } = await supabase
       .from("application_ocr_checks")

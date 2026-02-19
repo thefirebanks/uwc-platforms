@@ -2,6 +2,8 @@ import type {
   ApplicationStatus,
   AppRole,
   CommunicationStatus,
+  RecommendationStatus,
+  RecommenderRole,
   StageAutomationTrigger,
   StageCode,
   StageFieldType,
@@ -124,6 +126,7 @@ export interface Database {
           stage_label: string;
           milestone_label: string;
           due_at: string | null;
+          ocr_prompt_template: string | null;
           sort_order: number;
           created_at: string;
         },
@@ -134,6 +137,7 @@ export interface Database {
           stage_label: string;
           milestone_label: string;
           due_at?: string | null;
+          ocr_prompt_template?: string | null;
           sort_order?: number;
           created_at?: string;
         },
@@ -141,6 +145,7 @@ export interface Database {
           stage_label?: string;
           milestone_label?: string;
           due_at?: string | null;
+          ocr_prompt_template?: string | null;
           sort_order?: number;
         }
       >;
@@ -149,22 +154,73 @@ export interface Database {
           id: string;
           application_id: string;
           requester_id: string;
+          role: RecommenderRole;
           recommender_email: string;
           token: string;
+          status: RecommendationStatus;
+          invite_sent_at: string | null;
+          opened_at: string | null;
+          started_at: string | null;
           submitted_at: string | null;
+          invalidated_at: string | null;
+          invalidation_reason: string | null;
+          reminder_count: number;
+          last_reminder_at: string | null;
+          otp_code_hash: string | null;
+          otp_sent_at: string | null;
+          otp_attempt_count: number;
+          otp_verified_at: string | null;
+          access_expires_at: string;
+          session_token_hash: string | null;
+          session_expires_at: string | null;
+          responses: Json;
           created_at: string;
         },
         {
           id?: string;
           application_id: string;
           requester_id: string;
+          role: RecommenderRole;
           recommender_email: string;
           token: string;
+          status?: RecommendationStatus;
+          invite_sent_at?: string | null;
+          opened_at?: string | null;
+          started_at?: string | null;
           submitted_at?: string | null;
+          invalidated_at?: string | null;
+          invalidation_reason?: string | null;
+          reminder_count?: number;
+          last_reminder_at?: string | null;
+          otp_code_hash?: string | null;
+          otp_sent_at?: string | null;
+          otp_attempt_count?: number;
+          otp_verified_at?: string | null;
+          access_expires_at?: string;
+          session_token_hash?: string | null;
+          session_expires_at?: string | null;
+          responses?: Json;
           created_at?: string;
         },
         {
+          role?: RecommenderRole;
+          status?: RecommendationStatus;
+          invite_sent_at?: string | null;
+          opened_at?: string | null;
+          started_at?: string | null;
           submitted_at?: string | null;
+          invalidated_at?: string | null;
+          invalidation_reason?: string | null;
+          reminder_count?: number;
+          last_reminder_at?: string | null;
+          otp_code_hash?: string | null;
+          otp_sent_at?: string | null;
+          otp_attempt_count?: number;
+          otp_verified_at?: string | null;
+          access_expires_at?: string;
+          session_token_hash?: string | null;
+          session_expires_at?: string | null;
+          responses?: Json;
         }
       >;
       stage_transitions: TableDef<

@@ -59,7 +59,36 @@ describe("ApplicantApplicationForm", () => {
     render(
       <ApplicantApplicationForm
         cycleId="cycle-2"
-        initialRecommenders={["mentor@example.com", "amigo@example.com"]}
+        initialRecommenders={[
+          {
+            id: "rec-mentor",
+            role: "mentor",
+            email: "mentor@example.com",
+            status: "sent",
+            submittedAt: null,
+            inviteSentAt: "2026-02-18T20:00:00.000Z",
+            openedAt: null,
+            startedAt: null,
+            reminderCount: 0,
+            lastReminderAt: null,
+            invalidatedAt: null,
+            createdAt: "2026-02-18T20:00:00.000Z",
+          },
+          {
+            id: "rec-friend",
+            role: "friend",
+            email: "amigo@example.com",
+            status: "sent",
+            submittedAt: null,
+            inviteSentAt: "2026-02-18T20:00:00.000Z",
+            openedAt: null,
+            startedAt: null,
+            reminderCount: 0,
+            lastReminderAt: null,
+            invalidatedAt: null,
+            createdAt: "2026-02-18T20:00:00.000Z",
+          },
+        ]}
         existingApplication={{
           id: "app-2",
           applicant_id: "user-1",
@@ -83,8 +112,8 @@ describe("ApplicantApplicationForm", () => {
       />,
     );
 
-    expect(await screen.findByText("mentor@example.com")).toBeInTheDocument();
-    expect(screen.getByText("amigo@example.com")).toBeInTheDocument();
+    expect(await screen.findByDisplayValue("mentor@example.com")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("amigo@example.com")).toBeInTheDocument();
   });
 
   it("shows progress summary based on submitted state", async () => {

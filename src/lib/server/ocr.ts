@@ -3,6 +3,9 @@ import { AppError } from "@/lib/errors/app-error";
 const GEMINI_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
 
+export const DEFAULT_OCR_PROMPT =
+  "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.";
+
 function clampConfidence(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
@@ -74,8 +77,10 @@ export function parseOcrModelOutput(outputText: string) {
 
 export async function runOcrCheck({
   fileUrl,
+  promptTemplate,
 }: {
   fileUrl: string;
+  promptTemplate?: string | null;
 }): Promise<{ summary: string; confidence: number; rawResponse: Record<string, unknown> }> {
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -86,6 +91,8 @@ export async function runOcrCheck({
       status: 400,
     });
   }
+
+  const prompt = (promptTemplate?.trim() || DEFAULT_OCR_PROMPT).trim();
 
   const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
     method: "POST",
@@ -101,9 +108,10 @@ export async function runOcrCheck({
             {
               text: [
                 "Analiza este documento y evalúa si parece válido para etapa documental.",
+                prompt,
                 `URL temporal del archivo: ${fileUrl}`,
                 "Responde SOLO JSON con este formato:",
-                '{"summary":"resumen breve","confidence":0.0}',
+                '{"summary":"resumen breve","confidence":0.0,"findings":["hallazgo 1","hallazgo 2"]}',
                 "confidence debe ir entre 0 y 1.",
               ].join("\n"),
             },

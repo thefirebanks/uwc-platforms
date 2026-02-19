@@ -1,0 +1,41 @@
+import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
+import { withErrorHandling } from "@/lib/errors/with-error-handling";
+import { AppError } from "@/lib/errors/app-error";
+import { saveRecommendationDraft } from "@/lib/server/recommendations-service";
+
+const tokenSchema = z.string().uuid();
+const payloadSchema = z.record(z.string(), z.unknown());
+
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ token: string }> },
+) {
+  return withErrorHandling(async () => {
+    const { token: rawToken } = await context.params;
+    const tokenParsed = tokenSchema.safeParse(rawToken);
+    const sessionToken = request.headers.get("x-recommender-session")?.trim();
+    const body = await request.json();
+    const bodyParsed = payloadSchema.safeParse(body);
+
+    if (!tokenParsed.success || !sessionToken || !bodyParsed.success) {
+      throw new AppError({
+        message: "Invalid recommendation draft payload",
+        userMessage: "No se pudo guardar el borrador.",
+        status: 400,
+      });
+    }
+
+    const result = await saveRecommendationDraft({
+      token: tokenParsed.data,
+      sessionToken,
+      payload: bodyParsed.data,
+    });
+
+    return NextResponse.json({
+      recommendation: result.recommendation,
+      validationErrors: result.validationErrors,
+    });
+  }, { operation: "recommendations.public.draft_save" });
+}
+

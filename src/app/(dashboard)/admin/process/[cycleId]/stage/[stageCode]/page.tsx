@@ -103,6 +103,7 @@ export default async function StageConfigPage({
       stageLabel={(templateData as CycleStageTemplate | null)?.stage_label ?? parsedStageCode}
       initialFields={(fieldsData as CycleStageField[] | null) ?? fallbackFields}
       initialAutomations={(automationsData as StageAutomationTemplate[] | null) ?? fallbackAutomations}
+      initialOcrPromptTemplate={(templateData as CycleStageTemplate | null)?.ocr_prompt_template ?? null}
     />
   );
 }

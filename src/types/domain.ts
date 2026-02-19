@@ -4,6 +4,15 @@ export type StageCode = "documents" | "exam_placeholder";
 export type StageFieldType = "short_text" | "long_text" | "number" | "date" | "email" | "file";
 export type StageAutomationTrigger = "application_submitted" | "stage_result";
 export type CommunicationStatus = "queued" | "processing" | "sent" | "failed";
+export type RecommenderRole = "mentor" | "friend";
+export type RecommendationStatus =
+  | "invited"
+  | "sent"
+  | "opened"
+  | "in_progress"
+  | "submitted"
+  | "invalidated"
+  | "expired";
 
 export type ApplicationStatus =
   | "draft"
@@ -27,20 +36,42 @@ export interface Application {
   stage_code: StageCode;
   status: ApplicationStatus;
   payload: Record<string, string | number | boolean | null>;
-  files: Record<string, string>;
+  files: Record<string, string | ApplicationFileEntry>;
   validation_notes: string | null;
   error_report_count: number;
   created_at: string;
   updated_at: string;
 }
 
+export interface ApplicationFileEntry {
+  path: string;
+  title: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  uploaded_at: string;
+}
+
 export interface RecommendationRequest {
   id: string;
   application_id: string;
   requester_id: string;
+  role: RecommenderRole;
   recommender_email: string;
   token: string;
+  status: RecommendationStatus;
+  invite_sent_at: string | null;
+  opened_at: string | null;
+  started_at: string | null;
   submitted_at: string | null;
+  invalidated_at: string | null;
+  invalidation_reason: string | null;
+  reminder_count: number;
+  last_reminder_at: string | null;
+  otp_sent_at: string | null;
+  otp_verified_at: string | null;
+  access_expires_at: string;
+  responses: Record<string, unknown>;
   created_at: string;
 }
 
@@ -63,6 +94,7 @@ export interface CycleStageTemplate {
   stage_label: string;
   milestone_label: string;
   due_at: string | null;
+  ocr_prompt_template?: string | null;
   sort_order: number;
   created_at: string;
 }

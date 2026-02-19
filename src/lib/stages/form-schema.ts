@@ -118,14 +118,31 @@ export function validateRequiredFiles({
   files,
 }: {
   fields: CycleStageField[];
-  files: Record<string, string | undefined> | null | undefined;
+  files: Record<string, string | { path?: string } | undefined> | null | undefined;
 }) {
+  function hasFile(key: string) {
+    const candidate = files?.[key];
+    if (!candidate) {
+      return false;
+    }
+
+    if (typeof candidate === "string") {
+      return candidate.trim().length > 0;
+    }
+
+    if (typeof candidate === "object" && typeof candidate.path === "string") {
+      return candidate.path.trim().length > 0;
+    }
+
+    return false;
+  }
+
   const missingFields = fields.filter(
     (field) =>
       field.is_active &&
       field.field_type === "file" &&
       field.is_required &&
-      !(files && files[field.field_key]),
+      !hasFile(field.field_key),
   );
 
   return {

@@ -29,7 +29,8 @@
 - Application CRUD and submit
 - OCR check + OCR history (`POST/GET /api/applications/:id/ocr-check`)
 - Validation and stage transition
-- Recommendation request registration
+- Recommendation management (`GET/PUT /api/recommendations`, `POST /api/recommendations/:id/remind`)
+- Public no-login recommender flow (`/recomendacion/:token` + OTP/session APIs)
 - Exam import and export
 - Communication queue listing and processing (`GET /api/communications`, `POST /api/communications/process`)
 - Audit listing and export
@@ -53,7 +54,8 @@
   - API routes use server-side `requireAuth(["admin"])` checks (client role tampering is ignored).
   - Dashboard pages gate by server session role before render.
   - Database RLS enforces admin-only writes for admin resources (`cycles`, transitions, imports, communications, stage configs).
-  - Applicant-side direct table writes are guarded to prevent privilege escalation (no self role promotion, no applicant stage/status/admin-note mutations).
+- Applicant-side direct table writes are guarded to prevent privilege escalation (no self role promotion, no applicant stage/status/admin-note mutations).
+  - `recommendation_requests` table is admin-only at DB level; applicant access happens only via server APIs with ownership checks.
   - CI regression tests fail if admin route guards are removed (`tests/security/access-control-regressions.test.ts`).
   - E2E browser tampering test verifies applicant receives `403` on admin API attempts (`tests/e2e/access-control.spec.ts`).
 
@@ -70,8 +72,14 @@
   - only one active process at a time
   - applicant cap is enforced (max 3 applications across processes for now)
   - stage templates are auto-bootstrapped when creating a process and then editable by admin
+  - stage templates include OCR prompt template configurable per stage
   - stage field schema is editable by admin and drives applicant form rendering
   - required file fields are validated before submit
+  - file uploads store path + UX metadata (title, original name, mime, upload timestamp)
+  - applicant submit now requires both recommender roles submitted (`mentor` + `friend`)
+  - applicant cannot edit once stage close date passes; post-close edits require admin intervention
+  - recommender flow is no-login link + OTP verification + draft save + final one-way submit
+  - applicant sees recommender status/reminders but never sees/copies recommender tokenized links
   - stage automation templates can queue communication entries on trigger events
   - communication queue rows support delivery lifecycle (`queued`, `processing`, `sent`, `failed`)
   - admins can process queued deliveries and retry failed deliveries from process dashboard

@@ -24,6 +24,7 @@ const API_ROUTES = [
   "src/app/api/exports/route.ts",
   "src/app/api/me/route.ts",
   "src/app/api/recommendations/route.ts",
+  "src/app/api/recommendations/[id]/remind/route.ts",
 ];
 
 const ADMIN_SENSITIVE_ROUTES = [

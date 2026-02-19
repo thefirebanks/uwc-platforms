@@ -7,7 +7,15 @@ import type { ApplicationStatus, StageCode } from "@/types/domain";
 import type { StagePayload } from "@/lib/stages/form-schema";
 
 type ApplicationRow = Database["public"]["Tables"]["applications"]["Row"];
-type RecommendationRow = Database["public"]["Tables"]["recommendation_requests"]["Row"];
+
+function isPast(dateLike: string | null | undefined) {
+  if (!dateLike) {
+    return false;
+  }
+
+  const parsed = Date.parse(dateLike);
+  return Number.isFinite(parsed) && parsed < Date.now();
+}
 
 async function getActiveCycleId(supabase: SupabaseClient<Database>) {
   const { data, error } = await supabase
@@ -26,6 +34,38 @@ async function getActiveCycleId(supabase: SupabaseClient<Database>) {
   }
 
   return data.id;
+}
+
+export async function assertApplicantCanEditCycle({
+  supabase,
+  cycleId,
+}: {
+  supabase: SupabaseClient<Database>;
+  cycleId: string;
+}) {
+  const { data: cycle, error } = await supabase
+    .from("cycles")
+    .select("id, stage1_close_at")
+    .eq("id", cycleId)
+    .maybeSingle();
+
+  if (error || !cycle) {
+    throw new AppError({
+      message: "Cycle missing for applicant edit policy",
+      userMessage: "No se encontró el proceso de selección.",
+      status: 404,
+      details: error,
+    });
+  }
+
+  if (isPast(cycle.stage1_close_at)) {
+    throw new AppError({
+      message: "Applicant edit window closed",
+      userMessage:
+        "La etapa ya cerró y no puedes editar esta postulación. Contacta al comité si necesitas soporte.",
+      status: 422,
+    });
+  }
 }
 
 export async function getApplicationsForAdmin(
@@ -96,7 +136,7 @@ export async function upsertApplicantApplication({
 
   const { data: cycleExists, error: cycleError } = await supabase
     .from("cycles")
-    .select("id")
+    .select("id, stage1_close_at")
     .eq("id", targetCycleId)
     .maybeSingle();
 
@@ -106,6 +146,15 @@ export async function upsertApplicantApplication({
       userMessage: "No se encontró el proceso de selección elegido.",
       status: 404,
       details: cycleError,
+    });
+  }
+
+  if (isPast(cycleExists.stage1_close_at)) {
+    throw new AppError({
+      message: "Applicant attempted draft save after stage close",
+      userMessage:
+        "La etapa ya cerró y no puedes editar esta postulación. Contacta al comité si necesitas soporte.",
+      status: 422,
     });
   }
 
@@ -318,41 +367,6 @@ export async function transitionApplication({
   }
 
   return updated as ApplicationRow;
-}
-
-export async function createRecommendationRequests({
-  supabase,
-  applicationId,
-  requesterId,
-  emails,
-}: {
-  supabase: SupabaseClient<Database>;
-  applicationId: string;
-  requesterId: string;
-  emails: string[];
-}): Promise<RecommendationRow[]> {
-  const rows = emails.map((email) => ({
-    application_id: applicationId,
-    requester_id: requesterId,
-    recommender_email: email.trim().toLowerCase(),
-    token: crypto.randomUUID(),
-  }));
-
-  const { data, error } = await supabase
-    .from("recommendation_requests")
-    .insert(rows)
-    .select("*");
-
-  if (error || !data) {
-    throw new AppError({
-      message: "Recommendation creation failed",
-      userMessage: "No se pudieron registrar los recomendadores.",
-      status: 500,
-      details: error,
-    });
-  }
-
-  return data as RecommendationRow[];
 }
 
 export async function importExamCsv({

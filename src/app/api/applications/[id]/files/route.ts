@@ -3,10 +3,17 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
+import { assertApplicantCanEditCycle } from "@/lib/server/application-service";
+import type { Json } from "@/types/supabase";
 
 const schema = z.object({
   key: z.string().min(2),
   path: z.string().min(4),
+  title: z.string().min(2).max(140).optional(),
+  originalName: z.string().min(1).max(300).optional(),
+  mimeType: z.string().max(120).optional(),
+  sizeBytes: z.number().int().nonnegative().optional(),
+  uploadedAt: z.string().datetime().optional(),
 });
 
 export async function POST(
@@ -29,7 +36,7 @@ export async function POST(
 
     const { data: app } = await supabase
       .from("applications")
-      .select("id, applicant_id, files")
+      .select("id, applicant_id, cycle_id, files")
       .eq("id", id)
       .maybeSingle();
 
@@ -41,10 +48,31 @@ export async function POST(
       });
     }
 
+    await assertApplicantCanEditCycle({
+      supabase,
+      cycleId: app.cycle_id,
+    });
+
+    const currentFiles = (app.files as Record<string, unknown>) ?? {};
+    const currentValue = currentFiles[parsed.data.key];
+    const previousTitle =
+      typeof currentValue === "object" &&
+      currentValue !== null &&
+      typeof (currentValue as Record<string, unknown>).title === "string"
+        ? ((currentValue as Record<string, unknown>).title as string)
+        : undefined;
+
     const updatedFiles = {
-      ...(app.files as Record<string, string>),
-      [parsed.data.key]: parsed.data.path,
-    };
+      ...currentFiles,
+      [parsed.data.key]: {
+        path: parsed.data.path,
+        title: parsed.data.title?.trim() || previousTitle || parsed.data.originalName || parsed.data.path,
+        original_name: parsed.data.originalName ?? parsed.data.path.split("/").at(-1) ?? parsed.data.path,
+        mime_type: parsed.data.mimeType ?? "application/octet-stream",
+        size_bytes: parsed.data.sizeBytes ?? 0,
+        uploaded_at: parsed.data.uploadedAt ?? new Date().toISOString(),
+      },
+    } as Json;
 
     const { data, error } = await supabase
       .from("applications")

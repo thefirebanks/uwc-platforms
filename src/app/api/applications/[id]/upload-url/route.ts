@@ -3,6 +3,7 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
+import { assertApplicantCanEditCycle } from "@/lib/server/application-service";
 
 const schema = z.object({
   fileName: z.string().min(2),
@@ -29,7 +30,7 @@ export async function POST(
 
     const { data: app } = await supabase
       .from("applications")
-      .select("id, applicant_id")
+      .select("id, applicant_id, cycle_id")
       .eq("id", id)
       .maybeSingle();
 
@@ -41,7 +42,13 @@ export async function POST(
       });
     }
 
-    const objectPath = `${profile.id}/${id}/${Date.now()}-${parsed.data.fileName}`;
+    await assertApplicantCanEditCycle({
+      supabase,
+      cycleId: app.cycle_id,
+    });
+
+    const safeName = parsed.data.fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "archivo";
+    const objectPath = `${profile.id}/${id}/${Date.now()}-${safeName}`;
     const { data, error } = await supabase.storage
       .from("application-documents")
       .createSignedUploadUrl(objectPath);
