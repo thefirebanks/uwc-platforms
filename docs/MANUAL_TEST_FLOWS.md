@@ -313,3 +313,21 @@ Expected:
 - Draft saves and resumes within active session.
 - Final submit is one-way (`status=submitted` + immutable for recommender).
 - Friend role requires non-family confirmation checkbox.
+
+## Flow 26: Stage 1 PDF Default Schema Coverage
+1. Login as admin and open `/admin/process/:cycleId/stage/documents`.
+2. Verify fields include all major sections from `docs/STAGE1_PDF_FIELD_INVENTORY.md`:
+- Cumplimiento de requisitos
+- Información personal
+- Información del colegio
+- Hoja de vida e interés en UWC
+- Documentos y pago
+- Notas oficiales por grado (PRIMERO a QUINTO)
+3. Verify one field from the notes matrix exists (por ejemplo, `Notas oficiales PRIMERO - Arte`).
+4. Login as applicant and open `/applicant/process/:cycleId`.
+5. Verify those default fields render in applicant mode without manual admin bootstrapping.
+
+Expected:
+- Legacy 7-field cycles are auto-expanded to the full Stage 1 default schema.
+- Admin can edit/reorder/remove the expanded defaults as usual.
+- Applicant form reflects the same expanded schema.

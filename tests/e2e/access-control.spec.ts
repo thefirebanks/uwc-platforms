@@ -1,6 +1,16 @@
 import { expect, test } from "@playwright/test";
 
+const bypassReady =
+  process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true" &&
+  Boolean(process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL) &&
+  Boolean(process.env.NEXT_PUBLIC_DEMO_PASSWORD);
+
 test("demo applicant cannot invoke admin APIs", async ({ page }) => {
+  test.skip(
+    !bypassReady,
+    "This E2E check requires NEXT_PUBLIC_ENABLE_DEV_BYPASS=true and demo credentials in env.",
+  );
+
   await page.goto("/login");
   await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
   await expect(page).toHaveURL(/\/applicant/);

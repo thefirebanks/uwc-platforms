@@ -4,6 +4,7 @@ This folder contains the shared product and engineering source of truth for the 
 
 ## Core Documents
 - `docs/BRAINSTORMING.md`: Raw product brainstorming and context.
+- `docs/STAGE1_PDF_FIELD_INVENTORY.md`: Inventario completo de campos de Stage 1 extraídos del PDF oficial.
 - `docs/PRODUCT_SPEC.md`: Functional requirements and non-functional requirements.
 - `docs/ARCHITECTURE.md`: Technical architecture, system boundaries, and major design decisions.
 - `docs/PLANNING.md`: Iterative rollout plan and release milestones.
