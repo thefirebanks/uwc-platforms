@@ -1,25 +1,52 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { requireAuth } from "@/lib/server/auth";
+import {
+  buildApplicationsCsv,
+  getApplicationExportPackage,
+  getApplicationsForExport,
+  parseApplicationExportFilters,
+} from "@/lib/server/exports-service";
 
-export async function GET() {
+function buildCsvFileName() {
+  const stamp = new Date().toISOString().replaceAll(":", "-");
+  return `applications-export-${stamp}.csv`;
+}
+
+function buildApplicationFileName(applicationId: string) {
+  return `application-${applicationId}.json`;
+}
+
+export async function GET(request: NextRequest) {
   return withErrorHandling(async () => {
     const { supabase } = await requireAuth(["admin"]);
-    const { data: applications } = await supabase
-      .from("applications")
-      .select("id, applicant_id, stage_code, status, updated_at");
+    const applicationId = request.nextUrl.searchParams.get("applicationId");
 
-    const header = "application_id,applicant_id,stage,status,updated_at";
-    const rows = (applications ?? []).map(
-      (row) => `${row.id},${row.applicant_id},${row.stage_code},${row.status},${row.updated_at}`,
-    );
-    const csv = [header, ...rows].join("\n");
+    if (applicationId) {
+      const exportPackage = await getApplicationExportPackage({
+        supabase,
+        applicationId,
+      });
+      return new NextResponse(JSON.stringify(exportPackage, null, 2), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Disposition": `attachment; filename="${buildApplicationFileName(applicationId)}"`,
+        },
+      });
+    }
+
+    const filters = parseApplicationExportFilters(request.nextUrl.searchParams);
+    const result = await getApplicationsForExport({ supabase, filters });
+    const csv = buildApplicationsCsv(result.rows);
 
     return new NextResponse(csv, {
       status: 200,
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": 'attachment; filename="applications-export.csv"',
+        "Content-Disposition": `attachment; filename="${buildCsvFileName()}"`,
+        "X-Export-Total-Rows": String(result.total),
+        "X-Export-Truncated": String(result.truncated),
       },
     });
   }, { operation: "exports.applications_csv" });
