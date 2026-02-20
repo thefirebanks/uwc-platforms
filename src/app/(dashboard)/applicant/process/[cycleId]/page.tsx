@@ -3,6 +3,7 @@ import { ApplicantApplicationForm } from "@/components/applicant-application-for
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
+import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 import type {
   Application,
   CycleStageField,
@@ -67,13 +68,17 @@ export default async function ApplicantProcessPage({
     invalidatedAt: row.invalidated_at,
     createdAt: row.created_at,
   }));
+  const resolvedStageFields = resolveDocumentStageFields({
+    cycleId,
+    fields: ((stageFields as CycleStageField[] | null) ?? []),
+  });
 
   return (
     <ApplicantApplicationForm
       existingApplication={existingApplication}
       cycleId={cycleId}
       cycleName={(cycle as SelectionProcess).name}
-      stageFields={(stageFields as CycleStageField[] | null) ?? []}
+      stageFields={resolvedStageFields}
       stageCloseAt={(cycle as SelectionProcess).stage1_close_at ?? null}
       initialRecommenders={initialRecommenders}
     />

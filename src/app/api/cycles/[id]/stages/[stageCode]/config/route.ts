@@ -4,6 +4,7 @@ import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
+import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 import type { Database } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
@@ -133,8 +134,16 @@ export async function GET(
       });
     }
 
+    const rawFields = (fieldsData as StageFieldRow[] | null) ?? [];
+    const fields = stageCode === "documents"
+      ? resolveDocumentStageFields({
+          cycleId,
+          fields: rawFields,
+        })
+      : rawFields;
+
     return NextResponse.json({
-      fields: (fieldsData as StageFieldRow[] | null) ?? [],
+      fields,
       automations: (automationsData as StageAutomationRow[] | null) ?? [],
       ocrPromptTemplate:
         ((templateData as Pick<StageTemplateRow, "ocr_prompt_template"> | null)?.ocr_prompt_template ?? null),

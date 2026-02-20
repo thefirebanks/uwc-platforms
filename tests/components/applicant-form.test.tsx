@@ -11,7 +11,7 @@ describe("ApplicantApplicationForm", () => {
     render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-1" />);
 
     expect(screen.getByRole("button", { name: "Enviar postulación" })).toBeDisabled();
-    expect(screen.getByText("Guarda primero un borrador para habilitar la subida.")).toBeInTheDocument();
+    expect(screen.getAllByText("Guarda primero un borrador para habilitar la subida.").length).toBeGreaterThan(0);
     expect(screen.getByText("Progreso de postulación")).toBeInTheDocument();
   });
 

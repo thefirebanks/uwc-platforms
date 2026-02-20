@@ -11,7 +11,7 @@ import {
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { validateStagePayload } from "@/lib/stages/form-schema";
 import type { CycleStageField } from "@/types/domain";
-import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
+import { buildFallbackStageFields, resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 
 const cycleIdSchema = z.string().uuid();
 
@@ -84,7 +84,10 @@ export async function POST(request: NextRequest) {
 
       const configured = (stageFieldsData as CycleStageField[] | null) ?? [];
       if (configured.length > 0) {
-        stageFields = configured;
+        stageFields = resolveDocumentStageFields({
+          cycleId: targetCycleId,
+          fields: configured,
+        });
       }
     }
 

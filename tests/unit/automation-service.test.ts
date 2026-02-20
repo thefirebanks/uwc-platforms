@@ -10,6 +10,15 @@ vi.mock("@/lib/supabase/admin", () => ({
   getSupabaseAdminClient: mockGetSupabaseAdminClient,
 }));
 
+const MIN_REQUIRED_STAGE1_PAYLOAD = {
+  fullName: "Ana Pérez",
+  dateOfBirth: "2008-08-08",
+  nationality: "Peruana",
+  schoolName: "Colegio Demo",
+  gradeAverage: 16.5,
+  essay: "Quiero ir a UWC para formarme en una comunidad diversa y aportar a mi entorno.",
+};
+
 function createSupabaseFieldsMock(fields: unknown[], recommendationRows: unknown[] = []) {
   const recommendationClient = {
     from(table: string) {
@@ -99,7 +108,7 @@ describe("validateApplicationBeforeSubmit", () => {
           cycle_id: "cycle-1",
           stage_code: "documents",
           status: "draft",
-          payload: { fullName: "Ana Pérez" },
+          payload: MIN_REQUIRED_STAGE1_PAYLOAD,
           files: {},
           validation_notes: null,
           error_report_count: 0,
@@ -168,7 +177,7 @@ describe("validateApplicationBeforeSubmit", () => {
           cycle_id: "cycle-1",
           stage_code: "documents",
           status: "draft",
-          payload: { fullName: "Ana Pérez" },
+          payload: MIN_REQUIRED_STAGE1_PAYLOAD,
           files: { identificationDocument: "path/file.pdf" },
           validation_notes: null,
           error_report_count: 0,
@@ -231,7 +240,7 @@ describe("validateApplicationBeforeSubmit", () => {
           cycle_id: "cycle-1",
           stage_code: "documents",
           status: "draft",
-          payload: { fullName: "Ana Pérez" },
+          payload: MIN_REQUIRED_STAGE1_PAYLOAD,
           files: { identificationDocument: "path/file.pdf" },
           validation_notes: null,
           error_report_count: 0,

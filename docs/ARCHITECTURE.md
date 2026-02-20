@@ -74,6 +74,7 @@
   - stage templates are auto-bootstrapped when creating a process and then editable by admin
   - stage templates include OCR prompt template configurable per stage
   - stage field schema is editable by admin and drives applicant form rendering
+  - default Stage 1 schema is now bootstrapped from official UWC PDF inventory (`docs/STAGE1_PDF_FIELD_INVENTORY.md`) and includes the full notes matrix
   - required file fields are validated before submit
   - file uploads store path + UX metadata (title, original name, mime, upload timestamp)
   - applicant submit now requires both recommender roles submitted (`mentor` + `friend`)
