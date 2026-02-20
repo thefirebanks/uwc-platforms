@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildFallbackStageFields, resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
+import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 import type { CycleStageField } from "@/types/domain";
 
 function makeField(fieldKey: string): CycleStageField {
