@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
-import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
+import { buildFallbackStageFields, resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 import { validateRequiredFiles, validateStagePayload } from "@/lib/stages/form-schema";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/supabase";
@@ -41,11 +41,19 @@ async function getConfiguredStageFields({
     });
   }
 
-  return ((data as Database["public"]["Tables"]["cycle_stage_fields"]["Row"][] | null) ?? []).length > 0
-    ? ((data as Database["public"]["Tables"]["cycle_stage_fields"]["Row"][] | null) ?? [])
-    : stageCode === "documents"
-      ? buildFallbackStageFields(cycleId)
-      : [];
+  const rows = ((data as Database["public"]["Tables"]["cycle_stage_fields"]["Row"][] | null) ?? []);
+  if (stageCode !== "documents") {
+    return rows;
+  }
+
+  if (rows.length === 0) {
+    return buildFallbackStageFields(cycleId);
+  }
+
+  return resolveDocumentStageFields({
+    cycleId,
+    fields: rows,
+  });
 }
 
 async function validateRecommendersBeforeSubmit({

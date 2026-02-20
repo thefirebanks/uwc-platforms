@@ -13,6 +13,7 @@ Build a faster, cleaner, easier-to-use platform for UWC Peru selection process m
   - max 3 applications per applicant across processes
   - process templates with editable labels/milestones and timeline dates
   - stage-level configurable form fields and required documents
+  - Stage 1 default field catalog aligned to official UWC PDF form inventory
   - stage-level configurable automation templates (email)
 - Stage model:
   - `documents` (Stage 1, full flow)
