@@ -30,7 +30,7 @@ describe("resolveDocumentStageFields", () => {
     expect(fields.some((field) => field.field_key === "officialGrade_primero_arte")).toBe(true);
   });
 
-  it("replaces legacy 7-field defaults with expanded fallback", () => {
+  it("keeps legacy-shaped stage fields untouched when already configured", () => {
     const legacy = [
       "fullName",
       "dateOfBirth",
@@ -46,9 +46,7 @@ describe("resolveDocumentStageFields", () => {
       fields: legacy,
     });
 
-    const fallback = buildFallbackStageFields("cycle-legacy");
-    expect(resolved).toHaveLength(fallback.length);
-    expect(resolved.some((field) => field.field_key === "officialGrade_quinto_matematica")).toBe(true);
+    expect(resolved).toEqual(legacy);
   });
 
   it("keeps user-defined stage fields untouched", () => {
