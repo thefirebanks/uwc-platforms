@@ -22,7 +22,7 @@ Expected:
 6. Submit application.
 
 Expected:
-- Progress panel (`Progreso de postulación`) is visible and updates section statuses.
+- Progress panel (`Progreso por secciones`) is visible and clickable per section.
 - Applicant page keeps maroon mockup hierarchy: eyebrow cycle label, large serif title, and left-accent progress block.
 - Draft save success message appears.
 - Submit success message appears.
@@ -328,6 +328,21 @@ Expected:
 5. Verify those default fields render in applicant mode without manual admin bootstrapping.
 
 Expected:
-- Legacy 7-field cycles are auto-expanded to the full Stage 1 default schema.
+- New/empty Stage 1 configs bootstrap to the full official default schema.
 - Admin can edit/reorder/remove the expanded defaults as usual.
 - Applicant form reflects the same expanded schema.
+
+## Flow 27: Applicant Section Wizard + Autosave
+1. Login as applicant and open `/applicant/process/:cycleId`.
+2. Verify `Antes de empezar` card is visible with checklist and required document hints.
+3. In section `Elegibilidad`, edit one field and stop typing.
+4. Verify draft status shows `Cambios pendientes` then transitions to `Guardando borrador...` and finally `Borrador guardado`.
+5. Click `Siguiente` and confirm section navigation works without losing values.
+6. Use progress list to jump directly to `Recomendadores`, then back to `Datos personales`.
+7. In any field, blur input and verify draft is persisted without pressing submit.
+
+Expected:
+- Applicant sees one section at a time (reduced cognitive load).
+- Autosave persists partial drafts without forcing all required fields immediately.
+- Manual `Guardar borrador` remains available and uses same draft pipeline.
+- Section navigation keeps data intact and progress statuses update.
