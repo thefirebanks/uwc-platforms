@@ -18,6 +18,8 @@ import {
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import { useAppLanguage } from "@/components/language-provider";
+import type { AppLanguage } from "@/lib/i18n/messages";
 import type { Application, CycleStageField, RecommendationStatus, RecommenderRole } from "@/types/domain";
 import { StageBadge, StatusBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
@@ -65,7 +67,7 @@ type ProgressState = "complete" | "in_progress" | "not_started";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 type WizardSectionId = ApplicantFormSectionId | "documents_uploads" | "recommenders_flow" | "review_submit";
 
-const SECTION_TITLES: Record<WizardSectionId, string> = {
+const SECTION_TITLES_ES: Record<WizardSectionId, string> = {
   eligibility: "Elegibilidad",
   identity: "Datos personales",
   family: "Familia y apoderados",
@@ -79,6 +81,20 @@ const SECTION_TITLES: Record<WizardSectionId, string> = {
   review_submit: "Revisión y envío",
 };
 
+const SECTION_TITLES_EN: Record<WizardSectionId, string> = {
+  eligibility: "Eligibility",
+  identity: "Personal details",
+  family: "Family and guardians",
+  school: "School and grades",
+  motivation: "Motivation",
+  recommenders: "Recommender details",
+  documents: "Payment and support",
+  other: "Additional fields",
+  documents_uploads: "Documents",
+  recommenders_flow: "Recommenders",
+  review_submit: "Review and submit",
+};
+
 const FIELD_LABEL_PREFIX_BY_SECTION: Partial<Record<ApplicantFormSectionId, string>> = {
   eligibility: "Cumplimiento de requisitos - ",
   identity: "Información personal - ",
@@ -86,6 +102,53 @@ const FIELD_LABEL_PREFIX_BY_SECTION: Partial<Record<ApplicantFormSectionId, stri
   school: "Información del colegio - ",
   motivation: "Hoja de vida e interés en UWC - ",
   documents: "Documentos - ",
+};
+
+const ENGLISH_FIELD_LABEL_BY_KEY: Record<string, string> = {
+  eligibilityBirthYear: "Birth year",
+  eligibilityCountryOfBirth: "Country of birth",
+  eligibilityCountryOfResidence: "Country of residence",
+  secondNationality: "Second nationality",
+  secondaryYear2025: "School year attended in 2025",
+  isUpperThird: "Are you in the top third?",
+  hasMinimumAverage14: "Do you have at least 14 or a B average?",
+  hasStudiedIb: "Have you studied IB?",
+  ibInstructionYear: "IB instruction year",
+  priorUwcPeruSelectionParticipation: "Previously participated in UWC Peru selection?",
+  otherCountrySelection2025: "Participated in another country's selection in 2025?",
+  uwcDiscoveryChannel: "How did you first hear about UWC?",
+};
+
+const ENGLISH_FIELD_PLACEHOLDER_BY_KEY: Record<string, string> = {
+  eligibilityBirthYear: "2008 / 2009 / 2010",
+  eligibilityCountryOfBirth: "Peru",
+  eligibilityCountryOfResidence: "Peru",
+  secondNationality: "Optional",
+  secondaryYear2025: "4th or 5th year of secondary school",
+  isUpperThird: "Yes / No",
+  hasMinimumAverage14: "Yes / No",
+  hasStudiedIb: "Yes / No",
+  ibInstructionYear: "Example: First year of IB",
+  priorUwcPeruSelectionParticipation: "Yes / No",
+  otherCountrySelection2025: "Yes / No",
+  uwcDiscoveryChannel: "Main source",
+};
+
+const ENGLISH_FIELD_HELP_BY_KEY: Record<string, string> = {
+  secondNationality: "Only if applicable.",
+  isUpperThird: "Enter the answer as text.",
+  ibInstructionYear: "Only if you answered yes to studying/studied IB.",
+};
+
+const SECTION_DESCRIPTIONS_EN: Record<ApplicantFormSectionId, string> = {
+  eligibility: "Validate baseline eligibility criteria for the 2026 process.",
+  identity: "Identity, contact, and personal context information.",
+  family: "Parent/guardian and legal custody details.",
+  school: "School details and official grades by year.",
+  motivation: "Personal responses about interests and purpose.",
+  recommenders: "Reference details to coordinate recommendations.",
+  documents: "Payment and required document information.",
+  other: "Active custom fields outside the base schema.",
 };
 
 function getDisplayFieldLabel({
@@ -101,6 +164,76 @@ function getDisplayFieldLabel({
   }
 
   return fieldLabel.startsWith(prefix) ? fieldLabel.slice(prefix.length).trim() : fieldLabel;
+}
+
+function toEnglishTitleCase(value: string) {
+  return value
+    .split(" ")
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ")
+    .replace(/\bIb\b/g, "IB")
+    .replace(/\bUwc\b/g, "UWC")
+    .replace(/\bId\b/g, "ID");
+}
+
+function humanizeFieldKey(fieldKey: string) {
+  if (fieldKey.startsWith("officialGradeAverage_")) {
+    const grade = fieldKey.replace("officialGradeAverage_", "");
+    return `Official Grade Average ${grade.toUpperCase()}`;
+  }
+
+  if (fieldKey.startsWith("officialGrade_")) {
+    const [, grade, ...subjectParts] = fieldKey.split("_");
+    const subjectRaw = subjectParts.join("_").replace(/([a-z])([A-Z])/g, "$1 $2");
+    return `Official Grade ${grade.toUpperCase()} - ${toEnglishTitleCase(subjectRaw.replace(/_/g, " "))}`;
+  }
+
+  const normalized = fieldKey
+    .replace(/^eligibility/, "")
+    .replace(/^guardian/, "guardian")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/_/g, " ")
+    .trim();
+
+  return normalized.length > 0 ? toEnglishTitleCase(normalized) : fieldKey;
+}
+
+function getLocalizedDisplayFieldLabel({
+  sectionId,
+  field,
+  language,
+}: {
+  sectionId: ApplicantFormSectionId;
+  field: CycleStageField;
+  language: AppLanguage;
+}) {
+  const displayLabel = getDisplayFieldLabel({
+    sectionId,
+    fieldLabel: field.field_label,
+  });
+
+  if (language === "es") {
+    return displayLabel;
+  }
+
+  return ENGLISH_FIELD_LABEL_BY_KEY[field.field_key] ?? humanizeFieldKey(field.field_key);
+}
+
+function getLocalizedFieldPlaceholder(field: CycleStageField, language: AppLanguage) {
+  if (language === "es") {
+    return field.placeholder ?? undefined;
+  }
+
+  return ENGLISH_FIELD_PLACEHOLDER_BY_KEY[field.field_key];
+}
+
+function getLocalizedFieldHelpText(field: CycleStageField, language: AppLanguage) {
+  if (language === "es") {
+    return field.help_text ?? undefined;
+  }
+
+  return ENGLISH_FIELD_HELP_BY_KEY[field.field_key];
 }
 
 function shouldUseWideFieldLayout({
@@ -194,50 +327,57 @@ function parseFileEntry(value: ApplicationFileValue | undefined | null) {
   };
 }
 
-function statusTone(status: RecommendationStatus) {
+function statusTone(status: RecommendationStatus, language: AppLanguage) {
+  const isEnglish = language === "en";
   if (status === "submitted") {
-    return { label: "Enviado", color: "#166534", bg: "#DCFCE7" };
+    return { label: isEnglish ? "Submitted" : "Enviado", color: "#166534", bg: "#DCFCE7" };
   }
   if (status === "in_progress") {
-    return { label: "En progreso", color: "#92400E", bg: "#FEF3C7" };
+    return { label: isEnglish ? "In progress" : "En progreso", color: "#92400E", bg: "#FEF3C7" };
   }
   if (status === "opened") {
-    return { label: "Abierto", color: "#1D4ED8", bg: "#DBEAFE" };
+    return { label: isEnglish ? "Opened" : "Abierto", color: "#1D4ED8", bg: "#DBEAFE" };
   }
   if (status === "sent") {
-    return { label: "Invitación enviada", color: "#0F766E", bg: "#CCFBF1" };
+    return { label: isEnglish ? "Invite sent" : "Invitación enviada", color: "#0F766E", bg: "#CCFBF1" };
   }
   if (status === "expired") {
-    return { label: "Vencido", color: "#991B1B", bg: "#FEE2E2" };
+    return { label: isEnglish ? "Expired" : "Vencido", color: "#991B1B", bg: "#FEE2E2" };
   }
   if (status === "invalidated") {
-    return { label: "Reemplazado", color: "#6B7280", bg: "#F3F4F6" };
+    return { label: isEnglish ? "Replaced" : "Reemplazado", color: "#6B7280", bg: "#F3F4F6" };
   }
-  return { label: "Pendiente", color: "#6B7280", bg: "#F3F4F6" };
+  return { label: isEnglish ? "Pending" : "Pendiente", color: "#6B7280", bg: "#F3F4F6" };
 }
 
-function roleLabel(role: RecommenderRole) {
-  return role === "mentor" ? "Tutor/Profesor/Mentor" : "Amigo (no familiar)";
+function roleLabel(role: RecommenderRole, language: AppLanguage) {
+  if (role === "mentor") {
+    return language === "en" ? "Tutor/Teacher/Mentor" : "Tutor/Profesor/Mentor";
+  }
+
+  return language === "en" ? "Friend (non-family)" : "Amigo (no familiar)";
 }
 
-function formatSaveStatusLabel(saveState: SaveState, lastSavedAt: string | null) {
+function formatSaveStatusLabel(saveState: SaveState, lastSavedAt: string | null, language: AppLanguage) {
+  const isEnglish = language === "en";
   if (saveState === "saving") {
-    return "Guardando borrador...";
+    return isEnglish ? "Saving draft..." : "Guardando borrador...";
   }
 
   if (saveState === "dirty") {
-    return "Cambios pendientes";
+    return isEnglish ? "Pending changes" : "Cambios pendientes";
   }
 
   if (saveState === "error") {
-    return "Error al guardar borrador";
+    return isEnglish ? "Error saving draft" : "Error al guardar borrador";
   }
 
   if (saveState === "saved" && lastSavedAt) {
-    return `Borrador guardado ${new Date(lastSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+    const timestamp = new Date(lastSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return isEnglish ? `Draft saved ${timestamp}` : `Borrador guardado ${timestamp}`;
   }
 
-  return "Borrador listo";
+  return isEnglish ? "Draft ready" : "Borrador listo";
 }
 
 function getSectionFieldStatus({
@@ -274,6 +414,12 @@ export function ApplicantApplicationForm({
   stageCloseAt?: string | null;
   initialRecommenders?: RecommenderSummary[];
 }) {
+  const { language } = useAppLanguage();
+  const isEnglish = language === "en";
+  const locale = isEnglish ? "en-US" : "es-PE";
+  const copy = useCallback((spanish: string, english: string) => (isEnglish ? english : spanish), [isEnglish]);
+  const sectionTitles = isEnglish ? SECTION_TITLES_EN : SECTION_TITLES_ES;
+
   const LOCKED_STATUSES = new Set<Application["status"]>([
     "submitted",
     "eligible",
@@ -363,8 +509,8 @@ export function ApplicantApplicationForm({
 
       sections.push({
         id: section.id,
-        title: section.title,
-        description: section.description,
+        title: sectionTitles[section.id],
+        description: isEnglish ? SECTION_DESCRIPTIONS_EN[section.id] : section.description,
         formSection: section,
         status: getSectionFieldStatus({
           fields: section.fields,
@@ -381,8 +527,11 @@ export function ApplicantApplicationForm({
       });
       sections.push({
         id: "documents_uploads",
-        title: "Documentos",
-        description: "Carga los archivos obligatorios y confirma metadatos.",
+        title: sectionTitles.documents_uploads,
+        description: copy(
+          "Carga los archivos obligatorios y confirma metadatos.",
+          "Upload the required files and confirm metadata.",
+        ),
         formSection: documentFormSection,
         status: docMetadataStatus,
       });
@@ -390,22 +539,22 @@ export function ApplicantApplicationForm({
 
     sections.push({
       id: "recommenders_flow",
-      title: "Recomendadores",
-      description: "Registra dos recomendadores y sigue su estado.",
+      title: sectionTitles.recommenders_flow,
+      description: copy("Registra dos recomendadores y sigue su estado.", "Register two recommenders and track their status."),
       formSection: groupedFormSections.find((section) => section.id === "recommenders") ?? null,
       status: "not_started",
     });
 
     sections.push({
       id: "review_submit",
-      title: "Revisión y envío",
-      description: "Revisa tu avance final y envía tu postulación.",
+      title: sectionTitles.review_submit,
+      description: copy("Revisa tu avance final y envía tu postulación.", "Review your final progress and submit your application."),
       formSection: null,
       status: "not_started",
     });
 
     return sections;
-  }, [application?.payload, documentFormSection, fileStageFields.length, groupedFormSections]);
+  }, [application?.payload, copy, documentFormSection, fileStageFields.length, groupedFormSections, isEnglish, sectionTitles]);
 
   const documentsStatus = useMemo(() => {
     const requiredFileFields = fileStageFields.filter((field) => field.is_required);
@@ -482,10 +631,13 @@ export function ApplicantApplicationForm({
   const progressPercent = progressSteps.length > 0
     ? Math.round((completedSteps / progressSteps.length) * 100)
     : 0;
-  const draftStatusLabel = formatSaveStatusLabel(saveState, lastSavedAt);
+  const draftStatusLabel = formatSaveStatusLabel(saveState, lastSavedAt, language);
   const requiredDocumentLabels = useMemo(
-    () => fileStageFields.filter((field) => field.is_required).map((field) => field.field_label),
-    [fileStageFields],
+    () =>
+      fileStageFields
+        .filter((field) => field.is_required)
+        .map((field) => getLocalizedDisplayFieldLabel({ sectionId: "documents", field, language })),
+    [fileStageFields, language],
   );
   const currentSection = wizardSections.find((section) => section.id === activeSectionId) ?? wizardSections[0] ?? null;
   const currentFormSectionId = currentSection?.formSection?.id ?? null;
@@ -616,7 +768,7 @@ export function ApplicantApplicationForm({
         setFieldErrors(validation.errors);
         setSaveState("error");
         if (!silent) {
-          const firstError = Object.values(validation.errors)[0] ?? "Hay campos inválidos.";
+          const firstError = Object.values(validation.errors)[0] ?? copy("Hay campos inválidos.", "There are invalid fields.");
           setError({ message: firstError });
         }
         return false;
@@ -653,14 +805,14 @@ export function ApplicantApplicationForm({
         setLastSavedAt(new Date().toISOString());
         setSaveState("saved");
         if (!silent) {
-          setSuccessMessage("Borrador guardado correctamente.");
+          setSuccessMessage(copy("Borrador guardado correctamente.", "Draft saved successfully."));
         }
         return true;
       } finally {
         setIsSavingDraft(false);
       }
     },
-    [cycleId, formStageFields, formValues, isEditingEnabled],
+    [copy, cycleId, formStageFields, formValues, isEditingEnabled],
   );
 
   useEffect(() => {
@@ -705,9 +857,10 @@ export function ApplicantApplicationForm({
     return (
       <Grid container spacing={2}>
         {fields.map((field) => {
-          const displayLabel = getDisplayFieldLabel({
+          const displayLabel = getLocalizedDisplayFieldLabel({
             sectionId,
-            fieldLabel: field.field_label,
+            field,
+            language,
           });
 
           return (
@@ -744,8 +897,8 @@ export function ApplicantApplicationForm({
                 minRows={field.field_type === "long_text" ? 6 : undefined}
                 fullWidth
                 disabled={!isEditingEnabled}
-                placeholder={field.placeholder ?? undefined}
-                helperText={fieldErrors[field.field_key] ?? field.help_text}
+                placeholder={getLocalizedFieldPlaceholder(field, language)}
+                helperText={fieldErrors[field.field_key] ?? getLocalizedFieldHelpText(field, language)}
                 error={Boolean(fieldErrors[field.field_key])}
                 InputLabelProps={{ shrink: true }}
               />
@@ -761,14 +914,16 @@ export function ApplicantApplicationForm({
     setSuccessMessage(null);
 
     if (!application?.id) {
-      setError({ message: "Primero guarda tu borrador antes de enviar." });
+      setError({ message: copy("Primero guarda tu borrador antes de enviar.", "Save your draft before submitting.") });
       return;
     }
 
     if (isStageClosed) {
       setError({
-        message:
+        message: copy(
           "La etapa ya cerró y no puedes enviar o editar esta postulación. Contacta al comité.",
+          "This stage is closed and you cannot submit or edit this application. Contact the committee.",
+        ),
       });
       return;
     }
@@ -784,7 +939,7 @@ export function ApplicantApplicationForm({
     }
 
     setApplication(body.application);
-    setSuccessMessage("Postulación enviada. El comité revisará tu información.");
+    setSuccessMessage(copy("Postulación enviada. El comité revisará tu información.", "Application submitted. The committee will review your information."));
   }
 
   async function saveRecommenders() {
@@ -792,14 +947,16 @@ export function ApplicantApplicationForm({
     setSuccessMessage(null);
 
     if (!application?.id) {
-      setError({ message: "Guarda tu postulación antes de registrar recomendadores." });
+      setError({ message: copy("Guarda tu postulación antes de registrar recomendadores.", "Save your application before registering recommenders.") });
       return;
     }
 
     if (isLocked && !isEditMode) {
       setError({
-        message:
+        message: copy(
           "Tu postulación ya fue enviada. Haz clic en 'Editar respuesta' para habilitar cambios.",
+          "Your application was already submitted. Click 'Edit response' to enable changes.",
+        ),
       });
       return;
     }
@@ -809,8 +966,10 @@ export function ApplicantApplicationForm({
 
     if (!mentorEmail || !friendEmail) {
       setError({
-        message:
+        message: copy(
           "Debes registrar 2 recomendadores: uno tutor/profesor/mentor y uno amigo.",
+          "You must register 2 recommenders: one tutor/teacher/mentor and one friend.",
+        ),
       });
       return;
     }
@@ -844,16 +1003,31 @@ export function ApplicantApplicationForm({
 
       const chunks = [];
       if (createdCount > 0) {
-        chunks.push(`${createdCount} invitación(es) enviada(s).`);
+        chunks.push(
+          copy(
+            `${createdCount} invitación(es) enviada(s).`,
+            `${createdCount} invitation(s) sent.`,
+          ),
+        );
       }
       if (replacedCount > 0) {
-        chunks.push(`${replacedCount} recomendador(es) reemplazado(s) con token nuevo.`);
+        chunks.push(
+          copy(
+            `${replacedCount} recomendador(es) reemplazado(s) con token nuevo.`,
+            `${replacedCount} recommender(s) replaced with a new token.`,
+          ),
+        );
       }
       if (failedEmailCount > 0) {
-        chunks.push(`${failedEmailCount} correo(s) no se enviaron, usa "Enviar recordatorio".`);
+        chunks.push(
+          copy(
+            `${failedEmailCount} correo(s) no se enviaron, usa "Enviar recordatorio".`,
+            `${failedEmailCount} email(s) were not sent, use "Send reminder".`,
+          ),
+        );
       }
 
-      setSuccessMessage(chunks.length > 0 ? chunks.join(" ") : "Recomendadores actualizados.");
+      setSuccessMessage(chunks.length > 0 ? chunks.join(" ") : copy("Recomendadores actualizados.", "Recommenders updated."));
     } finally {
       setSavingRecommenders(false);
     }
@@ -879,7 +1053,7 @@ export function ApplicantApplicationForm({
       setRecommenders((current) =>
         current.map((row) => (row.id === updated.id ? updated : row)),
       );
-      setSuccessMessage("Recordatorio enviado al recomendador.");
+      setSuccessMessage(copy("Recordatorio enviado al recomendador.", "Reminder sent to recommender."));
     } finally {
       setRemindingId(null);
     }
@@ -923,7 +1097,7 @@ export function ApplicantApplicationForm({
       }
 
       setApplication(body.application);
-      setSuccessMessage("Título del documento actualizado.");
+      setSuccessMessage(copy("Título del documento actualizado.", "Document title updated."));
     } finally {
       setSavingFileTitleKey(null);
     }
@@ -940,8 +1114,10 @@ export function ApplicantApplicationForm({
 
     if (isLocked && !isEditMode) {
       setError({
-        message:
+        message: copy(
           "Tu postulación ya fue enviada. Haz clic en 'Editar respuesta' para actualizar documentos.",
+          "Your application was already submitted. Click 'Edit response' to update documents.",
+        ),
       });
       return;
     }
@@ -973,7 +1149,7 @@ export function ApplicantApplicationForm({
       });
 
       if (!uploadResponse.ok) {
-        setError({ message: "No se pudo subir el archivo al almacenamiento." });
+        setError({ message: copy("No se pudo subir el archivo al almacenamiento.", "Could not upload the file to storage.") });
         return;
       }
 
@@ -1002,7 +1178,7 @@ export function ApplicantApplicationForm({
         ...current,
         [fieldKey]: current[fieldKey]?.trim() || file.name,
       }));
-      setSuccessMessage("Documento subido correctamente.");
+      setSuccessMessage(copy("Documento subido correctamente.", "Document uploaded successfully."));
     } finally {
       setUploadingFieldKey(null);
     }
@@ -1031,19 +1207,22 @@ export function ApplicantApplicationForm({
                   lineHeight: { xs: 1.1, sm: 1.08 },
                 }}
               >
-                Tu postulación
+                {copy("Tu postulación", "Your application")}
               </Typography>
               <Typography sx={{ mt: 1 }} color="text.secondary">
-                Completa solo la información requerida para esta etapa.
+                {copy("Completa solo la información requerida para esta etapa.", "Complete only the information required for this stage.")}
               </Typography>
               {stageCloseAt ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  Cierre de etapa: {new Date(stageCloseAt).toLocaleDateString()}
+                  {copy("Cierre de etapa", "Stage closes")}: {new Date(stageCloseAt).toLocaleDateString(locale)}
                 </Typography>
               ) : null}
               {isStageClosed ? (
                 <Typography variant="body2" color="error.main" sx={{ mt: 0.5 }}>
-                  Etapa cerrada: no se permiten nuevas ediciones del postulante.
+                  {copy(
+                    "Etapa cerrada: no se permiten nuevas ediciones del postulante.",
+                    "Stage closed: no further applicant edits are allowed.",
+                  )}
                 </Typography>
               ) : null}
             </Box>
@@ -1052,11 +1231,17 @@ export function ApplicantApplicationForm({
           {isLocked && !isEditMode ? (
             <Stack spacing={1} sx={{ mt: 2 }}>
               <Typography color="text.secondary">
-                Tu postulación ya fue enviada. Para cambiar datos, habilita edición manual.
+                {copy(
+                  "Tu postulación ya fue enviada. Para cambiar datos, habilita edición manual.",
+                  "Your application was already submitted. Enable manual editing to make changes.",
+                )}
               </Typography>
               {isStageClosed ? (
                 <Typography variant="body2" color="error.main">
-                  La etapa está cerrada. Solo el comité puede reabrir cambios.
+                  {copy(
+                    "La etapa está cerrada. Solo el comité puede reabrir cambios.",
+                    "The stage is closed. Only the committee can reopen changes.",
+                  )}
                 </Typography>
               ) : (
                 <Box>
@@ -1064,11 +1249,16 @@ export function ApplicantApplicationForm({
                     variant="outlined"
                     onClick={() => {
                       setError(null);
-                      setSuccessMessage("Edición habilitada. Guarda cambios y vuelve a enviar.");
+                      setSuccessMessage(
+                        copy(
+                          "Edición habilitada. Guarda cambios y vuelve a enviar.",
+                          "Editing enabled. Save changes and submit again.",
+                        ),
+                      );
                       setIsEditMode(true);
                     }}
                   >
-                    Editar respuesta
+                    {copy("Editar respuesta", "Edit response")}
                   </Button>
                 </Box>
               )}
@@ -1080,10 +1270,10 @@ export function ApplicantApplicationForm({
                 variant="text"
                 onClick={() => {
                   setIsEditMode(false);
-                  setSuccessMessage("Edición cancelada.");
+                  setSuccessMessage(copy("Edición cancelada.", "Editing cancelled."));
                 }}
               >
-                Cancelar edición
+                {copy("Cancelar edición", "Cancel editing")}
               </Button>
             </Box>
           ) : null}
@@ -1097,10 +1287,12 @@ export function ApplicantApplicationForm({
         >
           <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1.5 }}>
             <Typography variant="body2" color="text.secondary">
-              Progreso por secciones
+              {copy("Progreso por secciones", "Section progress")}
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 600 }}>
-              {completedSteps} de {progressSteps.length} completado
+              {isEnglish
+                ? `${completedSteps} of ${progressSteps.length} complete`
+                : `${completedSteps} de ${progressSteps.length} completado`}
             </Typography>
           </Stack>
           <Chip
@@ -1210,29 +1402,44 @@ export function ApplicantApplicationForm({
             sx={{ px: 2.5, py: 0.4 }}
           >
             <Stack>
-              <Typography variant="h6">Antes de empezar</Typography>
+              <Typography variant="h6">{copy("Antes de empezar", "Before you start")}</Typography>
               <Typography variant="body2" color="text.secondary">
-                Checklist rápida de preparación para enviar sin fricción.
+                {copy(
+                  "Checklist rápida de preparación para enviar sin fricción.",
+                  "Quick checklist to prepare and submit smoothly.",
+                )}
               </Typography>
             </Stack>
           </AccordionSummary>
           <AccordionDetails sx={{ px: 2.5, pt: 0, pb: 2 }}>
             <Typography color="text.secondary" sx={{ mb: 1.2 }}>
-              Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.
+              {copy(
+                "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
+                "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
+              )}
             </Typography>
             <Stack spacing={0.4}>
               <Typography variant="body2">
-                1. Ten listos documentos en PDF/JPG/PNG (idealmente menos de 10MB).
+                {copy(
+                  "1. Ten listos documentos en PDF/JPG/PNG (idealmente menos de 10MB).",
+                  "1. Prepare documents in PDF/JPG/PNG format (ideally under 10MB).",
+                )}
               </Typography>
               <Typography variant="body2">
-                2. Confirma los correos de tus dos recomendadores antes de registrarlos.
+                {copy(
+                  "2. Confirma los correos de tus dos recomendadores antes de registrarlos.",
+                  "2. Confirm your two recommenders' emails before registering them.",
+                )}
               </Typography>
               <Typography variant="body2">
-                3. Completa primero los campos obligatorios (marcados con *), luego revisa.
+                {copy(
+                  "3. Completa primero los campos obligatorios (marcados con *), luego revisa.",
+                  "3. Complete required fields first (marked with *), then review.",
+                )}
               </Typography>
               {requiredDocumentLabels.length > 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8 }}>
-                  Documentos obligatorios: {requiredDocumentLabels.join(", ")}.
+                  {copy("Documentos obligatorios", "Required documents")}: {requiredDocumentLabels.join(", ")}.
                 </Typography>
               ) : null}
             </Stack>
@@ -1279,9 +1486,12 @@ export function ApplicantApplicationForm({
             <CardContent>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Box>
-                  <Typography variant="h6">{SECTION_TITLES.documents_uploads}</Typography>
+                  <Typography variant="h6">{sectionTitles.documents_uploads}</Typography>
                   <Typography color="text.secondary" sx={{ mt: 0.4 }}>
-                    Sube únicamente los archivos solicitados para esta etapa.
+                    {copy(
+                      "Sube únicamente los archivos solicitados para esta etapa.",
+                      "Upload only the files requested for this stage.",
+                    )}
                   </Typography>
                 </Box>
                 <StatusBadge status={documentsStatus} />
@@ -1297,7 +1507,10 @@ export function ApplicantApplicationForm({
               ) : null}
 
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                La validación OCR se ejecuta desde el panel admin al revisar postulaciones.
+                {copy(
+                  "La validación OCR se ejecuta desde el panel admin al revisar postulaciones.",
+                  "OCR validation is run from the admin panel during application review.",
+                )}
               </Typography>
               <Stack spacing={2}>
                 {fileStageFields.map((field) => {
@@ -1310,8 +1523,12 @@ export function ApplicantApplicationForm({
 
                   return (
                     <Box key={field.id} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 2 }}>
-                      <Typography fontWeight={700}>{field.field_label}</Typography>
-                      {field.help_text ? <Typography color="text.secondary">{field.help_text}</Typography> : null}
+                      <Typography fontWeight={700}>
+                        {getLocalizedDisplayFieldLabel({ sectionId: "documents", field, language })}
+                      </Typography>
+                      {getLocalizedFieldHelpText(field, language) ? (
+                        <Typography color="text.secondary">{getLocalizedFieldHelpText(field, language)}</Typography>
+                      ) : null}
                       <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} sx={{ mt: 1.2 }}>
                         <Button
                           variant="outlined"
@@ -1319,10 +1536,10 @@ export function ApplicantApplicationForm({
                           disabled={!application?.id || uploadingFieldKey === field.field_key || !isEditingEnabled}
                         >
                           {uploadingFieldKey === field.field_key
-                            ? "Subiendo..."
+                            ? copy("Subiendo...", "Uploading...")
                             : fileEntry
-                              ? "Reemplazar archivo"
-                              : `Subir ${field.field_label}`}
+                              ? copy("Reemplazar archivo", "Replace file")
+                              : `${copy("Subir", "Upload")} ${getLocalizedDisplayFieldLabel({ sectionId: "documents", field, language })}`}
                           <input
                             type="file"
                             accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif"
@@ -1333,7 +1550,7 @@ export function ApplicantApplicationForm({
                         {fileEntry ? (
                           <>
                             <TextField
-                              label="Título visible"
+                              label={copy("Título visible", "Visible title")}
                               value={currentTitle}
                               onChange={(event) =>
                                 setFileTitleEdits((current) => ({
@@ -1349,31 +1566,33 @@ export function ApplicantApplicationForm({
                               onClick={() => saveFileTitle(field.field_key)}
                               disabled={!isEditingEnabled || savingFileTitleKey === field.field_key}
                             >
-                              {savingFileTitleKey === field.field_key ? "Guardando..." : "Guardar título"}
+                              {savingFileTitleKey === field.field_key
+                                ? copy("Guardando...", "Saving...")
+                                : copy("Guardar título", "Save title")}
                             </Button>
                           </>
                         ) : null}
                       </Stack>
                       {!application?.id ? (
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                          Guarda primero un borrador para habilitar la subida.
+                          {copy("Guarda primero un borrador para habilitar la subida.", "Save a draft first to enable uploads.")}
                         </Typography>
                       ) : null}
                       {fileEntry && fileName ? (
                         <Stack spacing={0.4} sx={{ mt: 1.5 }}>
                           <Typography variant="body2" fontWeight={600}>
-                            Documento actual: {fileName}
+                            {copy("Documento actual", "Current document")}: {fileName}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            Título: {currentTitle}
+                            {copy("Título", "Title")}: {currentTitle}
                           </Typography>
                           {fileEntry.uploaded_at ? (
                             <Typography variant="caption" color="text.secondary">
-                              Subido: {new Date(fileEntry.uploaded_at).toLocaleString()}
+                              {copy("Subido", "Uploaded")}: {new Date(fileEntry.uploaded_at).toLocaleString(locale)}
                             </Typography>
                           ) : null}
                           <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
-                            Ruta: {fileEntry.path}
+                            {copy("Ruta", "Path")}: {fileEntry.path}
                           </Typography>
                         </Stack>
                       ) : null}
@@ -1390,9 +1609,12 @@ export function ApplicantApplicationForm({
             <CardContent>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
                 <Box>
-                  <Typography variant="h6">{SECTION_TITLES.recommenders_flow}</Typography>
+                  <Typography variant="h6">{sectionTitles.recommenders_flow}</Typography>
                   <Typography color="text.secondary" sx={{ mt: 0.4 }}>
-                    Registra un mentor y un amigo (no familiar). Solo mostramos estado, nunca enlaces.
+                    {copy(
+                      "Registra un mentor y un amigo (no familiar). Solo mostramos estado, nunca enlaces.",
+                      "Register one mentor and one friend (non-family). We only show status, never links.",
+                    )}
                   </Typography>
                 </Box>
                 <StatusBadge status={recommenderStatus} />
@@ -1410,7 +1632,7 @@ export function ApplicantApplicationForm({
               <Stack spacing={2}>
                 {(["mentor", "friend"] as const).map((role) => {
                   const current = activeRecommendersByRole.get(role) ?? null;
-                  const tone = current ? statusTone(current.status) : statusTone("invited");
+                  const tone = current ? statusTone(current.status, language) : statusTone("invited", language);
 
                   return (
                     <Box key={role} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 2 }}>
@@ -1421,14 +1643,14 @@ export function ApplicantApplicationForm({
                         spacing={1}
                         sx={{ mb: 1.2 }}
                       >
-                        <Typography fontWeight={700}>{roleLabel(role)}</Typography>
+                        <Typography fontWeight={700}>{roleLabel(role, language)}</Typography>
                         {current ? (
                           <Chip
                             label={tone.label}
                             sx={{ bgcolor: tone.bg, color: tone.color, fontWeight: 600 }}
                           />
                         ) : (
-                          <Chip label="Sin registrar" />
+                          <Chip label={copy("Sin registrar", "Not registered")} />
                         )}
                       </Stack>
                       <TextField
@@ -1441,8 +1663,8 @@ export function ApplicantApplicationForm({
                         }
                         fullWidth
                         type="email"
-                        label={`Correo (${roleLabel(role)})`}
-                        placeholder={role === "mentor" ? "mentor@colegio.edu.pe" : "amigo@gmail.com"}
+                        label={`${copy("Correo", "Email")} (${roleLabel(role, language)})`}
+                        placeholder={role === "mentor" ? "mentor@school.edu" : "friend@gmail.com"}
                         disabled={!isEditingEnabled || current?.status === "submitted"}
                       />
                       <Stack
@@ -1453,12 +1675,12 @@ export function ApplicantApplicationForm({
                       >
                         {current?.inviteSentAt ? (
                           <Typography variant="body2" color="text.secondary">
-                            Invitación: {new Date(current.inviteSentAt).toLocaleString()}
+                            {copy("Invitación", "Invite")}: {new Date(current.inviteSentAt).toLocaleString(locale)}
                           </Typography>
                         ) : null}
                         {current?.submittedAt ? (
                           <Typography variant="body2" color="success.main">
-                            Formulario enviado: {new Date(current.submittedAt).toLocaleString()}
+                            {copy("Formulario enviado", "Form submitted")}: {new Date(current.submittedAt).toLocaleString(locale)}
                           </Typography>
                         ) : null}
                         {current && current.status !== "submitted" ? (
@@ -1467,7 +1689,7 @@ export function ApplicantApplicationForm({
                             onClick={() => sendReminder(current.id)}
                             disabled={remindingId === current.id || !isEditingEnabled}
                           >
-                            {remindingId === current.id ? "Enviando..." : "Enviar recordatorio"}
+                            {remindingId === current.id ? copy("Enviando...", "Sending...") : copy("Enviar recordatorio", "Send reminder")}
                           </Button>
                         ) : null}
                       </Stack>
@@ -1481,17 +1703,17 @@ export function ApplicantApplicationForm({
                   onClick={saveRecommenders}
                   disabled={!isEditingEnabled || savingRecommenders}
                 >
-                  {savingRecommenders ? "Guardando..." : "Guardar recomendadores"}
+                  {savingRecommenders ? copy("Guardando...", "Saving...") : copy("Guardar recomendadores", "Save recommenders")}
                 </Button>
               </Stack>
               {loadingRecommenders ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                  Cargando recomendadores guardados...
+                  {copy("Cargando recomendadores guardados...", "Loading saved recommenders...")}
                 </Typography>
               ) : null}
               {!loadingRecommenders && application?.id && recommenders.length === 0 ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                  Aún no hay recomendadores registrados para esta postulación.
+                  {copy("Aún no hay recomendadores registrados para esta postulación.", "There are no recommenders registered for this application yet.")}
                 </Typography>
               ) : null}
             </CardContent>
@@ -1502,11 +1724,11 @@ export function ApplicantApplicationForm({
           <Card>
             <CardContent>
               <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Typography variant="h6">{SECTION_TITLES.review_submit}</Typography>
+                <Typography variant="h6">{sectionTitles.review_submit}</Typography>
                 <StatusBadge status={submissionStatus} />
               </Stack>
               <Typography color="text.secondary" sx={{ mb: 2 }}>
-                Revisa el progreso por sección y envía solo cuando estés listo.
+                {copy("Revisa el progreso por sección y envía solo cuando estés listo.", "Review progress by section and submit only when you are ready.")}
               </Typography>
               <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
                 <Button
@@ -1514,14 +1736,14 @@ export function ApplicantApplicationForm({
                   onClick={() => void saveDraft({ silent: false })}
                   disabled={isSavingDraft || !isEditingEnabled}
                 >
-                  {isSavingDraft ? <CircularProgress size={18} color="inherit" /> : "Guardar borrador"}
+                  {isSavingDraft ? <CircularProgress size={18} color="inherit" /> : copy("Guardar borrador", "Save draft")}
                 </Button>
                 <Button
                   variant="outlined"
                   onClick={submitApplication}
                   disabled={!application?.id || (isLocked && !isEditMode) || isStageClosed}
                 >
-                  {isLocked && isEditMode ? "Reenviar postulación" : "Enviar postulación"}
+                  {isLocked && isEditMode ? copy("Reenviar postulación", "Resubmit application") : copy("Enviar postulación", "Submit application")}
                 </Button>
               </Stack>
             </CardContent>
@@ -1554,14 +1776,14 @@ export function ApplicantApplicationForm({
                     }
                   }}
                 >
-                  Anterior
+                  {copy("Anterior", "Previous")}
                 </Button>
                 <Button
                   variant="outlined"
                   onClick={() => void saveDraft({ silent: false })}
                   disabled={isSavingDraft || !isEditingEnabled}
                 >
-                  {isSavingDraft ? "Guardando..." : "Guardar borrador"}
+                  {isSavingDraft ? copy("Guardando...", "Saving...") : copy("Guardar borrador", "Save draft")}
                 </Button>
               </Stack>
               <Button
@@ -1573,7 +1795,9 @@ export function ApplicantApplicationForm({
                   }
                 }}
               >
-                {nextSectionId ? `Siguiente: ${SECTION_TITLES[nextSectionId]}` : "Finalizado"}
+                {nextSectionId
+                  ? `${copy("Siguiente", "Next")}: ${sectionTitles[nextSectionId]}`
+                  : copy("Finalizado", "Finished")}
               </Button>
             </Stack>
           </CardContent>
