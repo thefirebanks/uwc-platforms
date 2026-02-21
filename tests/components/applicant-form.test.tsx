@@ -152,8 +152,12 @@ describe("ApplicantApplicationForm", () => {
       />,
     );
 
+    // Sidebar always shows progress label (e.g. "3 de 7 completado")
+    expect(screen.getAllByText(/\d+ de \d+ completado/).length).toBeGreaterThanOrEqual(1);
+
+    // Navigate to review_submit to see the full section progress summary
+    fireEvent.click(screen.getAllByRole("button", { name: /Revisión y envío/i })[0]);
     expect(screen.getByText("Progreso por secciones")).toBeInTheDocument();
-    expect(screen.getByText(/\d+ de \d+ completado/)).toBeInTheDocument();
   });
 
   it("autosaves partial draft after field edits", async () => {
@@ -184,7 +188,8 @@ describe("ApplicantApplicationForm", () => {
       target: { value: "2009" },
     });
 
-    expect(screen.getByText("Cambios pendientes")).toBeInTheDocument();
+    // Both sidebar and mobile progress show the draft status label
+    expect(screen.getAllByText("Cambios pendientes").length).toBeGreaterThanOrEqual(1);
 
     await waitFor(
       () =>

@@ -17,13 +17,19 @@ Expected:
 1. Login as applicant.
 2. Open `/applicant`.
 3. Select a process and click `Iniciar postulación` or `Abrir postulación`.
-4. Fill required form fields.
-5. Save draft.
-6. Submit application.
+4. **Desktop:** Verify fixed sidebar (280px left) shows process title, gradient progress bar, draft status dot, and numbered step list.
+5. **Mobile:** Verify collapsible progress panel shows circular progress indicator, current step label, and draft status; tap to expand full step list.
+6. Verify section eyebrow header shows "Paso N de M" (uppercase) with serif section title.
+7. Fill required form fields.
+8. Save draft via the fixed bottom action bar (`Guardar borrador`).
+9. Navigate sections using sidebar (desktop) or mobile progress panel.
+10. Submit application from `Revisión y envío` section.
 
 Expected:
-- Progress panel (`Progreso por secciones`) is visible and clickable per section.
-- Applicant page keeps maroon mockup hierarchy: eyebrow cycle label, large serif title, and left-accent progress block.
+- Desktop sidebar shows step progress with complete (green check) / active (maroon border) / pending states.
+- Mobile progress panel expands/collapses correctly and matches sidebar data.
+- Fixed action bar shows Previous (ghost) + Save Draft (outlined) + Next (maroon contained); Previous hidden on first section.
+- `Revisión y envío` section shows `Progreso por secciones` summary with per-section status.
 - Draft save success message appears.
 - Submit success message appears.
 - Record status changes in `applications`.
@@ -164,12 +170,14 @@ Expected:
 
 ## Flow 15: Applicant Stage Context View
 1. Login as applicant and open `/applicant/process/:cycleId`.
-2. Confirm page header shows `Cierre de etapa` date for current stage.
-3. Confirm no extra full-process timeline card is rendered.
+2. **Desktop:** Confirm sidebar header shows process title and optional deadline date for current stage.
+3. **Mobile:** Confirm collapsible progress panel shows current step label; no extra full-process timeline card is rendered.
+4. Confirm no standalone page header with stage badge is rendered (stage context is embedded in sidebar/mobile panel).
 
 Expected:
 - Applicant sees only current-stage context (minimal information principle).
-- Stage close date reflects process configuration from admin.
+- Stage close date (if configured) appears in sidebar header on desktop and is accessible via mobile progress panel.
+- No separate page-level header duplicates stage information.
 
 ## Flow 16: Admin Stage Field Builder
 1. Login as admin and open `/admin/process/:cycleId`.
@@ -335,36 +343,48 @@ Expected:
 ## Flow 27: Applicant Section Wizard + Autosave
 1. Login as applicant and open `/applicant/process/:cycleId`.
 2. Verify `Antes de empezar` appears as a collapsible panel:
-- existing application: starts collapsed
-- first-time application: starts expanded
+   - existing application: starts collapsed
+   - first-time application: starts expanded
 3. Expand the panel and verify checklist + required document hints are present.
-4. In section `Elegibilidad`, edit one field and stop typing.
-5. Verify draft status chip shows `Cambios pendientes` then transitions to `Guardando borrador...` and finally `Borrador guardado`.
-6. Click `Siguiente` and confirm section navigation works without losing values.
-7. Use progress list to jump directly to `Recomendadores`, then back to `Datos personales`.
-8. In any field, blur input and verify draft is persisted without pressing submit.
+4. **Desktop:** Verify fixed sidebar (280px left) shows numbered step list with active step highlighted (maroon left border, filled circle). **Mobile:** Verify collapsible progress panel shows circular SVG progress and current step label.
+5. In section `Elegibilidad`, edit one field and stop typing.
+6. Verify draft status indicator shows `Cambios pendientes` (visible in both sidebar and mobile progress panel) then transitions to `Guardando borrador...` and finally `Borrador guardado`.
+7. Click `Siguiente` in the fixed bottom action bar and confirm section navigation works without losing values.
+8. **Desktop:** Use sidebar step list to jump directly to `Recomendadores`, then back to `Datos personales`. **Mobile:** Expand progress panel and tap steps to navigate.
+9. In any field, blur input and verify draft is persisted without pressing submit.
 
 Expected:
 - Applicant sees one section at a time (reduced cognitive load).
+- Desktop sidebar and mobile progress panel both reflect current section and completion status.
 - Autosave persists partial drafts without forcing all required fields immediately.
-- Manual `Guardar borrador` remains available and uses same draft pipeline.
-- Section navigation keeps data intact and progress statuses update.
+- Draft status dot/label updates in sidebar (desktop) and mobile progress panel simultaneously.
+- Manual `Guardar borrador` in the fixed bottom action bar remains available and uses same draft pipeline.
+- Section navigation via sidebar (desktop), mobile progress panel, or action bar buttons keeps data intact and progress statuses update.
 
 ## Flow 28: Applicant Mobile Layout Polish (Stage 1)
 1. Open `/applicant/process/:cycleId` on mobile viewport (e.g. 390x844).
 2. Verify top navigation remains usable:
-- brand and `Procesos` stay visible
-- role chip is hidden on mobile
-- `Cerrar sesión` stays tappable
-3. Verify header stack order:
-- process badge and stage badge do not overlap title
-- title remains readable without clipping
-4. Scroll through Stage 1 content and verify the bottom action card behavior:
-- no overlay blocking form inputs
-- on mobile it behaves as regular content flow (non-sticky)
-5. Verify long labels (especially imported from PDF inventory) are readable and do not collapse into clipped text.
+   - brand and `Procesos` stay visible
+   - role chip is hidden on mobile
+   - `Cerrar sesión` stays tappable
+3. Verify collapsible mobile progress panel:
+   - compact bar shows current step label + circular SVG progress percentage
+   - tapping the bar expands full step list with numbered items and completion states
+   - draft status dot/label is visible in the panel
+   - panel collapses cleanly when tapped again
+4. Verify section eyebrow header:
+   - "Paso N de M" uppercase label in maroon
+   - serif section title (Newsreader) is readable and does not clip
+5. Scroll through Stage 1 content and verify the fixed bottom action bar:
+   - bar is fixed at bottom with no left offset on mobile (full width)
+   - Previous (ghost), Save Draft (outlined), Next (maroon contained) buttons are tappable
+   - no overlay blocking form inputs
+6. Verify long labels (especially imported from PDF inventory) are readable and do not collapse into clipped text.
+7. Verify sidebar is completely hidden on mobile (no horizontal overflow or scroll).
 
 Expected:
-- Mobile flow stays readable and tappable across header, progress, and form sections.
-- Action controls remain visible without covering in-progress fields.
+- Mobile flow stays readable and tappable across header, progress panel, and form sections.
+- Collapsible progress panel provides navigation and status without consuming permanent screen space.
+- Fixed action bar remains visible and accessible without covering in-progress fields.
 - High-density field labels stay legible through normalized display labels.
+- No horizontal scroll caused by hidden sidebar elements.
