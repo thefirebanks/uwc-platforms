@@ -95,11 +95,13 @@ export async function POST(request: NextRequest) {
       body && typeof body.payload === "object" && body.payload !== null
         ? (body.payload as Record<string, unknown>)
         : (body as Record<string, unknown>);
+    const allowPartial = body && typeof body.allowPartial === "boolean" ? body.allowPartial : false;
 
     const validation = validateStagePayload({
       fields: stageFields.filter((field) => field.field_type !== "file"),
       payload: rawPayload,
       skipFileValidation: true,
+      enforceRequired: !allowPartial,
     });
 
     if (!validation.isValid) {
