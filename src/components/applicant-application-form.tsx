@@ -2,6 +2,9 @@
 
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
   Card,
@@ -14,6 +17,7 @@ import {
   Typography,
 } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import type { Application, CycleStageField, RecommendationStatus, RecommenderRole } from "@/types/domain";
 import { StageBadge, StatusBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
@@ -74,6 +78,48 @@ const SECTION_TITLES: Record<WizardSectionId, string> = {
   recommenders_flow: "Recomendadores",
   review_submit: "Revisión y envío",
 };
+
+const FIELD_LABEL_PREFIX_BY_SECTION: Partial<Record<ApplicantFormSectionId, string>> = {
+  eligibility: "Cumplimiento de requisitos - ",
+  identity: "Información personal - ",
+  family: "Información familiar y apoderados - ",
+  school: "Información del colegio - ",
+  motivation: "Hoja de vida e interés en UWC - ",
+  documents: "Documentos - ",
+};
+
+function getDisplayFieldLabel({
+  sectionId,
+  fieldLabel,
+}: {
+  sectionId: ApplicantFormSectionId;
+  fieldLabel: string;
+}) {
+  const prefix = FIELD_LABEL_PREFIX_BY_SECTION[sectionId];
+  if (!prefix) {
+    return fieldLabel;
+  }
+
+  return fieldLabel.startsWith(prefix) ? fieldLabel.slice(prefix.length).trim() : fieldLabel;
+}
+
+function shouldUseWideFieldLayout({
+  field,
+  displayLabel,
+}: {
+  field: CycleStageField;
+  displayLabel: string;
+}) {
+  if (field.field_type === "long_text") {
+    return true;
+  }
+
+  if (displayLabel.length >= 34) {
+    return true;
+  }
+
+  return Boolean(field.help_text && field.help_text.length > 90);
+}
 
 function getPayloadValue(payload: Application["payload"], key: string) {
   const raw = payload?.[key];
@@ -259,6 +305,7 @@ export function ApplicantApplicationForm({
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formValues, setFormValues] = useState<Record<string, string>>({});
   const [activeSectionId, setActiveSectionId] = useState<WizardSectionId>("eligibility");
+  const [isPrepExpanded, setIsPrepExpanded] = useState(!existingApplication?.id);
 
   const isStageClosed = Boolean(stageCloseAt && Date.parse(stageCloseAt) < Date.now());
   const isLocked = application ? LOCKED_STATUSES.has(application.status) : false;
@@ -441,6 +488,7 @@ export function ApplicantApplicationForm({
     [fileStageFields],
   );
   const currentSection = wizardSections.find((section) => section.id === activeSectionId) ?? wizardSections[0] ?? null;
+  const currentFormSectionId = currentSection?.formSection?.id ?? null;
   const currentSectionIndex = currentSection
     ? wizardSections.findIndex((section) => section.id === currentSection.id)
     : -1;
@@ -449,6 +497,13 @@ export function ApplicantApplicationForm({
     currentSectionIndex >= 0 && currentSectionIndex < wizardSections.length - 1
       ? wizardSections[currentSectionIndex + 1]?.id ?? null
       : null;
+  const saveStatusTone = saveState === "error"
+    ? { bg: "#FEE2E2", color: "#991B1B" }
+    : saveState === "saving"
+      ? { bg: "#E0F2FE", color: "#0C4A6E" }
+      : saveState === "dirty"
+        ? { bg: "#FEF3C7", color: "#92400E" }
+        : { bg: "var(--success-soft)", color: "var(--success)" };
 
   useEffect(() => {
     if (wizardSections.length === 0) {
@@ -638,6 +693,67 @@ export function ApplicantApplicationForm({
       void saveDraft({ silent: true });
     }
     setActiveSectionId(sectionId);
+  }
+
+  function renderEditableFields({
+    fields,
+    sectionId,
+  }: {
+    fields: CycleStageField[];
+    sectionId: ApplicantFormSectionId;
+  }) {
+    return (
+      <Grid container spacing={2}>
+        {fields.map((field) => {
+          const displayLabel = getDisplayFieldLabel({
+            sectionId,
+            fieldLabel: field.field_label,
+          });
+
+          return (
+            <Grid
+              key={field.id}
+              size={shouldUseWideFieldLayout({ field, displayLabel }) ? 12 : { xs: 12, md: 6 }}
+            >
+              <TextField
+                label={field.is_required ? `${displayLabel} *` : displayLabel}
+                value={formValues[field.field_key] ?? ""}
+                onChange={(event) => {
+                  const nextValue = event.target.value;
+                  setFormValues((current) => ({
+                    ...current,
+                    [field.field_key]: nextValue,
+                  }));
+                  markFieldDirty();
+                }}
+                onBlur={() => {
+                  if (hasPendingChanges && !isSavingDraft) {
+                    void saveDraft({ silent: true });
+                  }
+                }}
+                type={
+                  field.field_type === "date"
+                    ? "date"
+                    : field.field_type === "number"
+                      ? "number"
+                      : field.field_type === "email"
+                        ? "email"
+                        : "text"
+                }
+                multiline={field.field_type === "long_text"}
+                minRows={field.field_type === "long_text" ? 6 : undefined}
+                fullWidth
+                disabled={!isEditingEnabled}
+                placeholder={field.placeholder ?? undefined}
+                helperText={fieldErrors[field.field_key] ?? field.help_text}
+                error={Boolean(fieldErrors[field.field_key])}
+                InputLabelProps={{ shrink: true }}
+              />
+            </Grid>
+          );
+        })}
+      </Grid>
+    );
   }
 
   async function submitApplication() {
@@ -893,17 +1009,30 @@ export function ApplicantApplicationForm({
   }
 
   return (
-    <Box sx={{ maxWidth: 840, width: "100%", mx: "auto" }}>
+    <Box sx={{ maxWidth: 920, width: "100%", mx: "auto", px: { xs: 1, sm: 0 } }}>
       <Stack spacing={3}>
         <Box className="page-header" sx={{ mb: 0 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={2}>
+          <Stack
+            direction={{ xs: "column", sm: "row" }}
+            justifyContent="space-between"
+            alignItems={{ xs: "flex-start", sm: "flex-start" }}
+            spacing={2}
+          >
             <Box>
               {cycleName ? (
                 <Typography className="eyebrow" sx={{ mb: 1 }}>
                   {cycleName}
                 </Typography>
               ) : null}
-              <Typography variant="h3">Tu postulación</Typography>
+              <Typography
+                variant="h3"
+                sx={{
+                  fontSize: { xs: "2.35rem", sm: "3.15rem" },
+                  lineHeight: { xs: 1.1, sm: 1.08 },
+                }}
+              >
+                Tu postulación
+              </Typography>
               <Typography sx={{ mt: 1 }} color="text.secondary">
                 Completa solo la información requerida para esta etapa.
               </Typography>
@@ -960,7 +1089,12 @@ export function ApplicantApplicationForm({
           ) : null}
         </Box>
 
-        <Box className="progress-section">
+        <Box
+          className="progress-section"
+          sx={{
+            position: "relative",
+          }}
+        >
           <Stack direction="row" justifyContent="space-between" alignItems="baseline" sx={{ mb: 1.5 }}>
             <Typography variant="body2" color="text.secondary">
               Progreso por secciones
@@ -969,9 +1103,17 @@ export function ApplicantApplicationForm({
               {completedSteps} de {progressSteps.length} completado
             </Typography>
           </Stack>
-          <Typography variant="body2" color={saveState === "error" ? "error.main" : "text.secondary"} sx={{ mb: 1.5 }}>
-            {draftStatusLabel}
-          </Typography>
+          <Chip
+            size="small"
+            label={draftStatusLabel}
+            sx={{
+              mb: 1.5,
+              bgcolor: saveStatusTone.bg,
+              color: saveStatusTone.color,
+              fontWeight: 600,
+              alignSelf: "flex-start",
+            }}
+          />
           <Box
             sx={{
               height: 4,
@@ -1038,6 +1180,7 @@ export function ApplicantApplicationForm({
                     flex: 1,
                     fontWeight: activeSectionId === step.key || step.status !== "not_started" ? 600 : 400,
                     color: step.status === "not_started" ? "var(--muted)" : "var(--ink)",
+                    fontSize: { xs: "1.08rem", sm: "1.16rem" },
                   }}
                 >
                   {step.label}
@@ -1048,11 +1191,32 @@ export function ApplicantApplicationForm({
           </Stack>
         </Box>
 
-        <Card>
-          <CardContent>
-            <Typography variant="h6" sx={{ mb: 0.8 }}>
-              Antes de empezar
-            </Typography>
+        <Accordion
+          expanded={isPrepExpanded}
+          onChange={(_event, expanded) => setIsPrepExpanded(expanded)}
+          disableGutters
+          elevation={0}
+          sx={{
+            border: "1px solid var(--sand)",
+            borderRadius: "var(--radius)",
+            bgcolor: "var(--cream)",
+            "&::before": { display: "none" },
+          }}
+        >
+          <AccordionSummary
+            expandIcon={<ExpandMoreIcon />}
+            aria-controls="prep-content"
+            id="prep-header"
+            sx={{ px: 2.5, py: 0.4 }}
+          >
+            <Stack>
+              <Typography variant="h6">Antes de empezar</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Checklist rápida de preparación para enviar sin fricción.
+              </Typography>
+            </Stack>
+          </AccordionSummary>
+          <AccordionDetails sx={{ px: 2.5, pt: 0, pb: 2 }}>
             <Typography color="text.secondary" sx={{ mb: 1.2 }}>
               Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.
             </Typography>
@@ -1072,8 +1236,8 @@ export function ApplicantApplicationForm({
                 </Typography>
               ) : null}
             </Stack>
-          </CardContent>
-        </Card>
+          </AccordionDetails>
+        </Accordion>
 
         {error ? <ErrorCallout message={error.message} errorId={error.errorId} context="applicant_form" /> : null}
 
@@ -1100,46 +1264,12 @@ export function ApplicantApplicationForm({
                   }
                 />
               </Stack>
-              <Grid container spacing={2}>
-                {currentSection.formSection.fields.map((field) => (
-                  <Grid key={field.id} size={field.field_type === "long_text" ? 12 : { xs: 12, md: 6 }}>
-                    <TextField
-                      label={field.is_required ? `${field.field_label} *` : field.field_label}
-                      value={formValues[field.field_key] ?? ""}
-                      onChange={(event) => {
-                        const nextValue = event.target.value;
-                        setFormValues((current) => ({
-                          ...current,
-                          [field.field_key]: nextValue,
-                        }));
-                        markFieldDirty();
-                      }}
-                      onBlur={() => {
-                        if (hasPendingChanges && !isSavingDraft) {
-                          void saveDraft({ silent: true });
-                        }
-                      }}
-                      type={
-                        field.field_type === "date"
-                          ? "date"
-                          : field.field_type === "number"
-                            ? "number"
-                            : field.field_type === "email"
-                              ? "email"
-                              : "text"
-                      }
-                      multiline={field.field_type === "long_text"}
-                      minRows={field.field_type === "long_text" ? 6 : undefined}
-                      fullWidth
-                      disabled={!isEditingEnabled}
-                      placeholder={field.placeholder ?? undefined}
-                      helperText={fieldErrors[field.field_key] ?? field.help_text}
-                      error={Boolean(fieldErrors[field.field_key])}
-                      InputLabelProps={{ shrink: true }}
-                    />
-                  </Grid>
-                ))}
-              </Grid>
+              {currentFormSectionId
+                ? renderEditableFields({
+                    fields: currentSection.formSection.fields,
+                    sectionId: currentFormSectionId,
+                  })
+                : null}
             </CardContent>
           </Card>
         ) : null}
@@ -1158,46 +1288,12 @@ export function ApplicantApplicationForm({
               </Stack>
 
               {currentSection.formSection?.fields.length ? (
-                <Grid container spacing={2} sx={{ mt: 0.5, mb: 2 }}>
-                  {currentSection.formSection.fields.map((field) => (
-                    <Grid key={field.id} size={field.field_type === "long_text" ? 12 : { xs: 12, md: 6 }}>
-                      <TextField
-                        label={field.is_required ? `${field.field_label} *` : field.field_label}
-                        value={formValues[field.field_key] ?? ""}
-                        onChange={(event) => {
-                          const nextValue = event.target.value;
-                          setFormValues((current) => ({
-                            ...current,
-                            [field.field_key]: nextValue,
-                          }));
-                          markFieldDirty();
-                        }}
-                        onBlur={() => {
-                          if (hasPendingChanges && !isSavingDraft) {
-                            void saveDraft({ silent: true });
-                          }
-                        }}
-                        type={
-                          field.field_type === "date"
-                            ? "date"
-                            : field.field_type === "number"
-                              ? "number"
-                              : field.field_type === "email"
-                                ? "email"
-                                : "text"
-                        }
-                        multiline={field.field_type === "long_text"}
-                        minRows={field.field_type === "long_text" ? 6 : undefined}
-                        fullWidth
-                        disabled={!isEditingEnabled}
-                        placeholder={field.placeholder ?? undefined}
-                        helperText={fieldErrors[field.field_key] ?? field.help_text}
-                        error={Boolean(fieldErrors[field.field_key])}
-                        InputLabelProps={{ shrink: true }}
-                      />
-                    </Grid>
-                  ))}
-                </Grid>
+                <Box sx={{ mt: 0.5, mb: 2 }}>
+                  {renderEditableFields({
+                    fields: currentSection.formSection.fields,
+                    sectionId: "documents",
+                  })}
+                </Box>
               ) : null}
 
               <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
@@ -1303,46 +1399,12 @@ export function ApplicantApplicationForm({
               </Stack>
 
               {currentSection.formSection?.fields.length ? (
-                <Grid container spacing={2} sx={{ mt: 0.5, mb: 2 }}>
-                  {currentSection.formSection.fields.map((field) => (
-                    <Grid key={field.id} size={field.field_type === "long_text" ? 12 : { xs: 12, md: 6 }}>
-                      <TextField
-                        label={field.is_required ? `${field.field_label} *` : field.field_label}
-                        value={formValues[field.field_key] ?? ""}
-                        onChange={(event) => {
-                          const nextValue = event.target.value;
-                          setFormValues((current) => ({
-                            ...current,
-                            [field.field_key]: nextValue,
-                          }));
-                          markFieldDirty();
-                        }}
-                        onBlur={() => {
-                          if (hasPendingChanges && !isSavingDraft) {
-                            void saveDraft({ silent: true });
-                          }
-                        }}
-                        type={
-                          field.field_type === "date"
-                            ? "date"
-                            : field.field_type === "number"
-                              ? "number"
-                              : field.field_type === "email"
-                                ? "email"
-                                : "text"
-                        }
-                        multiline={field.field_type === "long_text"}
-                        minRows={field.field_type === "long_text" ? 6 : undefined}
-                        fullWidth
-                        disabled={!isEditingEnabled}
-                        placeholder={field.placeholder ?? undefined}
-                        helperText={fieldErrors[field.field_key] ?? field.help_text}
-                        error={Boolean(fieldErrors[field.field_key])}
-                        InputLabelProps={{ shrink: true }}
-                      />
-                    </Grid>
-                  ))}
-                </Grid>
+                <Box sx={{ mt: 0.5, mb: 2 }}>
+                  {renderEditableFields({
+                    fields: currentSection.formSection.fields,
+                    sectionId: "recommenders",
+                  })}
+                </Box>
               ) : null}
 
               <Stack spacing={2}>
@@ -1466,7 +1528,15 @@ export function ApplicantApplicationForm({
           </Card>
         ) : null}
 
-        <Card>
+        <Card
+          sx={{
+            position: { xs: "relative", sm: "sticky" },
+            bottom: { sm: 16 },
+            zIndex: 5,
+            border: "1px solid var(--sand)",
+            boxShadow: "0 10px 28px rgba(44, 40, 37, 0.08)",
+          }}
+        >
           <CardContent>
             <Stack
               direction={{ xs: "column", sm: "row" }}
