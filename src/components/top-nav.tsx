@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppBar, Box, Button, Toolbar, Typography } from "@mui/material";
+import { LanguageToggle } from "@/components/language-toggle";
+import { useAppLanguage } from "@/components/language-provider";
 import type { AppRole } from "@/types/domain";
 import {
   clearSupabaseBrowserSessionCache,
@@ -13,6 +15,7 @@ import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 
 export function TopNav({ role }: { role: AppRole }) {
   const router = useRouter();
+  const { t } = useAppLanguage();
 
   async function logout() {
     const supabase = getSupabaseBrowserClient();
@@ -50,12 +53,15 @@ export function TopNav({ role }: { role: AppRole }) {
         >
           {role === "admin" ? (
             <>
-              <NavLink href="/admin" label="Procesos" />
-              <NavLink href="/admin/audit" label="Auditoría" />
+              <NavLink href="/admin" label={t("nav.processes")} />
+              <NavLink href="/admin/audit" label={t("nav.audit")} />
             </>
           ) : (
-            <NavLink href="/applicant" label="Procesos" />
+            <NavLink href="/applicant" label={t("nav.processes")} />
           )}
+        </Box>
+        <Box sx={{ mr: { xs: 0.5, sm: 1.5 } }}>
+          <LanguageToggle />
         </Box>
         <Box sx={{ mr: { xs: 0.5, sm: 1.5 } }}>
           <ThemeModeToggle />
@@ -73,7 +79,7 @@ export function TopNav({ role }: { role: AppRole }) {
             display: { xs: "none", sm: "inline-flex" },
           }}
         >
-          {role === "admin" ? "Admin" : "Postulante"}
+          {role === "admin" ? t("nav.roleAdmin") : t("nav.roleApplicant")}
         </Typography>
         <Button
           variant="outlined"
@@ -91,7 +97,7 @@ export function TopNav({ role }: { role: AppRole }) {
             },
           }}
         >
-          Cerrar sesión
+          {t("nav.logout")}
         </Button>
       </Toolbar>
     </AppBar>
