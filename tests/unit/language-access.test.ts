@@ -4,6 +4,7 @@ import { canUseEnglishLanguageToggle } from "@/lib/i18n/access";
 describe("canUseEnglishLanguageToggle", () => {
   afterEach(() => {
     delete process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL;
+    delete process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL;
   });
 
   it("allows admin users", () => {
@@ -39,5 +40,16 @@ describe("canUseEnglishLanguageToggle", () => {
         email: "applicant.demo@uwcperu.org",
       }),
     ).toBe(false);
+  });
+
+  it("allows demo admin email even if role is not admin", () => {
+    process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL = "admin.demo@uwcperu.org";
+
+    expect(
+      canUseEnglishLanguageToggle({
+        role: "applicant",
+        email: "admin.demo@uwcperu.org",
+      }),
+    ).toBe(true);
   });
 });

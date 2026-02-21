@@ -1,3 +1,5 @@
+"use client";
+
 import { Button, Card, CardContent, Stack, Typography } from "@mui/material";
 import { useAppLanguage } from "@/components/language-provider";
 import type { Application, SelectionProcess } from "@/types/domain";
