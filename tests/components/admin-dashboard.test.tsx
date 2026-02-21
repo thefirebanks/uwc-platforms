@@ -75,6 +75,7 @@ describe("AdminDashboard", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Operaciones avanzadas" }));
     fireEvent.click(screen.getByRole("button", { name: "Importar CSV" }));
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -143,6 +144,7 @@ describe("AdminDashboard", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Operaciones avanzadas" }));
     fireEvent.click(screen.getByRole("button", { name: "Procesar cola" }));
 
     await waitFor(() => {
@@ -200,5 +202,24 @@ describe("AdminDashboard", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/applications/app-1/ocr-check?limit=10");
     });
+  });
+
+  it("renders export links for filtered csv and individual json", () => {
+    render(
+      <AdminDashboard
+        initialApplications={[...applications]}
+        cycle={cycle}
+        cycleTemplates={[...cycleTemplates]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Exportar CSV filtrado" })).toHaveAttribute(
+      "href",
+      "/api/exports?cycleId=cycle-1",
+    );
+    expect(screen.getByRole("link", { name: "Exportar JSON" })).toHaveAttribute(
+      "href",
+      "/api/exports?applicationId=app-1",
+    );
   });
 });

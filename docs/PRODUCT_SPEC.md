@@ -30,7 +30,8 @@ Build a faster, cleaner, easier-to-use platform for UWC Peru selection process m
   - Admin validation (`eligible`, `ineligible`)
   - Admin stage transitions
   - Exam CSV import
-  - CSV export
+  - Export individual por postulante (JSON estructurado)
+  - Export masivo filtrado por proceso/etapa/estado/elegibilidad (CSV)
   - Communication queue lifecycle controls (queue, process, retry, status visibility)
   - Real email sending from queue via provider integration
   - OCR validation execution + confidence/history visibility per application

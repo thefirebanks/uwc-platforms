@@ -67,8 +67,9 @@ Expected:
 
 ## Flow 6: Exam Import
 1. Login as admin.
-2. Paste CSV in import panel.
-3. Trigger import.
+2. Open `/admin/process/:cycleId` and expand `Operaciones avanzadas`.
+3. Paste CSV in import panel.
+4. Trigger import.
 
 Expected:
 - Imported/skipped summary shown.
@@ -210,12 +211,13 @@ Expected:
 
 ## Flow 19: Communication Queue Lifecycle
 1. Login as admin and open `/admin/process/:cycleId`.
-2. In `Comunicaciones`, click `Actualizar estado`.
-3. Verify at least one queued row appears when automations were triggered.
-4. Click `Procesar cola`.
-5. Verify counters and table status update (`queued -> sent` or `failed`).
-6. Confirm the destination inbox received the email when status is `sent`.
-7. Click `Reintentar fallidas`.
+2. Expand `Operaciones avanzadas`.
+3. In `Comunicaciones`, click `Actualizar estado`.
+4. Verify at least one queued row appears when automations were triggered.
+5. Click `Procesar cola`.
+6. Verify counters and table status update (`queued -> sent` or `failed`).
+7. Confirm the destination inbox received the email when status is `sent`.
+8. Click `Reintentar fallidas`.
 
 Expected:
 - Summary chips reflect queue lifecycle counts.
@@ -314,7 +316,43 @@ Expected:
 - Final submit is one-way (`status=submitted` + immutable for recommender).
 - Friend role requires non-family confirmation checkbox.
 
-## Flow 26: Stage 1 PDF Default Schema Coverage
+## Flow 26: UI Consistency Audit Pass
+1. Review `/`, `/login`, `/applicant`, `/applicant/process/:cycleId`, `/admin`, and `/admin/process/:cycleId`.
+2. Verify text alignment for labels/placeholders/helper text in all form controls.
+3. Verify toggle contrast and selected/unselected visibility.
+4. Verify date fields and dense rows keep consistent spacing and alignment.
+5. Verify no clipped text in chips/buttons/cards at desktop and mobile widths.
+
+Expected:
+- No visual misalignment regressions in core forms.
+- Control states are distinguishable and accessible.
+- Layout remains stable across breakpoints.
+
+## Flow 27: UX Visibility and Information Density Audit
+1. For applicant pages, verify only current-stage actions are visible by default.
+2. For admin pages, verify high-frequency actions are visible first.
+3. Verify advanced/low-frequency controls are behind explicit reveal sections.
+4. Verify there is no duplicated configuration entry point for the same setting.
+
+Expected:
+- Pages remain functional without overwhelming users.
+- Visibility hierarchy matches user role priorities.
+- Advanced controls are discoverable but not noisy.
+
+## Flow 28: Export Data (Individual + Bulk)
+1. As admin, export one individual applicant package.
+2. Click `Exportar JSON` in one row and confirm a `.json` file downloads.
+3. Verify metadata includes stage, validation status, and document references.
+4. Apply filters (stage/status/eligibility) and export a bulk CSV.
+5. Click `Exportar CSV filtrado` and confirm the downloaded CSV matches current filters.
+6. Validate exported rows match filtered table contents.
+
+Expected:
+- Individual export is complete and downloadable.
+- Bulk export respects selected filters.
+- Export schemas are stable and committee-friendly.
+
+## Flow 29: Stage 1 PDF Default Schema Coverage
 1. Login as admin and open `/admin/process/:cycleId/stage/documents`.
 2. Verify fields include all major sections from `docs/STAGE1_PDF_FIELD_INVENTORY.md`:
 - Cumplimiento de requisitos
@@ -332,7 +370,7 @@ Expected:
 - Admin can edit/reorder/remove the expanded defaults as usual.
 - Applicant form reflects the same expanded schema.
 
-## Flow 27: Applicant Section Wizard + Autosave
+## Flow 30: Applicant Section Wizard + Autosave
 1. Login as applicant and open `/applicant/process/:cycleId`.
 2. Verify `Antes de empezar` appears as a collapsible panel:
 - existing application: starts collapsed
@@ -350,7 +388,7 @@ Expected:
 - Manual `Guardar borrador` remains available and uses same draft pipeline.
 - Section navigation keeps data intact and progress statuses update.
 
-## Flow 28: Applicant Mobile Layout Polish (Stage 1)
+## Flow 31: Applicant Mobile Layout Polish (Stage 1)
 1. Open `/applicant/process/:cycleId` on mobile viewport (e.g. 390x844).
 2. Verify top navigation remains usable:
 - brand and `Procesos` stay visible

@@ -31,7 +31,10 @@
 - Validation and stage transition
 - Recommendation management (`GET/PUT /api/recommendations`, `POST /api/recommendations/:id/remind`)
 - Public no-login recommender flow (`/recomendacion/:token` + OTP/session APIs)
-- Exam import and export
+- Exam import
+- Applicant exports (`GET /api/exports`):
+  - bulk CSV with filters (`cycleId`, `stageCode`, `status`, `eligibility`)
+  - single applicant JSON package (`applicationId`)
 - Communication queue listing and processing (`GET /api/communications`, `POST /api/communications/process`)
 - Audit listing and export
 - Bug reporting endpoint
