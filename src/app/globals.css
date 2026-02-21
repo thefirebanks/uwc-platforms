@@ -91,9 +91,9 @@ a {
 }
 
 .progress-section {
-  padding: 28px 32px;
+  padding: clamp(18px, 2.8vw, 28px) clamp(16px, 3.2vw, 32px);
   background: var(--cream);
-  border-left: 3px solid var(--uwc-maroon);
+  border-left: 2px solid var(--uwc-maroon);
   border-radius: var(--radius);
 }
 

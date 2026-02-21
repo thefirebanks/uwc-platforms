@@ -17,3 +17,17 @@ export function buildFallbackStageFields(cycleId: string): CycleStageField[] {
     created_at: new Date().toISOString(),
   }));
 }
+
+export function resolveDocumentStageFields({
+  cycleId,
+  fields,
+}: {
+  cycleId: string;
+  fields: CycleStageField[];
+}) {
+  if (fields.length === 0) {
+    return buildFallbackStageFields(cycleId);
+  }
+
+  return fields;
+}

@@ -25,14 +25,15 @@ export function TopNav({ role }: { role: AppRole }) {
 
   return (
     <AppBar position="sticky" color="inherit" elevation={0}>
-      <Toolbar>
+      <Toolbar sx={{ minHeight: { xs: 64, sm: 72 }, px: { xs: 1.5, sm: 2.5 }, gap: { xs: 0.5, sm: 1 } }}>
         <Typography
           variant="h6"
+          noWrap
           sx={{
             fontFamily: "var(--font-newsreader), 'Newsreader', Georgia, serif",
             fontWeight: 500,
             color: "var(--uwc-maroon)",
-            fontSize: "1.375rem",
+            fontSize: { xs: "1.05rem", sm: "1.375rem" },
             letterSpacing: "-0.01em",
           }}
         >
@@ -43,8 +44,8 @@ export function TopNav({ role }: { role: AppRole }) {
           component="nav"
           sx={{
             display: "flex",
-            gap: 1,
-            mr: 3,
+            gap: { xs: 0, sm: 1 },
+            mr: { xs: 0.5, sm: 2 },
           }}
         >
           {role === "admin" ? (
@@ -56,19 +57,20 @@ export function TopNav({ role }: { role: AppRole }) {
             <NavLink href="/applicant" label="Procesos" />
           )}
         </Box>
-        <Box sx={{ mr: 1.5 }}>
+        <Box sx={{ mr: { xs: 0.5, sm: 1.5 } }}>
           <ThemeModeToggle />
         </Box>
         <Typography
           variant="body2"
           sx={{
-            mr: 2,
+            mr: { xs: 0, sm: 2 },
             px: 1.5,
             py: 0.5,
             color: "var(--muted)",
             fontSize: "0.8125rem",
             backgroundColor: "var(--cream)",
             borderRadius: "4px",
+            display: { xs: "none", sm: "inline-flex" },
           }}
         >
           {role === "admin" ? "Admin" : "Postulante"}
@@ -81,6 +83,8 @@ export function TopNav({ role }: { role: AppRole }) {
             borderColor: "var(--sand)",
             color: "var(--ink)",
             fontWeight: 500,
+            minWidth: { xs: "unset", sm: "auto" },
+            px: { xs: 1.2, sm: 1.75 },
             "&:hover": {
               borderColor: "var(--muted)",
               backgroundColor: "var(--cream)",
@@ -104,7 +108,8 @@ function NavLink({ href, label }: { href: string; label: string }) {
       sx={{
         color: "var(--muted)",
         fontWeight: 500,
-        px: 2,
+        px: { xs: 1, sm: 2 },
+        minWidth: { xs: 64, sm: 88 },
         "&:hover": {
           color: "var(--ink)",
           backgroundColor: "var(--cream)",

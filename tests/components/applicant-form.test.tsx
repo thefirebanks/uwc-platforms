@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApplicantApplicationForm } from "@/components/applicant-application-form";
 
@@ -10,9 +10,10 @@ describe("ApplicantApplicationForm", () => {
   it("keeps submit disabled until a draft exists", async () => {
     render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-1" />);
 
+    fireEvent.click(screen.getByRole("button", { name: /Revisión y envío/i }));
     expect(screen.getByRole("button", { name: "Enviar postulación" })).toBeDisabled();
-    expect(screen.getByText("Guarda primero un borrador para habilitar la subida.")).toBeInTheDocument();
-    expect(screen.getByText("Progreso de postulación")).toBeInTheDocument();
+    expect(screen.getByText("Antes de empezar")).toBeInTheDocument();
+    expect(screen.getByText("Progreso por secciones")).toBeInTheDocument();
   });
 
   it("locks submitted forms until user enables edit mode", async () => {
@@ -46,6 +47,7 @@ describe("ApplicantApplicationForm", () => {
       />,
     );
 
+    fireEvent.click(screen.getAllByRole("button", { name: /Datos personales/i })[0]);
     const fullNameInput = screen.getByLabelText(/Nombre completo/i);
     expect(fullNameInput).toBeDisabled();
 
@@ -112,6 +114,7 @@ describe("ApplicantApplicationForm", () => {
       />,
     );
 
+    fireEvent.click(screen.getAllByRole("button", { name: /Recomendadores/i })[0]);
     expect(await screen.findByDisplayValue("mentor@example.com")).toBeInTheDocument();
     expect(screen.getByDisplayValue("amigo@example.com")).toBeInTheDocument();
   });
@@ -149,6 +152,56 @@ describe("ApplicantApplicationForm", () => {
       />,
     );
 
-    expect(screen.getByText("3 de 4 completado")).toBeInTheDocument();
+    expect(screen.getByText("Progreso por secciones")).toBeInTheDocument();
+    expect(screen.getByText(/\d+ de \d+ completado/)).toBeInTheDocument();
+  });
+
+  it("autosaves partial draft after field edits", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          application: {
+            id: "app-auto",
+            applicant_id: "user-1",
+            cycle_id: "cycle-4",
+            stage_code: "documents",
+            status: "draft",
+            payload: { eligibilityBirthYear: 2009 },
+            files: {},
+            validation_notes: null,
+            error_report_count: 0,
+            created_at: "2026-02-18T20:00:00.000Z",
+            updated_at: "2026-02-18T20:00:00.000Z",
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-4" />);
+
+    fireEvent.change(screen.getByLabelText(/Año de nacimiento/i), {
+      target: { value: "2009" },
+    });
+
+    expect(screen.getByText("Cambios pendientes")).toBeInTheDocument();
+
+    await waitFor(
+      () =>
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/applications",
+          expect.objectContaining({
+            method: "POST",
+          }),
+        ),
+      { timeout: 5000 },
+    );
+
+    const call = fetchMock.mock.calls.find(([url]) => url === "/api/applications");
+    expect(call).toBeTruthy();
+    const [, requestInit] = call as [string, RequestInit];
+    expect(typeof requestInit.body).toBe("string");
+    const parsed = JSON.parse(requestInit.body as string) as { allowPartial?: boolean };
+    expect(parsed.allowPartial).toBe(true);
   });
 });

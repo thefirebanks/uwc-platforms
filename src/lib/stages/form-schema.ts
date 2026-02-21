@@ -52,10 +52,12 @@ export function validateStagePayload({
   fields,
   payload,
   skipFileValidation = true,
+  enforceRequired = true,
 }: {
   fields: CycleStageField[];
   payload: Record<string, unknown>;
   skipFileValidation?: boolean;
+  enforceRequired?: boolean;
 }) {
   const errors: Record<string, string> = {};
   const normalizedPayload: StagePayload = {};
@@ -68,7 +70,7 @@ export function validateStagePayload({
     const rawValue = payload[field.field_key];
 
     if (field.field_type === "file") {
-      if (!skipFileValidation && field.is_required) {
+      if (!skipFileValidation && enforceRequired && field.is_required) {
         const candidate = parseString(rawValue);
         if (!candidate) {
           errors[field.field_key] = `${field.field_label} es obligatorio.`;
@@ -80,7 +82,7 @@ export function validateStagePayload({
     if (field.field_type === "number") {
       const parsed = parseNumber(rawValue);
       if (parsed === null) {
-        if (field.is_required) {
+        if (enforceRequired && field.is_required) {
           errors[field.field_key] = `${field.field_label} es obligatorio.`;
         }
         continue;
@@ -92,7 +94,7 @@ export function validateStagePayload({
 
     const parsedText = parseString(rawValue);
     if (!parsedText) {
-      if (field.is_required) {
+      if (enforceRequired && field.is_required) {
         errors[field.field_key] = `${field.field_label} es obligatorio.`;
       }
       continue;

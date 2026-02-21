@@ -22,7 +22,7 @@ Expected:
 6. Submit application.
 
 Expected:
-- Progress panel (`Progreso de postulación`) is visible and updates section statuses.
+- Progress panel (`Progreso por secciones`) is visible and clickable per section.
 - Applicant page keeps maroon mockup hierarchy: eyebrow cycle label, large serif title, and left-accent progress block.
 - Draft save success message appears.
 - Submit success message appears.
@@ -351,3 +351,58 @@ Expected:
 - Individual export is complete and downloadable.
 - Bulk export respects selected filters.
 - Export schemas are stable and committee-friendly.
+
+## Flow 29: Stage 1 PDF Default Schema Coverage
+1. Login as admin and open `/admin/process/:cycleId/stage/documents`.
+2. Verify fields include all major sections from `docs/STAGE1_PDF_FIELD_INVENTORY.md`:
+- Cumplimiento de requisitos
+- Información personal
+- Información del colegio
+- Hoja de vida e interés en UWC
+- Documentos y pago
+- Notas oficiales por grado (PRIMERO a QUINTO)
+3. Verify one field from the notes matrix exists (por ejemplo, `Notas oficiales PRIMERO - Arte`).
+4. Login as applicant and open `/applicant/process/:cycleId`.
+5. Verify those default fields render in applicant mode without manual admin bootstrapping.
+
+Expected:
+- New/empty Stage 1 configs bootstrap to the full official default schema.
+- Admin can edit/reorder/remove the expanded defaults as usual.
+- Applicant form reflects the same expanded schema.
+
+## Flow 30: Applicant Section Wizard + Autosave
+1. Login as applicant and open `/applicant/process/:cycleId`.
+2. Verify `Antes de empezar` appears as a collapsible panel:
+- existing application: starts collapsed
+- first-time application: starts expanded
+3. Expand the panel and verify checklist + required document hints are present.
+4. In section `Elegibilidad`, edit one field and stop typing.
+5. Verify draft status chip shows `Cambios pendientes` then transitions to `Guardando borrador...` and finally `Borrador guardado`.
+6. Click `Siguiente` and confirm section navigation works without losing values.
+7. Use progress list to jump directly to `Recomendadores`, then back to `Datos personales`.
+8. In any field, blur input and verify draft is persisted without pressing submit.
+
+Expected:
+- Applicant sees one section at a time (reduced cognitive load).
+- Autosave persists partial drafts without forcing all required fields immediately.
+- Manual `Guardar borrador` remains available and uses same draft pipeline.
+- Section navigation keeps data intact and progress statuses update.
+
+## Flow 31: Applicant Mobile Layout Polish (Stage 1)
+1. Open `/applicant/process/:cycleId` on mobile viewport (e.g. 390x844).
+2. Verify top navigation remains usable:
+- brand and `Procesos` stay visible
+- role chip is hidden on mobile
+- `Cerrar sesión` stays tappable
+3. Verify header stack order:
+- process badge and stage badge do not overlap title
+- title remains readable without clipping
+4. Scroll through Stage 1 content and verify the bottom action card behavior:
+- no overlay blocking form inputs
+- on mobile it behaves as regular content flow (non-sticky)
+5. Verify long labels (especially imported from PDF inventory) are readable and do not collapse into clipped text.
+
+Expected:
+- Mobile flow stays readable and tappable across header, progress, and form sections.
+- Action controls remain visible without covering in-progress fields.
+- High-density field labels stay legible through normalized display labels.

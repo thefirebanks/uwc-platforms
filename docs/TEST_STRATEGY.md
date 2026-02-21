@@ -38,6 +38,7 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/unit/application-validation.test.ts`
 - Stage template bootstrap:
   - `tests/unit/stage-templates.test.ts`
+  - `tests/unit/stage-field-fallback.test.ts`
 - Stage dynamic validation:
   - `tests/unit/stage-form-schema.test.ts`
 - Automation pre-submit checks:
