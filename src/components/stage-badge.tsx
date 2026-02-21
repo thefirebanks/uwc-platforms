@@ -1,10 +1,8 @@
-import Chip from "@mui/material/Chip";
-import type { StageCode } from "@/types/domain";
+"use client";
 
-const labelMap: Record<StageCode, string> = {
-  documents: "Stage 1: Documentos",
-  exam_placeholder: "Stage 2: Examen (Placeholder)",
-};
+import Chip from "@mui/material/Chip";
+import { useAppLanguage } from "@/components/language-provider";
+import type { StageCode } from "@/types/domain";
 
 type BadgeVariant = "progress" | "complete" | "pending";
 
@@ -14,6 +12,11 @@ interface StageBadgeProps {
 }
 
 export function StageBadge({ stage, variant = "progress" }: StageBadgeProps) {
+  const { t } = useAppLanguage();
+  const labelMap: Record<StageCode, string> = {
+    documents: t("stage.documents"),
+    exam_placeholder: t("stage.exam"),
+  };
   const colorMap: Record<BadgeVariant, "primary" | "success" | "default"> = {
     progress: "primary",
     complete: "success",
@@ -47,14 +50,14 @@ interface StatusBadgeProps {
   label?: string;
 }
 
-const statusLabels: Record<StatusBadgeProps["status"], string> = {
-  complete: "Completado",
-  in_progress: "En Progreso",
-  pending: "Pendiente",
-  not_started: "No Iniciado",
-};
-
 export function StatusBadge({ status, label }: StatusBadgeProps) {
+  const { t } = useAppLanguage();
+  const statusLabels: Record<StatusBadgeProps["status"], string> = {
+    complete: t("status.complete"),
+    in_progress: t("status.inProgress"),
+    pending: t("status.pending"),
+    not_started: t("status.notStarted"),
+  };
   const displayLabel = label ?? statusLabels[status];
 
   const styles: Record<StatusBadgeProps["status"], { bg: string; color: string }> = {

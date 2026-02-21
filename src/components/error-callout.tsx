@@ -10,9 +10,10 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { useAppLanguage } from "@/components/language-provider";
 
 export function ErrorCallout({
-  title = "No pudimos completar la acción",
+  title,
   message,
   errorId,
   context,
@@ -22,6 +23,7 @@ export function ErrorCallout({
   errorId?: string;
   context: string;
 }) {
+  const { t } = useAppLanguage();
   const [notes, setNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -43,7 +45,7 @@ export function ErrorCallout({
 
   return (
     <Alert severity="error" sx={{ borderRadius: 2 }}>
-      <AlertTitle>{title}</AlertTitle>
+      <AlertTitle>{title ?? t("error.defaultTitle")}</AlertTitle>
       <Stack spacing={1.5}>
         <Typography>{message}</Typography>
         {errorId ? (
@@ -57,7 +59,7 @@ export function ErrorCallout({
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               size="small"
-              label="Comentario adicional (opcional)"
+              label={t("error.commentLabel")}
               fullWidth
             />
             <Button
@@ -67,7 +69,7 @@ export function ErrorCallout({
               variant="outlined"
               color="error"
             >
-              {submitted ? "Reporte enviado" : "Reportar este problema"}
+              {submitted ? t("error.reportSent") : t("error.reportIssue")}
             </Button>
           </Box>
         ) : null}
