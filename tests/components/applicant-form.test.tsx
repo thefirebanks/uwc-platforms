@@ -11,7 +11,10 @@ describe("ApplicantApplicationForm", () => {
     render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: /Revisión y envío/i }));
-    expect(screen.getByRole("button", { name: "Enviar postulación" })).toBeDisabled();
+    // Both the inline submit button and the action bar show "Enviar postulación" on last step
+    const submitButtons = screen.getAllByRole("button", { name: /Enviar postulación/i });
+    expect(submitButtons.length).toBeGreaterThanOrEqual(1);
+    expect(submitButtons[0]).toBeDisabled();
     expect(screen.getByText("Antes de empezar")).toBeInTheDocument();
     expect(screen.getByText("Progreso por secciones")).toBeInTheDocument();
   });

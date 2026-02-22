@@ -9,6 +9,8 @@ export type SidebarStep = {
   key: string;
   label: string;
   status: ProgressState;
+  /** e.g. "85%", "1/2", or undefined (no badge shown for not_started) */
+  statusLabel?: string;
 };
 
 export function ApplicantSidebar({
@@ -82,6 +84,7 @@ export function ApplicantSidebar({
             fontSize: "1.25rem",
             fontWeight: 500,
             letterSpacing: "-0.02em",
+            lineHeight: 1.3,
             color: "var(--ink)",
           }}
         >
@@ -146,14 +149,16 @@ export function ApplicantSidebar({
                 width: "100%",
                 border: "none",
                 cursor: "pointer",
-                py: 1.25,
+                py: "10px",
                 px: 2.5,
                 bgcolor: isActive ? "var(--uwc-maroon-soft)" : "transparent",
                 position: "relative",
                 textAlign: "left",
                 fontFamily: "inherit",
+                transition: "all 0.15s ease",
                 "&:hover": {
-                  bgcolor: isActive ? "var(--uwc-maroon-soft)" : "rgba(0,0,0,0.03)",
+                  bgcolor: isActive ? "var(--uwc-maroon-soft)" : "var(--sand-light, #F3EFEB)",
+                  color: "var(--ink)",
                 },
                 // Active left border indicator
                 "&::before": isActive
@@ -161,8 +166,8 @@ export function ApplicantSidebar({
                       content: '""',
                       position: "absolute",
                       left: 0,
-                      top: 8,
-                      bottom: 8,
+                      top: 4,
+                      bottom: 4,
                       width: 3,
                       bgcolor: "var(--uwc-maroon)",
                       borderRadius: "0 3px 3px 0",
@@ -182,6 +187,7 @@ export function ApplicantSidebar({
                   justifyContent: "center",
                   fontSize: "0.65rem",
                   fontWeight: 600,
+                  transition: "all 0.2s",
                   bgcolor: isComplete
                     ? "var(--success)"
                     : isActive
@@ -199,7 +205,7 @@ export function ApplicantSidebar({
                       : "1.5px solid var(--sand)",
                 }}
               >
-                {isComplete ? <CheckIcon sx={{ fontSize: 14 }} /> : index + 1}
+                {isComplete ? <CheckIcon sx={{ fontSize: 12 }} /> : index + 1}
               </Box>
 
               {/* Label */}
@@ -207,49 +213,33 @@ export function ApplicantSidebar({
                 sx={{
                   flex: 1,
                   fontSize: "0.82rem",
-                  fontWeight: isActive || isComplete || isInProgress ? 500 : 400,
+                  fontWeight: isActive || isComplete ? 500 : 400,
                   color: isActive
                     ? "var(--uwc-maroon)"
                     : isComplete || isInProgress
                       ? "var(--ink)"
-                      : "var(--muted)",
+                      : "var(--ink-light, #5A5450)",
                 }}
               >
                 {step.label}
               </Typography>
 
               {/* Status badge */}
-              {isComplete ? (
+              {step.statusLabel ? (
                 <Typography
                   sx={{
                     fontSize: "0.6rem",
                     fontWeight: 600,
                     textTransform: "uppercase",
                     letterSpacing: "0.06em",
-                    color: "var(--success)",
-                    bgcolor: "var(--success-soft)",
                     px: 0.75,
                     py: 0.25,
                     borderRadius: "4px",
+                    color: isComplete ? "var(--success)" : "var(--uwc-maroon)",
+                    bgcolor: isComplete ? "var(--success-soft)" : "var(--uwc-maroon-soft)",
                   }}
                 >
-                  Listo
-                </Typography>
-              ) : isInProgress ? (
-                <Typography
-                  sx={{
-                    fontSize: "0.6rem",
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                    color: "var(--uwc-maroon)",
-                    bgcolor: "var(--uwc-maroon-soft)",
-                    px: 0.75,
-                    py: 0.25,
-                    borderRadius: "4px",
-                  }}
-                >
-                  En curso
+                  {step.statusLabel}
                 </Typography>
               ) : null}
             </Box>

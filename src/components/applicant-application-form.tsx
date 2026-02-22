@@ -7,11 +7,8 @@ import {
   AccordionSummary,
   Box,
   Button,
-  Card,
-  CardContent,
   Chip,
   CircularProgress,
-  Grid,
   Stack,
   TextField,
   Typography,
@@ -21,6 +18,9 @@ import { useAppLanguage } from "@/components/language-provider";
 import { ApplicantSidebar, type SidebarStep } from "@/components/applicant-sidebar";
 import { ApplicantMobileProgress } from "@/components/applicant-mobile-progress";
 import { ApplicantActionBar } from "@/components/applicant-action-bar";
+import { TogglePill } from "@/components/toggle-pill";
+import { GradesTable, isGradeField } from "@/components/grades-table";
+import { UploadZone } from "@/components/upload-zone";
 import type { AppLanguage } from "@/lib/i18n/messages";
 import type { Application, CycleStageField, RecommendationStatus, RecommenderRole } from "@/types/domain";
 import { StatusBadge } from "@/components/stage-badge";
@@ -32,6 +32,7 @@ import {
   type ApplicantFormSection,
   type ApplicantFormSectionId,
 } from "@/lib/stages/applicant-sections";
+import { getSubGroupsForSection, isBooleanField, type SubGroupDef } from "@/lib/stages/field-sub-groups";
 
 interface ApiError {
   message: string;
@@ -443,7 +444,6 @@ export function ApplicantApplicationForm({
   const [savingRecommenders, setSavingRecommenders] = useState(false);
   const [remindingId, setRemindingId] = useState<string | null>(null);
   const [uploadingFieldKey, setUploadingFieldKey] = useState<string | null>(null);
-  const [savingFileTitleKey, setSavingFileTitleKey] = useState<string | null>(null);
   const [fileTitleEdits, setFileTitleEdits] = useState<Record<string, string>>({});
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
@@ -611,22 +611,55 @@ export function ApplicantApplicationForm({
 
   const progressSteps = useMemo(
     () =>
-      wizardSections.map((section) => ({
-        key: section.id,
-        label: section.title,
-        status:
-          section.id === "documents_uploads"
-            ? getStepState({
-                complete: section.status === "complete" && documentsStatus === "complete",
-                inProgress: section.status !== "not_started" || documentsStatus !== "not_started",
-              })
-            : section.id === "recommenders_flow"
-              ? recommenderStatus
-              : section.id === "review_submit"
-                ? submissionStatus
-                : section.status,
-      })),
-    [documentsStatus, recommenderStatus, submissionStatus, wizardSections],
+      wizardSections.map((section) => {
+        // Compute status
+        let status: ProgressState;
+        if (section.id === "documents_uploads") {
+          status = getStepState({
+            complete: section.status === "complete" && documentsStatus === "complete",
+            inProgress: section.status !== "not_started" || documentsStatus !== "not_started",
+          });
+        } else if (section.id === "recommenders_flow") {
+          status = recommenderStatus;
+        } else if (section.id === "review_submit") {
+          status = submissionStatus;
+        } else {
+          status = section.status;
+        }
+
+        // Compute statusLabel (percentage or fraction)
+        let statusLabel: string | undefined;
+        if (status === "complete") {
+          // No label for complete — the check icon is sufficient
+          statusLabel = undefined;
+        } else if (section.id === "recommenders_flow") {
+          const submittedCount =
+            (activeRecommendersByRole.get("mentor")?.status === "submitted" ? 1 : 0) +
+            (activeRecommendersByRole.get("friend")?.status === "submitted" ? 1 : 0);
+          if (submittedCount > 0 || activeRecommendersByRole.size > 0) {
+            statusLabel = `${submittedCount}/2`;
+          }
+        } else if (section.id === "documents_uploads") {
+          const requiredFileFields = fileStageFields.filter((f) => f.is_required);
+          const files = (application?.files as Record<string, ApplicationFileValue> | undefined) ?? {};
+          const uploadedCount = requiredFileFields.filter((f) => isMeaningfulValue(parseFileEntry(files[f.field_key])?.path)).length;
+          if (requiredFileFields.length > 0 && (status === "in_progress" || uploadedCount > 0)) {
+            const pct = Math.round((uploadedCount / requiredFileFields.length) * 100);
+            statusLabel = `${pct}%`;
+          }
+        } else if (section.id !== "review_submit" && section.formSection && status === "in_progress") {
+          const reqFields = section.formSection.fields.filter((f) => f.is_required);
+          const payload = application?.payload ?? {};
+          const filledCount = reqFields.filter((f) => isMeaningfulValue((payload as Record<string, unknown>)[f.field_key])).length;
+          if (reqFields.length > 0) {
+            const pct = Math.round((filledCount / reqFields.length) * 100);
+            statusLabel = `${pct}%`;
+          }
+        }
+
+        return { key: section.id, label: section.title, status, statusLabel };
+      }),
+    [activeRecommendersByRole, application?.files, application?.payload, documentsStatus, fileStageFields, recommenderStatus, submissionStatus, wizardSections],
   );
 
   const completedSteps = progressSteps.filter((step) => step.status === "complete").length;
@@ -842,6 +875,244 @@ export function ApplicantApplicationForm({
     setActiveSectionId(sectionId);
   }
 
+  function renderSingleField(field: CycleStageField, sectionId: ApplicantFormSectionId) {
+    const displayLabel = getLocalizedDisplayFieldLabel({
+      sectionId,
+      field,
+      language,
+    });
+
+    // Boolean fields → toggle pill
+    if (isBooleanField(field.field_key)) {
+      return (
+        <Box sx={{ display: "flex", flexDirection: "column" }}>
+          <Typography
+            sx={{
+              fontSize: "0.78rem",
+              fontWeight: 500,
+              color: "var(--ink)",
+              mb: "5px",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
+          >
+            {displayLabel}
+            {field.is_required ? (
+              <Typography component="span" sx={{ color: "var(--uwc-maroon)", fontWeight: 400, fontSize: "inherit" }}>*</Typography>
+            ) : null}
+          </Typography>
+          <TogglePill
+            value={formValues[field.field_key] ?? ""}
+            onChange={(next) => {
+              setFormValues((current) => ({ ...current, [field.field_key]: next }));
+              markFieldDirty();
+            }}
+            onBlur={() => {
+              if (hasPendingChanges && !isSavingDraft) {
+                void saveDraft({ silent: true });
+              }
+            }}
+            yesLabel={isEnglish ? "Yes" : "Si"}
+            noLabel="No"
+            disabled={!isEditingEnabled}
+          />
+          {fieldErrors[field.field_key] ? (
+            <Typography sx={{ fontSize: "0.7rem", color: "error.main", mt: "3px" }}>
+              {fieldErrors[field.field_key]}
+            </Typography>
+          ) : null}
+          {!fieldErrors[field.field_key] && getLocalizedFieldHelpText(field, language) ? (
+            <Typography sx={{ fontSize: "0.7rem", color: "var(--muted)", mt: "3px" }}>
+              {getLocalizedFieldHelpText(field, language)}
+            </Typography>
+          ) : null}
+        </Box>
+      );
+    }
+
+    // Standard text/number/date/email fields
+    return (
+      <TextField
+        label={field.is_required ? `${displayLabel} *` : displayLabel}
+        value={formValues[field.field_key] ?? ""}
+        onChange={(event) => {
+          const nextValue = event.target.value;
+          setFormValues((current) => ({
+            ...current,
+            [field.field_key]: nextValue,
+          }));
+          markFieldDirty();
+        }}
+        onBlur={() => {
+          if (hasPendingChanges && !isSavingDraft) {
+            void saveDraft({ silent: true });
+          }
+        }}
+        type={
+          field.field_type === "date"
+            ? "date"
+            : field.field_type === "number"
+              ? "number"
+              : field.field_type === "email"
+                ? "email"
+                : "text"
+        }
+        multiline={field.field_type === "long_text"}
+        minRows={field.field_type === "long_text" ? 4 : undefined}
+        fullWidth
+        disabled={!isEditingEnabled}
+        placeholder={getLocalizedFieldPlaceholder(field, language)}
+        helperText={fieldErrors[field.field_key] ?? getLocalizedFieldHelpText(field, language)}
+        error={Boolean(fieldErrors[field.field_key])}
+        InputLabelProps={{ shrink: true }}
+      />
+    );
+  }
+
+  function renderFieldGrid(fields: CycleStageField[], sectionId: ApplicantFormSectionId) {
+    return (
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+          gap: "14px 18px",
+        }}
+      >
+        {fields.map((field) => {
+          const displayLabel = getLocalizedDisplayFieldLabel({
+            sectionId,
+            field,
+            language,
+          });
+          const isWide = shouldUseWideFieldLayout({ field, displayLabel });
+
+          return (
+            <Box key={field.id} sx={isWide ? { gridColumn: "1 / -1" } : undefined}>
+              {renderSingleField(field, sectionId)}
+            </Box>
+          );
+        })}
+      </Box>
+    );
+  }
+
+  function renderSubGroupCard(subGroup: SubGroupDef, fields: CycleStageField[], sectionId: ApplicantFormSectionId) {
+    const sgLabel = isEnglish ? subGroup.labelEn : subGroup.label;
+
+    if (subGroup.variant === "guardian") {
+      return (
+        <Box
+          key={subGroup.key}
+          sx={{
+            background: "var(--surface, #fff)",
+            border: "1px solid var(--sand-light, #F3EFEB)",
+            borderRadius: "var(--radius-lg, 12px)",
+            p: "20px",
+            mb: 2,
+          }}
+        >
+          {/* Guardian header */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: "10px", mb: 2 }}>
+            <Box
+              sx={{
+                width: 32,
+                height: 32,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "0.85rem",
+                background: subGroup.iconBg,
+                color: subGroup.iconColor,
+              }}
+            >
+              {subGroup.guardianNumber}
+            </Box>
+            <Box>
+              <Typography sx={{ fontWeight: 500, fontSize: "0.9rem", color: "var(--ink)" }}>
+                {sgLabel}
+              </Typography>
+              {(isEnglish ? subGroup.subtitleEn : subGroup.subtitle) ? (
+                <Typography sx={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                  {isEnglish ? subGroup.subtitleEn : subGroup.subtitle}
+                </Typography>
+              ) : null}
+            </Box>
+          </Box>
+          {renderFieldGrid(fields, sectionId)}
+        </Box>
+      );
+    }
+
+    if (subGroup.variant === "card") {
+      return (
+        <Box
+          key={subGroup.key}
+          sx={{
+            background: "var(--surface, #fff)",
+            border: "1px solid var(--sand-light, #F3EFEB)",
+            borderRadius: "var(--radius-lg, 12px)",
+            p: "20px",
+            mb: 2,
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: "14px" }}>
+            {subGroup.iconBg ? (
+              <Box
+                sx={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "8px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: "0.85rem",
+                  background: subGroup.iconBg,
+                  color: subGroup.iconColor,
+                }}
+              >
+                {/* No emoji — just a colored pill */}
+              </Box>
+            ) : null}
+            <Typography
+              sx={{
+                fontFamily: "var(--font-display)",
+                fontSize: "1rem",
+                fontWeight: 500,
+                color: "var(--ink)",
+              }}
+            >
+              {sgLabel}
+            </Typography>
+          </Box>
+          {renderFieldGrid(fields, sectionId)}
+        </Box>
+      );
+    }
+
+    // Default: form-group with label divider
+    return (
+      <Box key={subGroup.key} sx={{ mb: "28px" }}>
+        <Typography
+          sx={{
+            fontSize: "0.68rem",
+            fontWeight: 600,
+            letterSpacing: "0.06em",
+            textTransform: "uppercase",
+            color: "var(--muted)",
+            mb: "14px",
+            pb: 1,
+            borderBottom: "1px solid var(--sand-light, #F3EFEB)",
+          }}
+        >
+          {sgLabel}
+        </Typography>
+        {renderFieldGrid(fields, sectionId)}
+      </Box>
+    );
+  }
+
   function renderEditableFields({
     fields,
     sectionId,
@@ -849,58 +1120,125 @@ export function ApplicantApplicationForm({
     fields: CycleStageField[];
     sectionId: ApplicantFormSectionId;
   }) {
-    return (
-      <Grid container spacing={2}>
-        {fields.map((field) => {
-          const displayLabel = getLocalizedDisplayFieldLabel({
-            sectionId,
-            field,
-            language,
-          });
+    const subGroups = getSubGroupsForSection(sectionId);
 
-          return (
-            <Grid
-              key={field.id}
-              size={shouldUseWideFieldLayout({ field, displayLabel }) ? 12 : { xs: 12, md: 6 }}
-            >
-              <TextField
-                label={field.is_required ? `${displayLabel} *` : displayLabel}
-                value={formValues[field.field_key] ?? ""}
-                onChange={(event) => {
-                  const nextValue = event.target.value;
-                  setFormValues((current) => ({
-                    ...current,
-                    [field.field_key]: nextValue,
-                  }));
+    // Separate grade fields for the school section
+    const gradeFields = sectionId === "school" ? fields.filter((f) => isGradeField(f.field_key)) : [];
+    const nonGradeFields = sectionId === "school" ? fields.filter((f) => !isGradeField(f.field_key)) : fields;
+
+    // If no sub-groups, render flat
+    if (subGroups.length === 0) {
+      return (
+        <Box>
+          {renderFieldGrid(nonGradeFields, sectionId)}
+          {gradeFields.length > 0 ? (
+            <Box sx={{ mt: 3 }}>
+              <Typography
+                sx={{
+                  fontSize: "0.68rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "var(--muted)",
+                  mb: "14px",
+                  pb: 1,
+                  borderBottom: "1px solid var(--sand-light, #F3EFEB)",
+                }}
+              >
+                {isEnglish ? "Official grades by year" : "Notas oficiales por ano"}
+              </Typography>
+              <GradesTable
+                fields={gradeFields}
+                formValues={formValues}
+                onFieldChange={(key, value) => {
+                  setFormValues((current) => ({ ...current, [key]: value }));
                   markFieldDirty();
                 }}
-                onBlur={() => {
+                onFieldBlur={() => {
                   if (hasPendingChanges && !isSavingDraft) {
                     void saveDraft({ silent: true });
                   }
                 }}
-                type={
-                  field.field_type === "date"
-                    ? "date"
-                    : field.field_type === "number"
-                      ? "number"
-                      : field.field_type === "email"
-                        ? "email"
-                        : "text"
-                }
-                multiline={field.field_type === "long_text"}
-                minRows={field.field_type === "long_text" ? 6 : undefined}
-                fullWidth
                 disabled={!isEditingEnabled}
-                placeholder={getLocalizedFieldPlaceholder(field, language)}
-                helperText={fieldErrors[field.field_key] ?? getLocalizedFieldHelpText(field, language)}
-                error={Boolean(fieldErrors[field.field_key])}
-                InputLabelProps={{ shrink: true }}
+                language={language}
               />
-            </Grid>
+            </Box>
+          ) : null}
+        </Box>
+      );
+    }
+
+    // Collect all sub-grouped field keys
+    const subGroupedKeys = new Set<string>();
+    for (const sg of subGroups) {
+      for (const k of sg.fieldKeys) subGroupedKeys.add(k);
+    }
+
+    // Fields not in any sub-group (rendered first, ungrouped)
+    const ungroupedFields = nonGradeFields.filter((f) => !subGroupedKeys.has(f.field_key));
+
+    return (
+      <Box>
+        {/* Ungrouped fields first */}
+        {ungroupedFields.length > 0 ? (
+          <Box sx={{ mb: "28px", animation: "fadeUp 0.35s ease", animationFillMode: "backwards" }}>
+            {renderFieldGrid(ungroupedFields, sectionId)}
+          </Box>
+        ) : null}
+
+        {/* Sub-groups */}
+        {subGroups.map((sg, idx) => {
+          const sgFields = nonGradeFields.filter((f) => sg.fieldKeys.has(f.field_key));
+          if (sgFields.length === 0) return null;
+          return (
+            <Box
+              key={sg.key}
+              sx={{
+                animation: "fadeUp 0.35s ease",
+                animationFillMode: "backwards",
+                animationDelay: `${(idx + 1) * 0.05}s`,
+              }}
+            >
+              {renderSubGroupCard(sg, sgFields, sectionId)}
+            </Box>
           );
         })}
-      </Grid>
+
+        {/* Grades table for school section */}
+        {gradeFields.length > 0 ? (
+          <Box sx={{ mt: 1 }}>
+            <Typography
+              sx={{
+                fontSize: "0.68rem",
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "var(--muted)",
+                mb: "14px",
+                pb: 1,
+                borderBottom: "1px solid var(--sand-light, #F3EFEB)",
+              }}
+            >
+              {isEnglish ? "Official grades by year" : "Notas oficiales por ano"}
+            </Typography>
+            <GradesTable
+              fields={gradeFields}
+              formValues={formValues}
+              onFieldChange={(key, value) => {
+                setFormValues((current) => ({ ...current, [key]: value }));
+                markFieldDirty();
+              }}
+              onFieldBlur={() => {
+                if (hasPendingChanges && !isSavingDraft) {
+                  void saveDraft({ silent: true });
+                }
+              }}
+              disabled={!isEditingEnabled}
+              language={language}
+            />
+          </Box>
+        ) : null}
+      </Box>
     );
   }
 
@@ -1054,50 +1392,6 @@ export function ApplicantApplicationForm({
     }
   }
 
-  async function saveFileTitle(fieldKey: string) {
-    setError(null);
-    setSuccessMessage(null);
-
-    if (!application?.id) {
-      return;
-    }
-
-    const files = (application.files as Record<string, ApplicationFileValue> | undefined) ?? {};
-    const entry = parseFileEntry(files[fieldKey]);
-    const nextTitle = fileTitleEdits[fieldKey]?.trim();
-    if (!entry || !nextTitle) {
-      return;
-    }
-
-    setSavingFileTitleKey(fieldKey);
-    try {
-      const response = await fetch(`/api/applications/${application.id}/files`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          key: fieldKey,
-          path: entry.path,
-          title: nextTitle,
-          originalName: entry.original_name,
-          mimeType: entry.mime_type,
-          sizeBytes: entry.size_bytes,
-          uploadedAt: entry.uploaded_at ?? new Date().toISOString(),
-        }),
-      });
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
-
-      setApplication(body.application);
-      setSuccessMessage(copy("Título del documento actualizado.", "Document title updated."));
-    } finally {
-      setSavingFileTitleKey(null);
-    }
-  }
-
   async function uploadDocument(fieldKey: string, event: ChangeEvent<HTMLInputElement>) {
     setError(null);
     setSuccessMessage(null);
@@ -1213,7 +1507,7 @@ export function ApplicantApplicationForm({
         sx={{
           flex: 1,
           ml: { xs: 0, md: "280px" },
-          pb: "120px",
+          pb: { xs: "140px", md: "120px" },
         }}
       >
         <Box sx={{ maxWidth: 760, mx: "auto", px: { xs: 2, sm: 4 }, pt: { xs: 3, sm: 5 } }}>
@@ -1359,6 +1653,13 @@ export function ApplicantApplicationForm({
             </AccordionDetails>
           </Accordion>
 
+          {/* Animated section wrapper — re-mounts on section change */}
+          <Box
+            key={activeSectionId}
+            sx={{
+              animation: "fadeUp 0.35s ease both",
+            }}
+          >
           {/* Section eyebrow header */}
           {currentSection ? (
             <Box sx={{ mb: 4 }}>
@@ -1397,283 +1698,242 @@ export function ApplicantApplicationForm({
 
           {/* Form section content */}
           {currentSection && currentSection.formSection && currentSection.id !== "documents_uploads" && currentSection.id !== "recommenders_flow" && currentSection.id !== "review_submit" ? (
-            <Card>
-              <CardContent>
-                {currentFormSectionId
-                  ? renderEditableFields({
-                      fields: currentSection.formSection.fields,
-                      sectionId: currentFormSectionId,
-                    })
-                  : null}
-              </CardContent>
-            </Card>
+            <Box>
+              {currentFormSectionId
+                ? renderEditableFields({
+                    fields: currentSection.formSection.fields,
+                    sectionId: currentFormSectionId,
+                  })
+                : null}
+            </Box>
           ) : null}
 
           {currentSection?.id === "documents_uploads" ? (
-            <Card>
-              <CardContent>
-                {currentSection.formSection?.fields.length ? (
-                  <Box sx={{ mb: 2 }}>
-                    {renderEditableFields({
-                      fields: currentSection.formSection.fields,
-                      sectionId: "documents",
-                    })}
-                  </Box>
-                ) : null}
-
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-                  {copy(
-                    "La validación OCR se ejecuta desde el panel admin al revisar postulaciones.",
-                    "OCR validation is run from the admin panel during application review.",
-                  )}
-                </Typography>
-                <Stack spacing={2}>
-                  {fileStageFields.map((field) => {
-                    const rawValue =
-                      ((application?.files as Record<string, ApplicationFileValue> | undefined)?.[field.field_key] ??
-                        null) as ApplicationFileValue | null;
-                    const fileEntry = parseFileEntry(rawValue);
-                    const fileName = fileEntry?.original_name ?? null;
-                    const currentTitle = fileTitleEdits[field.field_key] ?? fileEntry?.title ?? "";
-
-                    return (
-                      <Box key={field.id} sx={{ border: "1px solid var(--sand)", borderRadius: "var(--radius-lg, 12px)", p: 2.5 }}>
-                        <Typography fontWeight={700}>
-                          {getLocalizedDisplayFieldLabel({ sectionId: "documents", field, language })}
-                        </Typography>
-                        {getLocalizedFieldHelpText(field, language) ? (
-                          <Typography color="text.secondary">{getLocalizedFieldHelpText(field, language)}</Typography>
-                        ) : null}
-                        <Stack direction={{ xs: "column", sm: "row" }} spacing={1.2} sx={{ mt: 1.2 }}>
-                          <Button
-                            variant="outlined"
-                            component="label"
-                            disabled={!application?.id || uploadingFieldKey === field.field_key || !isEditingEnabled}
-                          >
-                            {uploadingFieldKey === field.field_key
-                              ? copy("Subiendo...", "Uploading...")
-                              : fileEntry
-                                ? copy("Reemplazar archivo", "Replace file")
-                                : `${copy("Subir", "Upload")} ${getLocalizedDisplayFieldLabel({ sectionId: "documents", field, language })}`}
-                            <input
-                              type="file"
-                              accept=".pdf,.png,.jpg,.jpeg,.webp,.heic,.heif"
-                              hidden
-                              onChange={(event) => uploadDocument(field.field_key, event)}
-                            />
-                          </Button>
-                          {fileEntry ? (
-                            <>
-                              <TextField
-                                label={copy("Título visible", "Visible title")}
-                                value={currentTitle}
-                                onChange={(event) =>
-                                  setFileTitleEdits((current) => ({
-                                    ...current,
-                                    [field.field_key]: event.target.value,
-                                  }))
-                                }
-                                disabled={!isEditingEnabled}
-                                fullWidth
-                              />
-                              <Button
-                                variant="text"
-                                onClick={() => saveFileTitle(field.field_key)}
-                                disabled={!isEditingEnabled || savingFileTitleKey === field.field_key}
-                              >
-                                {savingFileTitleKey === field.field_key
-                                  ? copy("Guardando...", "Saving...")
-                                  : copy("Guardar título", "Save title")}
-                              </Button>
-                            </>
-                          ) : null}
-                        </Stack>
-                        {!application?.id ? (
-                          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                            {copy("Guarda primero un borrador para habilitar la subida.", "Save a draft first to enable uploads.")}
-                          </Typography>
-                        ) : null}
-                        {fileEntry && fileName ? (
-                          <Stack spacing={0.4} sx={{ mt: 1.5 }}>
-                            <Typography variant="body2" fontWeight={600}>
-                              {copy("Documento actual", "Current document")}: {fileName}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {copy("Título", "Title")}: {currentTitle}
-                            </Typography>
-                            {fileEntry.uploaded_at ? (
-                              <Typography variant="caption" color="text.secondary">
-                                {copy("Subido", "Uploaded")}: {new Date(fileEntry.uploaded_at).toLocaleString(locale)}
-                              </Typography>
-                            ) : null}
-                            <Typography variant="caption" color="text.secondary" sx={{ wordBreak: "break-all" }}>
-                              {copy("Ruta", "Path")}: {fileEntry.path}
-                            </Typography>
-                          </Stack>
-                        ) : null}
-                      </Box>
-                    );
+            <Box>
+              {currentSection.formSection?.fields.length ? (
+                <Box sx={{ mb: 2 }}>
+                  {renderEditableFields({
+                    fields: currentSection.formSection.fields,
+                    sectionId: "documents",
                   })}
-                </Stack>
-              </CardContent>
-            </Card>
+                </Box>
+              ) : null}
+
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontSize: "0.78rem" }}>
+                {copy(
+                  "La validación OCR se ejecuta desde el panel admin al revisar postulaciones.",
+                  "OCR validation is run from the admin panel during application review.",
+                )}
+              </Typography>
+              <Stack spacing={3}>
+                {fileStageFields.map((field) => {
+                  const rawValue =
+                    ((application?.files as Record<string, ApplicationFileValue> | undefined)?.[field.field_key] ??
+                      null) as ApplicationFileValue | null;
+                  const fileEntry = parseFileEntry(rawValue);
+                  const fileName = fileEntry?.original_name ?? null;
+
+                  return (
+                    <UploadZone
+                      key={field.id}
+                      label={getLocalizedDisplayFieldLabel({ sectionId: "documents", field, language })}
+                      hint={getLocalizedFieldHelpText(field, language) ?? undefined}
+                      fileEntry={fileEntry ? {
+                        path: fileEntry.path,
+                        title: fileEntry.title ?? undefined,
+                        original_name: fileEntry.original_name ?? undefined,
+                        mime_type: fileEntry.mime_type ?? undefined,
+                        size_bytes: fileEntry.size_bytes ?? undefined,
+                        uploaded_at: fileEntry.uploaded_at ?? undefined,
+                      } : null}
+                      fileName={fileName}
+                      isUploading={uploadingFieldKey === field.field_key}
+                      disabled={!application?.id || !isEditingEnabled}
+                      onUpload={(event) => uploadDocument(field.field_key, event)}
+                      language={language}
+                    />
+                  );
+                })}
+              </Stack>
+              {!application?.id ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, fontSize: "0.78rem" }}>
+                  {copy("Guarda primero un borrador para habilitar la subida.", "Save a draft first to enable uploads.")}
+                </Typography>
+              ) : null}
+            </Box>
           ) : null}
 
           {currentSection?.id === "recommenders_flow" ? (
-            <Card>
-              <CardContent>
-                {currentSection.formSection?.fields.length ? (
-                  <Box sx={{ mb: 2 }}>
-                    {renderEditableFields({
-                      fields: currentSection.formSection.fields,
-                      sectionId: "recommenders",
-                    })}
-                  </Box>
-                ) : null}
-
-                <Stack spacing={2}>
-                  {(["mentor", "friend"] as const).map((role) => {
-                    const current = activeRecommendersByRole.get(role) ?? null;
-                    const tone = current ? statusTone(current.status, language) : statusTone("invited", language);
-
-                    return (
-                      <Box key={role} sx={{ border: "1px solid var(--sand)", borderRadius: "var(--radius-lg, 12px)", p: 2.5 }}>
-                        <Stack
-                          direction={{ xs: "column", sm: "row" }}
-                          alignItems={{ xs: "flex-start", sm: "center" }}
-                          justifyContent="space-between"
-                          spacing={1}
-                          sx={{ mb: 1.2 }}
-                        >
-                          <Typography fontWeight={700}>{roleLabel(role, language)}</Typography>
-                          {current ? (
-                            <Chip
-                              label={tone.label}
-                              sx={{ bgcolor: tone.bg, color: tone.color, fontWeight: 600 }}
-                            />
-                          ) : (
-                            <Chip label={copy("Sin registrar", "Not registered")} />
-                          )}
-                        </Stack>
-                        <TextField
-                          value={recommenderInputs[role]}
-                          onChange={(event) =>
-                            setRecommenderInputs((prev) => ({
-                              ...prev,
-                              [role]: event.target.value,
-                            }))
-                          }
-                          fullWidth
-                          type="email"
-                          label={`${copy("Correo", "Email")} (${roleLabel(role, language)})`}
-                          placeholder={role === "mentor" ? "mentor@school.edu" : "friend@gmail.com"}
-                          disabled={!isEditingEnabled || current?.status === "submitted"}
-                        />
-                        <Stack
-                          direction={{ xs: "column", sm: "row" }}
-                          spacing={1}
-                          alignItems={{ xs: "flex-start", sm: "center" }}
-                          sx={{ mt: 1.2 }}
-                        >
-                          {current?.inviteSentAt ? (
-                            <Typography variant="body2" color="text.secondary">
-                              {copy("Invitación", "Invite")}: {new Date(current.inviteSentAt).toLocaleString(locale)}
-                            </Typography>
-                          ) : null}
-                          {current?.submittedAt ? (
-                            <Typography variant="body2" color="success.main">
-                              {copy("Formulario enviado", "Form submitted")}: {new Date(current.submittedAt).toLocaleString(locale)}
-                            </Typography>
-                          ) : null}
-                          {current && current.status !== "submitted" ? (
-                            <Button
-                              variant="text"
-                              onClick={() => sendReminder(current.id)}
-                              disabled={remindingId === current.id || !isEditingEnabled}
-                            >
-                              {remindingId === current.id ? copy("Enviando...", "Sending...") : copy("Enviar recordatorio", "Send reminder")}
-                            </Button>
-                          ) : null}
-                        </Stack>
-                      </Box>
-                    );
+            <Box>
+              {currentSection.formSection?.fields.length ? (
+                <Box sx={{ mb: 2 }}>
+                  {renderEditableFields({
+                    fields: currentSection.formSection.fields,
+                    sectionId: "recommenders",
                   })}
-                </Stack>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 2 }}>
-                  <Button
-                    variant="outlined"
-                    onClick={saveRecommenders}
-                    disabled={!isEditingEnabled || savingRecommenders}
-                  >
-                    {savingRecommenders ? copy("Guardando...", "Saving...") : copy("Guardar recomendadores", "Save recommenders")}
-                  </Button>
-                </Stack>
-                {loadingRecommenders ? (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                    {copy("Cargando recomendadores guardados...", "Loading saved recommenders...")}
-                  </Typography>
-                ) : null}
-                {!loadingRecommenders && application?.id && recommenders.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-                    {copy("Aún no hay recomendadores registrados para esta postulación.", "There are no recommenders registered for this application yet.")}
-                  </Typography>
-                ) : null}
-              </CardContent>
-            </Card>
+                </Box>
+              ) : null}
+
+              <Stack spacing={2}>
+                {(["mentor", "friend"] as const).map((role, idx) => {
+                  const current = activeRecommendersByRole.get(role) ?? null;
+                  const tone = current ? statusTone(current.status, language) : statusTone("invited", language);
+
+                  return (
+                    <Box key={role} sx={{ border: "1px solid var(--sand)", borderRadius: "var(--radius-lg, 12px)", p: 2.5 }}>
+                      {/* Guardian-card header */}
+                      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 1.5 }}>
+                        <Box
+                          sx={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: "50%",
+                            background: "var(--sand-light, #F3EFEB)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: "0.82rem",
+                            fontWeight: 700,
+                            color: "var(--ink-light, #5A5450)",
+                            flexShrink: 0,
+                          }}
+                        >
+                          {idx + 1}
+                        </Box>
+                        <Box sx={{ flex: 1, minWidth: 0 }}>
+                          <Typography sx={{ fontWeight: 600, fontSize: "0.88rem" }}>{roleLabel(role, language)}</Typography>
+                          <Typography sx={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                            {current
+                              ? current.email
+                              : copy("Sin registrar", "Not registered")}
+                          </Typography>
+                        </Box>
+                        {current ? (
+                          <Chip
+                            label={tone.label}
+                            size="small"
+                            sx={{ bgcolor: tone.bg, color: tone.color, fontWeight: 600, fontSize: "0.7rem" }}
+                          />
+                        ) : null}
+                      </Stack>
+
+                      <TextField
+                        value={recommenderInputs[role]}
+                        onChange={(event) =>
+                          setRecommenderInputs((prev) => ({
+                            ...prev,
+                            [role]: event.target.value,
+                          }))
+                        }
+                        fullWidth
+                        type="email"
+                        label={`${copy("Correo", "Email")} (${roleLabel(role, language)})`}
+                        placeholder={role === "mentor" ? "mentor@school.edu" : "friend@gmail.com"}
+                        disabled={!isEditingEnabled || current?.status === "submitted"}
+                      />
+                      <Stack
+                        direction={{ xs: "column", sm: "row" }}
+                        spacing={1}
+                        alignItems={{ xs: "flex-start", sm: "center" }}
+                        sx={{ mt: 1.2 }}
+                      >
+                        {current?.inviteSentAt ? (
+                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+                            {copy("Invitación", "Invite")}: {new Date(current.inviteSentAt).toLocaleString(locale)}
+                          </Typography>
+                        ) : null}
+                        {current?.submittedAt ? (
+                          <Typography variant="body2" color="success.main" sx={{ fontSize: "0.75rem" }}>
+                            {copy("Formulario enviado", "Form submitted")}: {new Date(current.submittedAt).toLocaleString(locale)}
+                          </Typography>
+                        ) : null}
+                        {current && current.status !== "submitted" ? (
+                          <Button
+                            variant="text"
+                            onClick={() => sendReminder(current.id)}
+                            disabled={remindingId === current.id || !isEditingEnabled}
+                          >
+                            {remindingId === current.id ? copy("Enviando...", "Sending...") : copy("Enviar recordatorio", "Send reminder")}
+                          </Button>
+                        ) : null}
+                      </Stack>
+                    </Box>
+                  );
+                })}
+              </Stack>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 2 }}>
+                <Button
+                  variant="outlined"
+                  onClick={saveRecommenders}
+                  disabled={!isEditingEnabled || savingRecommenders}
+                >
+                  {savingRecommenders ? copy("Guardando...", "Saving...") : copy("Guardar recomendadores", "Save recommenders")}
+                </Button>
+              </Stack>
+              {loadingRecommenders ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, fontSize: "0.78rem" }}>
+                  {copy("Cargando recomendadores guardados...", "Loading saved recommenders...")}
+                </Typography>
+              ) : null}
+              {!loadingRecommenders && application?.id && recommenders.length === 0 ? (
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, fontSize: "0.78rem" }}>
+                  {copy("Aún no hay recomendadores registrados para esta postulación.", "There are no recommenders registered for this application yet.")}
+                </Typography>
+              ) : null}
+            </Box>
           ) : null}
 
           {currentSection?.id === "review_submit" ? (
-            <Card>
-              <CardContent>
-                <Typography sx={{ fontSize: "0.65rem", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", mb: 1 }}>
-                  {copy("Progreso por secciones", "Section progress")}
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600, mb: 1.5 }}>
-                  {sidebarProgressLabel}
-                </Typography>
-                <Stack spacing={0.8} sx={{ mb: 3 }}>
-                  {progressSteps.map((step) => (
-                    <Stack key={step.key} direction="row" alignItems="center" spacing={1}>
-                      <Box
-                        sx={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: "50%",
-                          bgcolor:
-                            step.status === "complete"
-                              ? "var(--success)"
-                              : step.status === "in_progress"
-                                ? "var(--uwc-maroon)"
-                                : "var(--sand)",
-                        }}
-                      />
-                      <Typography variant="body2" sx={{ flex: 1 }}>{step.label}</Typography>
-                      <StatusBadge status={step.status} />
-                    </Stack>
-                  ))}
-                </Stack>
-                <Typography color="text.secondary" sx={{ mb: 2 }}>
-                  {copy("Revisa el progreso por sección y envía solo cuando estés listo.", "Review progress by section and submit only when you are ready.")}
-                </Typography>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                  <Button
-                    variant="contained"
-                    onClick={() => void saveDraft({ silent: false })}
-                    disabled={isSavingDraft || !isEditingEnabled}
-                  >
-                    {isSavingDraft ? <CircularProgress size={18} color="inherit" /> : copy("Guardar borrador", "Save draft")}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={submitApplication}
-                    disabled={!application?.id || (isLocked && !isEditMode) || isStageClosed}
-                  >
-                    {isLocked && isEditMode ? copy("Reenviar postulación", "Resubmit application") : copy("Enviar postulación", "Submit application")}
-                  </Button>
-                </Stack>
-              </CardContent>
-            </Card>
+            <Box>
+              <Typography sx={{ fontSize: "0.65rem", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", mb: 1 }}>
+                {copy("Progreso por secciones", "Section progress")}
+              </Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600, mb: 1.5 }}>
+                {sidebarProgressLabel}
+              </Typography>
+              <Stack spacing={0.8} sx={{ mb: 3 }}>
+                {progressSteps.map((step) => (
+                  <Stack key={step.key} direction="row" alignItems="center" spacing={1}>
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        bgcolor:
+                          step.status === "complete"
+                            ? "var(--success)"
+                            : step.status === "in_progress"
+                              ? "var(--uwc-maroon)"
+                              : "var(--sand)",
+                      }}
+                    />
+                    <Typography variant="body2" sx={{ flex: 1 }}>{step.label}</Typography>
+                    <StatusBadge status={step.status} />
+                  </Stack>
+                ))}
+              </Stack>
+              <Typography color="text.secondary" sx={{ mb: 2, fontSize: "0.82rem" }}>
+                {copy("Revisa el progreso por sección y envía solo cuando estés listo.", "Review progress by section and submit only when you are ready.")}
+              </Typography>
+              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
+                <Button
+                  variant="contained"
+                  onClick={() => void saveDraft({ silent: false })}
+                  disabled={isSavingDraft || !isEditingEnabled}
+                >
+                  {isSavingDraft ? <CircularProgress size={18} color="inherit" /> : copy("Guardar borrador", "Save draft")}
+                </Button>
+                <Button
+                  variant="outlined"
+                  onClick={submitApplication}
+                  disabled={!application?.id || (isLocked && !isEditMode) || isStageClosed}
+                >
+                  {isLocked && isEditMode ? copy("Reenviar postulación", "Resubmit application") : copy("Enviar postulación", "Submit application")}
+                </Button>
+              </Stack>
+            </Box>
           ) : null}
+          </Box>{/* end animated section wrapper */}
         </Box>
       </Box>
 
@@ -1681,16 +1941,24 @@ export function ApplicantApplicationForm({
       <ApplicantActionBar
         onPrevious={() => { if (previousSectionId) jumpToSection(previousSectionId); }}
         onSaveDraft={() => void saveDraft({ silent: false })}
-        onNext={() => { if (nextSectionId) jumpToSection(nextSectionId); }}
-        previousLabel={copy("Anterior", "Previous")}
+        onNext={() => {
+          if (nextSectionId) {
+            jumpToSection(nextSectionId);
+          } else if (activeSectionId === "review_submit") {
+            submitApplication();
+          }
+        }}
+        previousLabel={copy("\u2190 Anterior", "\u2190 Previous")}
         saveDraftLabel={isSavingDraft ? copy("Guardando...", "Saving...") : copy("Guardar borrador", "Save draft")}
         nextLabel={
-          nextSectionId
-            ? `${copy("Siguiente", "Next")}: ${sectionTitles[nextSectionId]}`
-            : copy("Finalizado", "Finished")
+          activeSectionId === "review_submit"
+            ? copy("Enviar postulación", "Submit application")
+            : nextSectionId
+              ? `${copy("Siguiente", "Next")} \u2192`
+              : copy("Finalizado", "Finished")
         }
         hasPrevious={Boolean(previousSectionId)}
-        hasNext={Boolean(nextSectionId)}
+        hasNext={Boolean(nextSectionId) || activeSectionId === "review_submit"}
         isSaving={isSavingDraft}
         isEditingEnabled={isEditingEnabled}
       />
