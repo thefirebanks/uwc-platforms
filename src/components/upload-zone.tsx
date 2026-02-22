@@ -214,7 +214,7 @@ export function UploadZone({
               ? copy("Subiendo...", "Uploading...", language)
               : (
                   <>
-                    {copy("Arrastra aqui o ", "Drag here or ", language)}
+                    {copy("Arrastra aqu\u00ed o ", "Drag here or ", language)}
                     <Typography
                       component="strong"
                       sx={{ color: "var(--uwc-maroon)", fontWeight: 500, fontSize: "inherit" }}

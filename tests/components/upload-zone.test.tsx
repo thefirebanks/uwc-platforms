@@ -31,7 +31,7 @@ describe("UploadZone", () => {
 
   it("renders drop zone when no file is present", () => {
     render(<UploadZone {...defaultProps} />);
-    expect(screen.getByText(/Arrastra aqui o/)).toBeInTheDocument();
+    expect(screen.getByText(/Arrastra aquí o/)).toBeInTheDocument();
     expect(screen.getByText("selecciona archivo")).toBeInTheDocument();
     expect(screen.getByText(/max. 10 MB/)).toBeInTheDocument();
   });

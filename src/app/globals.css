@@ -3,7 +3,6 @@
 :root {
   /* Typography */
   --font-display: var(--font-newsreader);
-  --font-body: var(--font-inter);
 
   /* UWC Brand Colors */
   --uwc-maroon: #9A2545;
@@ -81,7 +80,7 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
-  font-family: var(--font-body), -apple-system, sans-serif;
+  font-family: var(--font-body, "DM Sans"), -apple-system, sans-serif;
   background-color: var(--paper);
   color: var(--ink);
   line-height: 1.55;

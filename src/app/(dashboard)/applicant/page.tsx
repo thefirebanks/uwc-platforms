@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
+import { Box, Container } from "@mui/material";
 import {
   ApplicantProcessesDashboard,
   type ApplicantApplicationSummary,
 } from "@/components/applicant-processes-dashboard";
+import { ApplicantTopNav } from "@/components/applicant-top-nav";
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { SelectionProcess } from "@/types/domain";
@@ -25,10 +27,17 @@ export default async function ApplicantPage() {
     .order("updated_at", { ascending: false });
 
   return (
-    <ApplicantProcessesDashboard
-      processes={(cycles as SelectionProcess[] | null) ?? []}
-      applications={(applications as ApplicantApplicationSummary[] | null) ?? []}
-      maxApplications={3}
-    />
+    <>
+      <ApplicantTopNav />
+      <Box sx={{ pt: "var(--topbar-height)" }}>
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+          <ApplicantProcessesDashboard
+            processes={(cycles as SelectionProcess[] | null) ?? []}
+            applications={(applications as ApplicantApplicationSummary[] | null) ?? []}
+            maxApplications={3}
+          />
+        </Container>
+      </Box>
+    </>
   );
 }

@@ -82,7 +82,7 @@ export function createAppTheme(mode: PaletteMode = "light") {
       borderRadius,
     },
     typography: {
-      fontFamily: "var(--font-inter), 'Inter', -apple-system, sans-serif",
+      fontFamily: "var(--font-body, 'DM Sans'), -apple-system, sans-serif",
       h1: {
         fontFamily: "var(--font-newsreader), 'Newsreader', Georgia, serif",
         fontWeight: 400,

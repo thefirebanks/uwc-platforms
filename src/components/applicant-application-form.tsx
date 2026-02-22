@@ -2,22 +2,22 @@
 
 import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
   Box,
   Button,
   Chip,
   CircularProgress,
+  IconButton,
+  MenuItem,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useAppLanguage } from "@/components/language-provider";
 import { ApplicantSidebar, type SidebarStep } from "@/components/applicant-sidebar";
 import { ApplicantMobileProgress } from "@/components/applicant-mobile-progress";
 import { ApplicantActionBar } from "@/components/applicant-action-bar";
+import { ApplicantTopNav } from "@/components/applicant-top-nav";
 import { TogglePill } from "@/components/toggle-pill";
 import { GradesTable, isGradeField } from "@/components/grades-table";
 import { UploadZone } from "@/components/upload-zone";
@@ -32,7 +32,7 @@ import {
   type ApplicantFormSection,
   type ApplicantFormSectionId,
 } from "@/lib/stages/applicant-sections";
-import { getSubGroupsForSection, isBooleanField, type SubGroupDef } from "@/lib/stages/field-sub-groups";
+import { getSubGroupsForSection, isBooleanField, getBooleanFieldLabels, type SubGroupDef } from "@/lib/stages/field-sub-groups";
 
 interface ApiError {
   message: string;
@@ -68,9 +68,18 @@ type ApplicationFileValue =
 const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
 type ProgressState = "complete" | "in_progress" | "not_started";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
-type WizardSectionId = ApplicantFormSectionId | "documents_uploads" | "recommenders_flow" | "review_submit";
+type WizardSectionId =
+  | "prep_intro"
+  | ApplicantFormSectionId
+  | "documents_uploads"
+  | "recommenders_flow"
+  | "review_submit";
+
+const PREP_SECTION_ID = "prep_intro" as const;
+const SIDEBAR_VISIBILITY_STORAGE_KEY = "uwc:applicant-sidebar-hidden";
 
 const SECTION_TITLES_ES: Record<WizardSectionId, string> = {
+  prep_intro: "Antes de empezar",
   eligibility: "Elegibilidad",
   identity: "Datos personales",
   family: "Familia y apoderados",
@@ -85,6 +94,7 @@ const SECTION_TITLES_ES: Record<WizardSectionId, string> = {
 };
 
 const SECTION_TITLES_EN: Record<WizardSectionId, string> = {
+  prep_intro: "Before you start",
   eligibility: "Eligibility",
   identity: "Personal details",
   family: "Family and guardians",
@@ -98,13 +108,13 @@ const SECTION_TITLES_EN: Record<WizardSectionId, string> = {
   review_submit: "Review and submit",
 };
 
-const FIELD_LABEL_PREFIX_BY_SECTION: Partial<Record<ApplicantFormSectionId, string>> = {
-  eligibility: "Cumplimiento de requisitos - ",
-  identity: "Información personal - ",
-  family: "Información familiar y apoderados - ",
-  school: "Información del colegio - ",
-  motivation: "Hoja de vida e interés en UWC - ",
-  documents: "Documentos - ",
+const FIELD_LABEL_PREFIX_BY_SECTION: Partial<Record<ApplicantFormSectionId, string[]>> = {
+  eligibility: ["Cumplimiento de requisitos - "],
+  identity: ["Información personal - "],
+  family: ["Información familiar y apoderados - "],
+  school: ["Información del colegio - "],
+  motivation: ["Hoja de vida e interés en UWC - ", "Hoja de vida - "],
+  documents: ["Documentos - ", "Pago - ", "Documento - "],
 };
 
 const ENGLISH_FIELD_LABEL_BY_KEY: Record<string, string> = {
@@ -122,6 +132,40 @@ const ENGLISH_FIELD_LABEL_BY_KEY: Record<string, string> = {
   uwcDiscoveryChannel: "How did you first hear about UWC?",
 };
 
+const SPANISH_FIELD_LABEL_BY_KEY: Partial<Record<string, string>> = {
+  firstName: "Nombre(s)",
+  dateOfBirth: "Fecha de nacimiento",
+  documentType: "Tipo de documento",
+  documentNumber: "Número de documento",
+  ageAtEndOf2025: "Edad al 31/12/2025",
+  guardianCivilStatus: "Estado civil de padres/apoderados",
+  guardian1FullName: "Nombres y apellidos",
+  guardian2FullName: "Nombres y apellidos",
+  guardian1HasLegalCustody: "¿Tiene custodia legal?",
+  guardian2HasLegalCustody: "¿Tiene custodia legal?",
+  guardian1Email: "Correo electrónico",
+  guardian2Email: "Correo electrónico",
+  guardian1MobilePhone: "Celular",
+  guardian2MobilePhone: "Celular",
+  gradeAverage: "Promedio general (0–20)",
+  schoolDirectorEmail: "Correo del director/a",
+  schoolAddressLine: "Dirección del colegio",
+  yearsInCurrentSchool: "Años en el colegio actual",
+  receivedSchoolScholarship: "¿Recibes o recibiste beca?",
+  officialGradesComments: "Comentarios sobre notas",
+  whyShouldBeSelected: "¿Por qué deberías ser seleccionado/a?",
+  preferredUwcColleges: "¿A qué colegio(s) UWC te gustaría ir?",
+  activityOne: "Curso o actividad destacada",
+  recognition: "Reconocimiento destacado",
+  favoriteKnowledgeArea: "Curso/tema/área favorita",
+  freeTimeActivities: "Actividades en tiempo libre",
+  selfDescriptionThreeWords: "Tres palabras que te describen + ejemplo",
+  paymentOperationNumber: "Número de operación",
+  receivedFinancialAidForFee: "¿Recibiste asistencia financiera?",
+  mentorRecommenderName: "Nombre",
+  friendRecommenderName: "Nombre",
+};
+
 const ENGLISH_FIELD_PLACEHOLDER_BY_KEY: Record<string, string> = {
   eligibilityBirthYear: "2008 / 2009 / 2010",
   eligibilityCountryOfBirth: "Peru",
@@ -135,6 +179,55 @@ const ENGLISH_FIELD_PLACEHOLDER_BY_KEY: Record<string, string> = {
   priorUwcPeruSelectionParticipation: "Yes / No",
   otherCountrySelection2025: "Yes / No",
   uwcDiscoveryChannel: "Main source",
+};
+
+const SPANISH_FIELD_PLACEHOLDER_BY_KEY: Partial<Record<string, string>> = {
+  documentNumber: "Número",
+  guardian1Email: "correo@ejemplo.com",
+  guardian2Email: "correo@ejemplo.com",
+  guardian1MobilePhone: "+51 ...",
+  guardian2MobilePhone: "+51 ...",
+  schoolDirectorName: "Director/a",
+  schoolAddressLine: "Dirección completa",
+  officialGradesComments: "Si hay discrepancias entre tus notas o usas una escala diferente, explica aquí...",
+  essay: "Cuenta con tus propias palabras qué te motiva...",
+  whyShouldBeSelected: "Describe qué te hace único/a...",
+  preferredUwcColleges: "Puedes nombrar hasta 3 colegios y por qué...",
+  activityOne: "Describe brevemente...",
+  recognition: "Logro, premio, o reconocimiento...",
+  favoriteKnowledgeArea: "Tema o curso que más disfrutas...",
+  freeTimeActivities: "¿Qué haces en tu tiempo libre?...",
+  selfDescriptionThreeWords: "Tres palabras y un ejemplo...",
+  paymentOperationNumber: "Solo si corresponde pago regular",
+  mentorRecommenderName: "Nombre completo",
+  friendRecommenderName: "Nombre completo",
+};
+
+const HIDDEN_FIELD_HELP_TEXT_KEYS = new Set([
+  "fullName",
+  "dateOfBirth",
+  "maternalLastName",
+  "mobilePhone",
+  "landlineOrAlternativePhone",
+  "hasDisability",
+  "guardian2FullName",
+  "guardian2HasLegalCustody",
+  "guardian2Email",
+  "guardian2MobilePhone",
+  "officialGradesComments",
+  "paymentOperationNumber",
+]);
+
+const LONG_TEXT_ROWS_BY_KEY: Partial<Record<string, number>> = {
+  officialGradesComments: 2,
+  essay: 4,
+  whyShouldBeSelected: 4,
+  preferredUwcColleges: 2,
+  activityOne: 2,
+  recognition: 2,
+  favoriteKnowledgeArea: 2,
+  freeTimeActivities: 2,
+  selfDescriptionThreeWords: 2,
 };
 
 const ENGLISH_FIELD_HELP_BY_KEY: Record<string, string> = {
@@ -161,12 +254,18 @@ function getDisplayFieldLabel({
   sectionId: ApplicantFormSectionId;
   fieldLabel: string;
 }) {
-  const prefix = FIELD_LABEL_PREFIX_BY_SECTION[sectionId];
-  if (!prefix) {
+  const prefixes = FIELD_LABEL_PREFIX_BY_SECTION[sectionId];
+  if (!prefixes || prefixes.length === 0) {
     return fieldLabel;
   }
 
-  return fieldLabel.startsWith(prefix) ? fieldLabel.slice(prefix.length).trim() : fieldLabel;
+  for (const prefix of prefixes) {
+    if (fieldLabel.startsWith(prefix)) {
+      return fieldLabel.slice(prefix.length).trim();
+    }
+  }
+
+  return fieldLabel;
 }
 
 function toEnglishTitleCase(value: string) {
@@ -217,7 +316,7 @@ function getLocalizedDisplayFieldLabel({
   });
 
   if (language === "es") {
-    return displayLabel;
+    return SPANISH_FIELD_LABEL_BY_KEY[field.field_key] ?? displayLabel;
   }
 
   return ENGLISH_FIELD_LABEL_BY_KEY[field.field_key] ?? humanizeFieldKey(field.field_key);
@@ -225,7 +324,7 @@ function getLocalizedDisplayFieldLabel({
 
 function getLocalizedFieldPlaceholder(field: CycleStageField, language: AppLanguage) {
   if (language === "es") {
-    return field.placeholder ?? undefined;
+    return SPANISH_FIELD_PLACEHOLDER_BY_KEY[field.field_key] ?? field.placeholder ?? undefined;
   }
 
   return ENGLISH_FIELD_PLACEHOLDER_BY_KEY[field.field_key];
@@ -233,6 +332,9 @@ function getLocalizedFieldPlaceholder(field: CycleStageField, language: AppLangu
 
 function getLocalizedFieldHelpText(field: CycleStageField, language: AppLanguage) {
   if (language === "es") {
+    if (HIDDEN_FIELD_HELP_TEXT_KEYS.has(field.field_key)) {
+      return undefined;
+    }
     return field.help_text ?? undefined;
   }
 
@@ -256,6 +358,94 @@ function shouldUseWideFieldLayout({
 
   return Boolean(field.help_text && field.help_text.length > 90);
 }
+
+function getFieldMaxWidth(fieldKey: string) {
+  if (fieldKey === "ageAtEndOf2025") {
+    return { xs: "100%", md: 160 };
+  }
+
+  if (fieldKey === "guardianCivilStatus") {
+    return { xs: "100%", md: 340 };
+  }
+
+  return null;
+}
+
+function getApplicantSelectOptions(fieldKey: string, language: AppLanguage) {
+  if (fieldKey === "documentType") {
+    return language === "en"
+      ? ["DNI", "Passport", "Foreigner ID card"]
+      : ["DNI", "Pasaporte", "Carnet de Extranjería"];
+  }
+
+  if (fieldKey === "guardianCivilStatus") {
+    return language === "en"
+      ? ["Married", "Divorced", "Separated", "Partners", "Other"]
+      : ["Casados", "Divorciados", "Separados", "Convivientes", "Otro"];
+  }
+
+  return null;
+}
+
+const APPLICANT_TEXT_FIELD_SX = {
+  "& .MuiOutlinedInput-root": {
+    backgroundColor: "var(--surface, #fff)",
+    borderRadius: "var(--radius)",
+    fontSize: "0.85rem",
+    color: "var(--ink)",
+    minHeight: 40,
+    "& fieldset": {
+      borderColor: "var(--sand)",
+      borderWidth: "1.5px",
+      transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+    },
+    "&:hover fieldset": {
+      borderColor: "var(--muted)",
+    },
+    "&.Mui-focused fieldset": {
+      borderColor: "var(--uwc-maroon)",
+      boxShadow: "0 0 0 3px rgba(154, 37, 69, 0.08)",
+    },
+    "&.Mui-disabled": {
+      backgroundColor: "var(--surface, #fff)",
+    },
+    "&.Mui-disabled fieldset": {
+      borderColor: "var(--sand)",
+      borderWidth: "1.5px",
+    },
+    "&.MuiInputBase-multiline": {
+      alignItems: "flex-start",
+      padding: 0,
+    },
+  },
+  "& .MuiOutlinedInput-input": {
+    padding: "9px 12px",
+    lineHeight: 1.35,
+    fontSize: "0.85rem",
+    fontFamily: "var(--font-body), 'DM Sans', sans-serif",
+  },
+  "& .MuiOutlinedInput-input::placeholder": {
+    color: "var(--muted)",
+    opacity: 1,
+    fontWeight: 300,
+  },
+  "& .MuiOutlinedInput-input.Mui-disabled": {
+    WebkitTextFillColor: "var(--muted)",
+  },
+  "& .MuiOutlinedInput-input[type='number']": {
+    MozAppearance: "textfield",
+  },
+  "& .MuiOutlinedInput-input::-webkit-outer-spin-button, & .MuiOutlinedInput-input::-webkit-inner-spin-button": {
+    WebkitAppearance: "none",
+    margin: 0,
+  },
+  "& .MuiOutlinedInput-inputMultiline, & .MuiInputBase-inputMultiline": {
+    padding: "9px 12px",
+    lineHeight: 1.5,
+    minHeight: "84px !important",
+    fontFamily: "var(--font-body), 'DM Sans', sans-serif",
+  },
+} as const;
 
 function getPayloadValue(payload: Application["payload"], key: string) {
   const raw = payload?.[key];
@@ -452,8 +642,10 @@ export function ApplicantApplicationForm({
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formValues, setFormValues] = useState<Record<string, string>>({});
-  const [activeSectionId, setActiveSectionId] = useState<WizardSectionId>("eligibility");
-  const [isPrepExpanded, setIsPrepExpanded] = useState(!existingApplication?.id);
+  const [activeSectionId, setActiveSectionId] = useState<WizardSectionId>(
+    existingApplication?.id ? "eligibility" : PREP_SECTION_ID,
+  );
+  const [isSidebarHidden, setIsSidebarHidden] = useState(false);
 
   const isStageClosed = Boolean(stageCloseAt && Date.parse(stageCloseAt) < Date.now());
   const isLocked = application ? LOCKED_STATUSES.has(application.status) : false;
@@ -461,6 +653,51 @@ export function ApplicantApplicationForm({
   const providedStageFields = stageFields ?? EMPTY_STAGE_FIELDS;
   const initialApplicationIdRef = useRef<string | null>(existingApplication?.id ?? null);
   const skippedInitialRecommenderFetchRef = useRef(false);
+  const formValuesRef = useRef<Record<string, string>>({});
+  const hasPendingChangesRef = useRef(false);
+  const isSavingDraftRef = useRef(false);
+  const isEditingEnabledRef = useRef(isEditingEnabled);
+  const isLockedRef = useRef(isLocked);
+  const saveQueuedRef = useRef(false);
+  const localEditRevisionRef = useRef(0);
+  const forceHydrateFormValuesRef = useRef(true);
+  const previousHydratedApplicationIdRef = useRef<string | null>(existingApplication?.id ?? null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const saved = window.localStorage.getItem(SIDEBAR_VISIBILITY_STORAGE_KEY);
+    if (saved === "1") {
+      setIsSidebarHidden(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.localStorage.setItem(SIDEBAR_VISIBILITY_STORAGE_KEY, isSidebarHidden ? "1" : "0");
+  }, [isSidebarHidden]);
+
+  useEffect(() => {
+    formValuesRef.current = formValues;
+  }, [formValues]);
+
+  useEffect(() => {
+    hasPendingChangesRef.current = hasPendingChanges;
+  }, [hasPendingChanges]);
+
+  useEffect(() => {
+    isSavingDraftRef.current = isSavingDraft;
+  }, [isSavingDraft]);
+
+  useEffect(() => {
+    isEditingEnabledRef.current = isEditingEnabled;
+    isLockedRef.current = isLocked;
+  }, [isEditingEnabled, isLocked]);
 
   const effectiveStageFields = useMemo(() => {
     if (providedStageFields.length > 0) {
@@ -504,6 +741,17 @@ export function ApplicantApplicationForm({
       status: ProgressState;
     }> = [];
 
+    sections.push({
+      id: PREP_SECTION_ID,
+      title: sectionTitles.prep_intro,
+      description: copy(
+        "Checklist rápida de preparación para enviar sin fricción.",
+        "Quick checklist to prepare and submit smoothly.",
+      ),
+      formSection: null,
+      status: "complete",
+    });
+
     for (const section of groupedFormSections) {
       if (section.id === "documents" || section.id === "recommenders") {
         continue;
@@ -531,8 +779,8 @@ export function ApplicantApplicationForm({
         id: "documents_uploads",
         title: sectionTitles.documents_uploads,
         description: copy(
-          "Carga los archivos obligatorios y confirma metadatos.",
-          "Upload the required files and confirm metadata.",
+          "Sube los archivos solicitados para esta etapa. Formatos aceptados: PDF, PNG, JPG.",
+          "Upload the files requested for this stage. Accepted formats: PDF, PNG, JPG.",
         ),
         formSection: documentFormSection,
         status: docMetadataStatus,
@@ -542,7 +790,10 @@ export function ApplicantApplicationForm({
     sections.push({
       id: "recommenders_flow",
       title: sectionTitles.recommenders_flow,
-      description: copy("Registra dos recomendadores y sigue su estado.", "Register two recommenders and track their status."),
+      description: copy(
+        "Registra un mentor y un amigo (no familiar). Les enviaremos una invitación por correo.",
+        "Register a mentor and a friend (non-family). We will email them an invitation.",
+      ),
       formSection: groupedFormSections.find((section) => section.id === "recommenders") ?? null,
       status: "not_started",
     });
@@ -550,7 +801,10 @@ export function ApplicantApplicationForm({
     sections.push({
       id: "review_submit",
       title: sectionTitles.review_submit,
-      description: copy("Revisa tu avance final y envía tu postulación.", "Review your final progress and submit your application."),
+      description: copy(
+        "Revisa que toda la información esté correcta antes de enviar tu postulación.",
+        "Review that all information is correct before submitting your application.",
+      ),
       formSection: null,
       status: "not_started",
     });
@@ -609,9 +863,14 @@ export function ApplicantApplicationForm({
     [application],
   );
 
+  const progressWizardSections = useMemo(
+    () => wizardSections.filter((section) => section.id !== PREP_SECTION_ID),
+    [wizardSections],
+  );
+
   const progressSteps = useMemo(
     () =>
-      wizardSections.map((section) => {
+      progressWizardSections.map((section) => {
         // Compute status
         let status: ProgressState;
         if (section.id === "documents_uploads") {
@@ -659,7 +918,16 @@ export function ApplicantApplicationForm({
 
         return { key: section.id, label: section.title, status, statusLabel };
       }),
-    [activeRecommendersByRole, application?.files, application?.payload, documentsStatus, fileStageFields, recommenderStatus, submissionStatus, wizardSections],
+    [
+      activeRecommendersByRole,
+      application?.files,
+      application?.payload,
+      documentsStatus,
+      fileStageFields,
+      progressWizardSections,
+      recommenderStatus,
+      submissionStatus,
+    ],
   );
 
   const completedSteps = progressSteps.filter((step) => step.status === "complete").length;
@@ -684,6 +952,31 @@ export function ApplicantApplicationForm({
     currentSectionIndex >= 0 && currentSectionIndex < wizardSections.length - 1
       ? wizardSections[currentSectionIndex + 1]?.id ?? null
       : null;
+  const currentProgressSectionIndex =
+    currentSection && currentSection.id !== PREP_SECTION_ID
+      ? progressWizardSections.findIndex((section) => section.id === currentSection.id)
+      : -1;
+  const showNumberedStepHeader = Boolean(currentSection && currentSection.id !== PREP_SECTION_ID);
+  const modeStatusLabel = isStageClosed
+    ? copy("Modo: solo lectura (etapa cerrada)", "Mode: read-only (stage closed)")
+    : isLocked && isEditMode
+      ? copy("Modo: edición manual habilitada", "Mode: manual editing enabled")
+      : isLocked
+        ? copy("Modo: solo lectura", "Mode: read-only")
+        : undefined;
+  const modeStatusDot: "success" | "warning" | "error" | "info" | undefined = isStageClosed
+    ? "error"
+    : isLocked && isEditMode
+      ? "success"
+      : isLocked
+        ? "warning"
+        : undefined;
+  const editToggleLabel =
+    isLocked && isEditMode
+      ? hasPendingChanges
+        ? copy("Descartar cambios y salir", "Discard changes & exit")
+        : copy("Salir de edición", "Exit editing")
+      : copy("Editar respuesta", "Edit response");
 
   useEffect(() => {
     if (wizardSections.length === 0) {
@@ -696,6 +989,18 @@ export function ApplicantApplicationForm({
   }, [activeSectionId, wizardSections]);
 
   useEffect(() => {
+    const applicationId = application?.id ?? null;
+    const applicationChanged = previousHydratedApplicationIdRef.current !== applicationId;
+    previousHydratedApplicationIdRef.current = applicationId;
+    const shouldHydrate =
+      applicationChanged || forceHydrateFormValuesRef.current || !hasPendingChangesRef.current;
+
+    if (!shouldHydrate) {
+      return;
+    }
+
+    forceHydrateFormValuesRef.current = false;
+
     const payload = application?.payload ?? {};
     const nextValues: Record<string, string> = {};
 
@@ -703,8 +1008,12 @@ export function ApplicantApplicationForm({
       nextValues[field.field_key] = getPayloadValue(payload, field.field_key);
     }
 
+    formValuesRef.current = nextValues;
     setFormValues(nextValues);
-    setHasPendingChanges(false);
+    if (applicationChanged || !hasPendingChangesRef.current) {
+      hasPendingChangesRef.current = false;
+      setHasPendingChanges(false);
+    }
   }, [application?.id, application?.payload, formStageFields]);
 
   useEffect(() => {
@@ -776,7 +1085,12 @@ export function ApplicantApplicationForm({
 
   const saveDraft = useCallback(
     async ({ silent = false }: { silent?: boolean } = {}) => {
-      if (!isEditingEnabled) {
+      if (!isEditingEnabledRef.current) {
+        return false;
+      }
+
+      if (isSavingDraftRef.current) {
+        saveQueuedRef.current = true;
         return false;
       }
 
@@ -785,9 +1099,12 @@ export function ApplicantApplicationForm({
         setSuccessMessage(null);
       }
 
+      const currentValues = formValuesRef.current;
+      const requestedRevision = localEditRevisionRef.current;
+
       const validation = validateStagePayload({
         fields: formStageFields,
-        payload: formValues,
+        payload: currentValues,
         skipFileValidation: true,
         enforceRequired: false,
       });
@@ -803,6 +1120,7 @@ export function ApplicantApplicationForm({
       }
 
       setFieldErrors({});
+      isSavingDraftRef.current = true;
       setIsSavingDraft(true);
       setSaveState("saving");
 
@@ -827,20 +1145,43 @@ export function ApplicantApplicationForm({
           return false;
         }
 
+        const completedAt = new Date().toISOString();
+        const hasNewerLocalEdits = localEditRevisionRef.current !== requestedRevision;
+        if (!hasNewerLocalEdits) {
+          forceHydrateFormValuesRef.current = true;
+        }
         setApplication(body.application);
-        setIsEditMode(false);
-        setHasPendingChanges(false);
-        setLastSavedAt(new Date().toISOString());
-        setSaveState("saved");
-        if (!silent) {
-          setSuccessMessage(copy("Borrador guardado correctamente.", "Draft saved successfully."));
+        if (!isLockedRef.current) {
+          setIsEditMode(false);
+        }
+        setLastSavedAt(completedAt);
+
+        if (hasNewerLocalEdits) {
+          hasPendingChangesRef.current = true;
+          setHasPendingChanges(true);
+          setSaveState("dirty");
+          saveQueuedRef.current = true;
+        } else {
+          hasPendingChangesRef.current = false;
+          setHasPendingChanges(false);
+          setSaveState("saved");
         }
         return true;
       } finally {
+        isSavingDraftRef.current = false;
         setIsSavingDraft(false);
+
+        if (saveQueuedRef.current) {
+          saveQueuedRef.current = false;
+          if (isEditingEnabledRef.current && hasPendingChangesRef.current) {
+            window.setTimeout(() => {
+              void saveDraft({ silent: true });
+            }, 0);
+          }
+        }
       }
     },
-    [copy, cycleId, formStageFields, formValues, isEditingEnabled],
+    [copy, cycleId, formStageFields],
   );
 
   useEffect(() => {
@@ -856,7 +1197,9 @@ export function ApplicantApplicationForm({
   }, [hasPendingChanges, isEditingEnabled, isSavingDraft, saveDraft]);
 
   function markFieldDirty() {
-    if (!hasPendingChanges) {
+    localEditRevisionRef.current += 1;
+    if (!hasPendingChangesRef.current) {
+      hasPendingChangesRef.current = true;
       setHasPendingChanges(true);
     }
     if (saveState !== "saving") {
@@ -869,7 +1212,7 @@ export function ApplicantApplicationForm({
       return;
     }
 
-    if (isEditingEnabled && hasPendingChanges && !isSavingDraft) {
+    if (isEditingEnabled && hasPendingChanges) {
       void saveDraft({ silent: true });
     }
     setActiveSectionId(sectionId);
@@ -892,6 +1235,7 @@ export function ApplicantApplicationForm({
               fontWeight: 500,
               color: "var(--ink)",
               mb: "5px",
+              lineHeight: 1.35,
               display: "flex",
               alignItems: "center",
               gap: "4px",
@@ -908,13 +1252,8 @@ export function ApplicantApplicationForm({
               setFormValues((current) => ({ ...current, [field.field_key]: next }));
               markFieldDirty();
             }}
-            onBlur={() => {
-              if (hasPendingChanges && !isSavingDraft) {
-                void saveDraft({ silent: true });
-              }
-            }}
-            yesLabel={isEnglish ? "Yes" : "Si"}
-            noLabel="No"
+            yesLabel={getBooleanFieldLabels(field.field_key, language)?.yes ?? (isEnglish ? "Yes" : "S\u00ed")}
+            noLabel={getBooleanFieldLabels(field.field_key, language)?.no ?? "No"}
             disabled={!isEditingEnabled}
           />
           {fieldErrors[field.field_key] ? (
@@ -931,42 +1270,158 @@ export function ApplicantApplicationForm({
       );
     }
 
-    // Standard text/number/date/email fields
+    // Standard text/number/date/email fields — label above input (mockup style)
+    const errorMsg = fieldErrors[field.field_key];
+    const helpMsg = getLocalizedFieldHelpText(field, language);
+    const isCompactSchoolComments = field.field_key === "officialGradesComments";
+    const selectOptions = getApplicantSelectOptions(field.field_key, language);
+    const hasStudiedIbValue = (formValues.hasStudiedIb ?? "").trim().toLowerCase();
+    const isIbYearFieldTemporarilyDisabled =
+      field.field_key === "ibInstructionYear" &&
+      !["si", "sí", "yes"].includes(hasStudiedIbValue);
+    const fieldIsDisabled = !isEditingEnabled || isIbYearFieldTemporarilyDisabled;
+    const applyDimmedDependentFieldStyle = isIbYearFieldTemporarilyDisabled && isEditingEnabled;
+
+    const longTextRows = field.field_type === "long_text"
+      ? LONG_TEXT_ROWS_BY_KEY[field.field_key] ?? 3
+      : undefined;
+    const isLongTextField = field.field_type === "long_text";
+
     return (
-      <TextField
-        label={field.is_required ? `${displayLabel} *` : displayLabel}
-        value={formValues[field.field_key] ?? ""}
-        onChange={(event) => {
-          const nextValue = event.target.value;
-          setFormValues((current) => ({
-            ...current,
-            [field.field_key]: nextValue,
-          }));
-          markFieldDirty();
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          ...(applyDimmedDependentFieldStyle ? { opacity: 0.45 } : null),
         }}
-        onBlur={() => {
-          if (hasPendingChanges && !isSavingDraft) {
-            void saveDraft({ silent: true });
-          }
-        }}
-        type={
-          field.field_type === "date"
-            ? "date"
-            : field.field_type === "number"
-              ? "number"
-              : field.field_type === "email"
-                ? "email"
-                : "text"
-        }
-        multiline={field.field_type === "long_text"}
-        minRows={field.field_type === "long_text" ? 4 : undefined}
-        fullWidth
-        disabled={!isEditingEnabled}
-        placeholder={getLocalizedFieldPlaceholder(field, language)}
-        helperText={fieldErrors[field.field_key] ?? getLocalizedFieldHelpText(field, language)}
-        error={Boolean(fieldErrors[field.field_key])}
-        InputLabelProps={{ shrink: true }}
-      />
+      >
+        <Typography
+          component="label"
+          sx={{
+            fontSize: "0.78rem",
+            fontWeight: 500,
+            color: "var(--ink)",
+            mb: "5px",
+            lineHeight: 1.35,
+            display: "flex",
+            alignItems: "center",
+            gap: "4px",
+          }}
+        >
+          {displayLabel}
+          {field.is_required ? (
+            <Typography component="span" sx={{ color: "var(--uwc-maroon)", fontWeight: 400, fontSize: "inherit" }}>*</Typography>
+          ) : null}
+        </Typography>
+        {isLongTextField ? (
+          <Box
+            component="textarea"
+            value={formValues[field.field_key] ?? ""}
+            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
+              const nextValue = event.target.value;
+              setFormValues((current) => ({
+                ...current,
+                [field.field_key]: nextValue,
+              }));
+              markFieldDirty();
+            }}
+            rows={isCompactSchoolComments ? 2 : longTextRows}
+            disabled={fieldIsDisabled}
+            aria-label={displayLabel}
+            placeholder={getLocalizedFieldPlaceholder(field, language)}
+            sx={{
+              width: "100%",
+              padding: "9px 12px",
+              fontFamily: "var(--font-body), 'DM Sans', sans-serif",
+              fontSize: "0.85rem",
+              lineHeight: 1.5,
+              color: "var(--ink)",
+              background: "var(--surface, #fff)",
+              border: "1.5px solid var(--sand)",
+              borderColor: errorMsg ? "#DC2626" : "var(--sand)",
+              borderRadius: "var(--radius)",
+              outline: "none",
+              resize: "vertical",
+              minHeight: isCompactSchoolComments ? 72 : undefined,
+              transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+              "&::placeholder": {
+                color: "var(--muted)",
+                opacity: 1,
+                fontWeight: 300,
+              },
+              "&:hover": {
+                borderColor: errorMsg ? "#DC2626" : "var(--muted)",
+              },
+              "&:focus": {
+                borderColor: errorMsg ? "#DC2626" : "var(--uwc-maroon)",
+                boxShadow: errorMsg
+                  ? "0 0 0 3px rgba(220, 38, 38, 0.08)"
+                  : "0 0 0 3px rgba(154, 37, 69, 0.08)",
+              },
+              "&:disabled": {
+                color: "var(--muted)",
+                background: "var(--surface, #fff)",
+                WebkitTextFillColor: "var(--muted)",
+                cursor: "not-allowed",
+              },
+            }}
+          />
+        ) : (
+          <TextField
+            hiddenLabel
+            value={formValues[field.field_key] ?? ""}
+            onChange={(event) => {
+              const nextValue = event.target.value;
+              setFormValues((current) => ({
+                ...current,
+                [field.field_key]: nextValue,
+              }));
+              markFieldDirty();
+            }}
+            type={
+              field.field_type === "date"
+                ? "date"
+                : field.field_type === "number"
+                  ? "number"
+                  : field.field_type === "email"
+                    ? "email"
+                    : "text"
+            }
+            fullWidth
+            disabled={fieldIsDisabled}
+            select={Boolean(selectOptions)}
+            placeholder={getLocalizedFieldPlaceholder(field, language)}
+            error={Boolean(errorMsg)}
+            sx={APPLICANT_TEXT_FIELD_SX}
+            slotProps={{
+              htmlInput: {
+                "aria-label": displayLabel,
+                step:
+                  field.field_key === "gradeAverage"
+                    ? "0.1"
+                    : field.field_type === "number"
+                      ? "1"
+                      : undefined,
+              },
+            }}
+          >
+            {selectOptions?.map((option) => (
+              <MenuItem key={option} value={option}>
+                {option}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
+        {errorMsg ? (
+          <Typography sx={{ fontSize: "0.7rem", color: "error.main", mt: "3px" }}>
+            {errorMsg}
+          </Typography>
+        ) : helpMsg ? (
+          <Typography sx={{ fontSize: "0.7rem", color: "var(--muted)", mt: "3px" }}>
+            {helpMsg}
+          </Typography>
+        ) : null}
+      </Box>
     );
   }
 
@@ -975,8 +1430,11 @@ export function ApplicantApplicationForm({
       <Box
         sx={{
           display: "grid",
-          gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+          gridTemplateColumns: "1fr 1fr",
           gap: "14px 18px",
+          "@media (max-width: 768px)": {
+            gridTemplateColumns: "1fr",
+          },
         }}
       >
         {fields.map((field) => {
@@ -986,9 +1444,16 @@ export function ApplicantApplicationForm({
             language,
           });
           const isWide = shouldUseWideFieldLayout({ field, displayLabel });
+          const maxWidth = getFieldMaxWidth(field.field_key);
 
           return (
-            <Box key={field.id} sx={isWide ? { gridColumn: "1 / -1" } : undefined}>
+            <Box
+              key={field.id}
+              sx={{
+                ...(isWide ? { gridColumn: "1 / -1" } : null),
+                ...(maxWidth ? { maxWidth } : null),
+              }}
+            >
               {renderSingleField(field, sectionId)}
             </Box>
           );
@@ -1068,11 +1533,13 @@ export function ApplicantApplicationForm({
                   alignItems: "center",
                   justifyContent: "center",
                   fontSize: "0.85rem",
+                  lineHeight: 1,
                   background: subGroup.iconBg,
                   color: subGroup.iconColor,
                 }}
+                aria-hidden="true"
               >
-                {/* No emoji — just a colored pill */}
+                {subGroup.icon ?? null}
               </Box>
             ) : null}
             <Typography
@@ -1124,13 +1591,49 @@ export function ApplicantApplicationForm({
 
     // Separate grade fields for the school section
     const gradeFields = sectionId === "school" ? fields.filter((f) => isGradeField(f.field_key)) : [];
-    const nonGradeFields = sectionId === "school" ? fields.filter((f) => !isGradeField(f.field_key)) : fields;
+    const allNonGradeFields = sectionId === "school" ? fields.filter((f) => !isGradeField(f.field_key)) : fields;
+
+    // Hide school address sub-fields and school type details that are not in the mockup design
+    const HIDDEN_FIELDS_BY_SECTION: Partial<Record<ApplicantFormSectionId, Set<string>>> = {
+      identity: new Set([
+        "fullName",
+        "countryOfBirth",
+        "countryOfResidence",
+      ]),
+      school: new Set([
+        "schoolAddressNumber",
+        "schoolDistrict",
+        "schoolProvince",
+        "schoolRegion",
+        "schoolCountry",
+        "schoolTypeDetails",
+      ]),
+      recommenders: new Set([
+        "recommenderRequestMessage",
+      ]),
+    };
+    const hiddenFieldKeys = HIDDEN_FIELDS_BY_SECTION[sectionId] ?? null;
+    const nonGradeFields = hiddenFieldKeys
+      ? allNonGradeFields.filter((f) => !hiddenFieldKeys.has(f.field_key))
+      : allNonGradeFields;
+
+    // Keep the school comments textarea after the primary school fields and grades table
+    // to preserve the mockup flow (school info first, comments later).
+    const DEFERRED_SCHOOL_FIELDS = new Set(["officialGradesComments"]);
+    const deferredSchoolFields =
+      sectionId === "school"
+        ? nonGradeFields.filter((f) => DEFERRED_SCHOOL_FIELDS.has(f.field_key))
+        : [];
+    const topNonGradeFields =
+      sectionId === "school"
+        ? nonGradeFields.filter((f) => !DEFERRED_SCHOOL_FIELDS.has(f.field_key))
+        : nonGradeFields;
 
     // If no sub-groups, render flat
     if (subGroups.length === 0) {
       return (
         <Box>
-          {renderFieldGrid(nonGradeFields, sectionId)}
+          {renderFieldGrid(topNonGradeFields, sectionId)}
           {gradeFields.length > 0 ? (
             <Box sx={{ mt: 3 }}>
               <Typography
@@ -1145,7 +1648,7 @@ export function ApplicantApplicationForm({
                   borderBottom: "1px solid var(--sand-light, #F3EFEB)",
                 }}
               >
-                {isEnglish ? "Official grades by year" : "Notas oficiales por ano"}
+                {isEnglish ? "Official grades by year" : "Notas oficiales por a\u00f1o"}
               </Typography>
               <GradesTable
                 fields={gradeFields}
@@ -1154,14 +1657,15 @@ export function ApplicantApplicationForm({
                   setFormValues((current) => ({ ...current, [key]: value }));
                   markFieldDirty();
                 }}
-                onFieldBlur={() => {
-                  if (hasPendingChanges && !isSavingDraft) {
-                    void saveDraft({ silent: true });
-                  }
-                }}
+                onFieldBlur={() => {}}
                 disabled={!isEditingEnabled}
                 language={language}
               />
+            </Box>
+          ) : null}
+          {deferredSchoolFields.length > 0 ? (
+            <Box sx={{ mt: gradeFields.length > 0 ? 3 : 0 }}>
+              {renderFieldGrid(deferredSchoolFields, sectionId)}
             </Box>
           ) : null}
         </Box>
@@ -1175,7 +1679,7 @@ export function ApplicantApplicationForm({
     }
 
     // Fields not in any sub-group (rendered first, ungrouped)
-    const ungroupedFields = nonGradeFields.filter((f) => !subGroupedKeys.has(f.field_key));
+    const ungroupedFields = topNonGradeFields.filter((f) => !subGroupedKeys.has(f.field_key));
 
     return (
       <Box>
@@ -1188,7 +1692,10 @@ export function ApplicantApplicationForm({
 
         {/* Sub-groups */}
         {subGroups.map((sg, idx) => {
-          const sgFields = nonGradeFields.filter((f) => sg.fieldKeys.has(f.field_key));
+          const subGroupOrder = new Map(Array.from(sg.fieldKeys).map((key, orderIdx) => [key, orderIdx]));
+          const sgFields = topNonGradeFields
+            .filter((f) => sg.fieldKeys.has(f.field_key))
+            .sort((a, b) => (subGroupOrder.get(a.field_key) ?? 999) - (subGroupOrder.get(b.field_key) ?? 999));
           if (sgFields.length === 0) return null;
           return (
             <Box
@@ -1219,7 +1726,7 @@ export function ApplicantApplicationForm({
                 borderBottom: "1px solid var(--sand-light, #F3EFEB)",
               }}
             >
-              {isEnglish ? "Official grades by year" : "Notas oficiales por ano"}
+              {isEnglish ? "Official grades by year" : "Notas oficiales por a\u00f1o"}
             </Typography>
             <GradesTable
               fields={gradeFields}
@@ -1228,14 +1735,16 @@ export function ApplicantApplicationForm({
                 setFormValues((current) => ({ ...current, [key]: value }));
                 markFieldDirty();
               }}
-              onFieldBlur={() => {
-                if (hasPendingChanges && !isSavingDraft) {
-                  void saveDraft({ silent: true });
-                }
-              }}
+              onFieldBlur={() => {}}
               disabled={!isEditingEnabled}
               language={language}
             />
+          </Box>
+        ) : null}
+
+        {deferredSchoolFields.length > 0 ? (
+          <Box sx={{ mt: 3 }}>
+            {renderFieldGrid(deferredSchoolFields, sectionId)}
           </Box>
         ) : null}
       </Box>
@@ -1482,7 +1991,22 @@ export function ApplicantApplicationForm({
   const currentStepLabel = currentSection?.title ?? "";
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
+    <Box>
+      {/* Fixed top navigation */}
+      <ApplicantTopNav
+        draftStatusLabel={draftStatusLabel}
+        draftStatusDot={sidebarDraftDot}
+        modeStatusLabel={modeStatusLabel}
+        modeStatusDot={modeStatusDot}
+      />
+
+      <Box
+        sx={{
+          display: "flex",
+          pt: "var(--topbar-height)",
+          minHeight: "calc(100vh - var(--topbar-height))",
+        }}
+      >
       {/* Desktop Sidebar */}
       <ApplicantSidebar
         processLabel={cycleName ?? copy("Proceso 2026", "Process 2026")}
@@ -1494,20 +2018,65 @@ export function ApplicantApplicationForm({
         }
         progressPercent={progressPercent}
         progressLabel={sidebarProgressLabel}
-        draftStatusLabel={draftStatusLabel}
-        draftStatusDot={sidebarDraftDot}
         steps={sidebarSteps}
         activeStepKey={activeSectionId}
         onStepClick={(key) => jumpToSection(key as WizardSectionId)}
+        onHide={() => setIsSidebarHidden(true)}
+        hideLabel={copy("Ocultar barra lateral", "Hide sidebar")}
+        hiddenDesktop={isSidebarHidden}
       />
+
+      {isSidebarHidden ? (
+        <Box
+          sx={{
+            display: "none",
+            "@media (min-width: 769px)": {
+              display: "block",
+              position: "fixed",
+              top: "calc(var(--topbar-height) + 14px)",
+              left: 10,
+              zIndex: 55,
+            },
+          }}
+        >
+          <IconButton
+            onClick={() => setIsSidebarHidden(false)}
+            aria-label={copy("Mostrar barra lateral", "Show sidebar")}
+            size="small"
+            sx={{
+              width: 34,
+              height: 34,
+              border: "1px solid var(--sand)",
+              borderRadius: "10px",
+              color: "var(--muted)",
+              bgcolor: "var(--surface)",
+              boxShadow: "var(--shadow-sm)",
+              "&:hover": {
+                bgcolor: "var(--cream)",
+                borderColor: "var(--muted)",
+                color: "var(--ink)",
+              },
+            }}
+          >
+            <ChevronRightIcon fontSize="small" />
+          </IconButton>
+        </Box>
+      ) : null}
 
       {/* Main content area */}
       <Box
         component="main"
         sx={{
           flex: 1,
-          ml: { xs: 0, md: "280px" },
-          pb: { xs: "140px", md: "120px" },
+          ml: 0,
+          pb: "120px",
+          transition: "margin-left 220ms ease",
+          "@media (max-width: 768px)": {
+            pb: "140px",
+          },
+          "@media (min-width: 769px)": {
+            ml: isSidebarHidden ? 0 : "var(--sidebar-width, 280px)",
+          },
         }}
       >
         <Box sx={{ maxWidth: 760, mx: "auto", px: { xs: 2, sm: 4 }, pt: { xs: 3, sm: 5 } }}>
@@ -1525,10 +2094,10 @@ export function ApplicantApplicationForm({
           {/* Locked status banner */}
           {isLocked && !isEditMode ? (
             <Box sx={{ mb: 3, p: 2, bgcolor: "var(--cream)", border: "1px solid var(--sand)", borderRadius: "var(--radius)" }}>
-              <Typography color="text.secondary" sx={{ mb: 1 }}>
+              <Typography color="text.secondary">
                 {copy(
-                  "Tu postulación ya fue enviada. Para cambiar datos, habilita edición manual.",
-                  "Your application was already submitted. Enable manual editing to make changes.",
+                  "Tu postulación ya fue enviada. Para cambiar datos, usa “Editar respuesta” en la barra inferior.",
+                  "Your application was already submitted. Use “Edit response” in the bottom bar to make changes.",
                 )}
               </Typography>
               {isStageClosed ? (
@@ -1538,36 +2107,7 @@ export function ApplicantApplicationForm({
                     "The stage is closed. Only the committee can reopen changes.",
                   )}
                 </Typography>
-              ) : (
-                <Button
-                  variant="outlined"
-                  onClick={() => {
-                    setError(null);
-                    setSuccessMessage(
-                      copy(
-                        "Edición habilitada. Guarda cambios y vuelve a enviar.",
-                        "Editing enabled. Save changes and submit again.",
-                      ),
-                    );
-                    setIsEditMode(true);
-                  }}
-                >
-                  {copy("Editar respuesta", "Edit response")}
-                </Button>
-              )}
-            </Box>
-          ) : null}
-          {isLocked && isEditMode ? (
-            <Box sx={{ mb: 3 }}>
-              <Button
-                variant="text"
-                onClick={() => {
-                  setIsEditMode(false);
-                  setSuccessMessage(copy("Edición cancelada.", "Editing cancelled."));
-                }}
-              >
-                {copy("Cancelar edición", "Cancel editing")}
-              </Button>
+              ) : null}
             </Box>
           ) : null}
 
@@ -1588,44 +2128,68 @@ export function ApplicantApplicationForm({
             </Box>
           ) : null}
 
-          {/* "Before you start" accordion */}
-          <Accordion
-            expanded={isPrepExpanded}
-            onChange={(_event, expanded) => setIsPrepExpanded(expanded)}
-            disableGutters
-            elevation={0}
+          {/* Animated section wrapper — re-mounts on section change */}
+          <Box
+            key={activeSectionId}
             sx={{
-              border: "1px solid var(--sand)",
-              borderRadius: "var(--radius)",
-              bgcolor: "var(--cream)",
-              "&::before": { display: "none" },
-              mb: 3,
+              animation: "fadeUp 0.35s ease both",
             }}
           >
-            <AccordionSummary
-              expandIcon={<ExpandMoreIcon />}
-              aria-controls="prep-content"
-              id="prep-header"
-              sx={{ px: 2.5, py: 0.4 }}
-            >
-              <Stack>
-                <Typography variant="h6">{copy("Antes de empezar", "Before you start")}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {copy(
-                    "Checklist rápida de preparación para enviar sin fricción.",
-                    "Quick checklist to prepare and submit smoothly.",
-                  )}
+          {/* Section eyebrow header */}
+          {currentSection ? (
+            <Box sx={{ mb: 4 }}>
+              {showNumberedStepHeader ? (
+                <Typography
+                  sx={{
+                    fontSize: "0.65rem",
+                    fontWeight: 600,
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    color: "var(--uwc-maroon)",
+                    mb: 0.75,
+                  }}
+                >
+                  {isEnglish
+                    ? `Step ${currentProgressSectionIndex + 1} of ${progressWizardSections.length}`
+                    : `Paso ${currentProgressSectionIndex + 1} de ${progressWizardSections.length}`}
                 </Typography>
-              </Stack>
-            </AccordionSummary>
-            <AccordionDetails sx={{ px: 2.5, pt: 0, pb: 2 }}>
-              <Typography color="text.secondary" sx={{ mb: 1.2 }}>
+              ) : null}
+              <Typography
+                sx={{
+                  fontFamily: "var(--font-display), Georgia, serif",
+                  fontSize: { xs: "1.45rem", sm: "1.8rem" },
+                  fontWeight: 400,
+                  letterSpacing: "-0.02em",
+                  lineHeight: 1.25,
+                  color: "var(--ink)",
+                  mb: 1,
+                }}
+              >
+                {currentSection.title}
+              </Typography>
+              <Typography sx={{ fontSize: "0.85rem", color: "var(--muted)", maxWidth: 520 }}>
+                {currentSection.description}
+              </Typography>
+            </Box>
+          ) : null}
+
+          {/* Form section content */}
+          {currentSection?.id === PREP_SECTION_ID ? (
+            <Box
+              sx={{
+                border: "1px solid var(--sand)",
+                borderRadius: "var(--radius)",
+                bgcolor: "var(--cream)",
+                p: { xs: 2, sm: 2.5 },
+              }}
+            >
+              <Typography color="text.secondary" sx={{ mb: 1.2, fontSize: "0.85rem" }}>
                 {copy(
                   "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
                   "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
                 )}
               </Typography>
-              <Stack spacing={0.4}>
+              <Stack spacing={0.55}>
                 <Typography variant="body2">
                   {copy(
                     "1. Ten listos documentos en PDF/JPG/PNG (idealmente menos de 10MB).",
@@ -1650,53 +2214,9 @@ export function ApplicantApplicationForm({
                   </Typography>
                 ) : null}
               </Stack>
-            </AccordionDetails>
-          </Accordion>
-
-          {/* Animated section wrapper — re-mounts on section change */}
-          <Box
-            key={activeSectionId}
-            sx={{
-              animation: "fadeUp 0.35s ease both",
-            }}
-          >
-          {/* Section eyebrow header */}
-          {currentSection ? (
-            <Box sx={{ mb: 4 }}>
-              <Typography
-                sx={{
-                  fontSize: "0.65rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.08em",
-                  textTransform: "uppercase",
-                  color: "var(--uwc-maroon)",
-                  mb: 0.75,
-                }}
-              >
-                {isEnglish
-                  ? `Step ${currentSectionIndex + 1} of ${wizardSections.length}`
-                  : `Paso ${currentSectionIndex + 1} de ${wizardSections.length}`}
-              </Typography>
-              <Typography
-                sx={{
-                  fontFamily: "var(--font-display), Georgia, serif",
-                  fontSize: { xs: "1.45rem", sm: "1.8rem" },
-                  fontWeight: 400,
-                  letterSpacing: "-0.02em",
-                  lineHeight: 1.25,
-                  color: "var(--ink)",
-                  mb: 1,
-                }}
-              >
-                {currentSection.title}
-              </Typography>
-              <Typography sx={{ fontSize: "0.85rem", color: "var(--muted)", maxWidth: 520 }}>
-                {currentSection.description}
-              </Typography>
             </Box>
           ) : null}
 
-          {/* Form section content */}
           {currentSection && currentSection.formSection && currentSection.id !== "documents_uploads" && currentSection.id !== "recommenders_flow" && currentSection.id !== "review_submit" ? (
             <Box>
               {currentFormSectionId
@@ -1719,12 +2239,6 @@ export function ApplicantApplicationForm({
                 </Box>
               ) : null}
 
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5, fontSize: "0.78rem" }}>
-                {copy(
-                  "La validación OCR se ejecuta desde el panel admin al revisar postulaciones.",
-                  "OCR validation is run from the admin panel during application review.",
-                )}
-              </Typography>
               <Stack spacing={3}>
                 {fileStageFields.map((field) => {
                   const rawValue =
@@ -1817,20 +2331,40 @@ export function ApplicantApplicationForm({
                         ) : null}
                       </Stack>
 
-                      <TextField
-                        value={recommenderInputs[role]}
-                        onChange={(event) =>
-                          setRecommenderInputs((prev) => ({
-                            ...prev,
-                            [role]: event.target.value,
-                          }))
-                        }
-                        fullWidth
-                        type="email"
-                        label={`${copy("Correo", "Email")} (${roleLabel(role, language)})`}
-                        placeholder={role === "mentor" ? "mentor@school.edu" : "friend@gmail.com"}
-                        disabled={!isEditingEnabled || current?.status === "submitted"}
-                      />
+                      <Box sx={{ display: "flex", flexDirection: "column" }}>
+                        <Typography
+                          component="div"
+                          sx={{
+                            fontSize: "0.78rem",
+                            fontWeight: 500,
+                            color: "var(--ink)",
+                            mb: "5px",
+                            lineHeight: 1.35,
+                          }}
+                        >
+                          {`${copy("Correo", "Email")} (${roleLabel(role, language)})`}
+                        </Typography>
+                        <TextField
+                          hiddenLabel
+                          value={recommenderInputs[role]}
+                          onChange={(event) =>
+                            setRecommenderInputs((prev) => ({
+                              ...prev,
+                              [role]: event.target.value,
+                            }))
+                          }
+                          fullWidth
+                          type="email"
+                          placeholder={role === "mentor" ? "mentor@school.edu" : "friend@gmail.com"}
+                          disabled={!isEditingEnabled || current?.status === "submitted"}
+                          sx={APPLICANT_TEXT_FIELD_SX}
+                          slotProps={{
+                            htmlInput: {
+                              "aria-label": `${copy("Correo", "Email")} (${roleLabel(role, language)})`,
+                            },
+                          }}
+                        />
+                      </Box>
                       <Stack
                         direction={{ xs: "column", sm: "row" }}
                         spacing={1}
@@ -1941,6 +2475,46 @@ export function ApplicantApplicationForm({
       <ApplicantActionBar
         onPrevious={() => { if (previousSectionId) jumpToSection(previousSectionId); }}
         onSaveDraft={() => void saveDraft({ silent: false })}
+        onToggleEdit={() => {
+          setError(null);
+          setSuccessMessage(null);
+          if (isEditMode) {
+            if (hasPendingChanges) {
+              let confirmed = true;
+              if (typeof window !== "undefined") {
+                try {
+                  confirmed = window.confirm(
+                    copy(
+                      "Se descartarán los cambios no guardados y saldrás del modo edición. ¿Continuar?",
+                      "Unsaved changes will be discarded and editing mode will be closed. Continue?",
+                    ),
+                  );
+                } catch {
+                  confirmed = true;
+                }
+              }
+              if (!confirmed) {
+                return;
+              }
+            }
+            setIsEditMode(false);
+            setFieldErrors({});
+            setFormValues(() => {
+              const payload = application?.payload ?? {};
+              const nextValues: Record<string, string> = {};
+              for (const field of formStageFields) {
+                nextValues[field.field_key] = getPayloadValue(payload, field.field_key);
+              }
+              formValuesRef.current = nextValues;
+              return nextValues;
+            });
+            hasPendingChangesRef.current = false;
+            setHasPendingChanges(false);
+            setSaveState(lastSavedAt ? "saved" : "idle");
+            return;
+          }
+          setIsEditMode(true);
+        }}
         onNext={() => {
           if (nextSectionId) {
             jumpToSection(nextSectionId);
@@ -1949,6 +2523,7 @@ export function ApplicantApplicationForm({
           }
         }}
         previousLabel={copy("\u2190 Anterior", "\u2190 Previous")}
+        editLabel={editToggleLabel}
         saveDraftLabel={isSavingDraft ? copy("Guardando...", "Saving...") : copy("Guardar borrador", "Save draft")}
         nextLabel={
           activeSectionId === "review_submit"
@@ -1961,7 +2536,12 @@ export function ApplicantApplicationForm({
         hasNext={Boolean(nextSectionId) || activeSectionId === "review_submit"}
         isSaving={isSavingDraft}
         isEditingEnabled={isEditingEnabled}
+        hasPendingChanges={hasPendingChanges}
+        showEditToggle={isLocked && !isStageClosed}
+        isEditToggleDisabled={isStageClosed || isSavingDraft}
+        sidebarVisibleDesktop={!isSidebarHidden}
       />
+      </Box>{/* end layout flex container */}
     </Box>
   );
 }

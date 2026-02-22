@@ -14,6 +14,8 @@ export interface SubGroupDef {
   labelEn: string;
   /** If omitted, rendered as a plain form-group with a label divider */
   variant?: "card" | "guardian";
+  /** Optional visual icon glyph shown in card headers (applicant view only) */
+  icon?: string;
   /** 1-indexed guardian number (only for variant=guardian) */
   guardianNumber?: number;
   /** Subtitle shown below the label (guardian cards) */
@@ -31,7 +33,7 @@ export interface SubGroupDef {
 const ELIGIBILITY_SUB_GROUPS: SubGroupDef[] = [
   {
     key: "academic-req",
-    label: "Requisitos academicos",
+    label: "Requisitos acad\u00e9micos",
     labelEn: "Academic requirements",
     fieldKeys: new Set([
       "secondaryYear2025",
@@ -43,7 +45,7 @@ const ELIGIBILITY_SUB_GROUPS: SubGroupDef[] = [
   },
   {
     key: "prior-participation",
-    label: "Participacion previa",
+    label: "Participaci\u00f3n previa",
     labelEn: "Prior participation",
     fieldKeys: new Set([
       "priorUwcPeruSelectionParticipation",
@@ -61,6 +63,7 @@ const IDENTITY_SUB_GROUPS: SubGroupDef[] = [
     label: "Identidad",
     labelEn: "Identity",
     variant: "card",
+    icon: "👤",
     iconBg: "var(--uwc-blue-soft)",
     iconColor: "var(--uwc-blue)",
     fieldKeys: new Set([
@@ -80,9 +83,10 @@ const IDENTITY_SUB_GROUPS: SubGroupDef[] = [
   },
   {
     key: "address",
-    label: "Direccion",
+    label: "Direcci\u00f3n",
     labelEn: "Address",
     variant: "card",
+    icon: "📍",
     iconBg: "var(--success-soft)",
     iconColor: "var(--success)",
     fieldKeys: new Set([
@@ -98,6 +102,7 @@ const IDENTITY_SUB_GROUPS: SubGroupDef[] = [
     label: "Contacto",
     labelEn: "Contact",
     variant: "card",
+    icon: "📱",
     iconBg: "var(--warning-soft)",
     iconColor: "var(--warning)",
     fieldKeys: new Set(["mobilePhone", "landlineOrAlternativePhone"]),
@@ -107,6 +112,7 @@ const IDENTITY_SUB_GROUPS: SubGroupDef[] = [
     label: "Accesibilidad",
     labelEn: "Accessibility",
     variant: "card",
+    icon: "♿",
     iconBg: "var(--uwc-maroon-soft)",
     iconColor: "var(--uwc-maroon)",
     fieldKeys: new Set(["hasDisability", "hasLearningDisability"]),
@@ -122,7 +128,7 @@ const FAMILY_SUB_GROUPS: SubGroupDef[] = [
     labelEn: "Mother or legal guardian 1",
     variant: "guardian",
     guardianNumber: 1,
-    subtitle: "Informacion de contacto principal",
+    subtitle: "Informaci\u00f3n de contacto principal",
     subtitleEn: "Primary contact information",
     iconBg: "var(--uwc-maroon-soft)",
     iconColor: "var(--uwc-maroon)",
@@ -139,8 +145,8 @@ const FAMILY_SUB_GROUPS: SubGroupDef[] = [
     labelEn: "Father or legal guardian 2",
     variant: "guardian",
     guardianNumber: 2,
-    subtitle: "Opcional -- completar si aplica",
-    subtitleEn: "Optional -- fill in if applicable",
+    subtitle: "Opcional \u2014 completar si aplica",
+    subtitleEn: "Optional \u2014 fill in if applicable",
     iconBg: "var(--uwc-blue-soft)",
     iconColor: "var(--uwc-blue)",
     fieldKeys: new Set([
@@ -157,24 +163,20 @@ const FAMILY_SUB_GROUPS: SubGroupDef[] = [
 const SCHOOL_SUB_GROUPS: SubGroupDef[] = [
   {
     key: "school-info",
-    label: "Informacion del colegio",
+    label: "Informaci\u00f3n del colegio",
     labelEn: "School information",
     variant: "card",
+    icon: "🏫",
     iconBg: "var(--uwc-blue-soft)",
     iconColor: "var(--uwc-blue)",
     fieldKeys: new Set([
       "schoolName",
+      "gradeAverage",
       "schoolDirectorName",
       "schoolDirectorEmail",
       "schoolAddressLine",
-      "schoolAddressNumber",
-      "schoolDistrict",
-      "schoolProvince",
-      "schoolRegion",
-      "schoolCountry",
       "yearsInCurrentSchool",
       "schoolPublicOrPrivate",
-      "schoolTypeDetails",
       "receivedSchoolScholarship",
     ]),
   },
@@ -208,10 +210,27 @@ const BOOLEAN_FIELD_KEYS = new Set([
   "guardian2HasLegalCustody",
   "hasDisability",
   "hasLearningDisability",
+  "schoolPublicOrPrivate",
   "receivedSchoolScholarship",
   "receivedFinancialAidForFee",
 ]);
 
 export function isBooleanField(fieldKey: string): boolean {
   return BOOLEAN_FIELD_KEYS.has(fieldKey);
+}
+
+/**
+ * Returns custom toggle-pill labels for boolean fields that don't use
+ * the default S\u00ed / No. Returns `null` when the default labels apply.
+ */
+export function getBooleanFieldLabels(
+  fieldKey: string,
+  language: "es" | "en",
+): { yes: string; no: string } | null {
+  if (fieldKey === "schoolPublicOrPrivate") {
+    return language === "en"
+      ? { yes: "Public", no: "Private" }
+      : { yes: "P\u00fablico", no: "Privado" };
+  }
+  return null;
 }

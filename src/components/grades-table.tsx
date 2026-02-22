@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Box, TextField, Typography } from "@mui/material";
+import type React from "react";
+import { Box, Typography } from "@mui/material";
 import type { CycleStageField } from "@/types/domain";
 import type { AppLanguage } from "@/lib/i18n/messages";
 
@@ -28,6 +29,7 @@ const GRADE_SHORT_LABELS_EN: Record<GradeName, string> = {
 
 function humaniseSubject(subjectKey: string): string {
   return subjectKey
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/_/g, " ")
     .split(" ")
@@ -94,6 +96,13 @@ function computeAverage(cells: GradeCell[], values: Record<string, string>): str
   return (nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(1);
 }
 
+function getStoredAverageValue(year: GradeYear, values: Record<string, string>): string {
+  if (!year.averageField) return "--";
+  const raw = values[year.averageField.field_key] ?? "";
+  const parsed = Number.parseFloat(String(raw));
+  return Number.isFinite(parsed) ? parsed.toFixed(1) : "--";
+}
+
 /* ── Component ──────────────────────────────────────────────── */
 
 interface GradesTableProps {
@@ -121,6 +130,23 @@ export function GradesTable({
 
   if (!currentYear) return null;
 
+  function getYearAverageDisplay(year: GradeYear) {
+    const computed = computeAverage(year.cells, formValues);
+    return computed !== "--" ? computed : getStoredAverageValue(year, formValues);
+  }
+
+  function handleGradeCellChange(year: GradeYear, cell: GradeCell, nextValue: string) {
+    onFieldChange(cell.field.field_key, nextValue);
+
+    if (!year.averageField) {
+      return;
+    }
+
+    const nextValues = { ...formValues, [cell.field.field_key]: nextValue };
+    const computedAverage = computeAverage(year.cells, nextValues);
+    onFieldChange(year.averageField.field_key, computedAverage === "--" ? "" : computedAverage);
+  }
+
   return (
     <Box sx={{ mb: "28px", animation: "fadeUp 0.35s ease" }}>
       {/* Year tabs */}
@@ -135,7 +161,7 @@ export function GradesTable({
       >
         {years.map((y) => {
           const isActive = y.grade === activeYear;
-          const avg = computeAverage(y.cells, formValues);
+          const avg = getYearAverageDisplay(y);
           return (
             <Box
               key={y.grade}
@@ -182,6 +208,7 @@ export function GradesTable({
             textAlign: "left",
             px: 1.5,
             py: 1,
+            fontFamily: "var(--font-body), sans-serif",
             fontSize: "0.65rem",
             fontWeight: 600,
             letterSpacing: "0.05em",
@@ -198,6 +225,7 @@ export function GradesTable({
           "& td:first-of-type": {
             px: 1.5,
             py: 1,
+            fontFamily: "var(--font-body), sans-serif",
             fontSize: "0.82rem",
             color: "var(--ink)",
           },
@@ -205,6 +233,7 @@ export function GradesTable({
             textAlign: "right",
             px: 1,
             py: 0.5,
+            fontFamily: "var(--font-body), sans-serif",
           },
           "& tr:last-child td": { borderBottom: "none" },
         }}
@@ -220,21 +249,54 @@ export function GradesTable({
             <tr key={cell.field.field_key}>
               <td>{cell.subject}</td>
               <td>
-                <TextField
-                  variant="standard"
+                <Box
+                  component="input"
                   type="number"
+                  min={0}
+                  max={20}
+                  step={1}
                   value={formValues[cell.field.field_key] ?? ""}
-                  onChange={(e) => onFieldChange(cell.field.field_key, e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
+                    handleGradeCellChange(currentYear, cell, e.target.value)}
                   onBlur={onFieldBlur}
                   disabled={disabled}
-                  inputProps={{ min: 0, max: 20, step: 1, style: { textAlign: "right", width: 56, fontSize: "0.85rem", padding: "6px 10px" } }}
+                  placeholder="—"
                   sx={{
-                    "& .MuiInput-underline:before": { borderBottom: "1.5px solid transparent" },
-                    "& .MuiInput-underline:hover:before": { borderBottom: "1.5px solid var(--sand)" },
-                    "& .MuiInput-underline:after": { borderBottom: "1.5px solid var(--uwc-maroon)" },
-                    "& .MuiInput-underline.Mui-focused": {
-                      "& input": { background: "white", boxShadow: "0 0 0 3px rgba(154,37,69,0.08)", borderRadius: "6px" },
+                    width: 72,
+                    padding: "6px 10px",
+                    fontFamily: "var(--font-body), sans-serif",
+                    fontSize: "0.85rem",
+                    color: "var(--ink)",
+                    textAlign: "right",
+                    fontVariantNumeric: "tabular-nums",
+                    background: disabled ? "transparent" : "var(--surface)",
+                    border: disabled ? "1.5px solid transparent" : "1.5px solid var(--sand)",
+                    borderRadius: "6px",
+                    outline: "none",
+                    cursor: disabled ? "default" : "text",
+                    transition: "all 0.15s",
+                    "&::placeholder": {
+                      color: "var(--muted)",
+                      opacity: 1,
+                      fontFamily: "var(--font-body), sans-serif",
                     },
+                    "&:disabled": {
+                      color: "var(--muted)",
+                      WebkitTextFillColor: "var(--muted)",
+                      fontFamily: "var(--font-body), sans-serif",
+                    },
+                    "&:hover": disabled ? {} : { borderColor: "var(--muted)" },
+                    "&:focus": {
+                      borderColor: "var(--uwc-maroon)",
+                      background: "white",
+                      boxShadow: "0 0 0 3px rgba(154, 37, 69, 0.08)",
+                    },
+                    /* Hide number spinner arrows */
+                    "&::-webkit-outer-spin-button, &::-webkit-inner-spin-button": {
+                      WebkitAppearance: "none",
+                      margin: 0,
+                    },
+                    MozAppearance: "textfield",
                   }}
                 />
               </td>
@@ -265,13 +327,14 @@ export function GradesTable({
                 background: "var(--uwc-maroon-soft, #FAF0F2)",
                 fontWeight: 600,
                 color: "var(--uwc-maroon)",
-                fontFamily: "var(--font-display)",
-                fontSize: "1.1rem",
+                fontFamily: "var(--font-body), sans-serif",
+                fontVariantNumeric: "tabular-nums",
+                fontSize: "0.95rem",
                 borderBottom: "none !important",
                 borderRadius: "0 0 var(--radius) 0",
               }}
             >
-              {computeAverage(currentYear.cells, formValues)}
+              {getYearAverageDisplay(currentYear)}
             </Box>
           </tr>
         </tbody>
@@ -282,7 +345,7 @@ export function GradesTable({
         <input
           type="hidden"
           name={currentYear.averageField.field_key}
-          value={formValues[currentYear.averageField.field_key] ?? ""}
+          value={getYearAverageDisplay(currentYear) === "--" ? "" : getYearAverageDisplay(currentYear)}
         />
       ) : null}
     </Box>

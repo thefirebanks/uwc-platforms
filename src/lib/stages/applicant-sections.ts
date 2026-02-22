@@ -46,11 +46,11 @@ const SECTION_META: Record<
   },
   school: {
     title: "Colegio y rendimiento académico",
-    description: "Datos del colegio y notas oficiales por año.",
+    description: "Datos del colegio y notas oficiales por año. Ingresa tus calificaciones en la escala 0–20.",
   },
   motivation: {
     title: "Motivación y perfil",
-    description: "Respuestas personales sobre intereses y propósito.",
+    description: "Comparte tu historia, intereses y por qué UWC es tu camino.",
   },
   recommenders: {
     title: "Contexto de recomendadores",

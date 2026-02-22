@@ -33,12 +33,13 @@ describe("ApplicantApplicationForm", () => {
   it("keeps submit disabled until a draft exists", async () => {
     render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-1" />);
 
+    expect(screen.getAllByText("Antes de empezar").length).toBeGreaterThanOrEqual(1);
+
     fireEvent.click(screen.getByRole("button", { name: /Revisión y envío/i }));
     // Both the inline submit button and the action bar show "Enviar postulación" on last step
     const submitButtons = screen.getAllByRole("button", { name: /Enviar postulación/i });
     expect(submitButtons.length).toBeGreaterThanOrEqual(1);
     expect(submitButtons[0]).toBeDisabled();
-    expect(screen.getByText("Antes de empezar")).toBeInTheDocument();
     expect(screen.getByText("Progreso por secciones")).toBeInTheDocument();
   });
 
@@ -74,13 +75,13 @@ describe("ApplicantApplicationForm", () => {
     );
 
     fireEvent.click(screen.getAllByRole("button", { name: /Datos personales/i })[0]);
-    const fullNameInput = screen.getByLabelText(/Nombre completo/i);
-    expect(fullNameInput).toBeDisabled();
+    const dobInput = screen.getByLabelText(/Fecha de nacimiento/i);
+    expect(dobInput).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Editar respuesta" }));
 
-    expect(await screen.findByText("Edición habilitada. Guarda cambios y vuelve a enviar.")).toBeInTheDocument();
-    expect(screen.getByLabelText(/Nombre completo/i)).not.toBeDisabled();
+    expect(await screen.findByText(/Modo: edición manual habilitada/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Fecha de nacimiento/i)).not.toBeDisabled();
   });
 
   it("shows previously registered recommenders from API", async () => {
@@ -209,6 +210,7 @@ describe("ApplicantApplicationForm", () => {
     );
 
     render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-4" />);
+    fireEvent.click(screen.getByRole("button", { name: /Elegibilidad/i }));
 
     fireEvent.change(screen.getByLabelText(/Año de nacimiento/i), {
       target: { value: "2009" },
@@ -300,8 +302,8 @@ describe("ApplicantApplicationForm", () => {
     // Navigate to documents section
     fireEvent.click(screen.getAllByRole("button", { name: /Documentos/i })[0]);
 
-    // UploadZone renders "Arrastra aqui o" text for empty upload slots
-    const dropZoneTexts = screen.queryAllByText(/Arrastra aqui o/);
+    // UploadZone renders "Arrastra aquí o" text for empty upload slots
+    const dropZoneTexts = screen.queryAllByText(/Arrastra aquí o/);
     // Should have at least one upload zone (the form has file fields)
     expect(dropZoneTexts.length).toBeGreaterThanOrEqual(1);
 
@@ -379,6 +381,8 @@ describe("ApplicantApplicationForm", () => {
     );
 
     // 1 of 2 submitted -> sidebar should show "1/2"
-    expect(screen.getByText("1/2")).toBeInTheDocument();
+    // Use within to scope to sidebar since "1/2" may appear in content too
+    const sidebar = screen.getByTestId("applicant-sidebar");
+    expect(within(sidebar).getByText("1/2")).toBeInTheDocument();
   });
 });

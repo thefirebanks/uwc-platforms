@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Box, Collapse, Stack, Typography } from "@mui/material";
 import CheckIcon from "@mui/icons-material/Check";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import type { SidebarStep } from "@/components/applicant-sidebar";
 
 export function ApplicantMobileProgress({
@@ -23,7 +23,7 @@ export function ApplicantMobileProgress({
   activeStepKey: string;
   onStepClick: (key: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   const dotColor =
     draftStatusDot === "success"
@@ -31,43 +31,51 @@ export function ApplicantMobileProgress({
       : draftStatusDot === "warning"
         ? "var(--warning)"
         : draftStatusDot === "error"
-          ? "#991B1B"
+          ? "#DC2626"
           : "var(--uwc-blue)";
 
   return (
     <Box
+      data-testid="mobile-progress"
       sx={{
-        display: { xs: "block", md: "none" },
+        display: "none",
         bgcolor: "var(--cream)",
-        border: "1px solid var(--sand)",
-        borderRadius: "var(--radius)",
+        borderBottom: "1px solid var(--sand)",
         mb: 2,
+        borderRadius: 1.5,
         overflow: "hidden",
+        "@media (max-width: 768px)": {
+          display: "block",
+        },
       }}
     >
-      {/* Compact bar - always visible */}
+      {/* Compact top bar - always visible */}
       <Box
-        onClick={() => setExpanded((prev) => !prev)}
+        component="button"
+        onClick={() => setIsExpanded((prev) => !prev)}
         sx={{
           display: "flex",
           alignItems: "center",
-          gap: 1.5,
+          width: "100%",
           px: 2,
           py: 1.5,
+          border: "none",
           cursor: "pointer",
-          "&:hover": { bgcolor: "rgba(0,0,0,0.02)" },
+          bgcolor: "transparent",
+          fontFamily: "inherit",
+          gap: 1.5,
         }}
       >
-        {/* Circular progress indicator */}
+        {/* Progress circle */}
         <Box
           sx={{
             position: "relative",
             width: 36,
             height: 36,
-            minWidth: 36,
+            flexShrink: 0,
           }}
         >
-          <svg width={36} height={36} viewBox="0 0 36 36">
+          <svg width="36" height="36" viewBox="0 0 36 36">
             <circle
               cx="18"
               cy="18"
@@ -83,10 +91,10 @@ export function ApplicantMobileProgress({
               fill="none"
               stroke="var(--uwc-maroon)"
               strokeWidth="3"
-              strokeLinecap="round"
               strokeDasharray={`${(progressPercent / 100) * 94.25} 94.25`}
+              strokeLinecap="round"
               transform="rotate(-90 18 18)"
-              style={{ transition: "stroke-dasharray 0.5s ease" }}
+              style={{ transition: "stroke-dasharray 500ms ease" }}
             />
           </svg>
           <Typography
@@ -95,25 +103,23 @@ export function ApplicantMobileProgress({
               top: "50%",
               left: "50%",
               transform: "translate(-50%, -50%)",
-              fontSize: "0.55rem",
+              fontSize: "0.6rem",
               fontWeight: 700,
-              color: "var(--ink)",
+              color: "var(--uwc-maroon)",
             }}
           >
             {progressPercent}%
           </Typography>
         </Box>
 
-        {/* Current step info */}
-        <Box sx={{ flex: 1, minWidth: 0 }}>
+        {/* Step info */}
+        <Box sx={{ flex: 1, textAlign: "left" }}>
           <Typography
             sx={{
               fontSize: "0.82rem",
               fontWeight: 500,
               color: "var(--ink)",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
+              lineHeight: 1.3,
             }}
           >
             {currentStepLabel}
@@ -133,20 +139,41 @@ export function ApplicantMobileProgress({
           </Stack>
         </Box>
 
-        {/* Expand chevron */}
-        <ExpandMoreIcon
+        {/* Expand arrow */}
+        <KeyboardArrowDownIcon
           sx={{
-            color: "var(--muted)",
             fontSize: 20,
-            transition: "transform 200ms",
-            transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+            color: "var(--muted)",
+            transition: "transform 200ms ease",
+            transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
           }}
         />
       </Box>
 
       {/* Expanded step list */}
-      <Collapse in={expanded}>
-        <Box sx={{ borderTop: "1px solid var(--sand)", px: 1, py: 1 }}>
+      <Collapse in={isExpanded}>
+        <Box sx={{ px: 1, pb: 1.5 }}>
+          {/* Mini progress bar */}
+          <Box
+            sx={{
+              height: 2,
+              bgcolor: "var(--sand)",
+              borderRadius: 2,
+              overflow: "hidden",
+              mx: 1,
+              mb: 1.5,
+            }}
+          >
+            <Box
+              sx={{
+                height: "100%",
+                width: `${progressPercent}%`,
+                background: "linear-gradient(90deg, var(--uwc-maroon), var(--uwc-blue))",
+                transition: "width 500ms ease",
+              }}
+            />
+          </Box>
+
           {steps.map((step, index) => {
             const isActive = step.key === activeStepKey;
             const isComplete = step.status === "complete";
@@ -154,19 +181,24 @@ export function ApplicantMobileProgress({
             return (
               <Box
                 key={step.key}
+                component="button"
                 onClick={() => {
                   onStepClick(step.key);
-                  setExpanded(false);
+                  setIsExpanded(false);
                 }}
                 sx={{
                   display: "flex",
                   alignItems: "center",
                   gap: 1.25,
-                  px: 1.5,
+                  width: "100%",
                   py: 1,
+                  px: 1.5,
+                  border: "none",
                   borderRadius: 1,
                   cursor: "pointer",
+                  fontFamily: "inherit",
                   bgcolor: isActive ? "var(--uwc-maroon-soft)" : "transparent",
+                  transition: "background-color 0.15s",
                   "&:hover": {
                     bgcolor: isActive ? "var(--uwc-maroon-soft)" : "rgba(0,0,0,0.03)",
                   },
@@ -176,13 +208,18 @@ export function ApplicantMobileProgress({
                   sx={{
                     width: 22,
                     height: 22,
-                    minWidth: 22,
                     borderRadius: "50%",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                     fontSize: "0.6rem",
                     fontWeight: 600,
+                    flexShrink: 0,
+                    border: isComplete
+                      ? "1.5px solid var(--success)"
+                      : isActive
+                        ? "1.5px solid var(--uwc-maroon)"
+                        : "1.5px solid var(--sand)",
                     bgcolor: isComplete
                       ? "var(--success)"
                       : isActive
@@ -193,25 +230,36 @@ export function ApplicantMobileProgress({
                       : isActive
                         ? "var(--uwc-maroon)"
                         : "var(--muted)",
-                    border: isComplete
-                      ? "1.5px solid var(--success)"
-                      : isActive
-                        ? "1.5px solid var(--uwc-maroon)"
-                        : "1.5px solid var(--sand)",
                   }}
                 >
-                  {isComplete ? <CheckIcon sx={{ fontSize: 12 }} /> : index + 1}
+                  {isComplete ? <CheckIcon sx={{ fontSize: 11 }} /> : index + 1}
                 </Box>
                 <Typography
                   sx={{
-                    flex: 1,
                     fontSize: "0.78rem",
                     fontWeight: isActive ? 500 : 400,
-                    color: isActive ? "var(--uwc-maroon)" : isComplete ? "var(--ink)" : "var(--muted)",
+                    color: isActive
+                      ? "var(--uwc-maroon)"
+                      : step.status === "not_started"
+                        ? "var(--muted)"
+                        : "var(--ink)",
+                    textAlign: "left",
+                    flex: 1,
                   }}
                 >
                   {step.label}
                 </Typography>
+                {step.statusLabel && !isComplete ? (
+                  <Typography
+                    sx={{
+                      fontSize: "0.6rem",
+                      fontWeight: 600,
+                      color: step.status === "in_progress" ? "var(--uwc-maroon)" : "var(--muted)",
+                    }}
+                  >
+                    {step.statusLabel}
+                  </Typography>
+                ) : null}
               </Box>
             );
           })}
