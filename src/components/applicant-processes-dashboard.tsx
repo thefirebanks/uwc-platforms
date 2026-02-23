@@ -1,4 +1,7 @@
+"use client";
+
 import { Button, Card, CardContent, Stack, Typography } from "@mui/material";
+import { useAppLanguage } from "@/components/language-provider";
 import type { Application, SelectionProcess } from "@/types/domain";
 import { StageBadge } from "@/components/stage-badge";
 
@@ -9,7 +12,7 @@ export type ApplicantApplicationSummary = Pick<
 
 function formatDate(value: string | null) {
   if (!value) {
-    return "No configurada";
+    return null;
   }
 
   return new Date(value).toLocaleDateString();
@@ -24,6 +27,7 @@ export function ApplicantProcessesDashboard({
   applications: ApplicantApplicationSummary[];
   maxApplications?: number;
 }) {
+  const { t } = useAppLanguage();
   const applicationMap = new Map(applications.map((application) => [application.cycle_id, application]));
   const reachedLimit = applications.length >= maxApplications;
 
@@ -31,12 +35,12 @@ export function ApplicantProcessesDashboard({
     <Stack spacing={3}>
       <Card>
         <CardContent>
-          <Typography variant="h5">Tus procesos de selección</Typography>
+          <Typography variant="h5">{t("applicantProcesses.title")}</Typography>
           <Typography color="text.secondary">
-            Puedes postular a un máximo de {maxApplications} procesos en distintos años.
+            {t("applicantProcesses.description", { count: maxApplications })}
           </Typography>
           <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-            Postulaciones actuales: {applications.length}/{maxApplications}
+            {t("applicantProcesses.current", { current: applications.length, max: maxApplications })}
           </Typography>
         </CardContent>
       </Card>
@@ -44,7 +48,7 @@ export function ApplicantProcessesDashboard({
       <Card>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 2 }}>
-            Procesos disponibles
+            {t("applicantProcesses.available")}
           </Typography>
           <Stack spacing={2}>
             {processes.map((process) => {
@@ -55,18 +59,20 @@ export function ApplicantProcessesDashboard({
                   <CardContent>
                     <Stack spacing={1.2}>
                       <Typography variant="subtitle1" fontWeight={700}>
-                        {process.name} {process.is_active ? "(Activo)" : ""}
+                        {process.name} {process.is_active ? `(${t("state.active")})` : ""}
                       </Typography>
                       <Typography color="text.secondary" variant="body2">
-                        Stage 1: {formatDate(process.stage1_open_at)} - {formatDate(process.stage1_close_at)}
+                        Stage 1: {formatDate(process.stage1_open_at) ?? t("date.notConfigured")} -{" "}
+                        {formatDate(process.stage1_close_at) ?? t("date.notConfigured")}
                       </Typography>
                       <Typography color="text.secondary" variant="body2">
-                        Stage 2: {formatDate(process.stage2_open_at)} - {formatDate(process.stage2_close_at)}
+                        Stage 2: {formatDate(process.stage2_open_at) ?? t("date.notConfigured")} -{" "}
+                        {formatDate(process.stage2_close_at) ?? t("date.notConfigured")}
                       </Typography>
 
                       {application ? (
                         <Stack direction="row" spacing={1} alignItems="center">
-                          <Typography variant="body2">Estado:</Typography>
+                          <Typography variant="body2">{t("applicantProcesses.status")}</Typography>
                           <StageBadge stage={application.stage_code} />
                           <Typography variant="body2">{application.status}</Typography>
                         </Stack>
@@ -75,15 +81,15 @@ export function ApplicantProcessesDashboard({
                       <Stack direction="row" spacing={1}>
                         {application ? (
                           <Button href={`/applicant/process/${process.id}`} variant="contained">
-                            Abrir postulación
+                            {t("applicantProcesses.open")}
                           </Button>
                         ) : reachedLimit ? (
                           <Button disabled variant="outlined">
-                            Límite alcanzado
+                            {t("applicantProcesses.limit")}
                           </Button>
                         ) : (
                           <Button href={`/applicant/process/${process.id}`} variant="contained">
-                            Iniciar postulación
+                            {t("applicantProcesses.start")}
                           </Button>
                         )}
                       </Stack>

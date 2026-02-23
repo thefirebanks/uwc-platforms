@@ -1,0 +1,1303 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UWC Peru — Tu Postulación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --maroon: #9A2545;
+  --maroon-soft: #FAF0F2;
+  --maroon-dark: #7D1E38;
+  --blue: #004E89;
+  --blue-soft: #EDF4F9;
+  --ink: #2C2825;
+  --ink-light: #5A5450;
+  --paper: #FFFBF8;
+  --surface: #FFFFFF;
+  --cream: #FBF7F4;
+  --sand: #EBE6E0;
+  --sand-light: #F3EFEB;
+  --muted: #9A9590;
+  --success: #2D6A4F;
+  --success-soft: #E8F5EE;
+  --warning: #B45309;
+  --warning-soft: #FEF3C7;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow-sm: 0 1px 2px rgba(44,40,37,0.04);
+  --shadow-md: 0 2px 8px rgba(44,40,37,0.06), 0 1px 2px rgba(44,40,37,0.04);
+  --font-display: 'Newsreader', Georgia, serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+  --sidebar-width: 280px;
+  --topbar-height: 56px;
+}
+
+html { font-size: 15px; -webkit-font-smoothing: antialiased; }
+body {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--paper);
+  line-height: 1.55;
+  overflow-x: hidden;
+}
+
+/* ─── Topbar ─── */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: var(--topbar-height);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--sand);
+  backdrop-filter: blur(12px);
+}
+.topbar-brand {
+  font-family: var(--font-display);
+  font-size: 1.05rem; font-weight: 500; color: var(--maroon);
+  letter-spacing: -0.01em;
+}
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+.topbar-save {
+  font-size: 0.75rem; color: var(--muted);
+  display: flex; align-items: center; gap: 6px;
+  transition: opacity 0.3s;
+}
+.topbar-save .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--success); display: inline-block;
+  animation: pulse-dot 2s ease infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+}
+.topbar-user {
+  font-size: 0.8rem; color: var(--ink-light);
+  padding: 6px 12px; border-radius: 20px;
+  background: var(--cream); border: 1px solid var(--sand);
+}
+
+/* ─── Layout ─── */
+.layout {
+  display: flex;
+  padding-top: var(--topbar-height);
+  min-height: 100vh;
+}
+
+/* ─── Sidebar ─── */
+.sidebar {
+  position: fixed;
+  top: var(--topbar-height);
+  left: 0; bottom: 0;
+  width: var(--sidebar-width);
+  background: var(--cream);
+  border-right: 1px solid var(--sand);
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+  z-index: 50;
+}
+.sidebar-header {
+  padding: 24px 20px 16px;
+  border-bottom: 1px solid var(--sand);
+}
+.sidebar-header .process-label {
+  font-size: 0.65rem; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--maroon); margin-bottom: 4px;
+}
+.sidebar-header h2 {
+  font-family: var(--font-display);
+  font-size: 1.25rem; font-weight: 500;
+  color: var(--ink); letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+.sidebar-header .deadline {
+  font-size: 0.72rem; color: var(--muted); margin-top: 8px;
+  display: flex; align-items: center; gap: 5px;
+}
+.sidebar-progress {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--sand);
+}
+.sidebar-progress .progress-track {
+  height: 3px; background: var(--sand); border-radius: 3px;
+  overflow: hidden; margin-bottom: 6px;
+}
+.sidebar-progress .progress-fill {
+  height: 100%; border-radius: 3px;
+  background: linear-gradient(90deg, var(--maroon), var(--blue));
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sidebar-progress .progress-label {
+  font-size: 0.7rem; color: var(--muted); text-align: right;
+}
+.sidebar-nav { padding: 8px 0; flex: 1; }
+.sidebar-nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 20px;
+  cursor: pointer; border: none; background: none;
+  width: 100%; text-align: left;
+  font-family: var(--font-body);
+  font-size: 0.82rem; color: var(--ink-light);
+  transition: all 0.15s ease;
+  position: relative;
+}
+.sidebar-nav-item:hover { background: var(--sand-light); color: var(--ink); }
+.sidebar-nav-item.active {
+  color: var(--maroon); font-weight: 500;
+  background: var(--maroon-soft);
+}
+.sidebar-nav-item.active::before {
+  content: ''; position: absolute;
+  left: 0; top: 4px; bottom: 4px;
+  width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--maroon);
+}
+.sidebar-nav-item .nav-num {
+  width: 24px; height: 24px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.65rem; font-weight: 600;
+  border: 1.5px solid var(--sand);
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.sidebar-nav-item.active .nav-num {
+  border-color: var(--maroon); color: var(--maroon);
+  background: white;
+}
+.sidebar-nav-item.complete .nav-num {
+  border-color: var(--success); background: var(--success);
+  color: white;
+}
+.sidebar-nav-item .nav-num svg { width: 12px; height: 12px; }
+.sidebar-nav-item .nav-label { flex: 1; }
+.sidebar-nav-item .nav-status {
+  font-size: 0.6rem; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  padding: 2px 6px; border-radius: 4px;
+}
+.sidebar-nav-item.complete .nav-status {
+  color: var(--success); background: var(--success-soft);
+}
+.sidebar-nav-item.in-progress .nav-status {
+  color: var(--maroon); background: var(--maroon-soft);
+}
+
+/* ─── Main Content ─── */
+.main {
+  margin-left: var(--sidebar-width);
+  flex: 1; min-height: calc(100vh - var(--topbar-height));
+  display: flex; flex-direction: column;
+}
+.form-container {
+  max-width: 760px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 40px 32px 120px;
+}
+
+/* ─── Section Header ─── */
+.section-header {
+  margin-bottom: 32px;
+  animation: fadeUp 0.35s ease;
+}
+.section-header .section-eyebrow {
+  font-size: 0.65rem; font-weight: 600;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--maroon); margin-bottom: 6px;
+}
+.section-header h1 {
+  font-family: var(--font-display);
+  font-size: 1.8rem; font-weight: 400;
+  color: var(--ink); letter-spacing: -0.02em;
+  line-height: 1.25; margin-bottom: 8px;
+}
+.section-header p {
+  font-size: 0.85rem; color: var(--muted);
+  max-width: 520px;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Form Groups ─── */
+.form-group {
+  margin-bottom: 28px;
+  animation: fadeUp 0.35s ease;
+  animation-fill-mode: backwards;
+}
+.form-group:nth-child(2) { animation-delay: 0.05s; }
+.form-group:nth-child(3) { animation-delay: 0.1s; }
+.form-group:nth-child(4) { animation-delay: 0.15s; }
+
+.form-group-label {
+  font-size: 0.68rem; font-weight: 600;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--muted); margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--sand-light);
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 18px;
+}
+.field-grid .full { grid-column: 1 / -1; }
+
+/* ─── Fields ─── */
+.field {
+  display: flex; flex-direction: column;
+}
+.field label {
+  font-size: 0.78rem; font-weight: 500;
+  color: var(--ink); margin-bottom: 5px;
+  display: flex; align-items: center; gap: 4px;
+}
+.field label .req { color: var(--maroon); font-weight: 400; }
+.field .hint {
+  font-size: 0.7rem; color: var(--muted); margin-top: 3px;
+}
+.field input[type="text"],
+.field input[type="number"],
+.field input[type="email"],
+.field input[type="date"],
+.field textarea,
+.field select {
+  width: 100%;
+  padding: 9px 12px;
+  font-family: var(--font-body);
+  font-size: 0.85rem; color: var(--ink);
+  background: var(--surface);
+  border: 1.5px solid var(--sand);
+  border-radius: var(--radius);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field input:focus, .field textarea:focus, .field select:focus {
+  border-color: var(--maroon);
+  box-shadow: 0 0 0 3px rgba(154, 37, 69, 0.08);
+}
+.field input::placeholder, .field textarea::placeholder {
+  color: var(--muted); font-weight: 300;
+}
+.field textarea { resize: vertical; min-height: 100px; line-height: 1.5; }
+
+/* ─── Toggle Pill ─── */
+.toggle-pill {
+  display: flex; gap: 0;
+  border: 1.5px solid var(--sand);
+  border-radius: var(--radius);
+  overflow: hidden; width: fit-content;
+}
+.toggle-pill button {
+  padding: 8px 20px;
+  font-family: var(--font-body);
+  font-size: 0.82rem; font-weight: 400;
+  border: none; cursor: pointer;
+  background: var(--surface); color: var(--ink-light);
+  transition: all 0.2s ease;
+}
+.toggle-pill button.selected {
+  background: var(--maroon); color: white; font-weight: 500;
+}
+.toggle-pill button:not(.selected):hover {
+  background: var(--cream);
+}
+
+/* ─── Grades Table ─── */
+.grades-section { margin-bottom: 28px; }
+.year-tabs {
+  display: flex; gap: 4px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--sand);
+  padding-bottom: 0;
+}
+.year-tab {
+  padding: 8px 16px;
+  font-family: var(--font-body);
+  font-size: 0.78rem; font-weight: 500;
+  color: var(--muted); border: none;
+  background: none; cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: all 0.2s;
+}
+.year-tab:hover { color: var(--ink); }
+.year-tab.active {
+  color: var(--maroon);
+  border-bottom-color: var(--maroon);
+}
+.year-tab .tab-avg {
+  font-size: 0.65rem; color: var(--muted);
+  margin-left: 4px; font-weight: 400;
+}
+
+.grades-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  animation: fadeUp 0.25s ease;
+}
+.grades-table th {
+  text-align: left; padding: 8px 12px;
+  font-size: 0.65rem; font-weight: 600;
+  letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--muted); background: var(--cream);
+  border-bottom: 1px solid var(--sand);
+}
+.grades-table th:last-child { text-align: right; width: 100px; }
+.grades-table td {
+  padding: 0;
+  border-bottom: 1px solid var(--sand-light);
+}
+.grades-table td:first-child {
+  padding: 8px 12px;
+  font-size: 0.82rem; color: var(--ink);
+}
+.grades-table td:last-child {
+  text-align: right; padding: 4px 8px;
+}
+.grades-table input[type="number"] {
+  width: 72px; padding: 6px 10px;
+  font-family: var(--font-body);
+  font-size: 0.85rem; color: var(--ink);
+  text-align: right;
+  background: transparent;
+  border: 1.5px solid transparent;
+  border-radius: 6px;
+  outline: none; transition: all 0.15s;
+}
+.grades-table input[type="number"]:hover {
+  border-color: var(--sand);
+}
+.grades-table input[type="number"]:focus {
+  border-color: var(--maroon);
+  background: white;
+  box-shadow: 0 0 0 3px rgba(154, 37, 69, 0.08);
+}
+.grades-table tr:last-child td { border-bottom: none; }
+.grades-table .average-row td {
+  padding: 10px 12px;
+  background: var(--maroon-soft);
+  font-weight: 600; color: var(--maroon);
+  border-bottom: none;
+}
+.grades-table .average-row td:first-child {
+  border-radius: 0 0 0 var(--radius);
+}
+.grades-table .average-row td:last-child {
+  border-radius: 0 0 var(--radius) 0;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  padding-right: 12px;
+}
+
+/* ─── File Upload ─── */
+.upload-zone {
+  border: 2px dashed var(--sand);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  text-align: center;
+  background: var(--cream);
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+.upload-zone:hover {
+  border-color: var(--maroon);
+  background: var(--maroon-soft);
+}
+.upload-zone.dragging {
+  border-color: var(--maroon);
+  background: var(--maroon-soft);
+  transform: scale(1.01);
+}
+.upload-zone .upload-icon {
+  width: 36px; height: 36px; margin: 0 auto 10px;
+  color: var(--muted);
+}
+.upload-zone p {
+  font-size: 0.82rem; color: var(--ink-light);
+}
+.upload-zone p strong { color: var(--maroon); font-weight: 500; }
+.upload-zone .upload-hint {
+  font-size: 0.7rem; color: var(--muted); margin-top: 4px;
+}
+.uploaded-file {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1.5px solid var(--sand);
+  border-radius: var(--radius);
+  margin-top: 10px;
+}
+.uploaded-file .file-icon {
+  width: 32px; height: 32px; border-radius: 6px;
+  background: var(--maroon-soft); color: var(--maroon);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.6rem; font-weight: 700;
+  flex-shrink: 0;
+}
+.uploaded-file .file-info { flex: 1; min-width: 0; }
+.uploaded-file .file-name {
+  font-size: 0.8rem; font-weight: 500; color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.uploaded-file .file-meta {
+  font-size: 0.68rem; color: var(--muted);
+}
+.uploaded-file .file-remove {
+  width: 28px; height: 28px; border-radius: 50%;
+  border: none; background: var(--cream);
+  color: var(--muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.15s;
+  font-size: 1.1rem; line-height: 1;
+}
+.uploaded-file .file-remove:hover {
+  background: #FEE2E2; color: #DC2626;
+}
+
+/* ─── Bottom Action Bar ─── */
+.action-bar {
+  position: fixed; bottom: 0;
+  left: var(--sidebar-width); right: 0;
+  background: var(--surface);
+  border-top: 1px solid var(--sand);
+  padding: 12px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  z-index: 50;
+}
+.action-bar .btn {
+  padding: 10px 24px;
+  font-family: var(--font-body);
+  font-size: 0.82rem; font-weight: 500;
+  border-radius: var(--radius);
+  cursor: pointer; transition: all 0.2s;
+  border: none; display: flex; align-items: center; gap: 6px;
+}
+.action-bar .btn-ghost {
+  background: none; color: var(--ink-light);
+}
+.action-bar .btn-ghost:hover { background: var(--cream); }
+.action-bar .btn-primary {
+  background: var(--maroon); color: white;
+}
+.action-bar .btn-primary:hover { background: var(--maroon-dark); }
+.action-bar .btn-save {
+  background: var(--cream); color: var(--ink-light);
+  border: 1px solid var(--sand);
+}
+.action-bar .btn-save:hover { background: var(--sand-light); }
+
+/* ─── Mobile ─── */
+@media (max-width: 768px) {
+  :root { --sidebar-width: 0px; }
+  .sidebar { display: none; }
+  .main { margin-left: 0; }
+  .form-container { padding: 24px 16px 140px; }
+  .field-grid { grid-template-columns: 1fr; }
+  .field-grid .half-mobile { grid-column: span 1; }
+  .section-header h1 { font-size: 1.45rem; }
+  .action-bar { left: 0; padding: 10px 16px; }
+  .year-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .grades-table td:first-child { font-size: 0.75rem; }
+
+  .mobile-nav-toggle {
+    display: flex !important;
+  }
+  .mobile-sheet {
+    display: block !important;
+  }
+}
+
+.mobile-nav-toggle { display: none !important; }
+.mobile-sheet { display: none !important; }
+
+/* ─── Helpers ─── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  overflow: hidden; clip: rect(0,0,0,0);
+  white-space: nowrap; border: 0;
+}
+.mt-8 { margin-top: 8px; }
+.mt-16 { margin-top: 16px; }
+.mt-24 { margin-top: 24px; }
+
+/* ─── Transition for section switching ─── */
+.section-content {
+  animation: fadeUp 0.35s ease;
+}
+.section-content.leaving {
+  animation: fadeOut 0.15s ease forwards;
+}
+@keyframes fadeOut {
+  to { opacity: 0; transform: translateY(-8px); }
+}
+
+/* ─── Sub-group card ─── */
+.sub-group {
+  background: var(--surface);
+  border: 1px solid var(--sand-light);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.sub-group-label {
+  font-family: var(--font-display);
+  font-size: 1rem; font-weight: 500;
+  color: var(--ink); margin-bottom: 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.sub-group-label .sub-icon {
+  width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem;
+}
+
+/* ─── Guardian card ─── */
+.guardian-card {
+  background: var(--surface);
+  border: 1px solid var(--sand-light);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.guardian-card .guardian-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 16px;
+}
+.guardian-card .guardian-avatar {
+  width: 32px; height: 32px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.85rem;
+}
+.guardian-card .guardian-title {
+  font-weight: 500; font-size: 0.9rem; color: var(--ink);
+}
+.guardian-card .guardian-subtitle {
+  font-size: 0.72rem; color: var(--muted);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--sand); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<header class="topbar">
+  <div class="topbar-brand">UWC Selection</div>
+  <div class="topbar-right">
+    <div class="topbar-save">
+      <span class="dot"></span>
+      Borrador guardado hace 2s
+    </div>
+    <div class="topbar-user">Postulante</div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="process-label">Proceso 2026</div>
+      <h2>Tu postulación</h2>
+      <div class="deadline">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Cierre: 17 junio 2026
+      </div>
+    </div>
+
+    <div class="sidebar-progress">
+      <div class="progress-track">
+        <div class="progress-fill" style="width: 85%"></div>
+      </div>
+      <div class="progress-label">85% completado</div>
+    </div>
+
+    <nav class="sidebar-nav" id="sidebarNav">
+      <button class="sidebar-nav-item complete" data-section="elegibilidad">
+        <span class="nav-num"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <span class="nav-label">Elegibilidad</span>
+      </button>
+      <button class="sidebar-nav-item complete" data-section="datos-personales">
+        <span class="nav-num"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <span class="nav-label">Datos personales</span>
+      </button>
+      <button class="sidebar-nav-item complete" data-section="familia">
+        <span class="nav-num"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <span class="nav-label">Familia y apoderados</span>
+      </button>
+      <button class="sidebar-nav-item active" data-section="colegio">
+        <span class="nav-num">4</span>
+        <span class="nav-label">Colegio y notas</span>
+        <span class="nav-status" style="color:var(--warning);background:var(--warning-soft);">85%</span>
+      </button>
+      <button class="sidebar-nav-item" data-section="motivacion">
+        <span class="nav-num">5</span>
+        <span class="nav-label">Motivación</span>
+      </button>
+      <button class="sidebar-nav-item complete" data-section="documentos">
+        <span class="nav-num"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg></span>
+        <span class="nav-label">Documentos</span>
+      </button>
+      <button class="sidebar-nav-item in-progress" data-section="recomendadores">
+        <span class="nav-num">7</span>
+        <span class="nav-label">Recomendadores</span>
+        <span class="nav-status">1/2</span>
+      </button>
+      <button class="sidebar-nav-item" data-section="revision">
+        <span class="nav-num">8</span>
+        <span class="nav-label">Revisión y envío</span>
+      </button>
+    </nav>
+  </aside>
+
+  <!-- Main content -->
+  <main class="main">
+    <div class="form-container" id="formContainer">
+
+      <!-- ═══════════ ELEGIBILIDAD ═══════════ -->
+      <div class="section-content" id="section-elegibilidad" style="display:none;">
+        <div class="section-header">
+          <div class="section-eyebrow">Paso 1 de 8</div>
+          <h1>Elegibilidad</h1>
+          <p>Validamos los criterios base del proceso de selección 2026.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="field-grid">
+            <div class="field">
+              <label>Año de nacimiento <span class="req">*</span></label>
+              <input type="number" placeholder="2008, 2009 o 2010" value="2009">
+            </div>
+            <div class="field">
+              <label>País de nacimiento</label>
+              <input type="text" placeholder="Perú" value="Perú">
+            </div>
+            <div class="field">
+              <label>País de residencia</label>
+              <input type="text" placeholder="Perú" value="Perú">
+            </div>
+            <div class="field">
+              <label>Segunda nacionalidad</label>
+              <input type="text" placeholder="Opcional">
+              <span class="hint">Solo si aplica.</span>
+            </div>
+            <div class="field">
+              <label>Año de secundaria cursado en 2025</label>
+              <input type="text" placeholder="4to o 5to de secundaria" value="5to">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="form-group-label">Requisitos académicos</div>
+          <div class="field-grid">
+            <div class="field">
+              <label>¿Perteneces al tercio superior?</label>
+              <div class="toggle-pill">
+                <button class="selected" onclick="togglePill(this)">Sí</button>
+                <button onclick="togglePill(this)">No</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>¿Tienes mínimo 14 o B de promedio?</label>
+              <div class="toggle-pill">
+                <button class="selected" onclick="togglePill(this)">Sí</button>
+                <button onclick="togglePill(this)">No</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>¿Has estudiado IB?</label>
+              <div class="toggle-pill">
+                <button onclick="togglePill(this)">Sí</button>
+                <button class="selected" onclick="togglePill(this)">No</button>
+              </div>
+            </div>
+            <div class="field" id="ibYear" style="opacity:0.4;pointer-events:none;">
+              <label>Año de instrucción en IB</label>
+              <input type="text" placeholder="Primer año del IB">
+              <span class="hint">Solo si estudia/estudió IB.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="form-group-label">Participación previa</div>
+          <div class="field-grid">
+            <div class="field">
+              <label>¿Participó antes en selección UWC Perú?</label>
+              <div class="toggle-pill">
+                <button onclick="togglePill(this)">Sí</button>
+                <button class="selected" onclick="togglePill(this)">No</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>¿Participó en selección de otro país en 2025?</label>
+              <div class="toggle-pill">
+                <button onclick="togglePill(this)">Sí</button>
+                <button class="selected" onclick="togglePill(this)">No</button>
+              </div>
+            </div>
+            <div class="field full">
+              <label>¿Cómo te enteraste de UWC por primera vez?</label>
+              <input type="text" placeholder="Redes sociales, amigos, colegio..." value="Un amigo que fue a UWC Atlantic">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ DATOS PERSONALES ═══════════ -->
+      <div class="section-content" id="section-datos-personales" style="display:none;">
+        <div class="section-header">
+          <div class="section-eyebrow">Paso 2 de 8</div>
+          <h1>Datos personales</h1>
+          <p>Información de identidad, contacto y contexto personal.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="sub-group">
+            <div class="sub-group-label">
+              <span class="sub-icon" style="background:var(--blue-soft);color:var(--blue);">👤</span>
+              Identidad
+            </div>
+            <div class="field-grid">
+              <div class="field"><label>Nombre(s) <span class="req">*</span></label><input type="text" placeholder="Nombre(s)" value="María José"></div>
+              <div class="field"><label>Apellido paterno</label><input type="text" placeholder="Apellido paterno" value="Quispe"></div>
+              <div class="field"><label>Apellido materno</label><input type="text" placeholder="Apellido materno" value="Fernández"></div>
+              <div class="field"><label>Fecha de nacimiento <span class="req">*</span></label><input type="date" value="2009-03-15"></div>
+              <div class="field"><label>Tipo de documento</label>
+                <select><option>DNI</option><option>Pasaporte</option><option>Carnet de Extranjería</option></select>
+              </div>
+              <div class="field"><label>Número de documento</label><input type="text" placeholder="Número" value="76543210"></div>
+              <div class="field"><label>Edad al 31/12/2025</label><input type="number" value="16" style="width:80px;"></div>
+              <div class="field"><label>Género</label><input type="text" placeholder="Respuesta libre" value="Femenino"></div>
+              <div class="field"><label>Nacionalidad <span class="req">*</span></label><input type="text" value="Peruana"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="sub-group">
+            <div class="sub-group-label">
+              <span class="sub-icon" style="background:var(--success-soft);color:var(--success);">📍</span>
+              Dirección
+            </div>
+            <div class="field-grid">
+              <div class="field full"><label>Calle / Jr. / Av. / Mz. / AA.HH.</label><input type="text" placeholder="Dirección principal" value="Av. Arequipa 1245"></div>
+              <div class="field"><label>Número / Lote</label><input type="text" placeholder="Número" value="Dpto. 302"></div>
+              <div class="field"><label>Distrito</label><input type="text" value="Lince"></div>
+              <div class="field"><label>Provincia</label><input type="text" value="Lima"></div>
+              <div class="field"><label>Región</label><input type="text" value="Lima"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="sub-group">
+            <div class="sub-group-label">
+              <span class="sub-icon" style="background:var(--warning-soft);color:var(--warning);">📱</span>
+              Contacto
+            </div>
+            <div class="field-grid">
+              <div class="field"><label>Teléfono celular</label><input type="text" placeholder="+51 999 000 000" value="+51 987 654 321"></div>
+              <div class="field"><label>Teléfono fijo o alternativo</label><input type="text" placeholder="01 234 5678"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="sub-group">
+            <div class="sub-group-label">
+              <span class="sub-icon" style="background:var(--maroon-soft);color:var(--maroon);">♿</span>
+              Accesibilidad
+            </div>
+            <div class="field-grid">
+              <div class="field">
+                <label>¿Posees alguna discapacidad?</label>
+                <div class="toggle-pill">
+                  <button onclick="togglePill(this)">Sí</button>
+                  <button class="selected" onclick="togglePill(this)">No</button>
+                </div>
+              </div>
+              <div class="field">
+                <label>¿Posees alguna discapacidad de aprendizaje?</label>
+                <div class="toggle-pill">
+                  <button onclick="togglePill(this)">Sí</button>
+                  <button class="selected" onclick="togglePill(this)">No</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ FAMILIA ═══════════ -->
+      <div class="section-content" id="section-familia" style="display:none;">
+        <div class="section-header">
+          <div class="section-eyebrow">Paso 3 de 8</div>
+          <h1>Familia y apoderados</h1>
+          <p>Datos de contacto y custodia de tus padres o apoderados legales.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="field" style="max-width:340px;">
+            <label>Estado civil de padres/apoderados</label>
+            <select>
+              <option>Casados</option><option>Divorciados</option><option>Separados</option><option>Convivientes</option><option>Otro</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="guardian-card">
+            <div class="guardian-header">
+              <div class="guardian-avatar" style="background:var(--maroon-soft);color:var(--maroon);">1</div>
+              <div>
+                <div class="guardian-title">Madre o apoderado/a legal 1</div>
+                <div class="guardian-subtitle">Información de contacto principal</div>
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field full"><label>Nombres y apellidos</label><input type="text" placeholder="Nombre completo" value="Rosa Fernández Gutiérrez"></div>
+              <div class="field"><label>¿Tiene custodia legal?</label>
+                <div class="toggle-pill"><button class="selected" onclick="togglePill(this)">Sí</button><button onclick="togglePill(this)">No</button></div>
+              </div>
+              <div class="field"><label>Correo electrónico</label><input type="email" placeholder="correo@ejemplo.com" value="rosa.fernandez@gmail.com"></div>
+              <div class="field"><label>Celular</label><input type="text" placeholder="+51 ..." value="+51 912 345 678"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="guardian-card">
+            <div class="guardian-header">
+              <div class="guardian-avatar" style="background:var(--blue-soft);color:var(--blue);">2</div>
+              <div>
+                <div class="guardian-title">Padre o apoderado/a legal 2</div>
+                <div class="guardian-subtitle">Opcional — completar si aplica</div>
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field full"><label>Nombres y apellidos</label><input type="text" placeholder="Nombre completo" value="Carlos Quispe Rojas"></div>
+              <div class="field"><label>¿Tiene custodia legal?</label>
+                <div class="toggle-pill"><button class="selected" onclick="togglePill(this)">Sí</button><button onclick="togglePill(this)">No</button></div>
+              </div>
+              <div class="field"><label>Correo electrónico</label><input type="email" placeholder="correo@ejemplo.com" value="carlos.quispe@outlook.com"></div>
+              <div class="field"><label>Celular</label><input type="text" placeholder="+51 ..." value="+51 998 765 432"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ COLEGIO Y NOTAS ═══════════ -->
+      <div class="section-content" id="section-colegio">
+        <div class="section-header">
+          <div class="section-eyebrow">Paso 4 de 8</div>
+          <h1>Colegio y notas</h1>
+          <p>Datos del colegio y notas oficiales por año. Ingresa tus calificaciones en la escala 0–20.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="sub-group">
+            <div class="sub-group-label">
+              <span class="sub-icon" style="background:var(--blue-soft);color:var(--blue);">🏫</span>
+              Información del colegio
+            </div>
+            <div class="field-grid">
+              <div class="field"><label>Colegio <span class="req">*</span></label><input type="text" value="Colegio Mayor Secundario Presidente del Perú"></div>
+              <div class="field"><label>Promedio general (0–20) <span class="req">*</span></label><input type="number" value="16.2" step="0.1"></div>
+              <div class="field"><label>Nombre del director/a</label><input type="text" placeholder="Director/a"></div>
+              <div class="field"><label>Correo del director/a</label><input type="email" placeholder="direccion@colegio.edu.pe"></div>
+              <div class="field full"><label>Dirección del colegio</label><input type="text" placeholder="Dirección completa"></div>
+              <div class="field"><label>Años en el colegio actual</label><input type="number" placeholder="Ej: 5" value="5"></div>
+              <div class="field"><label>¿Colegio público o privado?</label>
+                <div class="toggle-pill"><button class="selected" onclick="togglePill(this)">Público</button><button onclick="togglePill(this)">Privado</button></div>
+              </div>
+              <div class="field"><label>¿Recibes o recibiste beca?</label>
+                <div class="toggle-pill"><button onclick="togglePill(this)">Sí</button><button class="selected" onclick="togglePill(this)">No</button></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="form-group-label">Notas oficiales por año</div>
+
+          <div class="grades-section">
+            <div class="year-tabs" id="yearTabs">
+              <button class="year-tab active" data-year="primero" onclick="switchYear(this)">1ro <span class="tab-avg">15.8</span></button>
+              <button class="year-tab" data-year="segundo" onclick="switchYear(this)">2do <span class="tab-avg">16.1</span></button>
+              <button class="year-tab" data-year="tercero" onclick="switchYear(this)">3ro <span class="tab-avg">16.4</span></button>
+              <button class="year-tab" data-year="cuarto" onclick="switchYear(this)">4to <span class="tab-avg">16.8</span></button>
+              <button class="year-tab" data-year="quinto" onclick="switchYear(this)">5to <span class="tab-avg">—</span></button>
+            </div>
+
+            <div class="year-content" id="year-primero">
+              <table class="grades-table">
+                <thead><tr><th>Materia</th><th>Nota</th></tr></thead>
+                <tbody>
+                  <tr><td>Matemática</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Comunicación</td><td><input type="number" min="0" max="20" value="17" step="1"></td></tr>
+                  <tr><td>Inglés</td><td><input type="number" min="0" max="20" value="18" step="1"></td></tr>
+                  <tr><td>Ciencia y tecnología</td><td><input type="number" min="0" max="20" value="15" step="1"></td></tr>
+                  <tr><td>Ciencias sociales</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Desarrollo personal y cívica</td><td><input type="number" min="0" max="20" value="15" step="1"></td></tr>
+                  <tr><td>Educación física</td><td><input type="number" min="0" max="20" value="17" step="1"></td></tr>
+                  <tr><td>Educación para el trabajo</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Educación religiosa</td><td><input type="number" min="0" max="20" value="14" step="1"></td></tr>
+                  <tr><td>Arte y cultura</td><td><input type="number" min="0" max="20" value="15" step="1"></td></tr>
+                  <tr><td>Historia, geografía y economía</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Formación ciudadana y cívica</td><td><input type="number" min="0" max="20" value="15" step="1"></td></tr>
+                  <tr><td>Persona, familia y relaciones</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Castellano como segunda lengua</td><td><input type="number" min="0" max="20" value="" placeholder="—"></td></tr>
+                  <tr><td>Gestiona su aprendizaje</td><td><input type="number" min="0" max="20" value="" placeholder="—"></td></tr>
+                  <tr><td>Entornos virtuales TIC</td><td><input type="number" min="0" max="20" value="" placeholder="—"></td></tr>
+                  <tr class="average-row"><td>Promedio 1ro</td><td>15.8</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="year-content" id="year-segundo" style="display:none;">
+              <table class="grades-table">
+                <thead><tr><th>Materia</th><th>Nota</th></tr></thead>
+                <tbody>
+                  <tr><td>Matemática</td><td><input type="number" min="0" max="20" value="17" step="1"></td></tr>
+                  <tr><td>Comunicación</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Inglés</td><td><input type="number" min="0" max="20" value="18" step="1"></td></tr>
+                  <tr><td>Ciencia y tecnología</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Ciencias sociales</td><td><input type="number" min="0" max="20" value="15" step="1"></td></tr>
+                  <tr><td>Desarrollo personal y cívica</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Educación física</td><td><input type="number" min="0" max="20" value="17" step="1"></td></tr>
+                  <tr><td>Educación para el trabajo</td><td><input type="number" min="0" max="20" value="15" step="1"></td></tr>
+                  <tr><td>Educación religiosa</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Arte y cultura</td><td><input type="number" min="0" max="20" value="17" step="1"></td></tr>
+                  <tr><td>Historia, geografía y economía</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Formación ciudadana y cívica</td><td><input type="number" min="0" max="20" value="15" step="1"></td></tr>
+                  <tr><td>Persona, familia y relaciones</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr><td>Castellano como segunda lengua</td><td><input type="number" min="0" max="20" value="" placeholder="—"></td></tr>
+                  <tr><td>Gestiona su aprendizaje</td><td><input type="number" min="0" max="20" value="" placeholder="—"></td></tr>
+                  <tr><td>Entornos virtuales TIC</td><td><input type="number" min="0" max="20" value="" placeholder="—"></td></tr>
+                  <tr class="average-row"><td>Promedio 2do</td><td>16.1</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="year-content" id="year-tercero" style="display:none;">
+              <table class="grades-table">
+                <thead><tr><th>Materia</th><th>Nota</th></tr></thead>
+                <tbody>
+                  <tr><td>Matemática</td><td><input type="number" min="0" max="20" value="17" step="1"></td></tr>
+                  <tr><td>Comunicación</td><td><input type="number" min="0" max="20" value="17" step="1"></td></tr>
+                  <tr><td>Inglés</td><td><input type="number" min="0" max="20" value="19" step="1"></td></tr>
+                  <tr><td>Ciencia y tecnología</td><td><input type="number" min="0" max="20" value="16" step="1"></td></tr>
+                  <tr class="average-row"><td>Promedio 3ro</td><td>16.4</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="year-content" id="year-cuarto" style="display:none;">
+              <table class="grades-table">
+                <thead><tr><th>Materia</th><th>Nota</th></tr></thead>
+                <tbody>
+                  <tr><td>Matemática</td><td><input type="number" min="0" max="20" value="18" step="1"></td></tr>
+                  <tr><td>Comunicación</td><td><input type="number" min="0" max="20" value="17" step="1"></td></tr>
+                  <tr class="average-row"><td>Promedio 4to</td><td>16.8</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="year-content" id="year-quinto" style="display:none;">
+              <table class="grades-table">
+                <thead><tr><th>Materia</th><th>Nota</th></tr></thead>
+                <tbody>
+                  <tr><td>Matemática</td><td><input type="number" min="0" max="20" placeholder="—" step="1"></td></tr>
+                  <tr><td>Comunicación</td><td><input type="number" min="0" max="20" placeholder="—" step="1"></td></tr>
+                  <tr class="average-row"><td>Promedio 5to</td><td>—</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+          </div>
+
+          <div class="field full mt-16">
+            <label>Comentarios sobre notas</label>
+            <textarea placeholder="Si hay discrepancias entre tus notas o usas una escala diferente, explica aquí..."></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ MOTIVACIÓN ═══════════ -->
+      <div class="section-content" id="section-motivacion" style="display:none;">
+        <div class="section-header">
+          <div class="section-eyebrow">Paso 5 de 8</div>
+          <h1>Motivación</h1>
+          <p>Comparte tu historia, intereses y por qué UWC es tu camino.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="field">
+            <label>¿Por qué quieres ir a un UWC? <span class="req">*</span></label>
+            <textarea placeholder="Cuenta con tus propias palabras qué te motiva..." rows="5"></textarea>
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="field">
+            <label>¿Por qué deberías ser seleccionado/a?</label>
+            <textarea placeholder="Describe qué te hace único/a..." rows="5"></textarea>
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="field">
+            <label>¿A qué colegio(s) UWC te gustaría ir?</label>
+            <textarea placeholder="Puedes nombrar hasta 3 colegios y por qué..." rows="3"></textarea>
+          </div>
+        </div>
+        <div class="form-group">
+          <div class="form-group-label">Hoja de vida</div>
+          <div class="field-grid">
+            <div class="field full"><label>Curso o actividad destacada</label><textarea rows="2" placeholder="Describe brevemente..."></textarea></div>
+            <div class="field full"><label>Reconocimiento destacado</label><textarea rows="2" placeholder="Logro, premio, o reconocimiento..."></textarea></div>
+            <div class="field full"><label>Área de conocimiento favorita</label><input type="text" placeholder="Ciencias, humanidades, arte..."></div>
+            <div class="field full"><label>Actividades en tiempo libre</label><textarea rows="2" placeholder="¿Qué haces cuando no estudias?"></textarea></div>
+            <div class="field full"><label>Tres palabras que te describen + ejemplo</label><textarea rows="3" placeholder="Escribe 3 palabras y un breve ejemplo de cada una..."></textarea></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ DOCUMENTOS ═══════════ -->
+      <div class="section-content" id="section-documentos" style="display:none;">
+        <div class="section-header">
+          <div class="section-eyebrow">Paso 6 de 8</div>
+          <h1>Documentos</h1>
+          <p>Sube los archivos solicitados para esta etapa. Formatos aceptados: PDF, PNG, JPG.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="form-group-label">Identidad</div>
+          <div class="field">
+            <label>Copia de DNI <span class="req">*</span></label>
+            <span class="hint" style="margin-bottom:8px;">Anverso y reverso, legible.</span>
+            <div class="uploaded-file">
+              <div class="file-icon">PDF</div>
+              <div class="file-info">
+                <div class="file-name">DNI_MariaJose_Quispe.pdf</div>
+                <div class="file-meta">1.2 MB · Subido 15 feb 2026</div>
+              </div>
+              <button class="file-remove" title="Eliminar">×</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="form-group-label">Académicos</div>
+          <div class="field">
+            <label>Certificado Oficial de Estudios <span class="req">*</span></label>
+            <span class="hint" style="margin-bottom:8px;">Documento académico principal.</span>
+            <div class="upload-zone" ondragover="event.preventDefault();this.classList.add('dragging')" ondragleave="this.classList.remove('dragging')" ondrop="event.preventDefault();this.classList.remove('dragging')">
+              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <p>Arrastra aquí o <strong>selecciona archivo</strong></p>
+              <div class="upload-hint">PDF, PNG, JPG · máx. 10 MB</div>
+            </div>
+          </div>
+          <div class="field mt-16">
+            <label>Archivo Excel de Promedio de Notas</label>
+            <span class="hint" style="margin-bottom:8px;">Formato de promedio UWC Perú.</span>
+            <div class="upload-zone" ondragover="event.preventDefault();this.classList.add('dragging')" ondragleave="this.classList.remove('dragging')">
+              <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+              <p>Arrastra aquí o <strong>selecciona archivo</strong></p>
+              <div class="upload-hint">PDF, PNG, JPG, XLS · máx. 10 MB</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="form-group-label">Pago</div>
+          <div class="field-grid">
+            <div class="field">
+              <label>Número de operación</label>
+              <input type="text" placeholder="Solo si corresponde pago regular">
+              <span class="hint">Solo si corresponde pago regular.</span>
+            </div>
+            <div class="field">
+              <label>¿Recibiste asistencia financiera?</label>
+              <div class="toggle-pill">
+                <button onclick="togglePill(this)">Sí</button>
+                <button class="selected" onclick="togglePill(this)">No</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ RECOMENDADORES ═══════════ -->
+      <div class="section-content" id="section-recomendadores" style="display:none;">
+        <div class="section-header">
+          <div class="section-eyebrow">Paso 7 de 8</div>
+          <h1>Recomendadores</h1>
+          <p>Registra un mentor y un amigo (no familiar). Les enviaremos una invitación por correo.</p>
+        </div>
+
+        <div class="form-group">
+          <div class="guardian-card">
+            <div class="guardian-header">
+              <div class="guardian-avatar" style="background:var(--success-soft);color:var(--success);">✓</div>
+              <div>
+                <div class="guardian-title">Tutor / Profesor / Mentor</div>
+                <div class="guardian-subtitle" style="color:var(--success);">Recomendación enviada</div>
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field"><label>Nombre</label><input type="text" value="Prof. Ana García Mendoza"></div>
+              <div class="field"><label>Correo</label><input type="email" value="ana.garcia@colegio.edu.pe"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <div class="guardian-card" style="border-color:var(--warning-soft);">
+            <div class="guardian-header">
+              <div class="guardian-avatar" style="background:var(--warning-soft);color:var(--warning);">⏳</div>
+              <div>
+                <div class="guardian-title">Amigo/a (no familiar)</div>
+                <div class="guardian-subtitle" style="color:var(--warning);">Pendiente — invitación no enviada</div>
+              </div>
+            </div>
+            <div class="field-grid">
+              <div class="field"><label>Nombre</label><input type="text" placeholder="Nombre completo"></div>
+              <div class="field"><label>Correo</label><input type="email" placeholder="correo@ejemplo.com"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ REVISIÓN ═══════════ -->
+      <div class="section-content" id="section-revision" style="display:none;">
+        <div class="section-header">
+          <div class="section-eyebrow">Paso 8 de 8</div>
+          <h1>Revisión y envío</h1>
+          <p>Revisa que toda la información esté correcta antes de enviar tu postulación.</p>
+        </div>
+        <div class="form-group">
+          <p style="font-size:0.9rem;color:var(--ink-light);line-height:1.7;">
+            Esta sección mostraría un resumen compacto de todas las secciones completadas,
+            con la opción de expandir/editar cada una directamente, y un botón final de envío.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<!-- Action Bar -->
+<div class="action-bar" id="actionBar">
+  <div style="display:flex;gap:8px;">
+    <button class="btn btn-ghost" id="btnPrev" onclick="prevSection()">← Anterior</button>
+    <button class="btn btn-save" onclick="saveDraft()">Guardar borrador</button>
+  </div>
+  <button class="btn btn-primary" id="btnNext" onclick="nextSection()">Siguiente →</button>
+</div>
+
+<script>
+const sections = [
+  'elegibilidad', 'datos-personales', 'familia', 'colegio',
+  'motivacion', 'documentos', 'recomendadores', 'revision'
+];
+let currentIndex = 3; // Start on Colegio y notas
+
+function showSection(index) {
+  // Hide all
+  sections.forEach(function(s) {
+    var el = document.getElementById('section-' + s);
+    if (el) el.style.display = 'none';
+  });
+
+  // Show target
+  var target = document.getElementById('section-' + sections[index]);
+  if (target) {
+    target.style.display = 'block';
+    // Re-trigger animation
+    target.style.animation = 'none';
+    target.offsetHeight; // reflow
+    target.style.animation = '';
+  }
+
+  // Update sidebar
+  document.querySelectorAll('.sidebar-nav-item').forEach(function(item, i) {
+    item.classList.remove('active');
+    if (i === index) item.classList.add('active');
+  });
+
+  // Update buttons
+  document.getElementById('btnPrev').style.visibility = index === 0 ? 'hidden' : 'visible';
+  document.getElementById('btnNext').textContent = index === sections.length - 1 ? 'Enviar postulación' : 'Siguiente →';
+
+  currentIndex = index;
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function nextSection() {
+  if (currentIndex < sections.length - 1) showSection(currentIndex + 1);
+}
+
+function prevSection() {
+  if (currentIndex > 0) showSection(currentIndex - 1);
+}
+
+// Sidebar nav clicks
+document.querySelectorAll('.sidebar-nav-item').forEach(function(item, i) {
+  item.addEventListener('click', function() { showSection(i); });
+});
+
+// Toggle pill
+function togglePill(btn) {
+  var parent = btn.parentElement;
+  parent.querySelectorAll('button').forEach(function(b) { b.classList.remove('selected'); });
+  btn.classList.add('selected');
+}
+
+// Year tabs
+function switchYear(tab) {
+  document.querySelectorAll('.year-tab').forEach(function(t) { t.classList.remove('active'); });
+  tab.classList.add('active');
+  document.querySelectorAll('.year-content').forEach(function(c) { c.style.display = 'none'; });
+  var yearId = 'year-' + tab.dataset.year;
+  var yearEl = document.getElementById(yearId);
+  if (yearEl) {
+    yearEl.style.display = 'block';
+    yearEl.style.animation = 'none';
+    yearEl.offsetHeight;
+    yearEl.style.animation = 'fadeUp 0.25s ease';
+  }
+}
+
+// Save draft visual
+function saveDraft() {
+  var saveEl = document.querySelector('.topbar-save');
+  saveEl.innerHTML = '<span class="dot" style="background:var(--warning);"></span> Guardando...';
+  setTimeout(function() {
+    saveEl.innerHTML = '<span class="dot"></span> Borrador guardado ahora';
+  }, 800);
+}
+
+// Init
+showSection(currentIndex);
+</script>
+
+</body>
+</html>

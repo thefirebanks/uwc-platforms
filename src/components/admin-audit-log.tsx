@@ -19,6 +19,7 @@ import {
 } from "@mui/material";
 import type { AuditEventListItem } from "@/lib/server/audit-service";
 import { ErrorCallout } from "@/components/error-callout";
+import { useAppLanguage } from "@/components/language-provider";
 
 interface ApiError {
   message: string;
@@ -115,6 +116,7 @@ function shortId(value: string | null) {
 }
 
 export function AdminAuditLog() {
+  const { t } = useAppLanguage();
   const [filters, setFilters] = useState<AuditFiltersForm>(defaultFormFilters);
   const [applied, setApplied] = useState<AppliedFilters>({
     ...defaultFormFilters,
@@ -203,13 +205,13 @@ export function AdminAuditLog() {
             justifyContent="space-between"
           >
             <Box>
-              <Typography variant="h5">Auditoría del proceso</Typography>
+              <Typography variant="h5">{t("audit.title")}</Typography>
               <Typography color="text.secondary">
-                Revisa acciones críticas (validaciones, transiciones, envíos y reportes).
+                {t("audit.description")}
               </Typography>
             </Box>
             <Button component="a" href={exportHref} variant="outlined">
-              Exportar CSV
+              {t("audit.exportCsv")}
             </Button>
           </Stack>
         </CardContent>
@@ -223,19 +225,19 @@ export function AdminAuditLog() {
             <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
               <TextField
                 select
-                label="Acción"
+                label={t("audit.action")}
                 value={filters.action}
                 onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))}
                 size="small"
               >
                 {actionOptions.map((action) => (
                   <MenuItem key={action || "all"} value={action}>
-                    {action || "Todas las acciones"}
+                    {action || t("audit.allActions")}
                   </MenuItem>
                 ))}
               </TextField>
               <TextField
-                label="Request ID"
+                label={t("audit.requestId")}
                 value={filters.requestId}
                 onChange={(event) =>
                   setFilters((current) => ({ ...current, requestId: event.target.value }))
@@ -243,7 +245,7 @@ export function AdminAuditLog() {
                 size="small"
               />
               <TextField
-                label="ID postulación"
+                label={t("audit.applicationId")}
                 value={filters.applicationId}
                 onChange={(event) =>
                   setFilters((current) => ({ ...current, applicationId: event.target.value }))
@@ -251,7 +253,7 @@ export function AdminAuditLog() {
                 size="small"
               />
               <TextField
-                label="ID actor"
+                label={t("audit.actorId")}
                 value={filters.actorId}
                 onChange={(event) => setFilters((current) => ({ ...current, actorId: event.target.value }))}
                 size="small"
@@ -259,7 +261,7 @@ export function AdminAuditLog() {
             </Stack>
             <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems="center">
               <TextField
-                label="Desde"
+                label={t("audit.from")}
                 type="datetime-local"
                 value={filters.from}
                 onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))}
@@ -267,7 +269,7 @@ export function AdminAuditLog() {
                 InputLabelProps={{ shrink: true }}
               />
               <TextField
-                label="Hasta"
+                label={t("audit.to")}
                 type="datetime-local"
                 value={filters.to}
                 onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))}
@@ -276,7 +278,7 @@ export function AdminAuditLog() {
               />
               <TextField
                 select
-                label="Filas por página"
+                label={t("audit.rowsPerPage")}
                 value={String(applied.pageSize)}
                 onChange={(event) =>
                   setApplied((current) => ({
@@ -293,10 +295,10 @@ export function AdminAuditLog() {
                 <MenuItem value="100">100</MenuItem>
               </TextField>
               <Button variant="contained" onClick={applyFilters}>
-                Buscar
+                {t("audit.search")}
               </Button>
               <Button variant="text" onClick={clearFilters}>
-                Limpiar
+                {t("audit.clear")}
               </Button>
             </Stack>
           </Stack>
@@ -306,33 +308,37 @@ export function AdminAuditLog() {
       <Card>
         <CardContent>
           <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-            <Typography variant="h6">Eventos</Typography>
+            <Typography variant="h6">{t("audit.events")}</Typography>
             <Typography color="text.secondary">
-              Total: {total} | Página {applied.page} de {Math.max(totalPages, 1)}
+              {t("audit.totalPage", {
+                total,
+                page: applied.page,
+                pages: Math.max(totalPages, 1),
+              })}
             </Typography>
           </Stack>
 
           {isLoading ? (
             <Stack direction="row" spacing={1} alignItems="center">
               <CircularProgress size={18} />
-              <Typography color="text.secondary">Cargando auditoría...</Typography>
+              <Typography color="text.secondary">{t("audit.loading")}</Typography>
             </Stack>
           ) : (
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Fecha</TableCell>
-                  <TableCell>Acción</TableCell>
-                  <TableCell>Request ID</TableCell>
-                  <TableCell>Postulación</TableCell>
-                  <TableCell>Actor</TableCell>
-                  <TableCell>Metadata</TableCell>
+                  <TableCell>{t("audit.date")}</TableCell>
+                  <TableCell>{t("audit.action")}</TableCell>
+                  <TableCell>{t("audit.requestId")}</TableCell>
+                  <TableCell>{t("audit.application")}</TableCell>
+                  <TableCell>{t("audit.actor")}</TableCell>
+                  <TableCell>{t("audit.metadata")}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {events.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6}>No hay eventos para los filtros seleccionados.</TableCell>
+                    <TableCell colSpan={6}>{t("audit.empty")}</TableCell>
                   </TableRow>
                 ) : (
                   events.map((event) => (
@@ -371,14 +377,14 @@ export function AdminAuditLog() {
               disabled={isLoading || applied.page <= 1}
               onClick={() => goToPage(applied.page - 1)}
             >
-              Anterior
+              {t("audit.previous")}
             </Button>
             <Button
               variant="outlined"
               disabled={isLoading || totalPages === 0 || applied.page >= totalPages}
               onClick={() => goToPage(applied.page + 1)}
             >
-              Siguiente
+              {t("audit.next")}
             </Button>
           </Stack>
         </CardContent>

@@ -13,6 +13,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import { useAppLanguage } from "@/components/language-provider";
 import type { SelectionProcess } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 
@@ -27,7 +28,7 @@ interface ApiError {
 
 function formatDate(value: string | null) {
   if (!value) {
-    return "No configurada";
+    return null;
   }
 
   return new Date(value).toLocaleDateString();
@@ -38,9 +39,11 @@ export function AdminProcessesDashboard({
 }: {
   initialProcesses: ProcessSummary[];
 }) {
+  const { t } = useAppLanguage();
   const router = useRouter();
   const [processes, setProcesses] = useState(initialProcesses);
-  const [name, setName] = useState("Proceso de Selección 2027");
+  const initialYear = String(new Date().getFullYear() + 1);
+  const [name, setName] = useState(t("adminProcesses.defaultName", { year: initialYear }));
   const [year, setYear] = useState(String(new Date().getFullYear() + 1));
   const [setAsActive, setSetAsActive] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
@@ -83,8 +86,8 @@ export function AdminProcessesDashboard({
 
       const created = body.cycle as SelectionProcess;
       setProcesses((current) => [{ ...created, applicationCount: 0 }, ...current]);
-      setStatusMessage("Proceso creado correctamente.");
-      setName(`Proceso de Selección ${parsedYear + 1}`);
+      setStatusMessage(t("adminProcesses.createdSuccess"));
+      setName(t("adminProcesses.defaultName", { year: parsedYear + 1 }));
       setYear(String(parsedYear + 1));
       setSetAsActive(false);
       router.refresh();
@@ -115,7 +118,7 @@ export function AdminProcessesDashboard({
         process.id === id ? { ...process, is_active: true } : { ...process, is_active: false },
       ),
     );
-    setStatusMessage(`Proceso activo actualizado: ${updated.name}`);
+    setStatusMessage(t("adminProcesses.updatedActive", { name: updated.name }));
     router.refresh();
   }
 
@@ -123,9 +126,9 @@ export function AdminProcessesDashboard({
     <Stack spacing={3}>
       <Card>
         <CardContent>
-          <Typography variant="h5">Dashboard de procesos de selección</Typography>
+          <Typography variant="h5">{t("adminProcesses.title")}</Typography>
           <Typography color="text.secondary">
-            Crea y gestiona procesos anuales. Desde cada proceso puedes configurar fechas y revisar postulaciones.
+            {t("adminProcesses.description")}
           </Typography>
         </CardContent>
       </Card>
@@ -141,17 +144,17 @@ export function AdminProcessesDashboard({
       <Card>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 2 }}>
-            Crear nuevo proceso
+            {t("adminProcesses.create")}
           </Typography>
           <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
             <TextField
-              label="Nombre del proceso"
+              label={t("adminProcesses.processName")}
               value={name}
               onChange={(event) => setName(event.target.value)}
               fullWidth
             />
             <TextField
-              label="Año"
+              label={t("adminProcesses.year")}
               type="number"
               value={year}
               onChange={(event) => setYear(event.target.value)}
@@ -159,10 +162,10 @@ export function AdminProcessesDashboard({
             />
             <Stack direction="row" spacing={1} alignItems="center">
               <Switch checked={setAsActive} onChange={(event) => setSetAsActive(event.target.checked)} />
-              <Typography>Activar al crear</Typography>
+              <Typography>{t("adminProcesses.activateOnCreate")}</Typography>
             </Stack>
             <Button variant="contained" onClick={createProcess} disabled={isSubmitting}>
-              Crear proceso
+              {t("adminProcesses.createButton")}
             </Button>
           </Stack>
         </CardContent>
@@ -171,7 +174,7 @@ export function AdminProcessesDashboard({
       <Card>
         <CardContent>
           <Typography variant="h6" sx={{ mb: 2 }}>
-            Procesos disponibles
+            {t("adminProcesses.available")}
           </Typography>
           <Stack spacing={2}>
             {orderedProcesses.map((process) => (
@@ -191,25 +194,27 @@ export function AdminProcessesDashboard({
                 >
                   <Box>
                     <Typography variant="subtitle1" fontWeight={700}>
-                      {process.name} {process.is_active ? "(Activo)" : ""}
+                      {process.name} {process.is_active ? `(${t("state.active")})` : ""}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Postulaciones: {process.applicationCount}
+                      {t("adminProcesses.applications", { count: process.applicationCount })}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Stage 1: {formatDate(process.stage1_open_at)} - {formatDate(process.stage1_close_at)}
+                      Stage 1: {formatDate(process.stage1_open_at) ?? t("date.notConfigured")} -{" "}
+                      {formatDate(process.stage1_close_at) ?? t("date.notConfigured")}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      Stage 2: {formatDate(process.stage2_open_at)} - {formatDate(process.stage2_close_at)}
+                      Stage 2: {formatDate(process.stage2_open_at) ?? t("date.notConfigured")} -{" "}
+                      {formatDate(process.stage2_close_at) ?? t("date.notConfigured")}
                     </Typography>
                   </Box>
                   <Stack direction="row" spacing={1}>
                     <Button component={Link} href={`/admin/process/${process.id}`} variant="outlined">
-                      Gestionar proceso
+                      {t("adminProcesses.manageProcess")}
                     </Button>
                     {!process.is_active ? (
                       <Button variant="text" onClick={() => activateProcess(process.id)}>
-                        Marcar activo
+                        {t("adminProcesses.markActive")}
                       </Button>
                     ) : null}
                   </Stack>

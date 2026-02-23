@@ -1,6 +1,6 @@
 import { createTheme, type PaletteMode } from "@mui/material/styles";
 
-const borderRadius = 6;
+const borderRadius = 8;
 
 const lightColors = {
   uwcMaroon: "#9A2545",
@@ -13,9 +13,9 @@ const lightColors = {
   surface: "#FFFFFF",
   cream: "#FBF7F4",
   sand: "#EBE6E0",
-  muted: "#7A7572",
+  muted: "#9A9590",
   success: "#2D6A4F",
-  successSoft: "#EBF5F0",
+  successSoft: "#E8F5EE",
   warning: "#B45309",
   warningSoft: "#FEF3C7",
   menuShadow: "0 4px 12px rgba(44, 40, 37, 0.08)",
@@ -82,7 +82,7 @@ export function createAppTheme(mode: PaletteMode = "light") {
       borderRadius,
     },
     typography: {
-      fontFamily: "var(--font-inter), 'Inter', -apple-system, sans-serif",
+      fontFamily: "var(--font-body, 'DM Sans'), -apple-system, sans-serif",
       h1: {
         fontFamily: "var(--font-newsreader), 'Newsreader', Georgia, serif",
         fontWeight: 400,
@@ -178,9 +178,9 @@ export function createAppTheme(mode: PaletteMode = "light") {
           },
           outlined: {
             borderColor: colors.sand,
-            borderWidth: "1.5px",
+            borderWidth: "1px",
             "&:hover": {
-              borderWidth: "1.5px",
+              borderWidth: "1px",
               borderColor: colors.muted,
               backgroundColor: colors.cream,
             },
@@ -206,17 +206,7 @@ export function createAppTheme(mode: PaletteMode = "light") {
             fontWeight: 500,
             position: "relative",
             "&:hover": {
-              backgroundColor: colors.uwcMaroonSoft,
-            },
-            "&::after": {
-              content: '""',
-              position: "absolute",
-              bottom: 6,
-              left: 16,
-              right: 16,
-              height: "1px",
-              backgroundColor: "currentColor",
-              opacity: 0.3,
+              backgroundColor: colors.cream,
             },
           },
           textPrimary: {
@@ -252,9 +242,17 @@ export function createAppTheme(mode: PaletteMode = "light") {
             "& .MuiOutlinedInput-root": {
               backgroundColor: colors.surface,
               borderRadius,
+              fontSize: "0.85rem",
+              "& .MuiOutlinedInput-input": {
+                padding: "9px 12px",
+              },
+              "& .MuiOutlinedInput-input::placeholder": {
+                fontWeight: 300,
+              },
               "& fieldset": {
                 borderColor: colors.sand,
                 borderWidth: "1.5px",
+                transition: "border-color 0.15s, box-shadow 0.15s",
               },
               "&:hover fieldset": {
                 borderColor: colors.muted,
@@ -262,6 +260,7 @@ export function createAppTheme(mode: PaletteMode = "light") {
               "&.Mui-focused fieldset": {
                 borderColor: colors.uwcMaroon,
                 borderWidth: "1.5px",
+                boxShadow: `0 0 0 3px rgba(154, 37, 69, 0.08)`,
               },
             },
           },
@@ -272,9 +271,17 @@ export function createAppTheme(mode: PaletteMode = "light") {
           root: {
             backgroundColor: colors.surface,
             borderRadius,
+            fontSize: "0.85rem",
+            "& .MuiOutlinedInput-input": {
+              padding: "9px 12px",
+            },
+            "& .MuiOutlinedInput-input::placeholder": {
+              fontWeight: 300,
+            },
             "& fieldset": {
               borderColor: colors.sand,
               borderWidth: "1.5px",
+              transition: "border-color 0.15s, box-shadow 0.15s",
             },
             "&:hover fieldset": {
               borderColor: colors.muted,
@@ -282,6 +289,7 @@ export function createAppTheme(mode: PaletteMode = "light") {
             "&.Mui-focused fieldset": {
               borderColor: colors.uwcMaroon,
               borderWidth: "1.5px",
+              boxShadow: `0 0 0 3px rgba(154, 37, 69, 0.08)`,
             },
           },
         },
@@ -296,9 +304,9 @@ export function createAppTheme(mode: PaletteMode = "light") {
       MuiInputLabel: {
         styleOverrides: {
           root: {
-            color: colors.muted,
+            color: colors.ink,
             fontWeight: 500,
-            fontSize: "0.875rem",
+            fontSize: "0.78rem",
           },
         },
       },
@@ -312,6 +320,14 @@ export function createAppTheme(mode: PaletteMode = "light") {
             fontSize: "0.875rem",
             fontWeight: 500,
             marginLeft: 8,
+          },
+        },
+      },
+      MuiFormHelperText: {
+        styleOverrides: {
+          root: {
+            fontSize: "0.7rem",
+            marginTop: 3,
           },
         },
       },

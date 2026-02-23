@@ -3,7 +3,6 @@
 :root {
   /* Typography */
   --font-display: var(--font-newsreader);
-  --font-body: var(--font-inter);
 
   /* UWC Brand Colors */
   --uwc-maroon: #9A2545;
@@ -14,19 +13,31 @@
 
   /* Warm Neutrals */
   --ink: #2C2825;
+  --ink-light: #5A5450;
   --paper: #FFFBF8;
   --cream: #FBF7F4;
   --sand: #EBE6E0;
-  --muted: #7A7572;
+  --sand-light: #F3EFEB;
+  --muted: #9A9590;
+  --surface: #FFFFFF;
 
   /* Status Colors */
   --success: #2D6A4F;
-  --success-soft: #EBF5F0;
+  --success-soft: #E8F5EE;
   --warning: #B45309;
   --warning-soft: #FEF3C7;
 
   /* Spacing & Radius */
-  --radius: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+
+  /* Layout */
+  --sidebar-width: 280px;
+  --topbar-height: 56px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(44, 40, 37, 0.04);
+  --shadow-md: 0 2px 8px rgba(44, 40, 37, 0.06), 0 1px 2px rgba(44, 40, 37, 0.04);
 }
 
 :root[data-theme="dark"] {
@@ -37,19 +48,31 @@
   --uwc-blue-soft: rgba(92, 157, 210, 0.18);
 
   --ink: #F2ECE7;
+  --ink-light: #C0B8B2;
   --paper: #141313;
   --cream: #23201E;
   --sand: #3B3532;
+  --sand-light: #2E2A28;
   --muted: #B8AEA8;
+  --surface: #1D1B1A;
 
   --success: #56B589;
   --success-soft: rgba(86, 181, 137, 0.16);
   --warning: #E6A65C;
   --warning-soft: rgba(230, 166, 92, 0.18);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.12);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 html,
@@ -57,10 +80,11 @@ body {
   margin: 0;
   padding: 0;
   min-height: 100%;
-  font-family: var(--font-body), -apple-system, sans-serif;
+  font-family: var(--font-body, "DM Sans"), -apple-system, sans-serif;
   background-color: var(--paper);
   color: var(--ink);
-  line-height: 1.6;
+  line-height: 1.55;
+  overflow-x: hidden;
   transition: background-color 160ms ease, color 160ms ease;
 }
 
@@ -119,4 +143,41 @@ a {
 
 .action-link:hover {
   text-decoration-color: var(--uwc-maroon);
+}
+
+/* Section transition animations */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--sand);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
 }
