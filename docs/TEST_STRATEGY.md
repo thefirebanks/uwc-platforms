@@ -68,6 +68,8 @@ Every feature ships with tests at the most appropriate level. No feature is cons
   - `tests/components/error-callout.test.tsx`
 - Audit filtering/export helpers:
   - `tests/unit/audit-service.test.ts`
+- Application export filters/csv/file normalization:
+  - `tests/unit/exports-service.test.ts`
 - Smoke E2E:
   - `tests/e2e/home.spec.ts`
   - `tests/e2e/access-control.spec.ts`

@@ -14,6 +14,7 @@ Build a faster, cleaner, easier-to-use platform for UWC Peru selection process m
   - process templates with editable labels/milestones and timeline dates
   - stage-level configurable form fields and required documents
   - Stage 1 default field catalog aligned to official UWC PDF form inventory
+  - Sectioned Stage 1 applicant wizard with autosave drafts and per-section progress
   - stage-level configurable automation templates (email)
 - Stage model:
   - `documents` (Stage 1, full flow)
@@ -29,7 +30,8 @@ Build a faster, cleaner, easier-to-use platform for UWC Peru selection process m
   - Admin validation (`eligible`, `ineligible`)
   - Admin stage transitions
   - Exam CSV import
-  - CSV export
+  - Export individual por postulante (JSON estructurado)
+  - Export masivo filtrado por proceso/etapa/estado/elegibilidad (CSV)
   - Communication queue lifecycle controls (queue, process, retry, status visibility)
   - Real email sending from queue via provider integration
   - OCR validation execution + confidence/history visibility per application

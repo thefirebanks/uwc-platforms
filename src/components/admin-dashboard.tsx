@@ -3,6 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   Button,
   Card,
@@ -18,6 +21,7 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import type {
   Application,
   ApplicationOcrCheck,
@@ -34,6 +38,10 @@ interface ApiError {
   message: string;
   errorId?: string;
 }
+
+type StageFilter = StageCode | "all";
+type StatusFilter = Application["status"] | "all";
+type EligibilityFilter = "all" | "eligible" | "ineligible" | "pending" | "advanced";
 
 const EMPTY_COMMUNICATION_SUMMARY = {
   queued: 0,
@@ -117,6 +125,9 @@ export function AdminDashboard({
   const [selectedOcrApplicationId, setSelectedOcrApplicationId] = useState<string | null>(null);
   const [ocrChecks, setOcrChecks] = useState<ApplicationOcrCheck[]>([]);
   const [isOcrHistoryLoading, setIsOcrHistoryLoading] = useState(false);
+  const [stageFilter, setStageFilter] = useState<StageFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [eligibilityFilter, setEligibilityFilter] = useState<EligibilityFilter>("all");
 
   const orderedApplications = useMemo(
     () => [...applications].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
@@ -149,6 +160,56 @@ export function AdminDashboard({
 
     return counts;
   }, [applications]);
+  const filteredApplications = useMemo(() => {
+    return orderedApplications.filter((application) => {
+      if (stageFilter !== "all" && application.stage_code !== stageFilter) {
+        return false;
+      }
+
+      if (statusFilter !== "all" && application.status !== statusFilter) {
+        return false;
+      }
+
+      if (eligibilityFilter === "eligible" && application.status !== "eligible") {
+        return false;
+      }
+
+      if (eligibilityFilter === "ineligible" && application.status !== "ineligible") {
+        return false;
+      }
+
+      if (eligibilityFilter === "advanced" && application.status !== "advanced") {
+        return false;
+      }
+
+      if (
+        eligibilityFilter === "pending" &&
+        application.status !== "draft" &&
+        application.status !== "submitted"
+      ) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [eligibilityFilter, orderedApplications, stageFilter, statusFilter]);
+  const exportCsvHref = useMemo(() => {
+    const query = new URLSearchParams({
+      cycleId: cycle.id,
+    });
+
+    if (stageFilter !== "all") {
+      query.set("stageCode", stageFilter);
+    }
+
+    if (statusFilter !== "all") {
+      query.set("status", statusFilter);
+    } else if (eligibilityFilter !== "all") {
+      query.set("eligibility", eligibilityFilter);
+    }
+
+    return `/api/exports?${query.toString()}`;
+  }, [cycle.id, eligibilityFilter, stageFilter, statusFilter]);
 
   async function refreshData() {
     const response = await fetch(`/api/applications?cycleId=${cycle.id}`);
@@ -591,11 +652,77 @@ export function AdminDashboard({
 
       <Card>
         <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+          <Stack
+            direction={{ xs: "column", md: "row" }}
+            justifyContent="space-between"
+            alignItems={{ xs: "stretch", md: "center" }}
+            spacing={1}
+            sx={{ mb: 2 }}
+          >
             <Typography variant="h6">Postulaciones</Typography>
-            <Button onClick={refreshData} variant="outlined">
-              Refrescar
-            </Button>
+            <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
+              <Button component="a" href={exportCsvHref} variant="outlined">
+                Exportar CSV filtrado
+              </Button>
+              <Button onClick={refreshData} variant="outlined">
+                Refrescar
+              </Button>
+            </Stack>
+          </Stack>
+          <Stack direction={{ xs: "column", md: "row" }} spacing={1.2} sx={{ mb: 2 }}>
+            <TextField
+              select
+              size="small"
+              label="Etapa"
+              value={stageFilter}
+              onChange={(event) => setStageFilter(event.target.value as StageFilter)}
+              sx={{ minWidth: 160 }}
+            >
+              <MenuItem value="all">Todas</MenuItem>
+              <MenuItem value="documents">Stage 1</MenuItem>
+              <MenuItem value="exam_placeholder">Stage 2</MenuItem>
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Estado"
+              value={statusFilter}
+              onChange={(event) => {
+                const next = event.target.value as StatusFilter;
+                setStatusFilter(next);
+                if (next !== "all") {
+                  setEligibilityFilter("all");
+                }
+              }}
+              sx={{ minWidth: 170 }}
+            >
+              <MenuItem value="all">Todos</MenuItem>
+              <MenuItem value="draft">Borrador</MenuItem>
+              <MenuItem value="submitted">Enviada</MenuItem>
+              <MenuItem value="eligible">Elegible</MenuItem>
+              <MenuItem value="ineligible">No elegible</MenuItem>
+              <MenuItem value="advanced">Avanzada</MenuItem>
+            </TextField>
+            <TextField
+              select
+              size="small"
+              label="Elegibilidad"
+              value={eligibilityFilter}
+              onChange={(event) => {
+                const next = event.target.value as EligibilityFilter;
+                setEligibilityFilter(next);
+                if (next !== "all") {
+                  setStatusFilter("all");
+                }
+              }}
+              sx={{ minWidth: 190 }}
+            >
+              <MenuItem value="all">Todas</MenuItem>
+              <MenuItem value="pending">Pendiente de decisión</MenuItem>
+              <MenuItem value="eligible">Elegible</MenuItem>
+              <MenuItem value="ineligible">No elegible</MenuItem>
+              <MenuItem value="advanced">Avanzada</MenuItem>
+            </TextField>
           </Stack>
           <Table size="small">
             <TableHead>
@@ -608,76 +735,92 @@ export function AdminDashboard({
               </TableRow>
             </TableHead>
             <TableBody>
-              {orderedApplications.map((application) => (
-                <TableRow key={application.id}>
-                  <TableCell sx={{ fontFamily: "monospace" }}>{application.id.slice(0, 8)}</TableCell>
-                  <TableCell>
-                    <StageBadge stage={application.stage_code} />
-                  </TableCell>
-                  <TableCell>{application.status}</TableCell>
-                  <TableCell>{new Date(application.updated_at).toLocaleString()}</TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        color="success"
-                        onClick={() => validateApplication(application.id, "eligible")}
-                      >
-                        Elegible
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        color="warning"
-                        onClick={() => validateApplication(application.id, "ineligible")}
-                      >
-                        No elegible
-                      </Button>
-                      <TextField
-                        select
-                        size="small"
-                        value={application.stage_code}
-                        onChange={(event) =>
-                          transition(application.id, event.target.value as StageCode)
-                        }
-                      >
-                        <MenuItem value="documents">Stage 1</MenuItem>
-                        <MenuItem
-                          value="exam_placeholder"
-                          disabled={
-                            !canTransition({
-                              fromStage: application.stage_code,
-                              toStage: "exam_placeholder",
-                              status: application.status,
-                            })
-                          }
-                        >
-                          Stage 2 placeholder
-                        </MenuItem>
-                      </TextField>
-                      <Button
-                        variant="text"
-                        size="small"
-                        onClick={() => void loadOcrHistory(application.id)}
-                      >
-                        {selectedOcrApplicationId === application.id ? "Ocultar OCR" : "Ver OCR"}
-                      </Button>
-                      <Button
-                        variant="outlined"
-                        size="small"
-                        onClick={() => void runOcrValidation(application)}
-                        disabled={
-                          !getDefaultOcrFileKey(application) ||
-                          ocrLoadingApplicationId === application.id
-                        }
-                      >
-                        {ocrLoadingApplicationId === application.id ? "OCR..." : "OCR"}
-                      </Button>
-                    </Stack>
+              {filteredApplications.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    No hay postulaciones para los filtros seleccionados.
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredApplications.map((application) => (
+                  <TableRow key={application.id}>
+                    <TableCell sx={{ fontFamily: "monospace" }}>{application.id.slice(0, 8)}</TableCell>
+                    <TableCell>
+                      <StageBadge stage={application.stage_code} />
+                    </TableCell>
+                    <TableCell>{application.status}</TableCell>
+                    <TableCell>{new Date(application.updated_at).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          color="success"
+                          onClick={() => validateApplication(application.id, "eligible")}
+                        >
+                          Elegible
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          color="warning"
+                          onClick={() => validateApplication(application.id, "ineligible")}
+                        >
+                          No elegible
+                        </Button>
+                        <TextField
+                          select
+                          size="small"
+                          value={application.stage_code}
+                          onChange={(event) =>
+                            transition(application.id, event.target.value as StageCode)
+                          }
+                        >
+                          <MenuItem value="documents">Stage 1</MenuItem>
+                          <MenuItem
+                            value="exam_placeholder"
+                            disabled={
+                              !canTransition({
+                                fromStage: application.stage_code,
+                                toStage: "exam_placeholder",
+                                status: application.status,
+                              })
+                            }
+                          >
+                            Stage 2 placeholder
+                          </MenuItem>
+                        </TextField>
+                        <Button
+                          variant="text"
+                          size="small"
+                          onClick={() => void loadOcrHistory(application.id)}
+                        >
+                          {selectedOcrApplicationId === application.id ? "Ocultar OCR" : "Ver OCR"}
+                        </Button>
+                        <Button
+                          variant="outlined"
+                          size="small"
+                          onClick={() => void runOcrValidation(application)}
+                          disabled={
+                            !getDefaultOcrFileKey(application) ||
+                            ocrLoadingApplicationId === application.id
+                          }
+                        >
+                          {ocrLoadingApplicationId === application.id ? "OCR..." : "OCR"}
+                        </Button>
+                        <Button
+                          component="a"
+                          href={`/api/exports?applicationId=${application.id}`}
+                          variant="text"
+                          size="small"
+                        >
+                          Exportar JSON
+                        </Button>
+                      </Stack>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -725,92 +868,111 @@ export function AdminDashboard({
         </Card>
       ) : null}
 
-      <Card>
-        <CardContent>
-          <Typography variant="h6">Importación de examen externo</Typography>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Pega tu CSV con columnas: applicant_email, score, passed.
-          </Typography>
-          <Typography color="text.secondary" variant="body2" sx={{ mb: 1.5 }}>
-            Este módulo está en modo demo: muestra resumen de importación sin persistir notas de examen.
-          </Typography>
-          <TextField
-            value={csvData}
-            onChange={(event) => setCsvData(event.target.value)}
-            multiline
-            minRows={4}
-            fullWidth
-          />
-          <Button variant="outlined" sx={{ mt: 2 }} onClick={importExamCsv}>
-            Importar CSV
-          </Button>
-        </CardContent>
-      </Card>
+      <Accordion>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography variant="h6">Operaciones avanzadas</Typography>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Stack spacing={2}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6">Importación de examen externo</Typography>
+                <Typography color="text.secondary" sx={{ mb: 2 }}>
+                  Pega tu CSV con columnas: applicant_email, score, passed.
+                </Typography>
+                <Typography color="text.secondary" variant="body2" sx={{ mb: 1.5 }}>
+                  Este módulo está en modo demo: muestra resumen de importación sin persistir notas de examen.
+                </Typography>
+                <TextField
+                  value={csvData}
+                  onChange={(event) => setCsvData(event.target.value)}
+                  multiline
+                  minRows={4}
+                  fullWidth
+                />
+                <Button variant="outlined" sx={{ mt: 2 }} onClick={importExamCsv}>
+                  Importar CSV
+                </Button>
+              </CardContent>
+            </Card>
 
-      <Card>
-        <CardContent>
-          <Typography variant="h6">Comunicaciones</Typography>
-          <Typography color="text.secondary" sx={{ mb: 1.5 }}>
-            Registra correos en cola y ejecútalos con envío real (proveedor configurado).
-          </Typography>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={1} useFlexGap flexWrap="wrap" sx={{ mb: 1.5 }}>
-            <Chip label={`Cola: ${communicationSummary.queued}`} />
-            <Chip label={`Procesando: ${communicationSummary.processing}`} />
-            <Chip label={`Enviadas: ${communicationSummary.sent}`} color="success" />
-            <Chip label={`Fallidas: ${communicationSummary.failed}`} color="warning" />
+            <Card>
+              <CardContent>
+                <Typography variant="h6">Comunicaciones</Typography>
+                <Typography color="text.secondary" sx={{ mb: 1.5 }}>
+                  Registra correos en cola y ejecútalos con envío real (proveedor configurado).
+                </Typography>
+                <Stack
+                  direction={{ xs: "column", md: "row" }}
+                  spacing={1}
+                  useFlexGap
+                  flexWrap="wrap"
+                  sx={{ mb: 1.5 }}
+                >
+                  <Chip label={`Cola: ${communicationSummary.queued}`} />
+                  <Chip label={`Procesando: ${communicationSummary.processing}`} />
+                  <Chip label={`Enviadas: ${communicationSummary.sent}`} color="success" />
+                  <Chip label={`Fallidas: ${communicationSummary.failed}`} color="warning" />
+                </Stack>
+                <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
+                  <Button variant="contained" onClick={sendStatusEmails}>
+                    Enviar resultados
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void processCommunications("queued")}
+                    disabled={processingTargetStatus !== null}
+                  >
+                    {processingTargetStatus === "queued" ? "Procesando..." : "Procesar cola"}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => void processCommunications("failed")}
+                    disabled={processingTargetStatus !== null}
+                  >
+                    {processingTargetStatus === "failed" ? "Reintentando..." : "Reintentar fallidas"}
+                  </Button>
+                  <Button
+                    variant="text"
+                    onClick={() => void refreshCommunications()}
+                    disabled={isCommunicationLoading}
+                  >
+                    {isCommunicationLoading ? "Actualizando..." : "Actualizar estado"}
+                  </Button>
+                </Stack>
+                <Table size="small" sx={{ mt: 1.5 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Destino</TableCell>
+                      <TableCell>Estado</TableCell>
+                      <TableCell>Intentos</TableCell>
+                      <TableCell>Último intento</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {communications.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4}>Sin registros todavía. Usa `Actualizar estado`.</TableCell>
+                      </TableRow>
+                    ) : (
+                      communications.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.recipient_email}</TableCell>
+                          <TableCell>{item.status}</TableCell>
+                          <TableCell>{item.attempt_count}</TableCell>
+                          <TableCell>
+                            {item.last_attempt_at ? new Date(item.last_attempt_at).toLocaleString() : "-"}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
           </Stack>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
-            <Button variant="contained" onClick={sendStatusEmails}>
-              Enviar resultados
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={() => void processCommunications("queued")}
-              disabled={processingTargetStatus !== null}
-            >
-              {processingTargetStatus === "queued" ? "Procesando..." : "Procesar cola"}
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={() => void processCommunications("failed")}
-              disabled={processingTargetStatus !== null}
-            >
-              {processingTargetStatus === "failed" ? "Reintentando..." : "Reintentar fallidas"}
-            </Button>
-            <Button variant="text" onClick={() => void refreshCommunications()} disabled={isCommunicationLoading}>
-              {isCommunicationLoading ? "Actualizando..." : "Actualizar estado"}
-            </Button>
-          </Stack>
-          <Table size="small" sx={{ mt: 1.5 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Destino</TableCell>
-                <TableCell>Estado</TableCell>
-                <TableCell>Intentos</TableCell>
-                <TableCell>Último intento</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {communications.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={4}>Sin registros todavía. Usa `Actualizar estado`.</TableCell>
-                </TableRow>
-              ) : (
-                communications.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{item.recipient_email}</TableCell>
-                    <TableCell>{item.status}</TableCell>
-                    <TableCell>{item.attempt_count}</TableCell>
-                    <TableCell>
-                      {item.last_attempt_at ? new Date(item.last_attempt_at).toLocaleString() : "-"}
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+        </AccordionDetails>
+      </Accordion>
     </Stack>
   );
 }

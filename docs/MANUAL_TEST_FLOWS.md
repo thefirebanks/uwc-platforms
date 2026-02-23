@@ -17,13 +17,19 @@ Expected:
 1. Login as applicant.
 2. Open `/applicant`.
 3. Select a process and click `Iniciar postulación` or `Abrir postulación`.
-4. Fill required form fields.
-5. Save draft.
-6. Submit application.
+4. **Desktop:** Verify fixed sidebar (280px left) shows process title, gradient progress bar, draft status dot, and numbered step list.
+5. **Mobile:** Verify collapsible progress panel shows circular progress indicator, current step label, and draft status; tap to expand full step list.
+6. Verify section eyebrow header shows "Paso N de M" (uppercase) with serif section title.
+7. Fill required form fields.
+8. Save draft via the fixed bottom action bar (`Guardar borrador`).
+9. Navigate sections using sidebar (desktop) or mobile progress panel.
+10. Submit application from `Revisión y envío` section.
 
 Expected:
-- Progress panel (`Progreso de postulación`) is visible and updates section statuses.
-- Applicant page keeps maroon mockup hierarchy: eyebrow cycle label, large serif title, and left-accent progress block.
+- Desktop sidebar shows step progress with complete (green check) / active (maroon border) / pending states.
+- Mobile progress panel expands/collapses correctly and matches sidebar data.
+- Fixed action bar shows Previous (ghost) + Save Draft (outlined) + Next (maroon contained); Previous hidden on first section.
+- `Revisión y envío` section shows `Progreso por secciones` summary with per-section status.
 - Draft save success message appears.
 - Submit success message appears.
 - Record status changes in `applications`.
@@ -67,8 +73,9 @@ Expected:
 
 ## Flow 6: Exam Import
 1. Login as admin.
-2. Paste CSV in import panel.
-3. Trigger import.
+2. Open `/admin/process/:cycleId` and expand `Operaciones avanzadas`.
+3. Paste CSV in import panel.
+4. Trigger import.
 
 Expected:
 - Imported/skipped summary shown.
@@ -164,12 +171,14 @@ Expected:
 
 ## Flow 15: Applicant Stage Context View
 1. Login as applicant and open `/applicant/process/:cycleId`.
-2. Confirm page header shows `Cierre de etapa` date for current stage.
-3. Confirm no extra full-process timeline card is rendered.
+2. **Desktop:** Confirm sidebar header shows process title and optional deadline date for current stage.
+3. **Mobile:** Confirm collapsible progress panel shows current step label; no extra full-process timeline card is rendered.
+4. Confirm no standalone page header with stage badge is rendered (stage context is embedded in sidebar/mobile panel).
 
 Expected:
 - Applicant sees only current-stage context (minimal information principle).
-- Stage close date reflects process configuration from admin.
+- Stage close date (if configured) appears in sidebar header on desktop and is accessible via mobile progress panel.
+- No separate page-level header duplicates stage information.
 
 ## Flow 16: Admin Stage Field Builder
 1. Login as admin and open `/admin/process/:cycleId`.
@@ -210,12 +219,13 @@ Expected:
 
 ## Flow 19: Communication Queue Lifecycle
 1. Login as admin and open `/admin/process/:cycleId`.
-2. In `Comunicaciones`, click `Actualizar estado`.
-3. Verify at least one queued row appears when automations were triggered.
-4. Click `Procesar cola`.
-5. Verify counters and table status update (`queued -> sent` or `failed`).
-6. Confirm the destination inbox received the email when status is `sent`.
-7. Click `Reintentar fallidas`.
+2. Expand `Operaciones avanzadas`.
+3. In `Comunicaciones`, click `Actualizar estado`.
+4. Verify at least one queued row appears when automations were triggered.
+5. Click `Procesar cola`.
+6. Verify counters and table status update (`queued -> sent` or `failed`).
+7. Confirm the destination inbox received the email when status is `sent`.
+8. Click `Reintentar fallidas`.
 
 Expected:
 - Summary chips reflect queue lifecycle counts.
@@ -314,7 +324,43 @@ Expected:
 - Final submit is one-way (`status=submitted` + immutable for recommender).
 - Friend role requires non-family confirmation checkbox.
 
-## Flow 26: Stage 1 PDF Default Schema Coverage
+## Flow 26: UI Consistency Audit Pass
+1. Review `/`, `/login`, `/applicant`, `/applicant/process/:cycleId`, `/admin`, and `/admin/process/:cycleId`.
+2. Verify text alignment for labels/placeholders/helper text in all form controls.
+3. Verify toggle contrast and selected/unselected visibility.
+4. Verify date fields and dense rows keep consistent spacing and alignment.
+5. Verify no clipped text in chips/buttons/cards at desktop and mobile widths.
+
+Expected:
+- No visual misalignment regressions in core forms.
+- Control states are distinguishable and accessible.
+- Layout remains stable across breakpoints.
+
+## Flow 27: UX Visibility and Information Density Audit
+1. For applicant pages, verify only current-stage actions are visible by default.
+2. For admin pages, verify high-frequency actions are visible first.
+3. Verify advanced/low-frequency controls are behind explicit reveal sections.
+4. Verify there is no duplicated configuration entry point for the same setting.
+
+Expected:
+- Pages remain functional without overwhelming users.
+- Visibility hierarchy matches user role priorities.
+- Advanced controls are discoverable but not noisy.
+
+## Flow 28: Export Data (Individual + Bulk)
+1. As admin, export one individual applicant package.
+2. Click `Exportar JSON` in one row and confirm a `.json` file downloads.
+3. Verify metadata includes stage, validation status, and document references.
+4. Apply filters (stage/status/eligibility) and export a bulk CSV.
+5. Click `Exportar CSV filtrado` and confirm the downloaded CSV matches current filters.
+6. Validate exported rows match filtered table contents.
+
+Expected:
+- Individual export is complete and downloadable.
+- Bulk export respects selected filters.
+- Export schemas are stable and committee-friendly.
+
+## Flow 29: Stage 1 PDF Default Schema Coverage
 1. Login as admin and open `/admin/process/:cycleId/stage/documents`.
 2. Verify fields include all major sections from `docs/STAGE1_PDF_FIELD_INVENTORY.md`:
 - Cumplimiento de requisitos
@@ -329,5 +375,53 @@ Expected:
 
 Expected:
 - Legacy 7-field cycles are auto-expanded to the full Stage 1 default schema.
+- New/empty Stage 1 configs bootstrap to the full official default schema.
 - Admin can edit/reorder/remove the expanded defaults as usual.
 - Applicant form reflects the same expanded schema.
+
+## Flow 30: Applicant Section Wizard + Autosave
+1. Login as applicant and open `/applicant/process/:cycleId`.
+2. Verify `Antes de empezar` appears as its own dedicated intro step before `Elegibilidad` (not repeated inside every section).
+3. Open that intro step and verify checklist + required document hints are present.
+4. **Desktop:** Verify fixed sidebar (280px left) shows clickable step list with active step highlighted. **Mobile:** Verify collapsible progress panel shows progress and current step label.
+5. In section `Elegibilidad`, edit one field and stop typing.
+6. Verify draft status indicator shows `Cambios pendientes` then transitions to `Guardando...` and finally `Borrador guardado` (status visible in top nav and mobile progress panel on mobile).
+7. Click `Siguiente` in the fixed bottom action bar and confirm section navigation works without losing values.
+8. **Desktop:** Use sidebar step list to jump directly to `Recomendadores`, then back to `Datos personales`. **Mobile:** Expand progress panel and tap steps to navigate.
+9. In any field, make another edit and pause (without pressing submit); verify debounced autosave persists the draft.
+
+Expected:
+- Applicant sees one section at a time (reduced cognitive load).
+- Desktop sidebar and mobile progress panel both reflect current section and completion status.
+- Autosave persists partial drafts without forcing all required fields immediately.
+- Draft status label updates clearly while editing/saving and after save completes.
+- Manual `Guardar borrador` in the fixed bottom action bar remains available and uses same draft pipeline.
+- Section navigation via sidebar (desktop), mobile progress panel, or action bar buttons keeps data intact and progress statuses update.
+
+## Flow 31: Applicant Mobile Layout Polish (Stage 1)
+1. Open `/applicant/process/:cycleId` on mobile viewport (e.g. 390x844).
+2. Verify top navigation remains usable:
+   - brand and `Procesos` stay visible
+   - role chip is hidden on mobile
+   - `Cerrar sesión` stays tappable
+3. Verify collapsible mobile progress panel:
+   - compact bar shows current step label + circular SVG progress percentage
+   - tapping the bar expands full step list with numbered items and completion states
+   - draft status dot/label is visible in the panel
+   - panel collapses cleanly when tapped again
+4. Verify section eyebrow header:
+   - "Paso N de M" uppercase label in maroon
+   - serif section title (Newsreader) is readable and does not clip
+5. Scroll through Stage 1 content and verify the fixed bottom action bar:
+   - bar is fixed at bottom with no left offset on mobile (full width)
+   - Previous (ghost), Save Draft (outlined), Next (maroon contained) buttons are tappable
+   - no overlay blocking form inputs
+6. Verify long labels (especially imported from PDF inventory) are readable and do not collapse into clipped text.
+7. Verify sidebar is completely hidden on mobile (no horizontal overflow or scroll).
+
+Expected:
+- Mobile flow stays readable and tappable across header, progress panel, and form sections.
+- Collapsible progress panel provides navigation and status without consuming permanent screen space.
+- Fixed action bar remains visible and accessible without covering in-progress fields.
+- High-density field labels stay legible through normalized display labels.
+- No horizontal scroll caused by hidden sidebar elements.
