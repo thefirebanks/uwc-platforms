@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UWC Admin — Mockups</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root {
+  --maroon: #9A2545;
+  --maroon-soft: #FAF0F2;
+  --maroon-dark: #7D1E38;
+  --blue: #004E89;
+  --blue-soft: #EDF4F9;
+  --ink: #2C2825;
+  --ink-light: #5A5450;
+  --paper: #FFFBF8;
+  --surface: #FFFFFF;
+  --cream: #FBF7F4;
+  --sand: #EBE6E0;
+  --sand-light: #F3EFEB;
+  --muted: #9A9590;
+  --success: #2D6A4F;
+  --success-soft: #E8F5EE;
+  --warning: #B45309;
+  --warning-soft: #FEF3C7;
+  --danger: #DC2626;
+  --danger-soft: #FEF2F2;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --shadow-sm: 0 1px 2px rgba(44,40,37,0.04);
+  --shadow-md: 0 8px 24px rgba(44,40,37,0.08), 0 2px 6px rgba(44,40,37,0.04);
+  --font-display: 'Newsreader', Georgia, serif;
+  --font-body: 'DM Sans', system-ui, sans-serif;
+  --sidebar-width: 260px;
+  --topbar-height: 56px;
+}
+
+html { font-size: 15px; -webkit-font-smoothing: antialiased; }
+body { font-family: var(--font-body); color: var(--ink); background: var(--paper); line-height: 1.55; overflow-x: hidden; }
+
+/* ─── Topbar ─── */
+.topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100; height: var(--topbar-height);
+  display: flex; align-items: center; justify-content: space-between; padding: 0 24px;
+  background: var(--surface); border-bottom: 1px solid var(--sand); backdrop-filter: blur(12px);
+}
+.topbar-left { display: flex; align-items: center; gap: 32px; }
+.topbar-brand {
+  font-family: var(--font-display); font-size: 1.15rem; font-weight: 500; color: var(--ink);
+  letter-spacing: -0.01em; display: flex; align-items: center; gap: 8px; cursor: pointer;
+}
+.topbar-brand span { color: var(--maroon); }
+.topbar-nav { display: flex; gap: 24px; }
+.topbar-nav a { text-decoration: none; font-size: 0.85rem; color: var(--muted); font-weight: 500; transition: color 0.2s; cursor: pointer; }
+.topbar-nav a.active { color: var(--maroon); }
+.topbar-nav a:hover { color: var(--ink); }
+
+.topbar-right { display: flex; align-items: center; gap: 16px; }
+
+/* ─── Buttons ─── */
+.btn {
+  padding: 8px 16px; font-family: var(--font-body); font-size: 0.82rem; font-weight: 500; border-radius: var(--radius);
+  cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; gap: 6px; justify-content: center;
+}
+.btn-primary { background: var(--maroon); color: white; }
+.btn-primary:hover { background: var(--maroon-dark); }
+.btn-ghost { background: transparent; color: var(--ink-light); }
+.btn-ghost:hover { background: var(--cream); color: var(--ink); }
+.btn-outline { background: var(--surface); border: 1px solid var(--sand); color: var(--ink); }
+.btn-outline:hover { background: var(--sand-light); }
+.btn-icon { padding: 6px; color: var(--muted); border-radius: 6px; background: transparent; border: none; cursor: pointer; transition: all 0.15s; }
+.btn-icon:hover { background: var(--cream); color: var(--ink); }
+.btn-icon.danger:hover { background: var(--danger-soft); color: var(--danger); }
+
+/* ─── Layout ─── */
+.layout { display: flex; padding-top: var(--topbar-height); min-height: 100vh; }
+
+/* ─── Sidebar (Contextual) ─── */
+.sidebar {
+  position: fixed; top: var(--topbar-height); left: 0; bottom: 0; width: var(--sidebar-width);
+  background: var(--cream); border-right: 1px solid var(--sand); display: flex; flex-direction: column; z-index: 50;
+}
+.sidebar-header { padding: 24px 20px 16px; border-bottom: 1px solid var(--sand); }
+.sidebar-header .eyebrow { font-size: 0.65rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.sidebar-header h2 { font-family: var(--font-display); font-size: 1.15rem; font-weight: 500; color: var(--ink); letter-spacing: -0.01em; line-height: 1.3; }
+.sidebar-nav { padding: 12px 0; flex: 1; overflow-y: auto; }
+.stage-item {
+  display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer; border: none; background: none;
+  width: 100%; text-align: left; font-family: var(--font-body); transition: all 0.15s ease; position: relative;
+}
+.stage-item:hover { background: var(--sand-light); }
+.stage-item.active { background: var(--maroon-soft); }
+.stage-item.active::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 0 3px 3px 0; background: var(--maroon); }
+.stage-item .stage-icon {
+  width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  font-size: 0.75rem; color: var(--muted); border: 1px solid var(--sand); background: var(--surface); flex-shrink: 0;
+}
+.stage-item.active .stage-icon { color: var(--maroon); border-color: var(--maroon); }
+.stage-info { flex: 1; min-width: 0; }
+.stage-title { font-size: 0.82rem; font-weight: 500; color: var(--ink); margin-bottom: 2px; }
+.stage-item.active .stage-title { color: var(--maroon); }
+.stage-type { font-size: 0.65rem; color: var(--muted); }
+
+/* ─── Main Content Area ─── */
+.main { margin-left: var(--sidebar-width); flex: 1; display: flex; flex-direction: column; }
+.main.full-width { margin-left: 0; }
+
+.canvas-header { padding: 32px 40px 0; border-bottom: 1px solid var(--sand); background: var(--surface); }
+.canvas-title-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
+.canvas-title-row h1 { font-family: var(--font-display); font-size: 1.8rem; font-weight: 400; color: var(--ink); letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 4px; }
+.canvas-title-row p { font-size: 0.85rem; color: var(--muted); }
+.stage-status {
+  font-size: 0.65rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 4px 8px; border-radius: 4px;
+  color: var(--success); background: var(--success-soft); display: inline-block; margin-bottom: 12px;
+}
+
+/* Page Tabs */
+.page-tabs { display: flex; gap: 24px; margin-top: 16px; }
+.page-tab {
+  padding: 12px 0; font-size: 0.85rem; font-weight: 500; color: var(--muted); border: none; background: none;
+  cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; margin-bottom: -1px;
+}
+.page-tab:hover { color: var(--ink); }
+.page-tab.active { color: var(--maroon); border-bottom-color: var(--maroon); }
+
+.canvas-body { padding: 32px 40px 100px; max-width: 860px; margin: 0 auto; width: 100%; }
+.canvas-body.wide { max-width: 1000px; }
+.canvas-body.full { max-width: 100%; }
+
+/* ─── Shared Components ─── */
+.section-title { font-family: var(--font-display); font-size: 1.2rem; font-weight: 500; color: var(--ink); margin-bottom: 16px; }
+.dashboard-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 40px; }
+.stat-card {
+  background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); padding: 24px;
+  box-shadow: var(--shadow-sm); display: flex; flex-direction: column; gap: 8px;
+}
+.stat-card .stat-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.stat-card .stat-value { font-family: var(--font-display); font-size: 2.2rem; font-weight: 400; color: var(--ink); line-height: 1; }
+.stat-card .stat-trend { font-size: 0.75rem; color: var(--success); font-weight: 500; display: flex; align-items: center; gap: 4px; }
+.stat-card .stat-trend.down { color: var(--danger); }
+.stat-card .stat-trend.neutral { color: var(--muted); }
+
+/* Activity Feed */
+.activity-list { background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); overflow: hidden; }
+.activity-item { display: flex; align-items: center; gap: 16px; padding: 16px 20px; border-bottom: 1px solid var(--sand-light); }
+.activity-item:last-child { border-bottom: none; }
+.activity-icon { width: 32px; height: 32px; border-radius: 50%; background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; justify-content: center; font-size: 0.85rem; }
+.activity-details { flex: 1; }
+.activity-text { font-size: 0.85rem; color: var(--ink); }
+.activity-text strong { font-weight: 500; }
+.activity-time { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+
+/* ─── Process List View ─── */
+.process-list-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.process-card {
+  background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); padding: 24px;
+  display: flex; align-items: center; justify-content: space-between; transition: all 0.2s; cursor: pointer;
+}
+.process-card:hover { border-color: var(--maroon); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.process-card-left { display: flex; align-items: center; gap: 20px; }
+.process-card-icon {
+  width: 48px; height: 48px; border-radius: 12px; background: var(--cream); color: var(--ink-light);
+  display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+}
+.process-card.active .process-card-icon { background: var(--maroon-soft); color: var(--maroon); }
+.process-card-info h3 { font-family: var(--font-display); font-size: 1.2rem; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
+.process-card-info p { font-size: 0.85rem; color: var(--muted); }
+.process-badge { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 8px; border-radius: 4px; }
+.process-badge.active { background: var(--success-soft); color: var(--success); }
+.process-badge.draft { background: var(--warning-soft); color: var(--warning); }
+.process-badge.closed { background: var(--sand); color: var(--ink-light); }
+
+/* ─── Candidates View ─── */
+.candidates-toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; gap: 16px; }
+.search-input {
+  flex: 1; max-width: 320px; padding: 10px 14px 10px 36px; font-family: var(--font-body); font-size: 0.85rem;
+  border: 1px solid var(--sand); border-radius: var(--radius); outline: none; transition: border-color 0.2s;
+  background: var(--surface) url('data:image/svg+xml;utf8,<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%239A9590" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>') no-repeat 12px center;
+}
+.search-input:focus { border-color: var(--maroon); box-shadow: 0 0 0 3px rgba(154,37,69,0.08); }
+.filters-group { display: flex; gap: 12px; }
+.filter-select {
+  padding: 10px 14px; font-family: var(--font-body); font-size: 0.85rem; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius); outline: none; cursor: pointer;
+}
+
+.table-container { background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); overflow: hidden; }
+.candidates-table { width: 100%; border-collapse: collapse; text-align: left; }
+.candidates-table th { padding: 16px 20px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); border-bottom: 1px solid var(--sand); background: var(--paper); }
+.candidates-table td { padding: 16px 20px; font-size: 0.85rem; color: var(--ink); border-bottom: 1px solid var(--sand-light); vertical-align: middle; }
+.candidates-table tr:last-child td { border-bottom: none; }
+.candidates-table tr:hover td { background: var(--cream); }
+.candidate-name { font-weight: 500; display: flex; align-items: center; gap: 12px; }
+.candidate-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; }
+.candidate-email { font-size: 0.75rem; color: var(--muted); font-weight: 400; margin-top: 2px; }
+.status-pill { display: inline-flex; align-items: center; padding: 4px 8px; border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.status-pill.progress { background: var(--maroon-soft); color: var(--maroon); }
+.status-pill.complete { background: var(--success-soft); color: var(--success); }
+.status-pill.rejected { background: var(--sand); color: var(--ink-light); }
+
+/* ─── Form Builder (Editor) ─── */
+.builder-section-title {
+  font-size: 0.75rem; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); margin-bottom: 16px;
+  display: flex; align-items: center; gap: 8px;
+}
+.builder-section-title::after { content: ''; flex: 1; height: 1px; background: var(--sand); }
+.field-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+
+/* Field Card (Viewing Mode) */
+.field-card { background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius); transition: all 0.2s; display: flex; flex-direction: column; }
+.field-card:hover { border-color: var(--muted); }
+.field-header { display: flex; align-items: center; padding: 12px 16px; gap: 12px; cursor: pointer; }
+.drag-handle { color: var(--muted); cursor: grab; padding: 4px; opacity: 0.5; transition: opacity 0.2s; display: flex; align-items: center; }
+.field-card:hover .drag-handle { opacity: 1; }
+.field-icon { width: 28px; height: 28px; border-radius: 6px; background: var(--cream); color: var(--ink-light); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; flex-shrink: 0; }
+.field-details { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.field-name { font-size: 0.85rem; font-weight: 500; color: var(--ink); display: flex; align-items: center; gap: 8px;}
+.field-name .req-star { color: var(--maroon); font-weight: 400; }
+.field-type { font-size: 0.7rem; color: var(--muted); margin-top: 2px; }
+.field-actions { display: flex; align-items: center; gap: 4px; opacity: 0; transition: opacity 0.2s; }
+.field-card:hover .field-actions { opacity: 1; }
+
+/* Field Card (Editing Mode) */
+.field-card.editing { border-color: var(--maroon); box-shadow: 0 0 0 1px var(--maroon), var(--shadow-md); margin: 8px 0; }
+.field-card.editing .field-header { background: var(--maroon-soft); border-bottom: 1px solid rgba(154, 37, 69, 0.1); border-radius: var(--radius) var(--radius) 0 0; }
+.field-card.editing .field-actions { opacity: 1; }
+.field-card.editing .field-icon { background: white; color: var(--maroon); }
+.editing-badge { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--maroon); background: white; padding: 2px 6px; border-radius: 4px; }
+
+/* Field Editor Panel */
+.field-editor { display: none; padding: 24px; background: var(--surface); border-radius: 0 0 var(--radius) var(--radius); }
+.field-card.editing .field-editor { display: block; cursor: default; }
+.editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 24px; }
+.editor-grid .full { grid-column: 1 / -1; }
+
+/* Form Fields */
+.form-field { display: flex; flex-direction: column; }
+.form-field label { font-size: 0.8rem; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
+.form-field input[type="text"], .form-field input[type="date"], .form-field select, .form-field textarea {
+  width: 100%; padding: 10px 14px; font-family: var(--font-body); font-size: 0.85rem; color: var(--ink); background: var(--surface);
+  border: 1.5px solid var(--sand); border-radius: var(--radius); outline: none; transition: all 0.15s;
+}
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--maroon); box-shadow: 0 0 0 3px rgba(154,37,69,0.08); }
+.form-field .hint { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+
+/* Switch Toggle */
+.switch-wrapper { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border: 1px solid var(--sand); border-radius: var(--radius); background: var(--surface); }
+.switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: var(--sand); transition: .2s; border-radius: 22px; }
+.slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background-color: white; transition: .2s; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+input:checked + .slider { background-color: var(--maroon); }
+input:checked + .slider:before { transform: translateX(18px); }
+
+/* Options List Editor */
+.options-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.option-item { display: flex; align-items: center; gap: 8px; }
+.option-item input { flex: 1; }
+.add-option { font-size: 0.75rem; color: var(--maroon); background: none; border: none; cursor: pointer; text-align: left; padding: 4px 0; font-weight: 500; display: inline-block; width: fit-content; margin-top: 4px; }
+.add-option:hover { text-decoration: underline; }
+
+.add-field-btn {
+  width: 100%; padding: 16px; border: 1.5px dashed var(--sand); border-radius: var(--radius); background: var(--surface);
+  color: var(--ink-light); font-family: var(--font-body); font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
+}
+.add-field-btn:hover { border-color: var(--maroon); background: var(--maroon-soft); color: var(--maroon); }
+
+/* ─── Settings Card ─── */
+.settings-card { background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); padding: 28px; margin-bottom: 24px; }
+.settings-card-header { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid var(--sand-light); }
+.settings-card-header h3 { font-family: var(--font-display); font-size: 1.2rem; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
+.settings-card-header p { font-size: 0.8rem; color: var(--muted); }
+
+/* ─── Communications Cards ─── */
+.comm-card { background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 20px; transition: border-color 0.2s; }
+.comm-card:hover { border-color: var(--maroon); }
+.comm-icon { width: 40px; height: 40px; border-radius: 8px; background: var(--maroon-soft); color: var(--maroon); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.comm-content { flex: 1; }
+.comm-trigger { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
+.comm-title { font-size: 1rem; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
+.comm-subject { font-size: 0.85rem; color: var(--ink-light); margin-bottom: 12px; padding: 8px 12px; background: var(--paper); border: 1px solid var(--sand-light); border-radius: 6px; display: inline-block; }
+.comm-actions { display: flex; gap: 8px; }
+
+/* ─── Statistics Funnel ─── */
+.funnel-container { background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); padding: 32px; display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }
+.funnel-bar { display: flex; align-items: center; gap: 16px; }
+.funnel-label { width: 160px; font-size: 0.85rem; font-weight: 500; color: var(--ink); }
+.funnel-track { flex: 1; height: 24px; background: var(--sand-light); border-radius: 12px; overflow: hidden; position: relative; }
+.funnel-fill { height: 100%; background: var(--maroon); border-radius: 12px; transition: width 1s ease; }
+.funnel-fill.blue { background: var(--blue); }
+.funnel-fill.success { background: var(--success); }
+.funnel-value { width: 60px; text-align: right; font-size: 0.85rem; font-weight: 600; color: var(--ink); }
+
+/* ─── View Toggler ─── */
+.view { display: none; }
+.view.active { display: flex; flex-direction: column; animation: fadeIn 0.3s ease; }
+.tab-content { display: none; }
+.tab-content.active { display: block; animation: fadeIn 0.3s ease; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-brand" onclick="navigateGlobal('dashboard')">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+      <span>UWC</span> Admin
+    </div>
+    <nav class="topbar-nav">
+      <a onclick="navigateGlobal('dashboard')" class="global-link active" data-target="dashboard">Inicio</a>
+      <a onclick="navigateGlobal('process-list')" class="global-link" data-target="process-list">Procesos</a>
+      <a onclick="navigateGlobal('candidates')" class="global-link" data-target="candidates">Candidatos</a>
+      <a href="#">Evaluadores</a>
+    </nav>
+  </div>
+  <div class="topbar-right">
+    <div class="topbar-save"><span class="dot"></span> Online</div>
+    <button class="btn btn-outline" style="border:none;">Configuración</button>
+    <div style="width: 32px; height: 32px; border-radius: 50%; background: var(--maroon); color: white; display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 500;">AD</div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ==================== VIEW 1: GLOBAL DASHBOARD ==================== -->
+  <div id="view-dashboard" class="view active" style="width: 100%;">
+    <main class="main full-width">
+      <div class="canvas-header" style="border-bottom: none; padding-bottom: 16px;">
+        <div class="canvas-title-row">
+          <div>
+            <h1 style="font-size: 2rem;">¡Hola, Admin!</h1>
+            <p style="font-size: 1rem;">Aquí tienes el resumen del proceso activo "Selección UWC 2026".</p>
+          </div>
+          <button class="btn btn-primary" onclick="navigateGlobal('process')">Ir al Editor del Proceso 2026 →</button>
+        </div>
+      </div>
+
+      <div class="canvas-body wide">
+        <div class="dashboard-grid">
+          <div class="stat-card">
+            <div class="stat-title">Postulaciones Totales</div>
+            <div class="stat-value">452</div>
+            <div class="stat-trend"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg> +12% esta semana</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Formularios Completados</div>
+            <div class="stat-value">128</div>
+            <div class="stat-trend"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg> 28% de conversión</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-title">Evaluaciones Pendientes</div>
+            <div class="stat-value">45</div>
+            <div class="stat-trend down"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Requiere atención</div>
+          </div>
+        </div>
+
+        <div class="section-title">Actividad Reciente</div>
+        <div class="activity-list">
+          <div class="activity-item">
+            <div class="activity-icon">📄</div>
+            <div class="activity-details">
+              <div class="activity-text"><strong>Carlos Quispe</strong> envió su Formulario Principal.</div>
+              <div class="activity-time">Hace 10 minutos</div>
+            </div>
+            <button class="btn btn-ghost" onclick="navigateGlobal('candidates')">Ver perfil</button>
+          </div>
+          <div class="activity-item">
+            <div class="activity-icon" style="background:var(--success-soft);color:var(--success);">✓</div>
+            <div class="activity-details">
+              <div class="activity-text"><strong>Ana García (Recomendadora)</strong> completó la carta de recomendación para María José.</div>
+              <div class="activity-time">Hace 1 hora</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ==================== VIEW 2: PROCESS LIST ==================== -->
+  <div id="view-process-list" class="view" style="width: 100%;">
+    <main class="main full-width">
+      <div class="canvas-header" style="border-bottom: none; padding-bottom: 16px;">
+        <div class="canvas-title-row">
+          <div>
+            <h1 style="font-size: 2rem;">Procesos de Selección</h1>
+            <p style="font-size: 1rem;">Administra las convocatorias actuales, pasadas y futuras.</p>
+          </div>
+          <button class="btn btn-primary">+ Nuevo Proceso</button>
+        </div>
+      </div>
+
+      <div class="canvas-body wide">
+        <div class="process-list-grid">
+          <div class="process-card active" onclick="navigateGlobal('process')">
+            <div class="process-card-left">
+              <div class="process-card-icon">🎯</div>
+              <div class="process-card-info">
+                <h3>Selección UWC 2026</h3>
+                <p>Abierto • 452 candidatos • 4 etapas</p>
+              </div>
+            </div>
+            <div class="process-badge active">Activo</div>
+          </div>
+          <div class="process-card">
+            <div class="process-card-left">
+              <div class="process-card-icon">📝</div>
+              <div class="process-card-info">
+                <h3>Selección UWC 2027</h3>
+                <p>No publicado • 0 candidatos • 2 etapas</p>
+              </div>
+            </div>
+            <div class="process-badge draft">Borrador</div>
+          </div>
+          <div class="process-card" style="opacity: 0.7;">
+            <div class="process-card-left">
+              <div class="process-card-icon">🔒</div>
+              <div class="process-card-info">
+                <h3>Selección UWC 2025</h3>
+                <p>Cerrado el 30 Nov 2024 • 890 candidatos</p>
+              </div>
+            </div>
+            <div class="process-badge closed">Cerrado</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ==================== VIEW 3: CANDIDATES LIST ==================== -->
+  <div id="view-candidates" class="view" style="width: 100%;">
+    <main class="main full-width">
+      <div class="canvas-header" style="border-bottom: none; padding-bottom: 16px;">
+        <div class="canvas-title-row">
+          <div>
+            <h1 style="font-size: 2rem;">Candidatos</h1>
+            <p style="font-size: 1rem;">Selección UWC 2026</p>
+          </div>
+          <button class="btn btn-outline">Exportar Excel</button>
+        </div>
+      </div>
+
+      <div class="canvas-body full">
+        
+        <div class="candidates-toolbar">
+          <input type="text" class="search-input" placeholder="Buscar por nombre, email o DNI...">
+          <div class="filters-group">
+            <select class="filter-select">
+              <option>Todas las etapas</option>
+              <option>1. Elegibilidad</option>
+              <option selected>2. Formulario Principal</option>
+              <option>3. Examen</option>
+            </select>
+            <select class="filter-select">
+              <option>Todos los estados</option>
+              <option>En progreso</option>
+              <option>Completado</option>
+              <option>Rechazado</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="candidates-table">
+            <thead>
+              <tr>
+                <th>Candidato</th>
+                <th>Región</th>
+                <th>Etapa Actual</th>
+                <th>Estado</th>
+                <th>Última Actividad</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <div class="candidate-name">
+                    <div class="candidate-avatar">MJ</div>
+                    <div>
+                      <div>María José Quispe</div>
+                      <div class="candidate-email">mariajose@example.com</div>
+                    </div>
+                  </div>
+                </td>
+                <td>Lima</td>
+                <td>2. Formulario Principal</td>
+                <td><span class="status-pill progress">En progreso</span></td>
+                <td>Hoy, 10:30 am</td>
+                <td style="text-align:right;"><button class="btn btn-ghost">Ver Perfil</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="candidate-name">
+                    <div class="candidate-avatar" style="background:var(--maroon-soft);color:var(--maroon);">CG</div>
+                    <div>
+                      <div>Carlos Gómez Silva</div>
+                      <div class="candidate-email">carlos.g@example.com</div>
+                    </div>
+                  </div>
+                </td>
+                <td>Arequipa</td>
+                <td>2. Formulario Principal</td>
+                <td><span class="status-pill complete">Completado</span></td>
+                <td>Ayer, 16:45</td>
+                <td style="text-align:right;"><button class="btn btn-ghost">Ver Perfil</button></td>
+              </tr>
+              <tr>
+                <td>
+                  <div class="candidate-name">
+                    <div class="candidate-avatar" style="background:var(--success-soft);color:var(--success);">AL</div>
+                    <div>
+                      <div>Andrea López</div>
+                      <div class="candidate-email">andrea.lopez@example.com</div>
+                    </div>
+                  </div>
+                </td>
+                <td>Cusco</td>
+                <td>1. Elegibilidad</td>
+                <td><span class="status-pill rejected">No Elegible</span></td>
+                <td>12 Mar 2026</td>
+                <td style="text-align:right;"><button class="btn btn-ghost">Ver Perfil</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+
+  <!-- ==================== VIEW 4: PROCESS CONFIGURATION ==================== -->
+  <div id="view-process" class="view" style="flex: 1;">
+    <!-- Contextual Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header" style="cursor:pointer;" onclick="navigateGlobal('process-list')">
+        <div class="eyebrow" style="color:var(--maroon); display:flex; align-items:center; gap:4px;">← Volver a procesos</div>
+        <h2 style="margin-top:8px;">Selección UWC 2026</h2>
+      </div>
+      
+      <div class="sidebar-nav">
+        <div class="builder-section-title" style="padding: 0 20px; margin-bottom: 8px; margin-top: 8px;">Etapas del Proceso</div>
+        <button class="stage-item"><div class="stage-icon">1</div><div class="stage-info"><div class="stage-title">Elegibilidad</div><div class="stage-type">Formulario base</div></div></button>
+        <button class="stage-item active"><div class="stage-icon">2</div><div class="stage-info"><div class="stage-title">Formulario Principal</div><div class="stage-type">Formulario extenso</div></div></button>
+        <button class="stage-item"><div class="stage-icon">3</div><div class="stage-info"><div class="stage-title">Examen Académico</div><div class="stage-type">Evaluación externa</div></div></button>
+        <div style="padding: 16px 20px;"><button class="btn btn-ghost" style="width:100%; justify-content: flex-start; color: var(--maroon);">+ Añadir etapa</button></div>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="main">
+      <div class="canvas-header">
+        <div class="stage-status">Etapa Activa</div>
+        <div class="canvas-title-row">
+          <div>
+            <h1>Formulario Principal</h1>
+            <p>Configura la captura de datos de esta etapa, reglas de acceso y notificaciones.</p>
+          </div>
+          <button class="btn btn-outline" style="background:var(--paper);">Previsualizar Formulario</button>
+        </div>
+
+        <div class="page-tabs">
+          <button class="page-tab active" onclick="switchTab('editor', this)">Editor de Formulario</button>
+          <button class="page-tab" onclick="switchTab('settings', this)">Ajustes y Reglas</button>
+          <button class="page-tab" onclick="switchTab('comms', this)">Comunicaciones</button>
+          <button class="page-tab" onclick="switchTab('stats', this)">Estadísticas</button>
+        </div>
+      </div>
+
+      <div class="canvas-body">
+        
+        <!-- Tab: Editor de Formulario -->
+        <div id="tab-editor" class="tab-content active">
+          <div class="builder-section-title">Sección 1: Datos Personales</div>
+          
+          <div class="field-list">
+            
+            <!-- Field 1: View Mode -->
+            <div class="field-card" onclick="this.classList.toggle('editing')">
+              <div class="field-header">
+                <div class="drag-handle"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></div>
+                <div class="field-icon">T</div>
+                <div class="field-details">
+                  <div class="field-name">Nombres <span class="req-star">*</span></div>
+                  <div class="field-type">Texto corto • id: <code>nombres</code></div>
+                </div>
+                <div class="field-actions">
+                  <button class="btn-icon" title="Editar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                  <button class="btn-icon danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Field 2: EDITING MODE (Expanded) -->
+            <div class="field-card editing">
+              <div class="field-header" onclick="this.parentElement.classList.toggle('editing')">
+                <div class="drag-handle"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></div>
+                <div class="field-icon">≡</div>
+                <div class="field-details">
+                  <div class="field-name">Tipo de Documento <span class="editing-badge">Editando</span></div>
+                  <div class="field-type">Opciones (Desplegable)</div>
+                </div>
+                <div class="field-actions">
+                  <button class="btn-icon danger" title="Eliminar" onclick="event.stopPropagation()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                </div>
+              </div>
+              
+              <!-- The Detailed Edit Panel -->
+              <div class="field-editor">
+                <div class="editor-grid">
+                  <div class="form-field full">
+                    <label>Pregunta / Etiqueta que verá el usuario</label>
+                    <input type="text" value="Tipo de Documento">
+                  </div>
+                  <div class="form-field">
+                    <label>Identificador interno (ID)</label>
+                    <input type="text" value="document_type" style="font-family: monospace; color: var(--muted); background: var(--paper);">
+                    <div class="hint">Usado en exportaciones de Excel.</div>
+                  </div>
+                  <div class="form-field">
+                    <label>Tipo de campo</label>
+                    <select>
+                      <option>Texto corto</option>
+                      <option>Texto largo</option>
+                      <option selected>Opciones (Desplegable)</option>
+                      <option>Selección única (Radio)</option>
+                      <option>Casillas (Checkbox)</option>
+                      <option>Archivo PDF/Imagen</option>
+                    </select>
+                  </div>
+                  
+                  <!-- Options for Select Type -->
+                  <div class="form-field full" style="border-top: 1px solid var(--sand-light); padding-top: 16px; margin-top: 8px;">
+                    <label>Configurar Opciones</label>
+                    <div class="options-list">
+                      <div class="option-item">
+                        <div class="drag-handle" style="padding:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></div>
+                        <input type="text" value="DNI">
+                        <button class="btn-icon danger" style="padding:4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                      </div>
+                      <div class="option-item">
+                        <div class="drag-handle" style="padding:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></div>
+                        <input type="text" value="Carnet de Extranjería">
+                        <button class="btn-icon danger" style="padding:4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                      </div>
+                      <div class="option-item">
+                        <div class="drag-handle" style="padding:0;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></div>
+                        <input type="text" value="Pasaporte">
+                        <button class="btn-icon danger" style="padding:4px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+                      </div>
+                      <button class="add-option">+ Añadir otra opción</button>
+                    </div>
+                  </div>
+
+                  <div class="form-field full" style="margin-top: 16px;">
+                    <div class="switch-wrapper" style="border-color: var(--maroon-soft); background: var(--paper);">
+                      <div>
+                        <div style="font-size: 0.8rem; font-weight: 500; color: var(--ink);">Campo obligatorio</div>
+                        <div style="font-size: 0.75rem; color: var(--muted);">El postulante no podrá avanzar si no responde.</div>
+                      </div>
+                      <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--sand-light); display: flex; justify-content: flex-end; gap: 12px;">
+                  <button class="btn btn-ghost" onclick="this.closest('.field-card').classList.remove('editing'); event.stopPropagation();">Cancelar</button>
+                  <button class="btn btn-primary" onclick="this.closest('.field-card').classList.remove('editing'); event.stopPropagation();">Guardar Campo</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Field 3: View Mode -->
+            <div class="field-card" onclick="this.classList.toggle('editing')">
+              <div class="field-header">
+                <div class="drag-handle"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg></div>
+                <div class="field-icon">#</div>
+                <div class="field-details">
+                  <div class="field-name">Número de Documento <span class="req-star">*</span></div>
+                  <div class="field-type">Número • id: <code>document_number</code></div>
+                </div>
+                <div class="field-actions">
+                  <button class="btn-icon" title="Editar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+                  <button class="btn-icon danger"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+                </div>
+              </div>
+            </div>
+
+            <button class="add-field-btn"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Añadir nuevo campo</button>
+            <div style="margin-top: 16px; text-align: center;"><button class="btn btn-ghost" style="color: var(--maroon);">+ Añadir nueva sección</button></div>
+
+          </div>
+        </div>
+
+        <!-- Tab: Ajustes y Reglas (Restored!) -->
+        <div id="tab-settings" class="tab-content">
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <h3>Información General</h3>
+              <p>Datos básicos de la etapa que verán los postulantes.</p>
+            </div>
+            <div class="editor-grid">
+              <div class="form-field full">
+                <label>Nombre de la etapa</label>
+                <input type="text" value="Formulario Principal">
+              </div>
+              <div class="form-field full">
+                <label>Descripción corta</label>
+                <textarea rows="2">Completa tu información familiar, académica y redacta tus ensayos de motivación.</textarea>
+              </div>
+              <div class="form-field">
+                <label>Fecha de apertura</label>
+                <input type="date" value="2026-03-01">
+              </div>
+              <div class="form-field">
+                <label>Fecha de cierre</label>
+                <input type="date" value="2026-06-17">
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="settings-card-header">
+              <h3>Reglas de Acceso</h3>
+              <p>Condiciones para que un postulante pueda ingresar a esta etapa.</p>
+            </div>
+            <div class="form-field full" style="margin-bottom: 16px;">
+              <label>Etapa previa requerida</label>
+              <select>
+                <option>Ninguna (Etapa inicial)</option>
+                <option selected>1. Elegibilidad</option>
+              </select>
+            </div>
+            <div class="switch-wrapper">
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 500; color: var(--ink);">Bloquear si no cumple requisitos</div>
+                <div style="font-size: 0.75rem; color: var(--muted);">El postulante no podrá ver esta etapa si fue rechazado en la etapa previa.</div>
+              </div>
+              <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+            </div>
+          </div>
+
+          <div style="text-align: right;">
+            <button class="btn btn-primary">Guardar Ajustes</button>
+          </div>
+        </div>
+
+        <!-- Tab: Comunicaciones (Restored!) -->
+        <div id="tab-comms" class="tab-content">
+          <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
+            <p style="font-size: 0.85rem; color: var(--muted);">Configura correos automáticos vinculados a las acciones de esta etapa.</p>
+            <button class="btn btn-outline">+ Nueva Notificación</button>
+          </div>
+
+          <div class="comm-card">
+            <div class="comm-icon"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg></div>
+            <div class="comm-content">
+              <div class="comm-trigger">Trigger: Al ingresar a la etapa</div>
+              <div class="comm-title">Bienvenida al Formulario Principal</div>
+              <div class="comm-subject">Asunto: ¡Felicidades! Avanzaste a la siguiente etapa de selección UWC</div>
+              <div class="comm-actions">
+                <button class="btn btn-ghost" style="padding: 4px 8px;">Editar plantilla</button>
+                <div class="switch-wrapper" style="padding: 4px 8px; border:none; background:none;">
+                  <span style="font-size:0.75rem; font-weight:500; margin-right:8px;">Activo</span>
+                  <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="comm-card">
+            <div class="comm-icon" style="background:var(--success-soft);color:var(--success);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
+            <div class="comm-content">
+              <div class="comm-trigger">Trigger: Al completar (enviar) la etapa</div>
+              <div class="comm-title">Confirmación de Recepción</div>
+              <div class="comm-subject">Asunto: Hemos recibido tu formulario de postulación UWC</div>
+              <div class="comm-actions">
+                <button class="btn btn-ghost" style="padding: 4px 8px;">Editar plantilla</button>
+                <div class="switch-wrapper" style="padding: 4px 8px; border:none; background:none;">
+                  <span style="font-size:0.75rem; font-weight:500; margin-right:8px;">Activo</span>
+                  <label class="switch"><input type="checkbox" checked><span class="slider"></span></label>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="comm-card" style="border-style: dashed; border-color: var(--sand); background: var(--paper);">
+            <div class="comm-icon" style="background:var(--sand-light);color:var(--muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+            <div class="comm-content">
+              <div class="comm-trigger">Trigger: Recordatorio (3 días antes del cierre)</div>
+              <div class="comm-title">Recordatorio de Cierre</div>
+              <div class="comm-subject" style="font-style: italic;">Sin configurar</div>
+              <div class="comm-actions">
+                <button class="btn btn-outline" style="padding: 4px 12px; font-size:0.75rem;">Configurar correo</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab: Estadísticas (Restored!) -->
+        <div id="tab-stats" class="tab-content">
+          <div class="dashboard-grid" style="margin-bottom: 24px;">
+            <div class="stat-card">
+              <div class="stat-title">Habilitados</div>
+              <div class="stat-value">312</div>
+              <div class="stat-trend">Pasaron la etapa anterior</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-title">Completaron</div>
+              <div class="stat-value">128</div>
+              <div class="stat-trend">41% de avance</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-title">En progreso</div>
+              <div class="stat-value">156</div>
+              <div class="stat-trend" style="color:var(--warning);">Faltan 5 días para cierre</div>
+            </div>
+          </div>
+
+          <div class="section-title">Embudo de Conversión</div>
+          <div class="funnel-container">
+            <div class="funnel-bar">
+              <div class="funnel-label">Habilitados (Total)</div>
+              <div class="funnel-track"><div class="funnel-fill" style="width: 100%;"></div></div>
+              <div class="funnel-value">312</div>
+            </div>
+            <div class="funnel-bar">
+              <div class="funnel-label">Iniciaron el form.</div>
+              <div class="funnel-track"><div class="funnel-fill blue" style="width: 91%;"></div></div>
+              <div class="funnel-value">284</div>
+            </div>
+            <div class="funnel-bar">
+              <div class="funnel-label">Completaron al 100%</div>
+              <div class="funnel-track"><div class="funnel-fill success" style="width: 41%;"></div></div>
+              <div class="funnel-value">128</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+
+</div>
+
+<script>
+  function navigateGlobal(target) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.global-link').forEach(l => l.classList.remove('active'));
+    
+    document.getElementById('view-' + target).classList.add('active');
+    
+    let link = document.querySelector(`.global-link[data-target="${target}"]`);
+    if(link) link.classList.add('active');
+  }
+
+  function switchTab(tabId, btn) {
+    document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+    document.querySelectorAll('.page-tab').forEach(pt => pt.classList.remove('active'));
+    
+    document.getElementById('tab-' + tabId).classList.add('active');
+    btn.classList.add('active');
+  }
+</script>
+</body>
+</html>
