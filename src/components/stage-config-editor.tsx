@@ -2,28 +2,6 @@
 
 import Link from "next/link";
 import { useMemo, useState, type DragEvent } from "react";
-import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  FormControlLabel,
-  IconButton,
-  MenuItem,
-  Stack,
-  Switch,
-  TextField,
-  Typography,
-} from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
-import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
-import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
-import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import type { CycleStageField, StageAutomationTemplate, StageCode } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
@@ -58,71 +36,6 @@ function mapAutomationsWithLocalId(automations: StageAutomationTemplate[]) {
 function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
-  );
-}
-
-const REQUIRED_SWITCH_SX = {
-  "& .MuiSwitch-switchBase.Mui-checked": {
-    color: "#FFFFFF",
-    "& + .MuiSwitch-track": {
-      backgroundColor: "#B42346",
-      opacity: 1,
-    },
-  },
-  "& .MuiSwitch-switchBase": {
-    color: "#9CA3AF",
-  },
-  "& .MuiSwitch-track": {
-    backgroundColor: "#D1D5DB",
-    opacity: 1,
-  },
-};
-
-const VISIBLE_SWITCH_SX = {
-  "& .MuiSwitch-switchBase.Mui-checked": {
-    color: "#FFFFFF",
-    "& + .MuiSwitch-track": {
-      backgroundColor: "#1D4ED8",
-      opacity: 1,
-    },
-  },
-  "& .MuiSwitch-switchBase": {
-    color: "#9CA3AF",
-  },
-  "& .MuiSwitch-track": {
-    backgroundColor: "#D1D5DB",
-    opacity: 1,
-  },
-};
-
-function InsertFieldControl({
-  onInsert,
-  ariaLabel,
-}: {
-  onInsert: () => void;
-  ariaLabel: string;
-}) {
-  return (
-    <Stack direction="row" alignItems="center" spacing={1}>
-      <Box sx={{ flex: 1, height: 1, bgcolor: "var(--sand)" }} />
-      <IconButton
-        size="small"
-        color="primary"
-        aria-label={ariaLabel}
-        onClick={onInsert}
-        sx={{
-          border: "1px dashed var(--sand)",
-          bgcolor: "var(--paper)",
-          "&:hover": {
-            bgcolor: "var(--cream)",
-            borderColor: "var(--uwc-maroon)",
-          },
-        }}
-      >
-        <AddCircleOutlineIcon fontSize="small" />
-      </IconButton>
-      <Box sx={{ flex: 1, height: 1, bgcolor: "var(--sand)" }} />
-    </Stack>
   );
 }
 
@@ -195,23 +108,6 @@ export function StageConfigEditor({
       ...orderedFields.slice(safePosition),
     ];
 
-    applyOrderedFields(nextFields);
-  }
-
-  function moveField(localId: string, direction: "up" | "down") {
-    const currentIndex = orderedFields.findIndex((field) => field.localId === localId);
-    if (currentIndex < 0) {
-      return;
-    }
-
-    const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-    if (nextIndex < 0 || nextIndex >= orderedFields.length) {
-      return;
-    }
-
-    const nextFields = [...orderedFields];
-    const [moved] = nextFields.splice(currentIndex, 1);
-    nextFields.splice(nextIndex, 0, moved);
     applyOrderedFields(nextFields);
   }
 
@@ -319,392 +215,462 @@ export function StageConfigEditor({
     }
   }
 
+  const [activeTab, setActiveTab] = useState<"editor" | "comms">("editor");
+  const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
+
   return (
-    <Stack spacing={3}>
-      <Card>
-        <CardContent>
-          <Stack direction={{ xs: "column", md: "row" }} justifyContent="space-between" spacing={1.5}>
-            <Box>
-              <Typography variant="h5">Editar etapa</Typography>
-              <Typography color="text.secondary">
-                {cycleName} · {stageLabel}
-              </Typography>
-            </Box>
-            <Stack direction="row" spacing={1}>
-              <Button component={Link} href={`/admin/process/${cycleId}`} variant="outlined">
-                Volver al proceso
-              </Button>
-              <Button variant="contained" onClick={saveStageConfig} disabled={isSaving}>
-                Guardar configuración
-              </Button>
-            </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
+    <div id="view-process" className="view active" style={{ flex: 1, width: "100%" }}>
+      {/* Contextual Sidebar */}
+      <aside className="sidebar">
+        <div className="sidebar-header" style={{ cursor: "pointer" }}>
+          <Link href={`/admin/process/${cycleId}`} style={{ textDecoration: "none" }}>
+            <div className="eyebrow" style={{ color: "var(--maroon)", display: "flex", alignItems: "center", gap: "4px" }}>
+              ← Volver a procesos
+            </div>
+          </Link>
+          <h2 style={{ marginTop: "8px" }}>{cycleName}</h2>
+        </div>
+        
+        <div className="sidebar-nav">
+          <div className="builder-section-title" style={{ padding: "0 20px", marginBottom: "8px", marginTop: "8px" }}>
+            Etapas del Proceso
+          </div>
+          <button className="stage-item active">
+            <div className="stage-icon">1</div>
+            <div className="stage-info">
+              <div className="stage-title">{stageLabel}</div>
+              <div className="stage-type">Formulario</div>
+            </div>
+          </button>
+        </div>
+      </aside>
 
-      {error ? <ErrorCallout message={error.message} errorId={error.errorId} context="stage_config" /> : null}
-      {statusMessage ? (
-        <Box sx={{ p: 2, borderRadius: 2, bgcolor: "#DCFCE7" }}>
-          <Typography color="#166534">{statusMessage}</Typography>
-        </Box>
-      ) : null}
+      {/* Main Workspace */}
+      <main className="main">
+        <div className="canvas-header">
+          {error && <ErrorCallout message={error.message} errorId={error.errorId} context="stage_config" />}
+          {statusMessage && (
+            <div style={{ padding: "16px", borderRadius: "8px", backgroundColor: "#DCFCE7", color: "#166534", marginBottom: "16px" }}>
+              {statusMessage}
+            </div>
+          )}
+          <div className="stage-status">Etapa Activa</div>
+          <div className="canvas-title-row">
+            <div>
+              <h1>{stageLabel}</h1>
+              <p>Configura la captura de datos de esta etapa, reglas de acceso y notificaciones.</p>
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={saveStageConfig}
+              disabled={isSaving}
+            >
+              Guardar configuración
+            </button>
+          </div>
 
-      <Card>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
-            <Typography variant="h6">Campos requeridos</Typography>
-          </Stack>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Solo mostramos y pedimos lo estrictamente necesario para esta etapa.
-          </Typography>
-          <Stack spacing={2}>
-            {orderedFields.map((field, index) => (
-              <Box key={field.localId}>
-                <InsertFieldControl
-                  ariaLabel={`Agregar campo en posición ${index + 1}`}
-                  onInsert={() => insertFieldAt(index)}
-                />
-                <Box
-                  sx={{
-                    border: "1px solid #E5E7EB",
-                    borderRadius: 2,
-                    p: 2,
-                    mt: 1,
-                    bgcolor: draggedFieldId === field.localId ? "#F9FAFB" : "transparent",
-                    borderColor:
-                      dragOverFieldId === field.localId ? "var(--uwc-maroon)" : "#E5E7EB",
-                  }}
-                  draggable
-                  onDragStart={() => setDraggedFieldId(field.localId)}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    setDragOverFieldId(field.localId);
-                  }}
-                  onDragLeave={() => {
-                    setDragOverFieldId((current) => (current === field.localId ? null : current));
-                  }}
-                  onDrop={(event) => handleFieldDrop(event, field.localId)}
-                  onDragEnd={() => {
-                    setDraggedFieldId(null);
-                    setDragOverFieldId(null);
-                  }}
-                >
-                  <Stack direction={{ xs: "column", md: "row" }} spacing={1.2}>
-                    <Stack
-                      direction="row"
-                      spacing={0.5}
-                      alignItems="center"
-                      sx={{
-                        minWidth: 120,
-                        cursor: draggedFieldId === field.localId ? "grabbing" : "grab",
-                      }}
-                    >
-                      <DragIndicatorIcon
-                        fontSize="small"
-                        color="action"
-                        sx={{ cursor: draggedFieldId === field.localId ? "grabbing" : "grab" }}
-                      />
-                      <IconButton
-                        size="small"
-                        aria-label={`Mover arriba ${field.field_label}`}
-                        onClick={() => moveField(field.localId, "up")}
-                        disabled={index === 0}
+          <div className="page-tabs">
+            <button
+              className={`page-tab ${activeTab === "editor" ? "active" : ""}`}
+              onClick={() => setActiveTab("editor")}
+            >
+              Editor de Formulario
+            </button>
+            <button
+              className={`page-tab ${activeTab === "comms" ? "active" : ""}`}
+              onClick={() => setActiveTab("comms")}
+            >
+              Comunicaciones y OCR
+            </button>
+          </div>
+        </div>
+
+        <div className="canvas-body">
+          {activeTab === "editor" && (
+            <div id="tab-editor" className="tab-content active">
+              <div className="builder-section-title">Campos requeridos</div>
+              
+              <div className="field-list">
+                {orderedFields.map((field, index) => {
+                  const isEditing = activeFieldId === field.localId;
+
+                  return (
+                    <div key={field.localId}>
+                      <button
+                        className="add-field-btn"
+                        style={{ margin: "8px 0", padding: "8px", border: "1px dashed var(--sand)", background: "transparent" }}
+                        onClick={() => insertFieldAt(index)}
                       >
-                        <KeyboardArrowUpIcon />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        aria-label={`Mover abajo ${field.field_label}`}
-                        onClick={() => moveField(field.localId, "down")}
-                        disabled={index === orderedFields.length - 1}
-                      >
-                        <KeyboardArrowDownIcon />
-                      </IconButton>
-                    </Stack>
-                    <TextField
-                      label="Título"
-                      value={field.field_label}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setFields((current) =>
-                          current.map((item) =>
-                            item.localId === field.localId
-                              ? {
-                                  ...item,
-                                  field_label: value,
-                                  field_key:
-                                    item.id.startsWith("new-") || item.field_key.startsWith("nuevoCampo")
-                                      ? normalizeFieldKey(value)
-                                      : item.field_key,
-                                }
-                              : item,
-                          ),
-                        );
-                      }}
-                      fullWidth
-                    />
-                    <TextField
-                      select
-                      label="Tipo"
-                      value={field.field_type}
-                      onChange={(event) =>
-                        setFields((current) =>
-                          current.map((item) =>
-                            item.localId === field.localId
-                              ? {
-                                  ...item,
-                                  field_type: event.target.value as CycleStageField["field_type"],
-                                }
-                              : item,
-                          ),
-                        )
-                      }
-                      sx={{ minWidth: 180 }}
-                    >
-                      <MenuItem value="short_text">Texto corto</MenuItem>
-                      <MenuItem value="long_text">Texto largo</MenuItem>
-                      <MenuItem value="number">Número</MenuItem>
-                      <MenuItem value="date">Fecha</MenuItem>
-                      <MenuItem value="email">Correo</MenuItem>
-                      <MenuItem value="file">Archivo</MenuItem>
-                    </TextField>
-                    <TextField
-                      label="Clave"
-                      value={field.field_key}
-                      onChange={(event) =>
-                        setFields((current) =>
-                          current.map((item) =>
-                            item.localId === field.localId
-                              ? {
-                                  ...item,
-                                  field_key: normalizeFieldKey(event.target.value),
-                                }
-                              : item,
-                          ),
-                        )
-                      }
-                      sx={{ minWidth: 180 }}
-                    />
-                    <IconButton
-                      aria-label={`Eliminar ${field.field_label}`}
-                      onClick={() => removeField(field.localId)}
-                    >
-                      <DeleteOutlineIcon />
-                    </IconButton>
-                  </Stack>
-                  <Stack direction={{ xs: "column", md: "row" }} spacing={1.2} sx={{ mt: 1.2 }}>
-                    <TextField
-                      label="Placeholder"
-                      value={field.placeholder ?? ""}
-                      onChange={(event) =>
-                        setFields((current) =>
-                          current.map((item) =>
-                            item.localId === field.localId ? { ...item, placeholder: event.target.value } : item,
-                          ),
-                        )
-                      }
-                      fullWidth
-                      InputLabelProps={{ shrink: true }}
-                    />
-                    <TextField
-                      label="Ayuda"
-                      value={field.help_text ?? ""}
-                      onChange={(event) =>
-                        setFields((current) =>
-                          current.map((item) =>
-                            item.localId === field.localId ? { ...item, help_text: event.target.value } : item,
-                          ),
-                        )
-                      }
-                      fullWidth
-                      InputLabelProps={{ shrink: true }}
-                    />
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={field.is_required}
-                          sx={REQUIRED_SWITCH_SX}
-                          onChange={(event) =>
-                            setFields((current) =>
-                              current.map((item) =>
-                                item.localId === field.localId
-                                  ? {
-                                      ...item,
-                                      is_required: event.target.checked,
-                                    }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                      }
-                      label={`Obligatorio: ${field.is_required ? "Sí" : "No"}`}
-                    />
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={field.is_active}
-                          sx={VISIBLE_SWITCH_SX}
-                          onChange={(event) =>
-                            setFields((current) =>
-                              current.map((item) =>
-                                item.localId === field.localId
-                                  ? {
-                                      ...item,
-                                      is_active: event.target.checked,
-                                    }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                      }
-                      label={`Visible: ${field.is_active ? "Sí" : "No"}`}
-                    />
-                  </Stack>
-                </Box>
-              </Box>
-            ))}
-            <InsertFieldControl
-              ariaLabel="Agregar campo al final"
-              onInsert={() => insertFieldAt(orderedFields.length)}
-            />
-          </Stack>
-        </CardContent>
-      </Card>
+                        Agregar campo en posición {index + 1}
+                      </button>
 
-      <Accordion>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Automatizaciones de correo (Avanzado)</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Stack spacing={2}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography color="text.secondary">
-                Define plantillas por evento. Mantén solo las necesarias para no saturar al postulante.
-              </Typography>
-              <Button variant="outlined" size="small" onClick={addAutomation}>
-                Agregar automatización
-              </Button>
-            </Stack>
-            {automations.map((automation) => (
-              <Box key={automation.localId} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 2 }}>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={1.2}>
-                  <TextField
-                    select
-                    label="Evento"
-                    value={automation.trigger_event}
-                    onChange={(event) =>
-                      setAutomations((current) =>
-                        current.map((item) =>
-                          item.localId === automation.localId
-                            ? {
-                                ...item,
-                                trigger_event: event.target.value as StageAutomationTemplate["trigger_event"],
-                              }
-                            : item,
-                        ),
-                      )
-                    }
-                    sx={{ minWidth: 220 }}
-                  >
-                    <MenuItem value="application_submitted">Postulación enviada</MenuItem>
-                    <MenuItem value="stage_result">Resultado de etapa</MenuItem>
-                  </TextField>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={automation.is_enabled}
-                        onChange={(event) =>
-                          setAutomations((current) =>
-                            current.map((item) =>
-                              item.localId === automation.localId
-                                ? {
-                                    ...item,
-                                    is_enabled: event.target.checked,
+                      <div
+                        className={`field-card ${isEditing ? "editing" : ""}`}
+                        draggable={!isEditing}
+                        onDragStart={() => setDraggedFieldId(field.localId)}
+                        onDragOver={(event) => {
+                          event.preventDefault();
+                          setDragOverFieldId(field.localId);
+                        }}
+                        onDragLeave={() => {
+                          setDragOverFieldId((current) => (current === field.localId ? null : current));
+                        }}
+                        onDrop={(event) => handleFieldDrop(event, field.localId)}
+                        onDragEnd={() => {
+                          setDraggedFieldId(null);
+                          setDragOverFieldId(null);
+                        }}
+                        style={{
+                           borderColor: dragOverFieldId === field.localId ? "var(--uwc-maroon)" : undefined,
+                           backgroundColor: draggedFieldId === field.localId ? "var(--cream)" : undefined,
+                        }}
+                      >
+                        <div
+                          className="field-header"
+                          onClick={() => setActiveFieldId(isEditing ? null : field.localId)}
+                        >
+                          <div className="drag-handle" style={{ cursor: draggedFieldId === field.localId ? "grabbing" : "grab" }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+                          </div>
+                          <div className="field-icon">
+                            {field.field_type === "short_text" ? "T" : 
+                             field.field_type === "long_text" ? "T≡" :
+                             field.field_type === "number" ? "#" :
+                             field.field_type === "date" ? "📅" :
+                             field.field_type === "email" ? "@" : "📄"}
+                          </div>
+                          <div className="field-details">
+                            <div className="field-name">
+                              {field.field_label} {field.is_required && <span className="req-star">*</span>}
+                              {isEditing && <span className="editing-badge">Editando</span>}
+                            </div>
+                            <div className="field-type">
+                              {field.field_type} • id: <code>{field.field_key}</code>
+                            </div>
+                          </div>
+                          <div className="field-actions">
+                            <button
+                              className="btn-icon"
+                              title="Editar"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveFieldId(isEditing ? null : field.localId);
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                            <button
+                              className="btn-icon danger"
+                              title="Eliminar"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeField(field.localId);
+                              }}
+                            >
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                            </button>
+                          </div>
+                        </div>
+
+                        {isEditing && (
+                          <div className="field-editor" style={{ display: "block" }}>
+                            <div className="editor-grid">
+                              <div className="form-field full">
+                                <label htmlFor={`title-${field.localId}`}>Título</label>
+                                <input
+                                  id={`title-${field.localId}`}
+                                  type="text"
+                                  value={field.field_label}
+                                  onChange={(event) => {
+                                    const value = event.target.value;
+                                    setFields((current) =>
+                                      current.map((item) =>
+                                        item.localId === field.localId
+                                          ? {
+                                              ...item,
+                                              field_label: value,
+                                              field_key:
+                                                item.id.startsWith("new-") || item.field_key.startsWith("nuevoCampo")
+                                                  ? normalizeFieldKey(value)
+                                                  : item.field_key,
+                                            }
+                                          : item,
+                                      ),
+                                    );
+                                  }}
+                                />
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`key-${field.localId}`}>Identificador interno (Clave)</label>
+                                <input
+                                  id={`key-${field.localId}`}
+                                  type="text"
+                                  value={field.field_key}
+                                  onChange={(event) =>
+                                    setFields((current) =>
+                                      current.map((item) =>
+                                        item.localId === field.localId
+                                          ? {
+                                              ...item,
+                                              field_key: normalizeFieldKey(event.target.value),
+                                            }
+                                          : item,
+                                      ),
+                                    )
                                   }
-                                : item,
-                            ),
-                          )
-                        }
-                      />
-                    }
-                    label="Habilitada"
-                  />
-                  <IconButton
-                    aria-label={`Eliminar automatización ${automation.trigger_event}`}
-                    onClick={() => removeAutomation(automation.localId)}
-                  >
-                    <DeleteOutlineIcon />
-                  </IconButton>
-                </Stack>
-                <TextField
-                  label="Asunto"
-                  value={automation.template_subject}
-                  onChange={(event) =>
-                    setAutomations((current) =>
-                      current.map((item) =>
-                        item.localId === automation.localId
-                          ? {
-                              ...item,
-                              template_subject: event.target.value,
-                            }
-                          : item,
-                      ),
-                    )
-                  }
-                  fullWidth
-                  sx={{ mt: 1.2 }}
-                />
-                <TextField
-                  label="Cuerpo"
-                  value={automation.template_body}
-                  onChange={(event) =>
-                    setAutomations((current) =>
-                      current.map((item) =>
-                        item.localId === automation.localId
-                          ? {
-                              ...item,
-                              template_body: event.target.value,
-                            }
-                          : item,
-                      ),
-                    )
-                  }
-                  fullWidth
-                  multiline
-                  minRows={4}
-                  sx={{ mt: 1.2 }}
-                />
-              </Box>
-            ))}
-          </Stack>
-        </AccordionDetails>
-      </Accordion>
+                                  style={{ fontFamily: "monospace", color: "var(--muted)", background: "var(--paper)" }}
+                                />
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`type-${field.localId}`}>Tipo de campo</label>
+                                <select
+                                  id={`type-${field.localId}`}
+                                  value={field.field_type}
+                                  onChange={(event) =>
+                                    setFields((current) =>
+                                      current.map((item) =>
+                                        item.localId === field.localId
+                                          ? {
+                                              ...item,
+                                              field_type: event.target.value as CycleStageField["field_type"],
+                                            }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                >
+                                  <option value="short_text">Texto corto</option>
+                                  <option value="long_text">Texto largo</option>
+                                  <option value="number">Número</option>
+                                  <option value="date">Fecha</option>
+                                  <option value="email">Correo</option>
+                                  <option value="file">Archivo</option>
+                                </select>
+                              </div>
+                              <div className="form-field full">
+                                <label htmlFor={`placeholder-${field.localId}`}>Placeholder</label>
+                                <input
+                                  id={`placeholder-${field.localId}`}
+                                  type="text"
+                                  value={field.placeholder ?? ""}
+                                  onChange={(event) =>
+                                    setFields((current) =>
+                                      current.map((item) =>
+                                        item.localId === field.localId ? { ...item, placeholder: event.target.value } : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </div>
+                              <div className="form-field full">
+                                <label htmlFor={`help-${field.localId}`}>Ayuda</label>
+                                <input
+                                  id={`help-${field.localId}`}
+                                  type="text"
+                                  value={field.help_text ?? ""}
+                                  onChange={(event) =>
+                                    setFields((current) =>
+                                      current.map((item) =>
+                                        item.localId === field.localId ? { ...item, help_text: event.target.value } : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                              </div>
 
-      <Accordion defaultExpanded>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Prompt OCR (Gemini)</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Stack spacing={1.5}>
-            <Typography color="text.secondary">
-              Define instrucciones para extraer señales útiles desde documentos. Mantén el prompt claro y en español.
-            </Typography>
-            <TextField
-              label="Prompt OCR de la etapa"
-              value={ocrPromptTemplate}
-              onChange={(event) => setOcrPromptTemplate(event.target.value)}
-              fullWidth
-              multiline
-              minRows={6}
-            />
-            <Typography variant="body2" color="text.secondary">
-              Nota: el sistema siempre fuerza salida JSON con `summary` y `confidence`.
-            </Typography>
-          </Stack>
-        </AccordionDetails>
-      </Accordion>
-    </Stack>
+                              <div className="form-field full" style={{ marginTop: "16px" }}>
+                                <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)", marginBottom: "8px" }}>
+                                  <div>
+                                    <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>Campo obligatorio</div>
+                                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>El postulante no podrá avanzar si no responde.</div>
+                                  </div>
+                                  <label className="switch">
+                                    <input
+                                      type="checkbox"
+                                      checked={field.is_required}
+                                      onChange={(event) =>
+                                        setFields((current) =>
+                                          current.map((item) =>
+                                            item.localId === field.localId
+                                              ? { ...item, is_required: event.target.checked }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                    />
+                                    <span className="slider"></span>
+                                  </label>
+                                </div>
+                                <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)" }}>
+                                  <div>
+                                    <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>Campo visible</div>
+                                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Si está oculto, los postulantes no lo verán.</div>
+                                  </div>
+                                  <label className="switch">
+                                    <input
+                                      type="checkbox"
+                                      checked={field.is_active}
+                                      onChange={(event) =>
+                                        setFields((current) =>
+                                          current.map((item) =>
+                                            item.localId === field.localId
+                                              ? { ...item, is_active: event.target.checked }
+                                              : item,
+                                          ),
+                                        )
+                                      }
+                                    />
+                                    <span className="slider"></span>
+                                  </label>
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ marginTop: "24px", paddingTop: "24px", borderTop: "1px solid var(--sand-light)", display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+                              <button
+                                className="btn btn-primary"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveFieldId(null);
+                                }}
+                              >
+                                Listo
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                <button
+                  className="add-field-btn"
+                  onClick={() => insertFieldAt(orderedFields.length)}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginRight: "8px" }}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Agregar campo al final
+                </button>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "comms" && (
+            <div id="tab-comms" className="tab-content active">
+              <div className="builder-section-title">Automatizaciones de correo</div>
+              <div style={{ marginBottom: "24px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <p style={{ fontSize: "0.85rem", color: "var(--muted)" }}>Define plantillas por evento. Mantén solo las necesarias.</p>
+                <button className="btn btn-outline" onClick={addAutomation}>+ Nueva Notificación</button>
+              </div>
+
+              {automations.map((automation) => (
+                <div className="comm-card" key={automation.localId}>
+                  <div className="comm-icon">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                  </div>
+                  <div className="comm-content">
+                    <div className="editor-grid">
+                      <div className="form-field">
+                        <label htmlFor={`event-${automation.localId}`}>Evento</label>
+                        <select
+                          id={`event-${automation.localId}`}
+                          value={automation.trigger_event}
+                          onChange={(event) =>
+                            setAutomations((current) =>
+                              current.map((item) =>
+                                item.localId === automation.localId
+                                  ? { ...item, trigger_event: event.target.value as StageAutomationTemplate["trigger_event"] }
+                                  : item,
+                              ),
+                            )
+                          }
+                        >
+                          <option value="application_submitted">Postulación enviada</option>
+                          <option value="stage_result">Resultado de etapa</option>
+                        </select>
+                      </div>
+                      <div className="form-field" style={{ display: "flex", alignItems: "flex-end" }}>
+                         <div className="switch-wrapper" style={{ border: "none", background: "none", padding: "0", width: "100%" }}>
+                           <span style={{ fontSize: "0.85rem", fontWeight: 500, marginRight: "12px" }}>Habilitada</span>
+                           <label className="switch">
+                             <input
+                               type="checkbox"
+                               checked={automation.is_enabled}
+                               onChange={(event) =>
+                                 setAutomations((current) =>
+                                   current.map((item) =>
+                                     item.localId === automation.localId
+                                       ? { ...item, is_enabled: event.target.checked }
+                                       : item,
+                                   ),
+                                 )
+                               }
+                             />
+                             <span className="slider"></span>
+                           </label>
+                         </div>
+                      </div>
+                      <div className="form-field full">
+                        <label htmlFor={`subject-${automation.localId}`}>Asunto</label>
+                        <input
+                          id={`subject-${automation.localId}`}
+                          type="text"
+                          value={automation.template_subject}
+                          onChange={(event) =>
+                            setAutomations((current) =>
+                              current.map((item) =>
+                                item.localId === automation.localId ? { ...item, template_subject: event.target.value } : item,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                      <div className="form-field full">
+                        <label htmlFor={`body-${automation.localId}`}>Cuerpo</label>
+                        <textarea
+                          id={`body-${automation.localId}`}
+                          rows={4}
+                          value={automation.template_body}
+                          onChange={(event) =>
+                            setAutomations((current) =>
+                              current.map((item) =>
+                                item.localId === automation.localId ? { ...item, template_body: event.target.value } : item,
+                              ),
+                            )
+                          }
+                        />
+                      </div>
+                    </div>
+                    <div className="comm-actions" style={{ marginTop: "16px" }}>
+                      <button
+                        className="btn-icon danger"
+                        onClick={() => removeAutomation(automation.localId)}
+                        title="Eliminar automatización"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <div className="builder-section-title" style={{ marginTop: "32px" }}>Prompt OCR (Gemini)</div>
+              <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "16px" }}>
+                Define instrucciones para extraer señales útiles desde documentos. Mantén el prompt claro y en español.
+              </p>
+              <div className="form-field full">
+                <label htmlFor="ocr-prompt">Prompt OCR de la etapa</label>
+                <textarea
+                  id="ocr-prompt"
+                  rows={6}
+                  value={ocrPromptTemplate}
+                  onChange={(event) => setOcrPromptTemplate(event.target.value)}
+                />
+                <div className="hint" style={{ marginTop: "8px" }}>Nota: el sistema siempre fuerza salida JSON con `summary` y `confidence`.</div>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+    </div>
   );
 }

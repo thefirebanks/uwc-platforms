@@ -1,18 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Stack,
-  Switch,
-  TextField,
-  Typography,
-} from "@mui/material";
 import { useAppLanguage } from "@/components/language-provider";
 import type { SelectionProcess } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
@@ -30,7 +19,6 @@ function formatDate(value: string | null) {
   if (!value) {
     return null;
   }
-
   return new Date(value).toLocaleDateString();
 }
 
@@ -49,6 +37,7 @@ export function AdminProcessesDashboard({
   const [error, setError] = useState<ApiError | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);
 
   const orderedProcesses = useMemo(
     () =>
@@ -90,6 +79,7 @@ export function AdminProcessesDashboard({
       setName(t("adminProcesses.defaultName", { year: parsedYear + 1 }));
       setYear(String(parsedYear + 1));
       setSetAsActive(false);
+      setShowCreateForm(false);
       router.refresh();
     } finally {
       setIsSubmitting(false);
@@ -123,107 +113,111 @@ export function AdminProcessesDashboard({
   }
 
   return (
-    <Stack spacing={3}>
-      <Card>
-        <CardContent>
-          <Typography variant="h5">{t("adminProcesses.title")}</Typography>
-          <Typography color="text.secondary">
-            {t("adminProcesses.description")}
-          </Typography>
-        </CardContent>
-      </Card>
+    <main className="main full-width">
+      <div className="canvas-header" style={{ borderBottom: "none", paddingBottom: "16px" }}>
+        <div className="canvas-title-row">
+          <div>
+            <h1 style={{ fontSize: "2rem" }}>{t("adminProcesses.title")}</h1>
+            <p style={{ fontSize: "1rem" }}>{t("adminProcesses.description")}</p>
+          </div>
+          <button 
+            className={`btn ${showCreateForm ? 'btn-outline' : 'btn-primary'}`} 
+            onClick={() => setShowCreateForm(!showCreateForm)}
+          >
+            {showCreateForm ? 'Cancelar' : '+ Nuevo Proceso'}
+          </button>
+        </div>
+      </div>
 
-      {error ? <ErrorCallout message={error.message} errorId={error.errorId} context="admin_processes" /> : null}
+      <div className="canvas-body wide">
+        {error ? (
+          <div style={{ marginBottom: "24px" }}>
+            <ErrorCallout message={error.message} errorId={error.errorId} context="admin_processes" />
+          </div>
+        ) : null}
 
-      {statusMessage ? (
-        <Box sx={{ p: 2, borderRadius: 2, bgcolor: "#DBEAFE" }}>
-          <Typography color="#1D4ED8">{statusMessage}</Typography>
-        </Box>
-      ) : null}
+        {statusMessage ? (
+          <div style={{ padding: "12px", borderRadius: "8px", background: "var(--success-soft)", border: "1px solid var(--success)", color: "var(--success)", fontWeight: 500, marginBottom: "24px" }}>
+            {statusMessage}
+          </div>
+        ) : null}
 
-      <Card>
-        <CardContent>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            {t("adminProcesses.create")}
-          </Typography>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
-            <TextField
-              label={t("adminProcesses.processName")}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              fullWidth
-            />
-            <TextField
-              label={t("adminProcesses.year")}
-              type="number"
-              value={year}
-              onChange={(event) => setYear(event.target.value)}
-              sx={{ minWidth: 140 }}
-            />
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Switch checked={setAsActive} onChange={(event) => setSetAsActive(event.target.checked)} />
-              <Typography>{t("adminProcesses.activateOnCreate")}</Typography>
-            </Stack>
-            <Button variant="contained" onClick={createProcess} disabled={isSubmitting}>
-              {t("adminProcesses.createButton")}
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Typography variant="h6" sx={{ mb: 2 }}>
-            {t("adminProcesses.available")}
-          </Typography>
-          <Stack spacing={2}>
-            {orderedProcesses.map((process) => (
-              <Box
-                key={process.id}
-                sx={{
-                  border: "1px solid #E5E7EB",
-                  borderRadius: 2,
-                  p: 2,
-                }}
+        {showCreateForm && (
+          <div className="settings-card">
+            <div className="settings-card-header">
+              <h3>{t("adminProcesses.create")}</h3>
+              <p>Crea un nuevo proceso y opcionalmente déjalo activo desde el inicio.</p>
+            </div>
+            <div className="editor-grid">
+              <div className="form-field">
+                <label>{t("adminProcesses.processName")}</label>
+                <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
+              </div>
+              <div className="form-field">
+                <label>{t("adminProcesses.year")}</label>
+                <input type="number" value={year} onChange={(e) => setYear(e.target.value)} />
+              </div>
+              <div className="form-field full">
+                <div className="switch-wrapper" style={{ borderColor: "var(--sand)", background: "var(--surface)" }}>
+                  <div>
+                    <div style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--ink)" }}>{t("adminProcesses.activateOnCreate")}</div>
+                  </div>
+                  <label className="switch">
+                    <input type="checkbox" checked={setAsActive} onChange={(e) => setSetAsActive(e.target.checked)} />
+                    <span className="slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div style={{ textAlign: "right", marginTop: "24px" }}>
+              <button 
+                className="btn btn-primary" 
+                onClick={createProcess} 
+                disabled={isSubmitting}
               >
-                <Stack
-                  direction={{ xs: "column", md: "row" }}
-                  spacing={1}
-                  justifyContent="space-between"
-                  alignItems={{ md: "center" }}
-                >
-                  <Box>
-                    <Typography variant="subtitle1" fontWeight={700}>
-                      {process.name} {process.is_active ? `(${t("state.active")})` : ""}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {t("adminProcesses.applications", { count: process.applicationCount })}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Stage 1: {formatDate(process.stage1_open_at) ?? t("date.notConfigured")} -{" "}
-                      {formatDate(process.stage1_close_at) ?? t("date.notConfigured")}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      Stage 2: {formatDate(process.stage2_open_at) ?? t("date.notConfigured")} -{" "}
-                      {formatDate(process.stage2_close_at) ?? t("date.notConfigured")}
-                    </Typography>
-                  </Box>
-                  <Stack direction="row" spacing={1}>
-                    <Button component={Link} href={`/admin/process/${process.id}`} variant="outlined">
-                      {t("adminProcesses.manageProcess")}
-                    </Button>
-                    {!process.is_active ? (
-                      <Button variant="text" onClick={() => activateProcess(process.id)}>
-                        {t("adminProcesses.markActive")}
-                      </Button>
-                    ) : null}
-                  </Stack>
-                </Stack>
-              </Box>
-            ))}
-          </Stack>
-        </CardContent>
-      </Card>
-    </Stack>
+                {t("adminProcesses.createButton")}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="process-list-grid">
+          {orderedProcesses.map((process) => (
+            <div 
+              key={process.id} 
+              className={`process-card ${process.is_active ? "active" : ""}`}
+              onClick={() => router.push(`/admin/process/${process.id}`)}
+            >
+              <div className="process-card-left">
+                <div className="process-card-icon">{process.is_active ? "🎯" : "📝"}</div>
+                <div className="process-card-info">
+                  <h3>{process.name}</h3>
+                  <p>
+                    {process.is_active ? "Activo" : "Inactivo"} • {t("adminProcesses.applications", { count: process.applicationCount })} • Máx {process.max_applications_per_user}
+                  </p>
+                </div>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
+                <div className={`process-badge ${process.is_active ? "active" : "draft"}`}>
+                  {process.is_active ? t("state.active") : "Inactivo"}
+                </div>
+                {!process.is_active && (
+                  <button 
+                    className="btn btn-ghost" 
+                    style={{ fontSize: "0.7rem", padding: "4px 8px" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      activateProcess(process.id);
+                    }}
+                  >
+                    {t("adminProcesses.markActive")}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </main>
   );
 }
