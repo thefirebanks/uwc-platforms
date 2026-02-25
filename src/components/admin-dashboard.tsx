@@ -1,27 +1,7 @@
 "use client";
-
-import { useMemo, useState } from "react";
+import { useState, useMemo, Fragment } from "react";
 import Link from "next/link";
-import {
-  Accordion,
-  AccordionDetails,
-  AccordionSummary,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Chip,
-  MenuItem,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+
 import type {
   Application,
   ApplicationOcrCheck,
@@ -41,7 +21,12 @@ interface ApiError {
 
 type StageFilter = StageCode | "all";
 type StatusFilter = Application["status"] | "all";
-type EligibilityFilter = "all" | "eligible" | "ineligible" | "pending" | "advanced";
+type EligibilityFilter =
+  | "all"
+  | "eligible"
+  | "ineligible"
+  | "pending"
+  | "advanced";
 
 const EMPTY_COMMUNICATION_SUMMARY = {
   queued: 0,
@@ -72,7 +57,8 @@ function formatDate(value: string | null) {
 }
 
 function getApplicationFiles(application: Application) {
-  const files = (application.files as Record<string, unknown> | undefined) ?? {};
+  const files =
+    (application.files as Record<string, unknown> | undefined) ?? {};
   const normalized: Record<string, string> = {};
 
   for (const [key, value] of Object.entries(files)) {
@@ -81,7 +67,11 @@ function getApplicationFiles(application: Application) {
       continue;
     }
 
-    if (value && typeof value === "object" && typeof (value as Record<string, unknown>).path === "string") {
+    if (
+      value &&
+      typeof value === "object" &&
+      typeof (value as Record<string, unknown>).path === "string"
+    ) {
       normalized[key] = (value as Record<string, unknown>).path as string;
     }
   }
@@ -103,34 +93,135 @@ export function AdminDashboard({
   initialApplications,
   cycleTemplates,
   cycle,
+  initialWorkspaceSection = "process_config",
 }: {
   initialApplications: Application[];
   cycleTemplates: CycleStageTemplate[];
   cycle: SelectionProcess;
+  initialWorkspaceSection?: "process_config" | "stages" | "applications" | "communications";
 }) {
   const [applications, setApplications] = useState(initialApplications);
   const [templates, setTemplates] = useState(cycleTemplates);
   const [error, setError] = useState<ApiError | null>(null);
-  const [csvData, setCsvData] = useState("applicant_email,score,passed\napplicant.demo@uwcperu.org,15.7,true");
+  const [csvData, setCsvData] = useState(
+    "applicant_email,score,passed\napplicant.demo@uwcperu.org,15.7,true",
+  );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [stage1OpenAt, setStage1OpenAt] = useState(toDateInputValue(cycle.stage1_open_at));
-  const [stage1CloseAt, setStage1CloseAt] = useState(toDateInputValue(cycle.stage1_close_at));
-  const [stage2OpenAt, setStage2OpenAt] = useState(toDateInputValue(cycle.stage2_open_at));
-  const [stage2CloseAt, setStage2CloseAt] = useState(toDateInputValue(cycle.stage2_close_at));
+  const [stage1OpenAt, setStage1OpenAt] = useState(
+    toDateInputValue(cycle.stage1_open_at),
+  );
+  const [stage1CloseAt, setStage1CloseAt] = useState(
+    toDateInputValue(cycle.stage1_close_at),
+  );
+  const [stage2OpenAt, setStage2OpenAt] = useState(
+    toDateInputValue(cycle.stage2_open_at),
+  );
+  const [stage2CloseAt, setStage2CloseAt] = useState(
+    toDateInputValue(cycle.stage2_close_at),
+  );
   const [communications, setCommunications] = useState<CommunicationLog[]>([]);
-  const [communicationSummary, setCommunicationSummary] = useState({ ...EMPTY_COMMUNICATION_SUMMARY });
+  const [communicationSummary, setCommunicationSummary] = useState({
+    ...EMPTY_COMMUNICATION_SUMMARY,
+  });
   const [isCommunicationLoading, setIsCommunicationLoading] = useState(false);
-  const [processingTargetStatus, setProcessingTargetStatus] = useState<"queued" | "failed" | null>(null);
-  const [ocrLoadingApplicationId, setOcrLoadingApplicationId] = useState<string | null>(null);
-  const [selectedOcrApplicationId, setSelectedOcrApplicationId] = useState<string | null>(null);
+  const [processingTargetStatus, setProcessingTargetStatus] = useState<
+    "queued" | "failed" | null
+  >(null);
+  const [ocrLoadingApplicationId, setOcrLoadingApplicationId] = useState<
+    string | null
+  >(null);
+  const [selectedOcrApplicationId, setSelectedOcrApplicationId] = useState<
+    string | null
+  >(null);
   const [ocrChecks, setOcrChecks] = useState<ApplicationOcrCheck[]>([]);
   const [isOcrHistoryLoading, setIsOcrHistoryLoading] = useState(false);
   const [stageFilter, setStageFilter] = useState<StageFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [eligibilityFilter, setEligibilityFilter] = useState<EligibilityFilter>("all");
+  const [eligibilityFilter, setEligibilityFilter] =
+    useState<EligibilityFilter>("all");
+  const [activeSection, setActiveSection] = useState<
+    "process_config" | "stages" | "applications" | "communications"
+  >(initialWorkspaceSection);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const sections = [
+    "process_config",
+    "stages",
+    "applications",
+    "communications",
+  ] as const;
+
+  const SECTION_LABELS: Record<(typeof sections)[number], string> = {
+    process_config: "Reglas generales",
+    stages: "Etapas",
+    applications: "Postulaciones",
+    communications: "Comunicaciones y Examen",
+  };
+
+  const combinedStages = useMemo(() => {
+    return [
+      {
+        stageNumber: 1,
+        stageCode: "documents" as StageCode,
+        defaultLabel: "Documentos",
+        isPlaceholder: false,
+        canEditDates: true,
+        template: templates.find((t) => t.stage_code === "documents"),
+        openDate: stage1OpenAt,
+        closeDate: stage1CloseAt,
+      },
+      {
+        stageNumber: 2,
+        stageCode: "exam_placeholder" as StageCode,
+        defaultLabel: "Examen",
+        isPlaceholder: false,
+        canEditDates: true,
+        template: templates.find((t) => t.stage_code === "exam_placeholder"),
+        openDate: stage2OpenAt,
+        closeDate: stage2CloseAt,
+      },
+      {
+        stageNumber: 3,
+        defaultLabel: "Entrevistas",
+        isPlaceholder: true,
+        canEditDates: false,
+        template: null,
+      },
+      {
+        stageNumber: 4,
+        defaultLabel: "Presencial",
+        isPlaceholder: true,
+        canEditDates: false,
+        template: null,
+      },
+      {
+        stageNumber: 5,
+        defaultLabel: "Entrevista final",
+        isPlaceholder: true,
+        canEditDates: false,
+        template: null,
+      },
+      {
+        stageNumber: 6,
+        defaultLabel: "Nominación",
+        isPlaceholder: true,
+        canEditDates: false,
+        template: null,
+      },
+    ];
+  }, [
+    templates,
+    stage1OpenAt,
+    stage1CloseAt,
+    stage2OpenAt,
+    stage2CloseAt,
+  ]);
 
   const orderedApplications = useMemo(
-    () => [...applications].sort((a, b) => b.updated_at.localeCompare(a.updated_at)),
+    () =>
+      [...applications].sort((a, b) =>
+        b.updated_at.localeCompare(a.updated_at),
+      ),
     [applications],
   );
   const statusRollup = useMemo(() => {
@@ -148,18 +239,7 @@ export function AdminDashboard({
 
     return counts;
   }, [applications]);
-  const stageRollup = useMemo(() => {
-    const counts: Record<StageCode, number> = {
-      documents: 0,
-      exam_placeholder: 0,
-    };
 
-    for (const application of applications) {
-      counts[application.stage_code] += 1;
-    }
-
-    return counts;
-  }, [applications]);
   const filteredApplications = useMemo(() => {
     return orderedApplications.filter((application) => {
       if (stageFilter !== "all" && application.stage_code !== stageFilter) {
@@ -170,15 +250,24 @@ export function AdminDashboard({
         return false;
       }
 
-      if (eligibilityFilter === "eligible" && application.status !== "eligible") {
+      if (
+        eligibilityFilter === "eligible" &&
+        application.status !== "eligible"
+      ) {
         return false;
       }
 
-      if (eligibilityFilter === "ineligible" && application.status !== "ineligible") {
+      if (
+        eligibilityFilter === "ineligible" &&
+        application.status !== "ineligible"
+      ) {
         return false;
       }
 
-      if (eligibilityFilter === "advanced" && application.status !== "advanced") {
+      if (
+        eligibilityFilter === "advanced" &&
+        application.status !== "advanced"
+      ) {
         return false;
       }
 
@@ -228,7 +317,9 @@ export function AdminDashboard({
     setIsCommunicationLoading(true);
 
     try {
-      const response = await fetch(`/api/communications?cycleId=${cycle.id}&limit=8`);
+      const response = await fetch(
+        `/api/communications?cycleId=${cycle.id}&limit=8`,
+      );
       const body = await response.json();
 
       if (!response.ok) {
@@ -299,15 +390,21 @@ export function AdminDashboard({
     setStatusMessage("Fechas del proceso actualizadas.");
   }
 
-  async function validateApplication(applicationId: string, status: "eligible" | "ineligible") {
+  async function validateApplication(
+    applicationId: string,
+    status: "eligible" | "ineligible",
+  ) {
     setError(null);
     setStatusMessage(null);
 
-    const response = await fetch(`/api/applications/${applicationId}/validate`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status, notes: "Revisión manual del comité." }),
-    });
+    const response = await fetch(
+      `/api/applications/${applicationId}/validate`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, notes: "Revisión manual del comité." }),
+      },
+    );
 
     const body = await response.json();
 
@@ -324,14 +421,17 @@ export function AdminDashboard({
     setError(null);
     setStatusMessage(null);
 
-    const response = await fetch(`/api/applications/${applicationId}/transition`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        toStage,
-        reason: "Cambio ejecutado desde panel admin.",
-      }),
-    });
+    const response = await fetch(
+      `/api/applications/${applicationId}/transition`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          toStage,
+          reason: "Cambio ejecutado desde panel admin.",
+        }),
+      },
+    );
 
     const body = await response.json();
 
@@ -422,7 +522,10 @@ export function AdminDashboard({
     }
   }
 
-  async function loadOcrHistory(applicationId: string, options?: { forceOpen?: boolean }) {
+  async function loadOcrHistory(
+    applicationId: string,
+    options?: { forceOpen?: boolean },
+  ) {
     setError(null);
 
     if (!options?.forceOpen && selectedOcrApplicationId === applicationId) {
@@ -435,7 +538,9 @@ export function AdminDashboard({
     setIsOcrHistoryLoading(true);
 
     try {
-      const response = await fetch(`/api/applications/${applicationId}/ocr-check?limit=10`);
+      const response = await fetch(
+        `/api/applications/${applicationId}/ocr-check?limit=10`,
+      );
       const body = await response.json();
 
       if (!response.ok) {
@@ -465,11 +570,14 @@ export function AdminDashboard({
     setOcrLoadingApplicationId(application.id);
 
     try {
-      const response = await fetch(`/api/applications/${application.id}/ocr-check`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileKey }),
-      });
+      const response = await fetch(
+        `/api/applications/${application.id}/ocr-check`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileKey }),
+        },
+      );
       const body = await response.json();
 
       if (!response.ok) {
@@ -506,473 +614,933 @@ export function AdminDashboard({
   }
 
   return (
-    <Stack spacing={3}>
-      <Card>
-        <CardContent>
-          <Typography variant="h5">Panel de administración</Typography>
-          <Typography sx={{ mt: 1 }} fontWeight={700}>
-            {cycle.name}
-          </Typography>
-          <Typography color="text.secondary">
-            Gestiona validaciones, transición de etapas (2 etapas MVP) e importación de examen externo.
-          </Typography>
-          <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-            `Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1.
-          </Typography>
-          <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-            <Button component={Link} href="/admin" variant="outlined" size="small">
-              Volver al dashboard de procesos
-            </Button>
-            <Button component={Link} href="/admin/audit" variant="outlined" size="small">
-              Ver auditoría del proceso
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
-
-      {error ? (
-        <ErrorCallout message={error.message} errorId={error.errorId} context="admin_dashboard" />
-      ) : null}
-
-      {statusMessage ? (
-        <Box sx={{ p: 2, borderRadius: 2, bgcolor: "#DBEAFE" }}>
-          <Typography color="#1D4ED8">{statusMessage}</Typography>
-        </Box>
-      ) : null}
-
-      <Card>
-        <CardContent>
-          <Typography variant="h6">Configuración de etapas</Typography>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Define fechas base para Stage 1 y Stage 2 del proceso.
-          </Typography>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-            <TextField
-              label="Stage 1 inicio"
-              type="date"
-              value={stage1OpenAt}
-              onChange={(event) => setStage1OpenAt(event.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
-            <TextField
-              label="Stage 1 cierre"
-              type="date"
-              value={stage1CloseAt}
-              onChange={(event) => setStage1CloseAt(event.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
-            <TextField
-              label="Stage 2 inicio"
-              type="date"
-              value={stage2OpenAt}
-              onChange={(event) => setStage2OpenAt(event.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
-            <TextField
-              label="Stage 2 cierre"
-              type="date"
-              value={stage2CloseAt}
-              onChange={(event) => setStage2CloseAt(event.target.value)}
-              InputLabelProps={{ shrink: true }}
-            />
-            <Button variant="outlined" onClick={saveStageConfiguration}>
-              Guardar fechas
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Typography variant="h6">Plantillas de etapas</Typography>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Personaliza etiquetas e hitos por etapa. Las fechas se gestionan en la sección
-            `Configuración de etapas`.
-          </Typography>
-          <Stack spacing={2}>
-            {templates.map((template) => (
-              <Box key={template.id} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 1.5 }}>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems={{ md: "center" }}>
-                <Chip
-                  label={template.stage_code === "documents" ? "Stage 1" : "Stage 2"}
-                  color={template.stage_code === "documents" ? "primary" : "default"}
-                  sx={{ width: 110 }}
-                />
-                <TextField
-                  label="Nombre de etapa"
-                  value={template.stage_label}
-                  onChange={(event) => updateTemplate(template.id, "stage_label", event.target.value)}
-                  fullWidth
-                />
-                <TextField
-                  label="Hito"
-                  value={template.milestone_label}
-                  onChange={(event) => updateTemplate(template.id, "milestone_label", event.target.value)}
-                  fullWidth
-                />
-                <Button
-                  component={Link}
-                  href={`/admin/process/${cycle.id}/stage/${template.stage_code}`}
-                  variant="outlined"
-                  prefetch
-                  sx={{ minWidth: 132 }}
-                >
-                  Editar campos
-                </Button>
-                </Stack>
-              </Box>
-            ))}
-          </Stack>
-          <Button variant="outlined" sx={{ mt: 2 }} onClick={saveStageTemplates}>
-            Guardar plantillas
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Typography variant="h6">Resumen del proceso</Typography>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={1} sx={{ mt: 1.5 }} useFlexGap flexWrap="wrap">
-            <Chip label={`Total: ${applications.length}`} />
-            <Chip label={`Draft: ${statusRollup.draft}`} />
-            <Chip label={`Enviadas: ${statusRollup.submitted}`} />
-            <Chip label={`Elegibles: ${statusRollup.eligible}`} color="success" />
-            <Chip label={`No elegibles: ${statusRollup.ineligible}`} color="warning" />
-            <Chip label={`Avanzadas: ${statusRollup.advanced}`} color="primary" />
-          </Stack>
-          <Typography color="text.secondary" sx={{ mt: 2 }}>
-            Stage 1 (Documentos): {stageRollup.documents} · Stage 2 (Placeholder): {stageRollup.exam_placeholder}
-          </Typography>
-          <Typography color="text.secondary" variant="body2" sx={{ mt: 1 }}>
-            Fechas de referencia: Stage 1 cierra {formatDate(cycle.stage1_close_at)}; Stage 2 cierra{" "}
-            {formatDate(cycle.stage2_close_at)}.
-          </Typography>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardContent>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            justifyContent="space-between"
-            alignItems={{ xs: "stretch", md: "center" }}
-            spacing={1}
-            sx={{ mb: 2 }}
+    <div
+      className="layout"
+      style={{
+        paddingTop: 0,
+        minHeight: "auto",
+      }}
+    >
+      <aside
+        className="sidebar"
+        style={{
+          position: "sticky",
+          top: 0,
+          height: "calc(100vh - 72px)",
+        }}
+      >
+        <div
+          className="sidebar-header"
+          style={{
+            cursor: "pointer",
+          }}
+          onClick={() => (window.location.href = "/admin")}
+        >
+          <div
+            className="eyebrow"
+            style={{
+              color: "var(--maroon)",
+              display: "flex",
+              alignItems: "center",
+              gap: "4px",
+            }}
           >
-            <Typography variant="h6">Postulaciones</Typography>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
-              <Button component="a" href={exportCsvHref} variant="outlined">
-                Exportar CSV filtrado
-              </Button>
-              <Button onClick={refreshData} variant="outlined">
-                Refrescar
-              </Button>
-            </Stack>
-          </Stack>
-          <Stack direction={{ xs: "column", md: "row" }} spacing={1.2} sx={{ mb: 2 }}>
-            <TextField
-              select
-              size="small"
-              label="Etapa"
-              value={stageFilter}
-              onChange={(event) => setStageFilter(event.target.value as StageFilter)}
-              sx={{ minWidth: 160 }}
-            >
-              <MenuItem value="all">Todas</MenuItem>
-              <MenuItem value="documents">Stage 1</MenuItem>
-              <MenuItem value="exam_placeholder">Stage 2</MenuItem>
-            </TextField>
-            <TextField
-              select
-              size="small"
-              label="Estado"
-              value={statusFilter}
-              onChange={(event) => {
-                const next = event.target.value as StatusFilter;
-                setStatusFilter(next);
-                if (next !== "all") {
-                  setEligibilityFilter("all");
-                }
+            {"← Volver a procesos"}
+          </div>
+          <h2
+            style={{
+              marginTop: "8px",
+            }}
+          >
+            {cycle.name}
+          </h2>
+        </div>
+        <div className="sidebar-nav">
+          <div
+            className="builder-section-title"
+            style={{
+              padding: "0 20px",
+              marginBottom: "8px",
+              marginTop: "8px",
+            }}
+          >
+            {"Panel"}
+          </div>
+          {sections.map((a) => {
+            const c = activeSection === a,
+              d =
+                "stages" === a
+                  ? `${templates.length}/6 plantillas configuradas`
+                  : "applications" === a
+                    ? `${filteredApplications.length} resultado(s) filtrados`
+                    : "communications" === a
+                      ? `${communicationSummary.total} registros`
+                      : "Reglas y configuración";
+            return (
+              <button
+                key={a}
+                className={`stage-item ${c ? "active" : ""}`}
+                onClick={() => setActiveSection(a)}
+              >
+                <div className="stage-icon">
+                  {
+                    {
+                      process_config: "⚙",
+                      stages: "📋",
+                      applications: "👥",
+                      communications: "✉",
+                    }[a]
+                  }
+                </div>
+                <div className="stage-info">
+                  <div className="stage-title">{SECTION_LABELS[a]}</div>
+                  <div className="stage-type">{d}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </aside>
+      <main className="main">
+        {error ? (
+          <div
+            style={{
+              margin: "24px 40px 0",
+            }}
+          >
+            <ErrorCallout
+              message={error.message}
+              errorId={error.errorId}
+              context="admin_dashboard"
+            />
+          </div>
+        ) : null}
+        {statusMessage ? (
+          <div
+            style={{
+              margin: "24px 40px 0",
+            }}
+          >
+            <div
+              style={{
+                padding: "12px",
+                borderRadius: "8px",
+                backgroundColor: "rgba(29, 78, 216, 0.08)",
+                border: "1px solid rgba(29, 78, 216, 0.14)",
+                color: "#1D4ED8",
+                fontWeight: 500,
               }}
-              sx={{ minWidth: 170 }}
             >
-              <MenuItem value="all">Todos</MenuItem>
-              <MenuItem value="draft">Borrador</MenuItem>
-              <MenuItem value="submitted">Enviada</MenuItem>
-              <MenuItem value="eligible">Elegible</MenuItem>
-              <MenuItem value="ineligible">No elegible</MenuItem>
-              <MenuItem value="advanced">Avanzada</MenuItem>
-            </TextField>
-            <TextField
-              select
-              size="small"
-              label="Elegibilidad"
-              value={eligibilityFilter}
-              onChange={(event) => {
-                const next = event.target.value as EligibilityFilter;
-                setEligibilityFilter(next);
-                if (next !== "all") {
-                  setStatusFilter("all");
+              {statusMessage}
+            </div>
+          </div>
+        ) : null}
+        <div className="canvas-header">
+          <div className="canvas-title-row">
+            <div>
+              <h1>{"Resumen del Proceso"}</h1>
+              <p>
+                {
+                  "Gestiona validaciones, transición de etapas (2 etapas MVP) e importación de examen externo."
                 }
+              </p>
+              <p
+                style={{
+                  fontSize: "0.85rem",
+                  color: "var(--muted)",
+                  marginTop: "4px",
+                }}
+              >
+                {
+                  "`Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1."
+                }
+              </p>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "8px",
               }}
-              sx={{ minWidth: 190 }}
             >
-              <MenuItem value="all">Todas</MenuItem>
-              <MenuItem value="pending">Pendiente de decisión</MenuItem>
-              <MenuItem value="eligible">Elegible</MenuItem>
-              <MenuItem value="ineligible">No elegible</MenuItem>
-              <MenuItem value="advanced">Avanzada</MenuItem>
-            </TextField>
-          </Stack>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>ID</TableCell>
-                <TableCell>Etapa</TableCell>
-                <TableCell>Estado</TableCell>
-                <TableCell>Última actualización</TableCell>
-                <TableCell>Acciones</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredApplications.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5}>
-                    No hay postulaciones para los filtros seleccionados.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredApplications.map((application) => (
-                  <TableRow key={application.id}>
-                    <TableCell sx={{ fontFamily: "monospace" }}>{application.id.slice(0, 8)}</TableCell>
-                    <TableCell>
-                      <StageBadge stage={application.stage_code} />
-                    </TableCell>
-                    <TableCell>{application.status}</TableCell>
-                    <TableCell>{new Date(application.updated_at).toLocaleString()}</TableCell>
-                    <TableCell>
-                      <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap" alignItems="center">
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          color="success"
-                          onClick={() => validateApplication(application.id, "eligible")}
-                        >
-                          Elegible
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          color="warning"
-                          onClick={() => validateApplication(application.id, "ineligible")}
-                        >
-                          No elegible
-                        </Button>
-                        <TextField
-                          select
-                          size="small"
-                          value={application.stage_code}
-                          onChange={(event) =>
-                            transition(application.id, event.target.value as StageCode)
-                          }
-                        >
-                          <MenuItem value="documents">Stage 1</MenuItem>
-                          <MenuItem
-                            value="exam_placeholder"
-                            disabled={
-                              !canTransition({
-                                fromStage: application.stage_code,
-                                toStage: "exam_placeholder",
-                                status: application.status,
-                              })
-                            }
-                          >
-                            Stage 2 placeholder
-                          </MenuItem>
-                        </TextField>
-                        <Button
-                          variant="text"
-                          size="small"
-                          onClick={() => void loadOcrHistory(application.id)}
-                        >
-                          {selectedOcrApplicationId === application.id ? "Ocultar OCR" : "Ver OCR"}
-                        </Button>
-                        <Button
-                          variant="outlined"
-                          size="small"
-                          onClick={() => void runOcrValidation(application)}
-                          disabled={
-                            !getDefaultOcrFileKey(application) ||
-                            ocrLoadingApplicationId === application.id
-                          }
-                        >
-                          {ocrLoadingApplicationId === application.id ? "OCR..." : "OCR"}
-                        </Button>
-                        <Button
-                          component="a"
-                          href={`/api/exports?applicationId=${application.id}`}
-                          variant="text"
-                          size="small"
-                        >
-                          Exportar JSON
-                        </Button>
-                      </Stack>
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      {selectedOcrApplicationId ? (
-        <Card>
-          <CardContent>
-            <Typography variant="h6">Historial OCR</Typography>
-            <Typography color="text.secondary" sx={{ mb: 1.5 }}>
-              Postulación seleccionada:{" "}
-              <Typography component="span" sx={{ fontFamily: "monospace" }}>
-                {selectedOcrApplicationId.slice(0, 8)}
-              </Typography>
-            </Typography>
-            {isOcrHistoryLoading ? (
-              <Typography color="text.secondary">Cargando historial OCR...</Typography>
-            ) : ocrChecks.length === 0 ? (
-              <Typography color="text.secondary">
-                Aún no existen validaciones OCR para esta postulación.
-              </Typography>
-            ) : (
-              <Stack spacing={1.2}>
-                {ocrChecks.map((check) => (
-                  <Box key={check.id} sx={{ border: "1px solid #E5E7EB", borderRadius: 2, p: 1.5 }}>
-                    <Stack
-                      direction={{ xs: "column", md: "row" }}
-                      spacing={1}
-                      justifyContent="space-between"
-                    >
-                      <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
-                        {new Date(check.created_at).toLocaleString()}
-                      </Typography>
-                      <Chip label={`Confianza ${Math.round(check.confidence * 100)}%`} size="small" />
-                    </Stack>
-                    <Typography variant="body2" color="text.secondary">
-                      Archivo: {check.file_key}
-                    </Typography>
-                    <Typography sx={{ mt: 0.8 }}>{check.summary}</Typography>
-                  </Box>
-                ))}
-              </Stack>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Accordion>
-        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-          <Typography variant="h6">Operaciones avanzadas</Typography>
-        </AccordionSummary>
-        <AccordionDetails>
-          <Stack spacing={2}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6">Importación de examen externo</Typography>
-                <Typography color="text.secondary" sx={{ mb: 2 }}>
-                  Pega tu CSV con columnas: applicant_email, score, passed.
-                </Typography>
-                <Typography color="text.secondary" variant="body2" sx={{ mb: 1.5 }}>
-                  Este módulo está en modo demo: muestra resumen de importación sin persistir notas de examen.
-                </Typography>
-                <TextField
-                  value={csvData}
-                  onChange={(event) => setCsvData(event.target.value)}
-                  multiline
-                  minRows={4}
-                  fullWidth
-                />
-                <Button variant="outlined" sx={{ mt: 2 }} onClick={importExamCsv}>
-                  Importar CSV
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent>
-                <Typography variant="h6">Comunicaciones</Typography>
-                <Typography color="text.secondary" sx={{ mb: 1.5 }}>
-                  Registra correos en cola y ejecútalos con envío real (proveedor configurado).
-                </Typography>
-                <Stack
-                  direction={{ xs: "column", md: "row" }}
-                  spacing={1}
-                  useFlexGap
-                  flexWrap="wrap"
-                  sx={{ mb: 1.5 }}
+              <Link href="/admin" className="btn btn-outline">
+                {"Volver al dashboard de procesos"}
+              </Link>
+              <Link href="/admin/audit" className="btn btn-outline">
+                {"Ver auditoría del proceso"}
+              </Link>
+            </div>
+          </div>
+        </div>
+        <div className="canvas-body wide">
+          <div className="dashboard-grid">
+            <div className="stat-card">
+              <div className="stat-title">{"Postulaciones Totales"}</div>
+              <div className="stat-value">{applications.length}</div>
+              <div className="stat-trend neutral">{"En el sistema"}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">{"Elegibles / Avanzadas"}</div>
+              <div className="stat-value">
+                {statusRollup.eligible}
+                {" / "}
+                {statusRollup.advanced}
+              </div>
+              <div className="stat-trend">{"Pasaron filtro"}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">{"En progreso"}</div>
+              <div className="stat-value">
+                {statusRollup.draft + statusRollup.submitted}
+              </div>
+              <div className="stat-trend neutral">
+                {"Stage 1: "}
+                {formatDate(cycle.stage1_close_at)}
+              </div>
+            </div>
+          </div>
+          {"process_config" === activeSection ? (
+            <div className="settings-card">
+              <div className="settings-card-header">
+                <h3>{"Reglas generales"}</h3>
+                <p>
+                  {
+                    "Usa esta vista para reglas globales del proceso. Las fechas por etapa se editan en "
+                  }
+                  <strong>{"Etapas"}</strong>
+                  {" para mantener el calendario junto a cada plantilla."}
+                </p>
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  flexWrap: "wrap",
+                }}
+              >
+                <span
+                  className="status-pill"
+                  style={{
+                    background: "var(--sand)",
+                    color: "var(--ink)",
+                  }}
                 >
-                  <Chip label={`Cola: ${communicationSummary.queued}`} />
-                  <Chip label={`Procesando: ${communicationSummary.processing}`} />
-                  <Chip label={`Enviadas: ${communicationSummary.sent}`} color="success" />
-                  <Chip label={`Fallidas: ${communicationSummary.failed}`} color="warning" />
-                </Stack>
-                <Stack direction={{ xs: "column", md: "row" }} spacing={1}>
-                  <Button variant="contained" onClick={sendStatusEmails}>
-                    Enviar resultados
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={() => void processCommunications("queued")}
-                    disabled={processingTargetStatus !== null}
+                  {"Máx. postulaciones por usuario: "}
+                  {cycle.max_applications_per_user}
+                </span>
+                <span
+                  className={`status-pill ${cycle.is_active ? "complete" : "rejected"}`}
+                >
+                  {cycle.is_active ? "Proceso activo" : "Proceso inactivo"}
+                </span>
+                <span
+                  className="status-pill"
+                  style={{
+                    background: "var(--sand)",
+                    color: "var(--ink)",
+                  }}
+                >
+                  {"Ciclo: "}
+                  {cycle.id}
+                </span>
+              </div>
+            </div>
+          ) : null}
+          {"stages" === activeSection ? (
+            <div className="settings-card">
+              <div className="settings-card-header">
+                <h3>{"Plantillas de etapas"}</h3>
+                <p>
+                  {
+                    "Personaliza etiquetas, hitos y fechas por etapa. Se incluyen placeholders hasta Stage 6 para planear el flujo completo, aunque el MVP tenga menos etapas activas."
+                  }
+                </p>
+              </div>
+              <div className="field-list">
+                {combinedStages.map((a) => (
+                  <div
+                    key={a.template?.id ?? `placeholder-stage-${a.stageNumber}`}
+                    className="field-card"
+                    style={{
+                      padding: "16px",
+                    }}
                   >
-                    {processingTargetStatus === "queued" ? "Procesando..." : "Procesar cola"}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={() => void processCommunications("failed")}
-                    disabled={processingTargetStatus !== null}
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "16px",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div
+                        className="stage-status"
+                        style={{
+                          margin: 0,
+                          background:
+                            1 === a.stageNumber
+                              ? "var(--maroon-soft)"
+                              : 2 === a.stageNumber
+                                ? "var(--blue-soft)"
+                                : "var(--sand)",
+                          color:
+                            1 === a.stageNumber
+                              ? "var(--maroon)"
+                              : 2 === a.stageNumber
+                                ? "var(--blue)"
+                                : "var(--muted)",
+                        }}
+                      >
+                        {"Stage "}
+                        {a.stageNumber}
+                      </div>
+                      <div
+                        style={{
+                          flex: 1,
+                          display: "grid",
+                          gridTemplateColumns:
+                            "repeat(auto-fit, minmax(200px, 1fr))",
+                          gap: "12px",
+                        }}
+                      >
+                        <div className="form-field">
+                          <label>{"Nombre de etapa"}</label>
+                          <input
+                            type="text"
+                            value={a.template?.stage_label ?? a.defaultLabel}
+                            onChange={(b) => {
+                              if (a.template)
+                                updateTemplate(
+                                  a.template.id,
+                                  "stage_label",
+                                  b.target.value,
+                                );
+                            }}
+                            disabled={a.isPlaceholder}
+                          />
+                        </div>
+                        <div className="form-field">
+                          <label>{"Hito"}</label>
+                          <input
+                            type="text"
+                            value={a.template?.milestone_label ?? ""}
+                            onChange={(b) => {
+                              if (a.template)
+                                updateTemplate(
+                                  a.template.id,
+                                  "milestone_label",
+                                  b.target.value,
+                                );
+                            }}
+                            disabled={a.isPlaceholder}
+                            placeholder={
+                              a.isPlaceholder
+                                ? "Placeholder para futura etapa"
+                                : void 0
+                            }
+                          />
+                        </div>
+                        <div className="form-field">
+                          <label>{"Inicio"}</label>
+                          <input
+                            type="date"
+                            value={a.openDate}
+                            onChange={(b) => {
+                              if ("documents" === a.stageCode) {
+                                setStage1OpenAt(b.target.value);
+                              } else if ("exam_placeholder" === a.stageCode) {
+                                setStage2OpenAt(b.target.value);
+                              }
+                            }}
+                            disabled={!a.canEditDates}
+                          />
+                        </div>
+                        <div className="form-field">
+                          <label>{"Cierre"}</label>
+                          <input
+                            type="date"
+                            value={a.closeDate}
+                            onChange={(b) => {
+                              if ("documents" === a.stageCode) {
+                                setStage1CloseAt(b.target.value);
+                              } else if ("exam_placeholder" === a.stageCode) {
+                                setStage2CloseAt(b.target.value);
+                              }
+                            }}
+                            disabled={!a.canEditDates}
+                          />
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          minWidth: "132px",
+                        }}
+                      >
+                        {a.template && a.stageCode ? (
+                          <Link
+                            href={`/admin/process/${cycle.id}/stage/${a.stageCode}`}
+                            className="btn btn-outline"
+                            style={{
+                              width: "100%",
+                            }}
+                          >
+                            {"Editar campos"}
+                          </Link>
+                        ) : (
+                          <button
+                            className="btn btn-outline"
+                            disabled={!0}
+                            style={{
+                              width: "100%",
+                              opacity: 0.5,
+                            }}
+                          >
+                            {"Próximamente"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  marginTop: "24px",
+                }}
+              >
+                <button
+                  className="btn btn-outline"
+                  onClick={saveStageTemplates}
+                >
+                  {"Guardar plantillas"}
+                </button>
+                <button
+                  className="btn btn-outline"
+                  onClick={saveStageConfiguration}
+                >
+                  {"Guardar fechas de etapas activas"}
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {"applications" === activeSection ? (
+            <>
+              <div
+                className="candidates-toolbar"
+                style={{
+                  flexDirection: "column",
+                  alignItems: "flex-start",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    width: "100%",
+                    alignItems: "center",
+                  }}
+                >
+                  <div
+                    className="section-title"
+                    style={{
+                      margin: 0,
+                    }}
                   >
-                    {processingTargetStatus === "failed" ? "Reintentando..." : "Reintentar fallidas"}
-                  </Button>
-                  <Button
-                    variant="text"
-                    onClick={() => void refreshCommunications()}
-                    disabled={isCommunicationLoading}
+                    {"Postulaciones"}
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                    }}
                   >
-                    {isCommunicationLoading ? "Actualizando..." : "Actualizar estado"}
-                  </Button>
-                </Stack>
-                <Table size="small" sx={{ mt: 1.5 }}>
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Destino</TableCell>
-                      <TableCell>Estado</TableCell>
-                      <TableCell>Intentos</TableCell>
-                      <TableCell>Último intento</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {communications.length === 0 ? (
-                      <TableRow>
-                        <TableCell colSpan={4}>Sin registros todavía. Usa `Actualizar estado`.</TableCell>
-                      </TableRow>
+                    <a href={exportCsvHref} className="btn btn-outline">
+                      {"Exportar CSV filtrado"}
+                    </a>
+                    <button onClick={refreshData} className="btn btn-outline">
+                      {"Refrescar"}
+                    </button>
+                  </div>
+                </div>
+                <div
+                  className="filters-group"
+                  style={{
+                    flexWrap: "wrap",
+                    marginTop: "16px",
+                  }}
+                >
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Buscar postulante..."
+                    value={searchQuery}
+                    onChange={(a) => setSearchQuery(a.target.value)}
+                  />
+                  <select
+                    className="filter-select"
+                    value={stageFilter}
+                    onChange={(a) => setStageFilter(a.target.value as StageFilter)}
+                  >
+                    <option value="all">{"Todas las etapas"}</option>
+                    <option value="documents">{"Stage 1"}</option>
+                    <option value="exam_placeholder">{"Stage 2"}</option>
+                  </select>
+                  <select
+                    className="filter-select"
+                    value={statusFilter}
+                    onChange={(a) => {
+                      const b = a.target.value as StatusFilter;
+                      {
+                        setStatusFilter(b);
+                        if (b !== "all") setEligibilityFilter("all");
+                      }
+                    }}
+                  >
+                    <option value="all">{"Todos los estados"}</option>
+                    <option value="draft">{"Borrador"}</option>
+                    <option value="submitted">{"Enviada"}</option>
+                    <option value="eligible">{"Elegible"}</option>
+                    <option value="ineligible">{"No elegible"}</option>
+                    <option value="advanced">{"Avanzada"}</option>
+                  </select>
+                  <select
+                    className="filter-select"
+                    value={eligibilityFilter}
+                    onChange={(a) => {
+                      const b = a.target.value as EligibilityFilter;
+                      {
+                        setEligibilityFilter(b);
+                        if (b !== "all") setStatusFilter("all");
+                      }
+                    }}
+                  >
+                    <option value="all">{"Todas las elegibilidades"}</option>
+                    <option value="pending">{"Pendiente de decisión"}</option>
+                    <option value="eligible">{"Elegible"}</option>
+                    <option value="ineligible">{"No elegible"}</option>
+                    <option value="advanced">{"Avanzada"}</option>
+                  </select>
+                </div>
+              </div>
+              <div className="table-container">
+                <table className="candidates-table">
+                  <thead>
+                    <tr>
+                      <th>{"ID"}</th>
+                      <th>{"Etapa"}</th>
+                      <th>{"Estado"}</th>
+                      <th>{"Última actualización"}</th>
+                      <th>{"Acciones"}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {0 === filteredApplications.length ? (
+                      <tr>
+                        <td
+                          colSpan={5}
+                          style={{
+                            textAlign: "center",
+                          }}
+                        >
+                          {
+                            "No hay postulaciones para los filtros seleccionados."
+                          }
+                        </td>
+                      </tr>
                     ) : (
-                      communications.map((item) => (
-                        <TableRow key={item.id}>
-                          <TableCell>{item.recipient_email}</TableCell>
-                          <TableCell>{item.status}</TableCell>
-                          <TableCell>{item.attempt_count}</TableCell>
-                          <TableCell>
-                            {item.last_attempt_at ? new Date(item.last_attempt_at).toLocaleString() : "-"}
-                          </TableCell>
-                        </TableRow>
+                      filteredApplications.map((a) => (
+                        <tr key={a.id}>
+                          <td
+                            style={{
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            {a.id.slice(0, 8)}
+                          </td>
+                          <td>
+                            <StageBadge stage={a.stage_code} />
+                          </td>
+                          <td>
+                            <span
+                              className={`status-pill ${["eligible", "advanced", "submitted"].includes(a.status) ? "complete" : "ineligible" === a.status ? "rejected" : "progress"}`}
+                            >
+                              {a.status}
+                            </span>
+                          </td>
+                          <td>{new Date(a.updated_at).toLocaleString()}</td>
+                          <td>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "8px",
+                                flexWrap: "wrap",
+                                alignItems: "center",
+                              }}
+                            >
+                              <button
+                                className="btn btn-outline"
+                                style={{
+                                  borderColor: "var(--success)",
+                                  color: "var(--success)",
+                                }}
+                                onClick={() =>
+                                  validateApplication(a.id, "eligible")
+                                }
+                              >
+                                {"Elegible"}
+                              </button>
+                              <button
+                                className="btn btn-outline"
+                                style={{
+                                  borderColor: "var(--warning)",
+                                  color: "var(--warning)",
+                                }}
+                                onClick={() =>
+                                  validateApplication(a.id, "ineligible")
+                                }
+                              >
+                                {"No elegible"}
+                              </button>
+                              <select
+                                className="filter-select"
+                                value={a.stage_code}
+                                onChange={(b) =>
+                                  transition(a.id, b.target.value as StageCode)
+                                }
+                                style={{
+                                  padding: "6px 12px",
+                                }}
+                              >
+                                <option value="documents">{"Stage 1"}</option>
+                                <option
+                                  value="exam_placeholder"
+                                  disabled={
+                                    !canTransition({
+                                      fromStage: a.stage_code,
+                                      toStage: "exam_placeholder",
+                                      status: a.status,
+                                    })
+                                  }
+                                >
+                                  {"Stage 2 placeholder"}
+                                </option>
+                              </select>
+                              <button
+                                className="btn btn-ghost"
+                                onClick={() => void loadOcrHistory(a.id)}
+                                style={{
+                                  color: "var(--maroon)",
+                                }}
+                              >
+                                {selectedOcrApplicationId === a.id
+                                  ? "Ocultar OCR"
+                                  : "Ver OCR"}
+                              </button>
+                              <button
+                                className="btn btn-outline"
+                                onClick={() => void runOcrValidation(a)}
+                                disabled={
+                                  !getDefaultOcrFileKey(a) ||
+                                  ocrLoadingApplicationId === a.id
+                                }
+                              >
+                                {ocrLoadingApplicationId === a.id
+                                  ? "OCR..."
+                                  : "OCR"}
+                              </button>
+                              <a
+                                href={`/api/exports?applicationId=${a.id}`}
+                                className="btn btn-ghost"
+                              >
+                                {"Exportar JSON"}
+                              </a>
+                            </div>
+                          </td>
+                        </tr>
                       ))
                     )}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          </Stack>
-        </AccordionDetails>
-      </Accordion>
-    </Stack>
+                  </tbody>
+                </table>
+              </div>
+              {selectedOcrApplicationId ? (
+                <div
+                  className="settings-card"
+                  style={{
+                    marginTop: "24px",
+                  }}
+                >
+                  <div className="settings-card-header">
+                    <h3>{"Historial OCR"}</h3>
+                    <p>
+                      {"Postulación seleccionada: "}
+                      <span
+                        style={{
+                          fontFamily: "monospace",
+                        }}
+                      >
+                        {selectedOcrApplicationId.slice(0, 8)}
+                      </span>
+                    </p>
+                  </div>
+                  {isOcrHistoryLoading ? (
+                    <p
+                      style={{
+                        color: "var(--muted)",
+                      }}
+                    >
+                      {"Cargando historial OCR..."}
+                    </p>
+                  ) : 0 === ocrChecks.length ? (
+                    <p
+                      style={{
+                        color: "var(--muted)",
+                      }}
+                    >
+                      {"Aún no existen validaciones OCR para esta postulación."}
+                    </p>
+                  ) : (
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "12px",
+                      }}
+                    >
+                      {ocrChecks.map((a) => (
+                        <div
+                          key={a.id}
+                          style={{
+                            border: "1px solid var(--sand)",
+                            borderRadius: "var(--radius)",
+                            padding: "16px",
+                            background: "var(--paper)",
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontFamily: "monospace",
+                                fontSize: "0.85rem",
+                              }}
+                            >
+                              {new Date(a.created_at).toLocaleString()}
+                            </span>
+                            <span className="status-pill complete">
+                              {"Confianza "}
+                              {Math.round(100 * a.confidence)}
+                              {"%"}
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              fontSize: "0.85rem",
+                              color: "var(--muted)",
+                              marginBottom: "8px",
+                            }}
+                          >
+                            {"Archivo: "}
+                            {a.file_key}
+                          </div>
+                          <p
+                            style={{
+                              fontSize: "0.9rem",
+                            }}
+                          >
+                            {a.summary}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </>
+          ) : null}
+          {"communications" === activeSection ? (
+            <>
+              <div className="settings-card">
+                <div className="settings-card-header">
+                  <h3>{"Importación de examen externo"}</h3>
+                  <p>
+                    {
+                      "Pega tu CSV con columnas: applicant_email, score, passed."
+                    }
+                  </p>
+                  <p
+                    style={{
+                      fontSize: "0.8rem",
+                      color: "var(--muted)",
+                      fontStyle: "italic",
+                      marginTop: "4px",
+                    }}
+                  >
+                    {
+                      "Este módulo está en modo demo: muestra resumen de importación sin persistir notas de examen."
+                    }
+                  </p>
+                </div>
+                <div className="form-field full">
+                  <textarea
+                    value={csvData}
+                    onChange={(a) => setCsvData(a.target.value)}
+                    rows={4}
+                    style={{
+                      width: "100%",
+                    }}
+                  />
+                </div>
+                <div
+                  style={{
+                    marginTop: "16px",
+                  }}
+                >
+                  <button className="btn btn-outline" onClick={importExamCsv}>
+                    {"Importar CSV"}
+                  </button>
+                </div>
+              </div>
+              <div className="settings-card">
+                <div className="settings-card-header">
+                  <h3>{"Comunicaciones"}</h3>
+                  <p>
+                    {
+                      "Registra correos en cola y ejecútalos con envío real (proveedor configurado)."
+                    }
+                  </p>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                    marginBottom: "24px",
+                  }}
+                >
+                  <span
+                    className="status-pill"
+                    style={{
+                      background: "var(--sand)",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {"Cola: "}
+                    {communicationSummary.queued}
+                  </span>
+                  <span
+                    className="status-pill"
+                    style={{
+                      background: "var(--sand)",
+                      color: "var(--ink)",
+                    }}
+                  >
+                    {"Procesando: "}
+                    {communicationSummary.processing}
+                  </span>
+                  <span className="status-pill complete">
+                    {"Enviadas: "}
+                    {communicationSummary.sent}
+                  </span>
+                  <span className="status-pill rejected">
+                    {"Fallidas: "}
+                    {communicationSummary.failed}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                    marginBottom: "24px",
+                  }}
+                >
+                  <button
+                    className="btn btn-primary"
+                    onClick={sendStatusEmails}
+                  >
+                    {"Enviar resultados"}
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => void processCommunications("queued")}
+                    disabled={null !== processingTargetStatus}
+                  >
+                    {"queued" === processingTargetStatus
+                      ? "Procesando..."
+                      : "Procesar cola"}
+                  </button>
+                  <button
+                    className="btn btn-outline"
+                    onClick={() => void processCommunications("failed")}
+                    disabled={null !== processingTargetStatus}
+                  >
+                    {"failed" === processingTargetStatus
+                      ? "Reintentando..."
+                      : "Reintentar fallidas"}
+                  </button>
+                  <button
+                    className="btn btn-ghost"
+                    onClick={() => void refreshCommunications()}
+                    disabled={isCommunicationLoading}
+                    style={{
+                      color: "var(--maroon)",
+                    }}
+                  >
+                    {isCommunicationLoading
+                      ? "Actualizando..."
+                      : "Actualizar estado"}
+                  </button>
+                </div>
+                <div className="table-container">
+                  <table className="candidates-table">
+                    <thead>
+                      <tr>
+                        <th>{"Destino"}</th>
+                        <th>{"Estado"}</th>
+                        <th>{"Intentos"}</th>
+                        <th>{"Último intento"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {0 === communications.length ? (
+                        <tr>
+                          <td
+                            colSpan={4}
+                            style={{
+                              textAlign: "center",
+                            }}
+                          >
+                            {"Sin registros todavía. Usa `Actualizar estado`."}
+                          </td>
+                        </tr>
+                      ) : (
+                        communications.map((a) => (
+                          <tr key={a.id}>
+                            <td>{a.recipient_email}</td>
+                            <td>{a.status}</td>
+                            <td>{a.attempt_count}</td>
+                            <td>
+                              {a.last_attempt_at
+                                ? new Date(a.last_attempt_at).toLocaleString()
+                                : "-"}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </div>
+      </main>
+    </div>
   );
 }

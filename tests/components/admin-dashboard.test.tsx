@@ -72,10 +72,10 @@ describe("AdminDashboard", () => {
         initialApplications={[]}
         cycle={cycle}
         cycleTemplates={[...cycleTemplates]}
+        initialWorkspaceSection="communications"
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Operaciones avanzadas" }));
     fireEvent.click(screen.getByRole("button", { name: "Importar CSV" }));
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -101,6 +101,7 @@ describe("AdminDashboard", () => {
         initialApplications={[]}
         cycle={cycle}
         cycleTemplates={[...cycleTemplates]}
+        initialWorkspaceSection="stages"
       />,
     );
 
@@ -141,10 +142,10 @@ describe("AdminDashboard", () => {
         initialApplications={[]}
         cycle={cycle}
         cycleTemplates={[...cycleTemplates]}
+        initialWorkspaceSection="communications"
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Operaciones avanzadas" }));
     fireEvent.click(screen.getByRole("button", { name: "Procesar cola" }));
 
     await waitFor(() => {
@@ -187,6 +188,7 @@ describe("AdminDashboard", () => {
         initialApplications={[...applications]}
         cycle={cycle}
         cycleTemplates={[...cycleTemplates]}
+        initialWorkspaceSection="applications"
       />,
     );
 
@@ -210,6 +212,7 @@ describe("AdminDashboard", () => {
         initialApplications={[...applications]}
         cycle={cycle}
         cycleTemplates={[...cycleTemplates]}
+        initialWorkspaceSection="applications"
       />,
     );
 
