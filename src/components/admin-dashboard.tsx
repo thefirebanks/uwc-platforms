@@ -614,13 +614,7 @@ export function AdminDashboard({
   }
 
   return (
-    <div
-      className="layout"
-      style={{
-        paddingTop: 0,
-        minHeight: "auto",
-      }}
-    >
+    <>
       <aside
         className="sidebar"
         style={{
@@ -1541,6 +1535,6 @@ export function AdminDashboard({
           ) : null}
         </div>
       </main>
-    </div>
+    </>
   );
 }

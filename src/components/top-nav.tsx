@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { AppBar, Box, Button, Toolbar, Typography } from "@mui/material";
+import { usePathname, useRouter } from "next/navigation";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useAppLanguage } from "@/components/language-provider";
 import type { AppRole } from "@/types/domain";
@@ -27,106 +26,42 @@ export function TopNav({ role }: { role: AppRole }) {
   }
 
   return (
-    <AppBar position="sticky" color="inherit" elevation={0}>
-      <Toolbar sx={{ minHeight: { xs: 64, sm: 72 }, px: { xs: 1.5, sm: 2.5 }, gap: { xs: 0.5, sm: 1 } }}>
-        <Typography
-          variant="h6"
-          noWrap
-          sx={{
-            fontFamily: "var(--font-newsreader), 'Newsreader', Georgia, serif",
-            fontWeight: 500,
-            color: "var(--uwc-maroon)",
-            fontSize: { xs: "1.05rem", sm: "1.375rem" },
-            letterSpacing: "-0.01em",
-          }}
-        >
-          UWC Selection
-        </Typography>
-        <Box sx={{ flexGrow: 1 }} />
-        <Box
-          component="nav"
-          sx={{
-            display: "flex",
-            gap: { xs: 0, sm: 1 },
-            mr: { xs: 0.5, sm: 2 },
-          }}
-        >
+    <header className="topbar">
+      <div className="topbar-left">
+        <Link href={role === "admin" ? "/admin" : "/applicant"} className="topbar-brand">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          <span>UWC</span> {role === "admin" ? "Admin" : "Applicant"}
+        </Link>
+        <nav className="topbar-nav">
           {role === "admin" ? (
             <>
-              <NavLink href="/admin" label={t("nav.processes")} />
+              <NavLink href="/admin" label={t("nav.processes")} exact />
               <NavLink href="/admin/audit" label={t("nav.audit")} />
             </>
           ) : (
             <NavLink href="/applicant" label={t("nav.processes")} />
           )}
-        </Box>
-        <Box sx={{ mr: { xs: 0.5, sm: 1.5 } }}>
-          <LanguageToggle />
-        </Box>
-        <Box sx={{ mr: { xs: 0.5, sm: 1.5 } }}>
-          <ThemeModeToggle />
-        </Box>
-        <Typography
-          variant="body2"
-          sx={{
-            mr: { xs: 0, sm: 2 },
-            px: 1.5,
-            py: 0.5,
-            color: "var(--muted)",
-            fontSize: "0.8125rem",
-            backgroundColor: "var(--cream)",
-            borderRadius: "4px",
-            display: { xs: "none", sm: "inline-flex" },
-          }}
-        >
-          {role === "admin" ? t("nav.roleAdmin") : t("nav.roleApplicant")}
-        </Typography>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={logout}
-          sx={{
-            borderColor: "var(--sand)",
-            color: "var(--ink)",
-            fontWeight: 500,
-            minWidth: { xs: "unset", sm: "auto" },
-            px: { xs: 1.2, sm: 1.75 },
-            "&:hover": {
-              borderColor: "var(--muted)",
-              backgroundColor: "var(--cream)",
-            },
-          }}
-        >
-          {t("nav.logout")}
-        </Button>
-      </Toolbar>
-    </AppBar>
+        </nav>
+      </div>
+      <div className="topbar-right">
+        <LanguageToggle />
+        <ThemeModeToggle />
+        <button className="btn btn-outline" onClick={logout} style={{ border: "none" }}>{t("nav.logout")}</button>
+        <div style={{ width: "32px", height: "32px", borderRadius: "50%", background: "var(--maroon)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "0.8rem", fontWeight: 500 }}>
+          {role === "admin" ? "AD" : "AP"}
+        </div>
+      </div>
+    </header>
   );
 }
 
-function NavLink({ href, label }: { href: string; label: string }) {
+function NavLink({ href, label, exact }: { href: string; label: string; exact?: boolean }) {
+  const pathname = usePathname();
+  const isActive = exact ? pathname === href : pathname?.startsWith(href);
+  
   return (
-    <Button
-      component={Link}
-      href={href}
-      variant="text"
-      size="small"
-      sx={{
-        color: "var(--muted)",
-        fontWeight: 500,
-        px: { xs: 1, sm: 2 },
-        minWidth: { xs: 64, sm: 88 },
-        "&:hover": {
-          color: "var(--ink)",
-          backgroundColor: "var(--cream)",
-        },
-        // Remove the underline from nav links
-        "&::after": {
-          display: "none",
-        },
-      }}
-    >
+    <Link href={href} className={isActive ? "active" : ""}>
       {label}
-    </Button>
+    </Link>
   );
 }
