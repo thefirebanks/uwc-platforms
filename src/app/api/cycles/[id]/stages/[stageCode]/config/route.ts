@@ -11,8 +11,6 @@ type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
 type StageAutomationRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
 type StageTemplateRow = Database["public"]["Tables"]["cycle_stage_templates"]["Row"];
 
-const stageCodeSchema = z.enum(["documents", "exam_placeholder"]);
-
 const fieldSchema = z.object({
   id: z.string().uuid().optional(),
   fieldKey: z.string().min(2).max(60),
@@ -41,6 +39,7 @@ const patchSchema = z.object({
 });
 
 const cycleIdSchema = z.string().uuid();
+const stageIdentifierSchema = z.string().min(1).max(160);
 
 async function ensureCycleExists({
   cycleId,
@@ -61,6 +60,54 @@ async function ensureCycleExists({
   }
 }
 
+async function resolveTemplateByIdentifier({
+  cycleId,
+  stageIdentifier,
+  supabase,
+}: {
+  cycleId: string;
+  stageIdentifier: string;
+  supabase: Awaited<ReturnType<typeof requireAuth>>["supabase"];
+}) {
+  const byId = await supabase
+    .from("cycle_stage_templates")
+    .select("*")
+    .eq("cycle_id", cycleId)
+    .eq("id", stageIdentifier)
+    .maybeSingle();
+
+  if (byId.data) {
+    return byId.data as StageTemplateRow;
+  }
+
+  if (byId.error) {
+    throw new AppError({
+      message: "Failed resolving stage template by id",
+      userMessage: "No se pudo identificar la etapa.",
+      status: 500,
+      details: byId.error,
+    });
+  }
+
+  const byCode = await supabase
+    .from("cycle_stage_templates")
+    .select("*")
+    .eq("cycle_id", cycleId)
+    .eq("stage_code", stageIdentifier)
+    .maybeSingle();
+
+  if (byCode.error || !byCode.data) {
+    throw new AppError({
+      message: "Stage template not found",
+      userMessage: "No se encontró la etapa seleccionada.",
+      status: 404,
+      details: byCode.error,
+    });
+  }
+
+  return byCode.data as StageTemplateRow;
+}
+
 export async function GET(
   _request: NextRequest,
   context: { params: Promise<{ id: string; stageCode: string }> },
@@ -69,9 +116,9 @@ export async function GET(
     const { supabase } = await requireAuth(["admin"]);
     const { id: rawCycleId, stageCode: rawStageCode } = await context.params;
     const cycleIdParsed = cycleIdSchema.safeParse(rawCycleId);
-    const stageCodeParsed = stageCodeSchema.safeParse(rawStageCode);
+    const stageIdentifierParsed = stageIdentifierSchema.safeParse(rawStageCode);
 
-    if (!cycleIdParsed.success || !stageCodeParsed.success) {
+    if (!cycleIdParsed.success || !stageIdentifierParsed.success) {
       throw new AppError({
         message: "Invalid cycle stage config context",
         userMessage: "La etapa o proceso seleccionado no es válido.",
@@ -80,9 +127,15 @@ export async function GET(
     }
 
     const cycleId = cycleIdParsed.data;
-    const stageCode = stageCodeParsed.data;
+    const stageIdentifier = stageIdentifierParsed.data;
 
     await ensureCycleExists({ cycleId, supabase });
+    const stageTemplate = await resolveTemplateByIdentifier({
+      cycleId,
+      stageIdentifier,
+      supabase,
+    });
+    const stageCode = stageTemplate.stage_code;
 
     const { data: fieldsData, error: fieldsError } = await supabase
       .from("cycle_stage_fields")
@@ -111,8 +164,8 @@ export async function GET(
         supabase
           .from("cycle_stage_templates")
           .select("id, ocr_prompt_template")
+          .eq("id", stageTemplate.id)
           .eq("cycle_id", cycleId)
-          .eq("stage_code", stageCode)
           .maybeSingle(),
       ]);
 
@@ -159,9 +212,9 @@ export async function PATCH(
     const { profile, supabase } = await requireAuth(["admin"]);
     const { id: rawCycleId, stageCode: rawStageCode } = await context.params;
     const cycleIdParsed = cycleIdSchema.safeParse(rawCycleId);
-    const stageCodeParsed = stageCodeSchema.safeParse(rawStageCode);
+    const stageIdentifierParsed = stageIdentifierSchema.safeParse(rawStageCode);
 
-    if (!cycleIdParsed.success || !stageCodeParsed.success) {
+    if (!cycleIdParsed.success || !stageIdentifierParsed.success) {
       throw new AppError({
         message: "Invalid cycle stage config context",
         userMessage: "La etapa o proceso seleccionado no es válido.",
@@ -170,7 +223,7 @@ export async function PATCH(
     }
 
     const cycleId = cycleIdParsed.data;
-    const stageCode = stageCodeParsed.data;
+    const stageIdentifier = stageIdentifierParsed.data;
     const body = await request.json();
     const parsed = patchSchema.safeParse(body);
 
@@ -184,6 +237,12 @@ export async function PATCH(
     }
 
     await ensureCycleExists({ cycleId, supabase });
+    const stageTemplate = await resolveTemplateByIdentifier({
+      cycleId,
+      stageIdentifier,
+      supabase,
+    });
+    const stageCode = stageTemplate.stage_code;
 
     const normalizedKeys = parsed.data.fields.map((field) => field.fieldKey.trim());
     if (new Set(normalizedKeys).size !== normalizedKeys.length) {
@@ -345,7 +404,7 @@ export async function PATCH(
             : null,
       })
       .eq("cycle_id", cycleId)
-      .eq("stage_code", stageCode)
+      .eq("id", stageTemplate.id)
       .select("id, ocr_prompt_template")
       .maybeSingle();
 
@@ -386,6 +445,7 @@ export async function PATCH(
       action: "cycle.stage_config_updated",
       metadata: {
         cycleId,
+        stageIdentifier,
         stageCode,
         fieldsSaved: savedFields.length,
         automationsSaved: savedAutomations.length,

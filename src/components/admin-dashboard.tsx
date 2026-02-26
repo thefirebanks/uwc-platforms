@@ -1,5 +1,5 @@
 "use client";
-import { useState, useMemo, Fragment } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import Link from "next/link";
 
 import type {
@@ -10,7 +10,6 @@ import type {
   SelectionProcess,
   StageCode,
 } from "@/types/domain";
-import { StageBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
 import { canTransition } from "@/lib/stages/transition";
 
@@ -89,6 +88,120 @@ function getDefaultOcrFileKey(application: Application) {
   return keys[0] ?? null;
 }
 
+function getPayloadString(
+  payload: Application["payload"],
+  candidates: string[],
+): string | null {
+  for (const key of candidates) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+
+  return null;
+}
+
+function getApplicationDisplayName(application: Application) {
+  const payload = application.payload ?? {};
+  const firstName =
+    getPayloadString(payload, ["firstName", "givenName", "name"]) ?? "";
+  const paternalLastName =
+    getPayloadString(payload, ["paternalLastName", "lastName", "surname"]) ??
+    "";
+  const maternalLastName =
+    getPayloadString(payload, ["maternalLastName", "secondLastName"]) ?? "";
+
+  const fullName = [firstName, paternalLastName, maternalLastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  if (fullName) {
+    return fullName;
+  }
+
+  return getPayloadString(payload, ["fullName"]) ?? `Postulación ${application.id.slice(0, 8)}`;
+}
+
+function getApplicationDisplayEmail(application: Application) {
+  return (
+    getPayloadString(application.payload ?? {}, [
+      "email",
+      "personalEmail",
+      "applicantEmail",
+      "guardian1Email",
+    ]) ?? `${application.id.slice(0, 8)}@sin-correo.local`
+  );
+}
+
+function getApplicationRegion(application: Application) {
+  return (
+    getPayloadString(application.payload ?? {}, [
+      "department",
+      "region",
+      "city",
+      "schoolRegion",
+    ]) ?? "Sin región"
+  );
+}
+
+function getApplicationInitials(application: Application) {
+  const name = getApplicationDisplayName(application)
+    .replace(/\s+/g, " ")
+    .trim();
+  const parts = name.split(" ").filter(Boolean);
+
+  if (parts.length === 0) {
+    return "AP";
+  }
+
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+function getStageLabel(stage: StageCode) {
+  if (stage === "documents") {
+    return "Stage 1: Documentos";
+  }
+
+  return "Stage 2: Examen (placeholder)";
+}
+
+function getStageShortLabel(stage: StageCode) {
+  return stage === "documents" ? "Stage 1" : "Stage 2";
+}
+
+function getStatusDisplayLabel(status: Application["status"]) {
+  switch (status) {
+    case "draft":
+      return "Borrador";
+    case "submitted":
+      return "Submitted";
+    case "eligible":
+      return "Elegible";
+    case "ineligible":
+      return "No elegible";
+    case "advanced":
+      return "Avanzada";
+    default:
+      return status;
+  }
+}
+
+function getStatusPillClass(status: Application["status"]) {
+  if (status === "ineligible") {
+    return "rejected";
+  }
+
+  if (status === "draft") {
+    return "progress";
+  }
+
+  return "complete";
+}
+
 export function AdminDashboard({
   initialApplications,
   cycleTemplates,
@@ -143,6 +256,7 @@ export function AdminDashboard({
     "process_config" | "stages" | "applications" | "communications"
   >(initialWorkspaceSection);
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
 
   const sections = [
     "process_config",
@@ -157,6 +271,42 @@ export function AdminDashboard({
     applications: "Postulaciones",
     communications: "Comunicaciones y Examen",
   };
+
+  const pageHeader = useMemo(() => {
+    switch (activeSection) {
+      case "stages":
+        return {
+          title: "Etapas del Proceso",
+          description:
+            "Configura plantillas, hitos y fechas por etapa para el flujo de selección.",
+          subnote: null as string | null,
+        };
+      case "applications":
+        return {
+          title: "Candidatos",
+          description: cycle.name,
+          subnote: null as string | null,
+        };
+      case "communications":
+        return {
+          title: "Comunicaciones y Examen",
+          description:
+            "Administra importación de resultados y el procesamiento de mensajes de esta convocatoria.",
+          subnote: null as string | null,
+        };
+      case "process_config":
+      default:
+        return {
+          title: "Resumen del Proceso",
+          description:
+            "Gestiona validaciones, transición de etapas (2 etapas MVP) e importación de examen externo.",
+          subnote:
+            "`Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1.",
+        };
+    }
+  }, [activeSection, cycle.name]);
+
+  const showSummaryCards = activeSection === "process_config";
 
   const combinedStages = useMemo(() => {
     return [
@@ -279,9 +429,36 @@ export function AdminDashboard({
         return false;
       }
 
+      if (deferredSearchQuery) {
+        const payloadValues = Object.values(application.payload ?? {}).map((value) =>
+          String(value ?? "").toLowerCase(),
+        );
+        const searchableValues = [
+          application.id,
+          application.applicant_id,
+          application.stage_code,
+          application.status,
+          ...payloadValues,
+        ];
+
+        if (
+          !searchableValues.some((value) =>
+            value.toLowerCase().includes(deferredSearchQuery),
+          )
+        ) {
+          return false;
+        }
+      }
+
       return true;
     });
-  }, [eligibilityFilter, orderedApplications, stageFilter, statusFilter]);
+  }, [
+    deferredSearchQuery,
+    eligibilityFilter,
+    orderedApplications,
+    stageFilter,
+    statusFilter,
+  ]);
   const exportCsvHref = useMemo(() => {
     const query = new URLSearchParams({
       cycleId: cycle.id,
@@ -615,51 +792,15 @@ export function AdminDashboard({
 
   return (
     <>
-      <aside
-        className="sidebar"
-        style={{
-          position: "sticky",
-          top: 0,
-          height: "calc(100vh - 72px)",
-        }}
-      >
-        <div
-          className="sidebar-header"
-          style={{
-            cursor: "pointer",
-          }}
-          onClick={() => (window.location.href = "/admin")}
-        >
-          <div
-            className="eyebrow"
-            style={{
-              color: "var(--maroon)",
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            {"← Volver a procesos"}
-          </div>
-          <h2
-            style={{
-              marginTop: "8px",
-            }}
-          >
-            {cycle.name}
-          </h2>
+      <aside className="sidebar">
+        <div className="sidebar-header">
+          <Link href="/admin/processes" className="admin-sidebar-backlink">
+            <div className="eyebrow">{"← Volver a procesos"}</div>
+          </Link>
+          <h2 className="admin-sidebar-title">{cycle.name}</h2>
         </div>
         <div className="sidebar-nav">
-          <div
-            className="builder-section-title"
-            style={{
-              padding: "0 20px",
-              marginBottom: "8px",
-              marginTop: "8px",
-            }}
-          >
-            {"Panel"}
-          </div>
+          <div className="builder-section-title admin-sidebar-section-title">{"Panel"}</div>
           {sections.map((a) => {
             const c = activeSection === a,
               d =
@@ -697,11 +838,7 @@ export function AdminDashboard({
       </aside>
       <main className="main">
         {error ? (
-          <div
-            style={{
-              margin: "24px 40px 0",
-            }}
-          >
+          <div className="admin-feedback-wrap">
             <ErrorCallout
               message={error.message}
               errorId={error.errorId}
@@ -710,21 +847,8 @@ export function AdminDashboard({
           </div>
         ) : null}
         {statusMessage ? (
-          <div
-            style={{
-              margin: "24px 40px 0",
-            }}
-          >
-            <div
-              style={{
-                padding: "12px",
-                borderRadius: "8px",
-                backgroundColor: "rgba(29, 78, 216, 0.08)",
-                border: "1px solid rgba(29, 78, 216, 0.14)",
-                color: "#1D4ED8",
-                fontWeight: 500,
-              }}
-            >
+          <div className="admin-feedback-wrap">
+            <div className="admin-feedback info" aria-live="polite">
               {statusMessage}
             </div>
           </div>
@@ -732,31 +856,14 @@ export function AdminDashboard({
         <div className="canvas-header">
           <div className="canvas-title-row">
             <div>
-              <h1>{"Resumen del Proceso"}</h1>
-              <p>
-                {
-                  "Gestiona validaciones, transición de etapas (2 etapas MVP) e importación de examen externo."
-                }
-              </p>
-              <p
-                style={{
-                  fontSize: "0.85rem",
-                  color: "var(--muted)",
-                  marginTop: "4px",
-                }}
-              >
-                {
-                  "`Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1."
-                }
-              </p>
+              <h1>{pageHeader.title}</h1>
+              <p>{pageHeader.description}</p>
+              {pageHeader.subnote ? (
+                <p className="admin-subnote">{pageHeader.subnote}</p>
+              ) : null}
             </div>
-            <div
-              style={{
-                display: "flex",
-                gap: "8px",
-              }}
-            >
-              <Link href="/admin" className="btn btn-outline">
+            <div className="admin-header-actions">
+              <Link href="/admin/processes" className="btn btn-outline">
                 {"Volver al dashboard de procesos"}
               </Link>
               <Link href="/admin/audit" className="btn btn-outline">
@@ -765,33 +872,35 @@ export function AdminDashboard({
             </div>
           </div>
         </div>
-        <div className="canvas-body wide">
-          <div className="dashboard-grid">
-            <div className="stat-card">
-              <div className="stat-title">{"Postulaciones Totales"}</div>
-              <div className="stat-value">{applications.length}</div>
-              <div className="stat-trend neutral">{"En el sistema"}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-title">{"Elegibles / Avanzadas"}</div>
-              <div className="stat-value">
-                {statusRollup.eligible}
-                {" / "}
-                {statusRollup.advanced}
+        <div className={`canvas-body ${activeSection === "applications" ? "full" : "wide"}`}>
+          {showSummaryCards ? (
+            <div className="dashboard-grid">
+              <div className="stat-card">
+                <div className="stat-title">{"Postulaciones Totales"}</div>
+                <div className="stat-value">{applications.length}</div>
+                <div className="stat-trend neutral">{"En el sistema"}</div>
               </div>
-              <div className="stat-trend">{"Pasaron filtro"}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-title">{"En progreso"}</div>
-              <div className="stat-value">
-                {statusRollup.draft + statusRollup.submitted}
+              <div className="stat-card">
+                <div className="stat-title">{"Elegibles / Avanzadas"}</div>
+                <div className="stat-value">
+                  {statusRollup.eligible}
+                  {" / "}
+                  {statusRollup.advanced}
+                </div>
+                <div className="stat-trend">{"Pasaron filtro"}</div>
               </div>
-              <div className="stat-trend neutral">
-                {"Stage 1: "}
-                {formatDate(cycle.stage1_close_at)}
+              <div className="stat-card">
+                <div className="stat-title">{"En progreso"}</div>
+                <div className="stat-value">
+                  {statusRollup.draft + statusRollup.submitted}
+                </div>
+                <div className="stat-trend neutral">
+                  {"Stage 1: "}
+                  {formatDate(cycle.stage1_close_at)}
+                </div>
               </div>
             </div>
-          </div>
+          ) : null}
           {"process_config" === activeSection ? (
             <div className="settings-card">
               <div className="settings-card-header">
@@ -804,20 +913,8 @@ export function AdminDashboard({
                   {" para mantener el calendario junto a cada plantilla."}
                 </p>
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <span
-                  className="status-pill"
-                  style={{
-                    background: "var(--sand)",
-                    color: "var(--ink)",
-                  }}
-                >
+              <div className="admin-chip-row">
+                <span className="status-pill admin-chip-neutral">
                   {"Máx. postulaciones por usuario: "}
                   {cycle.max_applications_per_user}
                 </span>
@@ -826,13 +923,7 @@ export function AdminDashboard({
                 >
                   {cycle.is_active ? "Proceso activo" : "Proceso inactivo"}
                 </span>
-                <span
-                  className="status-pill"
-                  style={{
-                    background: "var(--sand)",
-                    color: "var(--ink)",
-                  }}
-                >
+                <span className="status-pill admin-chip-neutral">
                   {"Ciclo: "}
                   {cycle.id}
                 </span>
@@ -842,72 +933,55 @@ export function AdminDashboard({
           {"stages" === activeSection ? (
             <div className="settings-card">
               <div className="settings-card-header">
-                <h3>{"Plantillas de etapas"}</h3>
-                <p>
-                  {
-                    "Personaliza etiquetas, hitos y fechas por etapa. Se incluyen placeholders hasta Stage 6 para planear el flujo completo, aunque el MVP tenga menos etapas activas."
-                  }
-                </p>
+                <div className="admin-toolbar">
+                  <div>
+                    <h3>{"Plantillas de etapas"}</h3>
+                    <p>
+                      {
+                        "Personaliza etiquetas, hitos y fechas por etapa. Se incluyen placeholders hasta Stage 6 para planear el flujo completo, aunque el MVP tenga menos etapas activas."
+                      }
+                    </p>
+                  </div>
+                  <div className="admin-toolbar-actions">
+                    <button className="btn btn-outline" onClick={saveStageTemplates}>
+                      {"Guardar plantillas"}
+                    </button>
+                    <button className="btn btn-outline" onClick={saveStageConfiguration}>
+                      {"Guardar fechas activas"}
+                    </button>
+                  </div>
+                </div>
               </div>
-              <div className="field-list">
-                {combinedStages.map((a) => (
-                  <div
-                    key={a.template?.id ?? `placeholder-stage-${a.stageNumber}`}
-                    className="field-card"
-                    style={{
-                      padding: "16px",
-                    }}
-                  >
+
+              <div className="admin-stage-template-list">
+                {combinedStages.map((a) => {
+                  const stageBadgeClass =
+                    a.stageNumber === 1
+                      ? "admin-stage-tag stage-1"
+                      : a.stageNumber === 2
+                        ? "admin-stage-tag stage-2"
+                        : "admin-stage-tag";
+
+                  return (
                     <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "16px",
-                        flexWrap: "wrap",
-                      }}
+                      key={a.template?.id ?? `placeholder-stage-${a.stageNumber}`}
+                      className="admin-stage-template-row"
                     >
-                      <div
-                        className="stage-status"
-                        style={{
-                          margin: 0,
-                          background:
-                            1 === a.stageNumber
-                              ? "var(--maroon-soft)"
-                              : 2 === a.stageNumber
-                                ? "var(--blue-soft)"
-                                : "var(--sand)",
-                          color:
-                            1 === a.stageNumber
-                              ? "var(--maroon)"
-                              : 2 === a.stageNumber
-                                ? "var(--blue)"
-                                : "var(--muted)",
-                        }}
-                      >
+                      <div className={stageBadgeClass}>
                         {"Stage "}
                         {a.stageNumber}
                       </div>
-                      <div
-                        style={{
-                          flex: 1,
-                          display: "grid",
-                          gridTemplateColumns:
-                            "repeat(auto-fit, minmax(200px, 1fr))",
-                          gap: "12px",
-                        }}
-                      >
+
+                      <div className="admin-stage-template-grid">
                         <div className="form-field">
                           <label>{"Nombre de etapa"}</label>
                           <input
                             type="text"
                             value={a.template?.stage_label ?? a.defaultLabel}
                             onChange={(b) => {
-                              if (a.template)
-                                updateTemplate(
-                                  a.template.id,
-                                  "stage_label",
-                                  b.target.value,
-                                );
+                              if (a.template) {
+                                updateTemplate(a.template.id, "stage_label", b.target.value);
+                              }
                             }}
                             disabled={a.isPlaceholder}
                           />
@@ -918,18 +992,19 @@ export function AdminDashboard({
                             type="text"
                             value={a.template?.milestone_label ?? ""}
                             onChange={(b) => {
-                              if (a.template)
+                              if (a.template) {
                                 updateTemplate(
                                   a.template.id,
                                   "milestone_label",
                                   b.target.value,
                                 );
+                              }
                             }}
                             disabled={a.isPlaceholder}
                             placeholder={
                               a.isPlaceholder
                                 ? "Placeholder para futura etapa"
-                                : void 0
+                                : undefined
                             }
                           />
                         </div>
@@ -939,9 +1014,9 @@ export function AdminDashboard({
                             type="date"
                             value={a.openDate}
                             onChange={(b) => {
-                              if ("documents" === a.stageCode) {
+                              if (a.stageCode === "documents") {
                                 setStage1OpenAt(b.target.value);
-                              } else if ("exam_placeholder" === a.stageCode) {
+                              } else if (a.stageCode === "exam_placeholder") {
                                 setStage2OpenAt(b.target.value);
                               }
                             }}
@@ -954,9 +1029,9 @@ export function AdminDashboard({
                             type="date"
                             value={a.closeDate}
                             onChange={(b) => {
-                              if ("documents" === a.stageCode) {
+                              if (a.stageCode === "documents") {
                                 setStage1CloseAt(b.target.value);
-                              } else if ("exam_placeholder" === a.stageCode) {
+                              } else if (a.stageCode === "exam_placeholder") {
                                 setStage2CloseAt(b.target.value);
                               }
                             }}
@@ -964,298 +1039,234 @@ export function AdminDashboard({
                           />
                         </div>
                       </div>
-                      <div
-                        style={{
-                          minWidth: "132px",
-                        }}
-                      >
+
+                      <div className="admin-stage-template-actions">
                         {a.template && a.stageCode ? (
                           <Link
-                            href={`/admin/process/${cycle.id}/stage/${a.stageCode}`}
+                            href={`/admin/process/${cycle.id}/stage/${a.template?.id ?? a.stageCode}`}
                             className="btn btn-outline"
-                            style={{
-                              width: "100%",
-                            }}
                           >
                             {"Editar campos"}
                           </Link>
                         ) : (
-                          <button
-                            className="btn btn-outline"
-                            disabled={!0}
-                            style={{
-                              width: "100%",
-                              opacity: 0.5,
-                            }}
-                          >
+                          <button className="btn btn-outline" disabled style={{ opacity: 0.5 }}>
                             {"Próximamente"}
                           </button>
                         )}
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  marginTop: "24px",
-                }}
-              >
-                <button
-                  className="btn btn-outline"
-                  onClick={saveStageTemplates}
-                >
-                  {"Guardar plantillas"}
-                </button>
-                <button
-                  className="btn btn-outline"
-                  onClick={saveStageConfiguration}
-                >
-                  {"Guardar fechas de etapas activas"}
-                </button>
+                  );
+                })}
               </div>
             </div>
           ) : null}
           {"applications" === activeSection ? (
             <>
-              <div
-                className="candidates-toolbar"
-                style={{
-                  flexDirection: "column",
-                  alignItems: "flex-start",
-                }}
-              >
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    width: "100%",
-                    alignItems: "center",
-                  }}
-                >
-                  <div
-                    className="section-title"
-                    style={{
-                      margin: 0,
-                    }}
-                  >
-                    {"Postulaciones"}
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                    }}
-                  >
-                    <a href={exportCsvHref} className="btn btn-outline">
-                      {"Exportar CSV filtrado"}
-                    </a>
-                    <button onClick={refreshData} className="btn btn-outline">
-                      {"Refrescar"}
-                    </button>
+              <div className="settings-card">
+                <div className="settings-card-header">
+                  <div className="admin-toolbar">
+                    <div>
+                      <h3>{"Postulaciones"}</h3>
+                    </div>
+                    <div className="admin-toolbar-actions">
+                      <a href={exportCsvHref} className="btn btn-outline">
+                        {"Exportar CSV filtrado"}
+                      </a>
+                      <button onClick={refreshData} className="btn btn-outline">
+                        {"Refrescar"}
+                      </button>
+                    </div>
                   </div>
                 </div>
-                <div
-                  className="filters-group"
-                  style={{
-                    flexWrap: "wrap",
-                    marginTop: "16px",
-                  }}
-                >
+
+                <div className="candidates-toolbar admin-candidates-toolbar">
                   <input
                     type="text"
                     className="search-input"
-                    placeholder="Buscar postulante..."
+                    placeholder="Buscar por nombre, email o documento..."
                     value={searchQuery}
                     onChange={(a) => setSearchQuery(a.target.value)}
                   />
-                  <select
-                    className="filter-select"
-                    value={stageFilter}
-                    onChange={(a) => setStageFilter(a.target.value as StageFilter)}
-                  >
-                    <option value="all">{"Todas las etapas"}</option>
-                    <option value="documents">{"Stage 1"}</option>
-                    <option value="exam_placeholder">{"Stage 2"}</option>
-                  </select>
-                  <select
-                    className="filter-select"
-                    value={statusFilter}
-                    onChange={(a) => {
-                      const b = a.target.value as StatusFilter;
-                      {
+                  <div className="filters-group admin-candidates-filters">
+                    <select
+                      className="filter-select"
+                      value={stageFilter}
+                      onChange={(a) => setStageFilter(a.target.value as StageFilter)}
+                    >
+                      <option value="all">{"Todas las etapas"}</option>
+                      <option value="documents">{"1. Documentos"}</option>
+                      <option value="exam_placeholder">{"2. Examen"}</option>
+                    </select>
+                    <select
+                      className="filter-select"
+                      value={statusFilter}
+                      onChange={(a) => {
+                        const b = a.target.value as StatusFilter;
                         setStatusFilter(b);
-                        if (b !== "all") setEligibilityFilter("all");
-                      }
-                    }}
-                  >
-                    <option value="all">{"Todos los estados"}</option>
-                    <option value="draft">{"Borrador"}</option>
-                    <option value="submitted">{"Enviada"}</option>
-                    <option value="eligible">{"Elegible"}</option>
-                    <option value="ineligible">{"No elegible"}</option>
-                    <option value="advanced">{"Avanzada"}</option>
-                  </select>
-                  <select
-                    className="filter-select"
-                    value={eligibilityFilter}
-                    onChange={(a) => {
-                      const b = a.target.value as EligibilityFilter;
-                      {
+                        if (b !== "all") {
+                          setEligibilityFilter("all");
+                        }
+                      }}
+                    >
+                      <option value="all">{"Todos los estados"}</option>
+                      <option value="draft">{"Borrador"}</option>
+                      <option value="submitted">{"Enviada"}</option>
+                      <option value="eligible">{"Elegible"}</option>
+                      <option value="ineligible">{"No elegible"}</option>
+                      <option value="advanced">{"Avanzada"}</option>
+                    </select>
+                    <select
+                      className="filter-select"
+                      value={eligibilityFilter}
+                      onChange={(a) => {
+                        const b = a.target.value as EligibilityFilter;
                         setEligibilityFilter(b);
-                        if (b !== "all") setStatusFilter("all");
-                      }
-                    }}
-                  >
-                    <option value="all">{"Todas las elegibilidades"}</option>
-                    <option value="pending">{"Pendiente de decisión"}</option>
-                    <option value="eligible">{"Elegible"}</option>
-                    <option value="ineligible">{"No elegible"}</option>
-                    <option value="advanced">{"Avanzada"}</option>
-                  </select>
+                        if (b !== "all") {
+                          setStatusFilter("all");
+                        }
+                      }}
+                    >
+                      <option value="all">{"Todas las elegibilidades"}</option>
+                      <option value="pending">{"Pendiente de decisión"}</option>
+                      <option value="eligible">{"Elegible"}</option>
+                      <option value="ineligible">{"No elegible"}</option>
+                      <option value="advanced">{"Avanzada"}</option>
+                    </select>
+                  </div>
                 </div>
-              </div>
-              <div className="table-container">
-                <table className="candidates-table">
-                  <thead>
-                    <tr>
-                      <th>{"ID"}</th>
-                      <th>{"Etapa"}</th>
-                      <th>{"Estado"}</th>
-                      <th>{"Última actualización"}</th>
-                      <th>{"Acciones"}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {0 === filteredApplications.length ? (
+
+                <div className="table-container">
+                  <table className="candidates-table admin-candidates-table">
+                    <thead>
                       <tr>
-                        <td
-                          colSpan={5}
-                          style={{
-                            textAlign: "center",
-                          }}
-                        >
-                          {
-                            "No hay postulaciones para los filtros seleccionados."
-                          }
-                        </td>
+                        <th>{"Candidato"}</th>
+                        <th>{"Región"}</th>
+                        <th>{"Etapa actual"}</th>
+                        <th>{"Estado"}</th>
+                        <th>{"Última actividad"}</th>
+                        <th>{"Acciones"}</th>
                       </tr>
-                    ) : (
-                      filteredApplications.map((a) => (
-                        <tr key={a.id}>
-                          <td
-                            style={{
-                              fontFamily: "monospace",
-                            }}
-                          >
-                            {a.id.slice(0, 8)}
-                          </td>
-                          <td>
-                            <StageBadge stage={a.stage_code} />
-                          </td>
-                          <td>
-                            <span
-                              className={`status-pill ${["eligible", "advanced", "submitted"].includes(a.status) ? "complete" : "ineligible" === a.status ? "rejected" : "progress"}`}
-                            >
-                              {a.status}
-                            </span>
-                          </td>
-                          <td>{new Date(a.updated_at).toLocaleString()}</td>
-                          <td>
-                            <div
-                              style={{
-                                display: "flex",
-                                gap: "8px",
-                                flexWrap: "wrap",
-                                alignItems: "center",
-                              }}
-                            >
-                              <button
-                                className="btn btn-outline"
-                                style={{
-                                  borderColor: "var(--success)",
-                                  color: "var(--success)",
-                                }}
-                                onClick={() =>
-                                  validateApplication(a.id, "eligible")
-                                }
-                              >
-                                {"Elegible"}
-                              </button>
-                              <button
-                                className="btn btn-outline"
-                                style={{
-                                  borderColor: "var(--warning)",
-                                  color: "var(--warning)",
-                                }}
-                                onClick={() =>
-                                  validateApplication(a.id, "ineligible")
-                                }
-                              >
-                                {"No elegible"}
-                              </button>
-                              <select
-                                className="filter-select"
-                                value={a.stage_code}
-                                onChange={(b) =>
-                                  transition(a.id, b.target.value as StageCode)
-                                }
-                                style={{
-                                  padding: "6px 12px",
-                                }}
-                              >
-                                <option value="documents">{"Stage 1"}</option>
-                                <option
-                                  value="exam_placeholder"
-                                  disabled={
-                                    !canTransition({
-                                      fromStage: a.stage_code,
-                                      toStage: "exam_placeholder",
-                                      status: a.status,
-                                    })
-                                  }
-                                >
-                                  {"Stage 2 placeholder"}
-                                </option>
-                              </select>
-                              <button
-                                className="btn btn-ghost"
-                                onClick={() => void loadOcrHistory(a.id)}
-                                style={{
-                                  color: "var(--maroon)",
-                                }}
-                              >
-                                {selectedOcrApplicationId === a.id
-                                  ? "Ocultar OCR"
-                                  : "Ver OCR"}
-                              </button>
-                              <button
-                                className="btn btn-outline"
-                                onClick={() => void runOcrValidation(a)}
-                                disabled={
-                                  !getDefaultOcrFileKey(a) ||
-                                  ocrLoadingApplicationId === a.id
-                                }
-                              >
-                                {ocrLoadingApplicationId === a.id
-                                  ? "OCR..."
-                                  : "OCR"}
-                              </button>
-                              <a
-                                href={`/api/exports?applicationId=${a.id}`}
-                                className="btn btn-ghost"
-                              >
-                                {"Exportar JSON"}
-                              </a>
-                            </div>
+                    </thead>
+                    <tbody>
+                      {filteredApplications.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="admin-empty-cell">
+                            {"No hay postulaciones para los filtros seleccionados."}
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        filteredApplications.map((a, index) => {
+                          const avatarToneClass =
+                            index % 3 === 0
+                              ? "tone-blue"
+                              : index % 3 === 1
+                                ? "tone-maroon"
+                                : "tone-green";
+
+                          return (
+                            <tr key={a.id}>
+                              <td>
+                                <div className="candidate-name">
+                                  <div className={`candidate-avatar ${avatarToneClass}`}>
+                                    {getApplicationInitials(a)}
+                                  </div>
+                                  <div>
+                                    <div>{getApplicationDisplayName(a)}</div>
+                                    <div className="candidate-email">
+                                      {getApplicationDisplayEmail(a)}
+                                    </div>
+                                    <div className="candidate-email admin-mono">
+                                      {a.id.slice(0, 8)}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td>{getApplicationRegion(a)}</td>
+                              <td>
+                                <span className="status-pill progress admin-stage-pill">
+                                  {getStageLabel(a.stage_code)}
+                                </span>
+                              </td>
+                              <td>
+                                <span className={`status-pill ${getStatusPillClass(a.status)}`}>
+                                  {getStatusDisplayLabel(a.status)}
+                                </span>
+                              </td>
+                              <td>{new Date(a.updated_at).toLocaleString()}</td>
+                              <td>
+                                <div className="admin-application-actions">
+                                  <div className="admin-application-actions-row">
+                                    <button
+                                      className="btn btn-outline admin-btn-success"
+                                      onClick={() => validateApplication(a.id, "eligible")}
+                                    >
+                                      {"Elegible"}
+                                    </button>
+                                    <button
+                                      className="btn btn-outline admin-btn-warning"
+                                      onClick={() => validateApplication(a.id, "ineligible")}
+                                    >
+                                      {"No elegible"}
+                                    </button>
+                                  </div>
+
+                                  <div className="admin-application-actions-row">
+                                    <select
+                                      className="filter-select admin-inline-select"
+                                      value={a.stage_code}
+                                      onChange={(b) =>
+                                        transition(a.id, b.target.value as StageCode)
+                                      }
+                                    >
+                                      <option value="documents">{getStageShortLabel("documents")}</option>
+                                      <option
+                                        value="exam_placeholder"
+                                        disabled={
+                                          !canTransition({
+                                            fromStage: a.stage_code,
+                                            toStage: "exam_placeholder",
+                                            status: a.status,
+                                          })
+                                        }
+                                      >
+                                        {getStageShortLabel("exam_placeholder")}
+                                      </option>
+                                    </select>
+                                    <button
+                                      className="btn btn-ghost admin-maroon-text"
+                                      onClick={() => void loadOcrHistory(a.id)}
+                                    >
+                                      {selectedOcrApplicationId === a.id ? "Ocultar OCR" : "Ver OCR"}
+                                    </button>
+                                  </div>
+
+                                  <div className="admin-application-actions-row">
+                                    <button
+                                      className="btn btn-outline"
+                                      onClick={() => void runOcrValidation(a)}
+                                      disabled={
+                                        !getDefaultOcrFileKey(a) ||
+                                        ocrLoadingApplicationId === a.id
+                                      }
+                                    >
+                                      {ocrLoadingApplicationId === a.id ? "OCR..." : "OCR"}
+                                    </button>
+                                    <a
+                                      href={`/api/exports?applicationId=${a.id}`}
+                                      className="btn btn-ghost"
+                                    >
+                                      {"Exportar JSON"}
+                                    </a>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
               {selectedOcrApplicationId ? (
                 <div

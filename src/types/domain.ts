@@ -1,6 +1,7 @@
 export type AppRole = "admin" | "applicant";
 
-export type StageCode = "documents" | "exam_placeholder";
+export type BuiltinStageCode = "documents" | "exam_placeholder";
+export type StageCode = BuiltinStageCode | (string & {});
 export type StageFieldType = "short_text" | "long_text" | "number" | "date" | "email" | "file";
 export type StageAutomationTrigger = "application_submitted" | "stage_result";
 export type CommunicationStatus = "queued" | "processing" | "sent" | "failed";

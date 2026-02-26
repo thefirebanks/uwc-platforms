@@ -3,7 +3,9 @@ export type AppLanguage = "es" | "en";
 type MessageMap = Record<string, string>;
 
 const spanish: MessageMap = {
+  "nav.home": "Inicio",
   "nav.processes": "Procesos",
+  "nav.candidates": "Candidatos",
   "nav.audit": "Auditoría",
   "nav.roleAdmin": "Admin",
   "nav.roleApplicant": "Postulante",
@@ -75,7 +77,9 @@ const spanish: MessageMap = {
 };
 
 const english: MessageMap = {
+  "nav.home": "Home",
   "nav.processes": "Processes",
+  "nav.candidates": "Candidates",
   "nav.audit": "Audit",
   "nav.roleAdmin": "Admin",
   "nav.roleApplicant": "Applicant",

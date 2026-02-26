@@ -17,6 +17,11 @@ export type ApplicantFormSection = {
   fields: CycleStageField[];
 };
 
+export type GroupApplicantFormFieldsOptions = {
+  includeInactive?: boolean;
+  includeFileFields?: boolean;
+};
+
 const SECTION_ORDER: ApplicantFormSectionId[] = [
   "eligibility",
   "identity",
@@ -67,6 +72,12 @@ const SECTION_META: Record<
 };
 
 const ELIGIBILITY_PREFIX = "eligibility";
+const CUSTOM_IDENTITY_PREFIX = "identityCustom";
+const CUSTOM_FAMILY_PREFIX = "guardianCustom";
+const CUSTOM_SCHOOL_PREFIX = "schoolCustom";
+const CUSTOM_MOTIVATION_PREFIX = "motivationCustom";
+const CUSTOM_RECOMMENDER_PREFIX = "recommenderCustom";
+const CUSTOM_DOCUMENTS_PREFIX = "docsCustom";
 const ELIGIBILITY_KEYS = new Set([
   "secondNationality",
   "secondaryYear2025",
@@ -150,6 +161,30 @@ function isOfficialGradesKey(key: string) {
 }
 
 export function classifyApplicantFieldKey(fieldKey: string): ApplicantFormSectionId {
+  if (fieldKey.startsWith(CUSTOM_IDENTITY_PREFIX)) {
+    return "identity";
+  }
+
+  if (fieldKey.startsWith(CUSTOM_FAMILY_PREFIX)) {
+    return "family";
+  }
+
+  if (fieldKey.startsWith(CUSTOM_SCHOOL_PREFIX)) {
+    return "school";
+  }
+
+  if (fieldKey.startsWith(CUSTOM_MOTIVATION_PREFIX)) {
+    return "motivation";
+  }
+
+  if (fieldKey.startsWith(CUSTOM_RECOMMENDER_PREFIX)) {
+    return "recommenders";
+  }
+
+  if (fieldKey.startsWith(CUSTOM_DOCUMENTS_PREFIX)) {
+    return "documents";
+  }
+
   if (fieldKey.startsWith(ELIGIBILITY_PREFIX) || ELIGIBILITY_KEYS.has(fieldKey)) {
     return "eligibility";
   }
@@ -181,7 +216,11 @@ export function classifyApplicantFieldKey(fieldKey: string): ApplicantFormSectio
   return "other";
 }
 
-export function groupApplicantFormFields(fields: CycleStageField[]): ApplicantFormSection[] {
+export function groupApplicantFormFields(
+  fields: CycleStageField[],
+  options: GroupApplicantFormFieldsOptions = {},
+): ApplicantFormSection[] {
+  const { includeInactive = false, includeFileFields = false } = options;
   const grouped = new Map<ApplicantFormSectionId, CycleStageField[]>();
 
   for (const sectionId of SECTION_ORDER) {
@@ -189,7 +228,11 @@ export function groupApplicantFormFields(fields: CycleStageField[]): ApplicantFo
   }
 
   for (const field of fields) {
-    if (!field.is_active || field.field_type === "file") {
+    if (!includeInactive && !field.is_active) {
+      continue;
+    }
+
+    if (!includeFileFields && field.field_type === "file") {
       continue;
     }
 

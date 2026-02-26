@@ -7,6 +7,31 @@ afterEach(() => {
 });
 
 describe("StageConfigEditor", () => {
+  const stageTemplates = [
+    {
+      id: "template-docs",
+      cycle_id: "cycle-1",
+      stage_code: "documents",
+      stage_label: "Documentos",
+      milestone_label: "Recepción",
+      due_at: null,
+      ocr_prompt_template: null,
+      sort_order: 1,
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "template-exam",
+      cycle_id: "cycle-1",
+      stage_code: "exam_placeholder",
+      stage_label: "Examen",
+      milestone_label: "Evaluación",
+      due_at: null,
+      ocr_prompt_template: null,
+      sort_order: 2,
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+  ] as const;
+
   it("saves stage config after adding a field", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -51,8 +76,12 @@ describe("StageConfigEditor", () => {
       <StageConfigEditor
         cycleId="cycle-1"
         cycleName="Proceso 2026"
+        stageId="template-docs"
         stageCode="documents"
         stageLabel="Stage 1"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
         initialFields={[
           {
             id: "field-1",
@@ -87,18 +116,18 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Agregar campo al final" }));
+    fireEvent.click(screen.getByRole("button", { name: "Añadir nuevo campo" }));
     fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/cycles/cycle-1/stages/documents/config",
+        "/api/cycles/cycle-1/stages/template-docs/config",
         expect.objectContaining({ method: "PATCH" }),
       );
     });
   });
 
-  it("can insert a field between rows and send ordered payload", async () => {
+  it("can add a field from the section toolbar and send ordered payload", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -113,8 +142,12 @@ describe("StageConfigEditor", () => {
       <StageConfigEditor
         cycleId="cycle-1"
         cycleName="Proceso 2026"
+        stageId="template-docs"
         stageCode="documents"
         stageLabel="Stage 1"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
         initialFields={[
           {
             id: "field-1",
@@ -150,7 +183,7 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getAllByRole("button", { name: /Agregar campo en posición/i })[1]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "Añadir nuevo campo" })[0]!);
     fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
 
     await waitFor(() => {
@@ -166,13 +199,17 @@ describe("StageConfigEditor", () => {
     expect(payload?.fields?.map((field: { sortOrder: number }) => field.sortOrder)).toEqual([1, 2, 3]);
   });
 
-  it("shows insertion controls between each field and at the end", () => {
+  it("shows per-section add controls and the add-section action", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
         cycleName="Proceso 2026"
+        stageId="template-docs"
         stageCode="documents"
         stageLabel="Stage 1"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
         initialFields={[
           {
             id: "field-1",
@@ -208,7 +245,7 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    expect(screen.getAllByRole("button", { name: /Agregar campo en posición/i })).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Agregar campo al final" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Añadir nuevo campo" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /\+ Añadir nueva sección/i })).toBeInTheDocument();
   });
 });

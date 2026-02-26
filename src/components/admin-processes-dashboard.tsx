@@ -1,13 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type KeyboardEvent } from "react";
 import { useAppLanguage } from "@/components/language-provider";
 import type { SelectionProcess } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 
 type ProcessSummary = SelectionProcess & {
   applicationCount: number;
+  primaryStageEditorId?: string | null;
 };
 
 interface ApiError {
@@ -19,6 +20,7 @@ function formatDate(value: string | null) {
   if (!value) {
     return null;
   }
+
   return new Date(value).toLocaleDateString();
 }
 
@@ -31,8 +33,10 @@ export function AdminProcessesDashboard({
   const router = useRouter();
   const [processes, setProcesses] = useState(initialProcesses);
   const initialYear = String(new Date().getFullYear() + 1);
-  const [name, setName] = useState(t("adminProcesses.defaultName", { year: initialYear }));
-  const [year, setYear] = useState(String(new Date().getFullYear() + 1));
+  const [name, setName] = useState(
+    t("adminProcesses.defaultName", { year: initialYear }),
+  );
+  const [year, setYear] = useState(initialYear);
   const [setAsActive, setSetAsActive] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -45,6 +49,7 @@ export function AdminProcessesDashboard({
         if (a.is_active !== b.is_active) {
           return a.is_active ? -1 : 1;
         }
+
         return b.created_at.localeCompare(a.created_at);
       }),
     [processes],
@@ -105,116 +110,188 @@ export function AdminProcessesDashboard({
     const updated = body.cycle as SelectionProcess;
     setProcesses((current) =>
       current.map((process) =>
-        process.id === id ? { ...process, is_active: true } : { ...process, is_active: false },
+        process.id === id
+          ? { ...process, is_active: true }
+          : { ...process, is_active: false },
       ),
     );
     setStatusMessage(t("adminProcesses.updatedActive", { name: updated.name }));
     router.refresh();
   }
 
+  function openProcess(id: string, stageId?: string | null) {
+    if (stageId) {
+      router.push(`/admin/process/${id}/stage/${stageId}`);
+      return;
+    }
+
+    router.push(`/admin/process/${id}`);
+  }
+
+  function handleCardKeyDown(
+    event: KeyboardEvent<HTMLElement>,
+    processId: string,
+  ) {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    const process = orderedProcesses.find((candidate) => candidate.id === processId);
+    openProcess(processId, process?.primaryStageEditorId ?? null);
+  }
+
   return (
     <main className="main full-width">
-      <div className="canvas-header" style={{ borderBottom: "none", paddingBottom: "16px" }}>
+      <div className="canvas-header admin-processes-header">
         <div className="canvas-title-row">
           <div>
-            <h1 style={{ fontSize: "2rem" }}>{t("adminProcesses.title")}</h1>
-            <p style={{ fontSize: "1rem" }}>{t("adminProcesses.description")}</p>
+            <h1 className="admin-processes-title">{t("adminProcesses.title")}</h1>
+            <p className="admin-processes-description">{t("adminProcesses.description")}</p>
           </div>
-          <button 
-            className={`btn ${showCreateForm ? 'btn-outline' : 'btn-primary'}`} 
-            onClick={() => setShowCreateForm(!showCreateForm)}
+          <button
+            type="button"
+            className={`btn ${showCreateForm ? "btn-outline" : "btn-primary"}`}
+            onClick={() => setShowCreateForm((current) => !current)}
           >
-            {showCreateForm ? 'Cancelar' : '+ Nuevo Proceso'}
+            {showCreateForm ? "Cancelar" : "+ Nuevo Proceso"}
           </button>
         </div>
       </div>
 
-      <div className="canvas-body wide">
+      <div className="canvas-body wide admin-page-stack">
         {error ? (
-          <div style={{ marginBottom: "24px" }}>
-            <ErrorCallout message={error.message} errorId={error.errorId} context="admin_processes" />
+          <div>
+            <ErrorCallout
+              message={error.message}
+              errorId={error.errorId}
+              context="admin_processes"
+            />
           </div>
         ) : null}
 
         {statusMessage ? (
-          <div style={{ padding: "12px", borderRadius: "8px", background: "var(--success-soft)", border: "1px solid var(--success)", color: "var(--success)", fontWeight: 500, marginBottom: "24px" }}>
+          <div className="admin-feedback success" aria-live="polite">
             {statusMessage}
           </div>
         ) : null}
 
-        {showCreateForm && (
-          <div className="settings-card">
+        {showCreateForm ? (
+          <section className="settings-card" aria-labelledby="create-process-title">
             <div className="settings-card-header">
-              <h3>{t("adminProcesses.create")}</h3>
-              <p>Crea un nuevo proceso y opcionalmente déjalo activo desde el inicio.</p>
+              <h3 id="create-process-title">{t("adminProcesses.create")}</h3>
+              <p>
+                Crea un nuevo proceso y opcionalmente déjalo activo desde el
+                inicio.
+              </p>
             </div>
+
             <div className="editor-grid">
               <div className="form-field">
-                <label>{t("adminProcesses.processName")}</label>
-                <input type="text" value={name} onChange={(e) => setName(e.target.value)} />
+                <label htmlFor="new-process-name">
+                  {t("adminProcesses.processName")}
+                </label>
+                <input
+                  id="new-process-name"
+                  type="text"
+                  value={name}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </div>
+
               <div className="form-field">
-                <label>{t("adminProcesses.year")}</label>
-                <input type="number" value={year} onChange={(e) => setYear(e.target.value)} />
+                <label htmlFor="new-process-year">{t("adminProcesses.year")}</label>
+                <input
+                  id="new-process-year"
+                  type="number"
+                  value={year}
+                  onChange={(event) => setYear(event.target.value)}
+                />
               </div>
+
               <div className="form-field full">
-                <div className="switch-wrapper" style={{ borderColor: "var(--sand)", background: "var(--surface)" }}>
+                <div className="switch-wrapper">
                   <div>
-                    <div style={{ fontSize: "0.85rem", fontWeight: 500, color: "var(--ink)" }}>{t("adminProcesses.activateOnCreate")}</div>
+                    <div className="admin-switch-label">
+                      {t("adminProcesses.activateOnCreate")}
+                    </div>
                   </div>
                   <label className="switch">
-                    <input type="checkbox" checked={setAsActive} onChange={(e) => setSetAsActive(e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={setAsActive}
+                      onChange={(event) => setSetAsActive(event.target.checked)}
+                    />
                     <span className="slider"></span>
                   </label>
                 </div>
               </div>
             </div>
-            <div style={{ textAlign: "right", marginTop: "24px" }}>
-              <button 
-                className="btn btn-primary" 
-                onClick={createProcess} 
+
+            <div className="admin-form-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={createProcess}
                 disabled={isSubmitting}
               >
                 {t("adminProcesses.createButton")}
               </button>
             </div>
-          </div>
-        )}
+          </section>
+        ) : null}
 
         <div className="process-list-grid">
           {orderedProcesses.map((process) => (
-            <div 
-              key={process.id} 
+            <article
+              key={process.id}
               className={`process-card ${process.is_active ? "active" : ""}`}
-              onClick={() => router.push(`/admin/process/${process.id}`)}
+              role="button"
+              tabIndex={0}
+              onClick={() => openProcess(process.id, process.primaryStageEditorId ?? null)}
+              onKeyDown={(event) => handleCardKeyDown(event, process.id)}
+              aria-label={`Abrir ${process.name}`}
             >
               <div className="process-card-left">
-                <div className="process-card-icon">{process.is_active ? "🎯" : "📝"}</div>
+                <div className="process-card-icon" aria-hidden="true">
+                  {process.is_active ? "🎯" : "📝"}
+                </div>
                 <div className="process-card-info">
                   <h3>{process.name}</h3>
                   <p>
-                    {process.is_active ? "Activo" : "Inactivo"} • {t("adminProcesses.applications", { count: process.applicationCount })} • Máx {process.max_applications_per_user}
+                    {process.is_active ? "Activo" : "Inactivo"} •{" "}
+                    {t("adminProcesses.applications", {
+                      count: process.applicationCount,
+                    })}{" "}
+                    • Máx {process.max_applications_per_user}
+                  </p>
+                  <p className="admin-text-muted">
+                    Stage 1 cierre: {formatDate(process.stage1_close_at) ?? "—"}
                   </p>
                 </div>
               </div>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
-                <div className={`process-badge ${process.is_active ? "active" : "draft"}`}>
+
+              <div className="admin-process-card-side">
+                <div
+                  className={`process-badge ${process.is_active ? "active" : "draft"}`}
+                >
                   {process.is_active ? t("state.active") : "Inactivo"}
                 </div>
-                {!process.is_active && (
-                  <button 
-                    className="btn btn-ghost" 
-                    style={{ fontSize: "0.7rem", padding: "4px 8px" }}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      activateProcess(process.id);
+
+                {!process.is_active ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost admin-process-inline-action"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void activateProcess(process.id);
                     }}
                   >
                     {t("adminProcesses.markActive")}
                   </button>
-                )}
+                ) : null}
               </div>
-            </div>
+            </article>
           ))}
         </div>
       </div>
