@@ -495,6 +495,7 @@ export function StageConfigEditor({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [lastSavedAtIso, setLastSavedAtIso] = useState<string | null>(null);
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
   const [ocrPromptTemplate, setOcrPromptTemplate] = useState(
@@ -697,7 +698,27 @@ export function StageConfigEditor({
     );
   }
 
-  function openPreview() {
+  async function openPreview() {
+    if (isSaving) {
+      return;
+    }
+
+    if (hasUnsavedConfigChanges) {
+      setStatusMessage("Guardando cambios antes de abrir la previsualización...");
+      const didSave = await saveStageConfig({ source: "preview" });
+      if (!didSave) {
+        return;
+      }
+    }
+
+    if (hasUnsavedSectionDraftChanges) {
+      setStatusMessage(
+        "La previsualización muestra los cambios guardados. Las secciones nuevas sin campos aún no se incluyen.",
+      );
+    } else if (!hasUnsavedConfigChanges) {
+      setStatusMessage("Abriendo previsualización de la versión guardada.");
+    }
+
     router.push(`/admin/process/${cycleId}/stage/${stageId}/preview`);
   }
 
@@ -837,7 +858,10 @@ export function StageConfigEditor({
     setAutomations((current) => current.filter((automation) => automation.localId !== localId));
   }
 
-  async function saveStageConfig() {
+  async function saveStageConfig(options?: {
+    source?: "manual" | "preview";
+  }) {
+    let didSave = false;
     setError(null);
     setStatusMessage(null);
     setIsSaving(true);
@@ -891,7 +915,7 @@ export function StageConfigEditor({
 
       if (!response.ok) {
         setError(body);
-        return;
+        return false;
       }
 
       const nextSavedFields = mapFieldsWithLocalId(body.fields ?? []);
@@ -952,10 +976,18 @@ export function StageConfigEditor({
         ocrPromptTemplate: nextSavedOcrPrompt,
       });
       savedSettingsSnapshotRef.current = serializeSettingsDraft(nextSavedSettings);
-      setStatusMessage("Configuración de etapa guardada.");
+      setLastSavedAtIso(new Date().toISOString());
+      setStatusMessage(
+        options?.source === "preview"
+          ? "Configuración guardada. Abriendo previsualización..."
+          : "Configuración guardada y publicada en la etapa.",
+      );
+      didSave = true;
     } finally {
       setIsSaving(false);
     }
+
+    return didSave;
   }
   const documentsRouteRepresentsMainForm = stageCode === "documents";
   const displayStageLabel = documentsRouteRepresentsMainForm
@@ -1026,6 +1058,13 @@ export function StageConfigEditor({
     hasUnsavedCommsConfigChanges ||
     hasUnsavedSettingsConfigChanges;
   const canSavePersistedConfig = hasUnsavedConfigChanges && !isSaving;
+  const saveFeedbackLabel = isSaving
+    ? "Guardando cambios..."
+    : hasUnsavedConfigChanges
+      ? "Hay cambios sin guardar"
+      : lastSavedAtIso
+        ? "Configuración guardada"
+        : "Sin cambios";
   const isLargeFormEditor = orderedFields.length >= 80;
   const saveableChangeLabels = [
     hasUnsavedFieldConfigChanges ? "Editor de Formulario" : null,
@@ -1532,14 +1571,22 @@ export function StageConfigEditor({
               <button
                 type="button"
                 className="btn btn-outline admin-stage-preview-btn"
-                onClick={openPreview}
+                onClick={() => void openPreview()}
+                disabled={isSaving}
+                title={
+                  hasUnsavedConfigChanges
+                    ? "Guardará los cambios persistibles y abrirá la previsualización."
+                    : "Abre la previsualización de la versión guardada."
+                }
               >
                 Previsualizar Formulario
               </button>
               <button
                 type="button"
                 className="btn btn-primary"
-                onClick={saveStageConfig}
+                onClick={() => {
+                  void saveStageConfig({ source: "manual" });
+                }}
                 disabled={!canSavePersistedConfig}
                 title={
                   isSaving
@@ -1553,6 +1600,18 @@ export function StageConfigEditor({
               </button>
             </div>
           </div>
+          <div className={`admin-stage-save-status ${isSaving ? "is-saving" : hasUnsavedConfigChanges ? "is-dirty" : "is-clean"}`}>
+            <span className="admin-stage-save-status-dot" aria-hidden="true" />
+            <span>{saveFeedbackLabel}</span>
+            {!hasUnsavedConfigChanges && lastSavedAtIso ? (
+              <span className="admin-stage-save-status-time">
+                {new Date(lastSavedAtIso).toLocaleTimeString("es-PE", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}
+              </span>
+            ) : null}
+          </div>
           <div className="admin-stage-save-hint" aria-live="polite">
             {hasUnsavedConfigChanges
               ? "Cambios sin guardar (editor, ajustes y/o comunicaciones)."
@@ -1562,7 +1621,7 @@ export function StageConfigEditor({
             <div className="admin-stage-save-scope" aria-live="polite">
               {saveableChangeLabels.length > 0 ? (
                 <div>
-                  <strong>Guardar configuración guardará:</strong>{" "}
+                  <strong>Este botón publicará cambios en:</strong>{" "}
                   {saveableChangeLabels.join(", ")}.
                 </div>
               ) : null}
@@ -1909,7 +1968,7 @@ export function StageConfigEditor({
                                   setActiveFieldId(null);
                                 }}
                               >
-                                Guardar Campo
+                                Aplicar cambios
                               </button>
                             </div>
                           </div>

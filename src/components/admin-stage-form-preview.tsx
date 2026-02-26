@@ -4,15 +4,17 @@ import type { PersistedCustomSection } from "@/lib/stages/stage-admin-config";
 import type { CycleStageField, StageCode } from "@/types/domain";
 
 function getDisplayStageLabel(stageCode: StageCode, stageLabel: string) {
+  const normalizedLabel = stageLabel.trim();
+
   if (stageCode === "documents") {
-    return "Formulario Principal";
+    return normalizedLabel || "Formulario Principal";
   }
 
   if (stageCode === "exam_placeholder") {
-    return "Examen Académico";
+    return normalizedLabel || "Examen Académico";
   }
 
-  return stageLabel;
+  return normalizedLabel;
 }
 
 function renderPreviewControl(field: CycleStageField) {

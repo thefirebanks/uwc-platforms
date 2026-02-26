@@ -371,7 +371,7 @@ describe("StageConfigEditor", () => {
     });
 
     const saveScopeHint = screen
-      .getByText(/Guardar configuración guardará:/i)
+      .getByText(/Este botón publicará cambios en:/i)
       .closest(".admin-stage-save-scope");
 
     expect(saveScopeHint).not.toBeNull();

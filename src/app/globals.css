@@ -633,8 +633,11 @@ input:checked + .slider:before { transform: translateX(18px); }
 }
 
 .admin-stage-section-header-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
+  opacity: 1;
+  cursor: not-allowed;
+  border-color: var(--sand);
+  background: color-mix(in srgb, var(--paper) 75%, var(--surface));
+  color: color-mix(in srgb, var(--muted) 88%, var(--ink) 12%);
 }
 
 .admin-stage-section-header-btn.is-active {
@@ -699,6 +702,11 @@ input:checked + .slider:before { transform: translateX(18px); }
 @keyframes adminLoadingShimmer {
   0% { background-position: 210% 0; }
   100% { background-position: -20% 0; }
+}
+
+@keyframes adminSpinPulse {
+  0%, 100% { transform: scale(1); opacity: 0.92; }
+  50% { transform: scale(1.12); opacity: 1; }
 }
 
 @keyframes candidateRowFlash {
@@ -1279,6 +1287,54 @@ input:checked + .slider:before { transform: translateX(18px); }
   gap: 8px;
   flex-wrap: wrap;
   align-items: center;
+}
+
+.admin-stage-save-status {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.admin-stage-save-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.9;
+  flex-shrink: 0;
+}
+
+.admin-stage-save-status.is-saving {
+  color: var(--maroon);
+}
+
+.admin-stage-save-status.is-saving .admin-stage-save-status-dot {
+  background: var(--maroon);
+  animation: adminSpinPulse 0.9s ease-in-out infinite;
+}
+
+.admin-stage-save-status.is-dirty {
+  color: var(--warning);
+}
+
+.admin-stage-save-status.is-dirty .admin-stage-save-status-dot {
+  background: var(--warning);
+}
+
+.admin-stage-save-status.is-clean {
+  color: var(--success);
+}
+
+.admin-stage-save-status.is-clean .admin-stage-save-status-dot {
+  background: var(--success);
+}
+
+.admin-stage-save-status-time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .admin-stage-preview-btn {
