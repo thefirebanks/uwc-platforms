@@ -809,6 +809,27 @@ export function StageConfigEditor({
     }
   }
 
+  function ensureUniqueFieldKey(fieldKey: string, currentLocalId: string) {
+    const normalizedBase = normalizeFieldKey(fieldKey);
+    const existingKeys = new Set(
+      orderedFields
+        .filter((candidate) => candidate.localId !== currentLocalId)
+        .map((candidate) => candidate.field_key),
+    );
+
+    if (!existingKeys.has(normalizedBase)) {
+      return normalizedBase;
+    }
+
+    let counter = 2;
+    let candidate = `${normalizedBase}${counter}`;
+    while (existingKeys.has(candidate)) {
+      counter += 1;
+      candidate = `${normalizedBase}${counter}`;
+    }
+    return candidate;
+  }
+
   function reorderDraggedField(targetLocalId: string) {
     if (!draggedFieldId || draggedFieldId === targetLocalId) {
       return;
@@ -887,6 +908,16 @@ export function StageConfigEditor({
     setError(null);
     setStatusMessage(null);
     setIsSaving(true);
+
+    const normalizedKeys = orderedFields.map((field) => field.field_key.trim());
+    if (new Set(normalizedKeys).size !== normalizedKeys.length) {
+      setError({
+        message:
+          "Hay claves técnicas duplicadas en los campos. Ajusta los identificadores internos antes de guardar.",
+      });
+      setIsSaving(false);
+      return false;
+    }
 
     try {
       const response = await fetch(`/api/cycles/${cycleId}/stages/${stageId}/config`, {
@@ -1872,7 +1903,7 @@ export function StageConfigEditor({
                                     const value = event.target.value;
                                     const nextFieldKey =
                                       field.id.startsWith("new-") || field.field_key.startsWith("nuevoCampo")
-                                        ? normalizeFieldKey(value)
+                                        ? ensureUniqueFieldKey(value, field.localId)
                                         : field.field_key;
                                     remapFieldSectionAssignmentKey(field.field_key, nextFieldKey);
                                     setFields((current) =>
@@ -1883,7 +1914,7 @@ export function StageConfigEditor({
                                               field_label: value,
                                               field_key:
                                                 item.id.startsWith("new-") || item.field_key.startsWith("nuevoCampo")
-                                                  ? normalizeFieldKey(value)
+                                                  ? ensureUniqueFieldKey(value, field.localId)
                                                   : item.field_key,
                                             }
                                           : item,
@@ -1899,14 +1930,17 @@ export function StageConfigEditor({
                                   type="text"
                                   value={field.field_key}
                                   onChange={(event) => {
-                                    const nextFieldKey = normalizeFieldKey(event.target.value);
+                                    const nextFieldKey = ensureUniqueFieldKey(
+                                      event.target.value,
+                                      field.localId,
+                                    );
                                     remapFieldSectionAssignmentKey(field.field_key, nextFieldKey);
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId
                                           ? {
                                               ...item,
-                                              field_key: normalizeFieldKey(event.target.value),
+                                              field_key: nextFieldKey,
                                             }
                                           : item,
                                       ),

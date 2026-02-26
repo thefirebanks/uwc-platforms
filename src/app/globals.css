@@ -1349,6 +1349,51 @@ input:checked + .slider:before { transform: translateX(18px); }
   font-size: 0.82rem;
 }
 
+.error-callout-report-form {
+  margin-top: 6px;
+}
+
+.error-callout-input-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.error-callout-input {
+  width: 100%;
+  min-height: 70px;
+  resize: vertical;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--sand);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.error-callout-input:focus {
+  outline: none;
+  border-color: var(--maroon);
+  box-shadow: 0 0 0 3px rgba(154, 37, 69, 0.08);
+}
+
+.error-callout-report-btn {
+  margin-top: 10px;
+  border-color: color-mix(in srgb, var(--danger) 24%, var(--sand));
+  color: var(--danger);
+}
+
+.error-callout-report-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--danger) 38%, var(--sand));
+  background: color-mix(in srgb, var(--danger) 6%, var(--surface));
+  color: var(--danger);
+}
+
 .admin-stage-preview-btn {
   background: var(--paper);
 }
