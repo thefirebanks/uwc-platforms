@@ -19,7 +19,10 @@ export function TopNav({ role }: { role: AppRole }) {
   const pathname = usePathname();
   const { t, language } = useAppLanguage();
   const isAdmin = role === "admin";
-  const [pendingNavHref, setPendingNavHref] = useState<string | null>(null);
+  const [pendingNav, setPendingNav] = useState<{
+    href: string;
+    sourcePath: string | null;
+  } | null>(null);
   const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLElement | null>(
     null,
   );
@@ -60,27 +63,26 @@ export function TopNav({ role }: { role: AppRole }) {
   }, [isAdmin, pathname, router]);
 
   useEffect(() => {
-    if (!pendingNavHref) return;
+    if (!pendingNav) return;
 
     const timeoutId = window.setTimeout(() => {
-      setPendingNavHref(null);
+      setPendingNav(null);
     }, 2500);
 
     return () => window.clearTimeout(timeoutId);
-  }, [pendingNavHref]);
+  }, [pendingNav]);
+
+  const isRoutePending =
+    pendingNav !== null &&
+    pathname === pendingNav.sourcePath &&
+    !navHrefMatchesPath(pendingNav.href, pathname);
 
   return (
     <header
       className={`topbar ${isAdmin ? "admin-topbar" : ""} ${
-        pendingNavHref && pathname && !navHrefMatchesPath(pendingNavHref, pathname)
-          ? "is-route-pending"
-          : ""
+        isRoutePending ? "is-route-pending" : ""
       }`}
-      aria-busy={
-        pendingNavHref && pathname && !navHrefMatchesPath(pendingNavHref, pathname)
-          ? true
-          : undefined
-      }
+      aria-busy={isRoutePending ? true : undefined}
     >
       <div className="topbar-left">
         <Link href={isAdmin ? "/admin" : "/applicant"} className="topbar-brand">
@@ -94,27 +96,27 @@ export function TopNav({ role }: { role: AppRole }) {
                 href="/admin"
                 label={t("nav.home")}
                 exact
-                onNavigateStart={setPendingNavHref}
+                onNavigateStart={(href) => setPendingNav({ href, sourcePath: pathname })}
                 onPrefetch={router.prefetch}
               />
               <NavLink
                 href="/admin/processes"
                 label={t("nav.processes")}
-                onNavigateStart={setPendingNavHref}
+                onNavigateStart={(href) => setPendingNav({ href, sourcePath: pathname })}
                 onPrefetch={router.prefetch}
               />
               <NavLink
                 href="/admin/candidates"
                 label={t("nav.candidates")}
                 exact
-                onNavigateStart={setPendingNavHref}
+                onNavigateStart={(href) => setPendingNav({ href, sourcePath: pathname })}
                 onPrefetch={router.prefetch}
               />
               <NavLink
                 href="/admin/audit"
                 label={t("nav.audit")}
                 exact
-                onNavigateStart={setPendingNavHref}
+                onNavigateStart={(href) => setPendingNav({ href, sourcePath: pathname })}
                 onPrefetch={router.prefetch}
               />
             </>

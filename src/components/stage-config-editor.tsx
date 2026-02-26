@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   startTransition,
-  useEffect,
+  useLayoutEffect,
   useDeferredValue,
   useMemo,
   useRef,
@@ -1129,16 +1129,21 @@ export function StageConfigEditor({
   const draftOnlyChangeLabels = [
     hasUnsavedSectionDraftChanges ? "Secciones nuevas (placeholder)" : null,
   ].filter(Boolean) as string[];
-  const saveFeedbackDetail = hasUnsavedConfigChanges
-    ? `Guardar configuración publicará: ${saveableChangeLabels.join(", ")}.`
-    : draftOnlyChangeLabels.length > 0
-      ? `Cambios locales no incluidos en Guardar configuración: ${draftOnlyChangeLabels.join(", ")}.`
-      : lastSavedAtIso
-        ? `Última publicación ${new Date(lastSavedAtIso).toLocaleTimeString("es-PE", {
-            hour: "2-digit",
-            minute: "2-digit",
-          })}.`
-        : "Sin cambios pendientes en configuración persistente.";
+  const saveStatusTimestamp = lastSavedAtIso
+    ? new Date(lastSavedAtIso).toLocaleTimeString("es-PE", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+  const saveFeedbackSummary = isSaving
+    ? "Guardando cambios de la etapa..."
+    : hasUnsavedConfigChanges
+      ? `Hay cambios sin guardar en ${saveableChangeLabels.join(", ")}. Previsualizar también los guarda.`
+      : draftOnlyChangeLabels.length > 0
+        ? `Hay borradores locales (${draftOnlyChangeLabels.join(", ")}) que aún no se publican.`
+        : saveStatusTimestamp
+          ? `Configuración guardada (${saveStatusTimestamp}).`
+          : "Sin cambios pendientes.";
 
   const editorSections = useMemo(
     () => {
@@ -1291,7 +1296,7 @@ export function StageConfigEditor({
     orderedFields.length,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (activeTab !== "editor") {
       return;
     }
@@ -1735,8 +1740,8 @@ export function StageConfigEditor({
             <div className="admin-stage-save-status-headline">
               <span className="admin-stage-save-status-dot" aria-hidden="true" />
               <span>{saveFeedbackLabel}</span>
+              <span className="admin-stage-save-status-time">{saveFeedbackSummary}</span>
             </div>
-            <div className="admin-stage-save-status-detail">{saveFeedbackDetail}</div>
           </div>
 
           <div className="page-tabs">

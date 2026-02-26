@@ -370,9 +370,13 @@ describe("StageConfigEditor", () => {
       target: { value: "Formulario Principal (editado)" },
     });
 
-    const saveStatus = screen.getByText(/Hay cambios sin guardar/i).closest(".admin-stage-save-status");
+    const saveStatus = screen
+      .getByText(/^Hay cambios sin guardar$/i)
+      .closest(".admin-stage-save-status");
     expect(saveStatus).not.toBeNull();
-    expect(saveStatus).toHaveTextContent("Guardar configuración publicará: Ajustes y Reglas.");
+    expect(saveStatus).toHaveTextContent(
+      "Hay cambios sin guardar en Ajustes y Reglas. Previsualizar también los guarda.",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
 
