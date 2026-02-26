@@ -208,6 +208,11 @@ a {
     color-mix(in srgb, var(--maroon) 18%, transparent) 100%
   );
   transform: translateX(-55%);
+  animation: none;
+  opacity: 0;
+}
+.topbar.is-route-pending .topbar-route-progress-bar {
+  opacity: 1;
   animation: topbarRouteProgress 820ms ease-in-out infinite;
 }
 
@@ -588,10 +593,6 @@ input:checked + .slider:before { transform: translateX(18px); }
   margin-bottom: 8px;
 }
 
-.admin-stage-collapsed-section .admin-stage-section-add-field {
-  margin-top: 10px;
-}
-
 .admin-stage-section-heading-row {
   display: flex;
   align-items: center;
@@ -618,15 +619,15 @@ input:checked + .slider:before { transform: translateX(18px); }
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
+  border: 1px solid var(--sand-light);
+  background: var(--surface);
   color: var(--muted);
   cursor: pointer;
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 
 .admin-stage-section-header-btn:hover:not(:disabled) {
-  background: var(--surface);
+  background: var(--paper);
   border-color: var(--sand);
   color: var(--ink);
 }
@@ -638,7 +639,7 @@ input:checked + .slider:before { transform: translateX(18px); }
 
 .admin-stage-section-header-btn.is-active {
   color: var(--maroon);
-  border-color: color-mix(in srgb, var(--maroon) 20%, var(--sand));
+  border-color: color-mix(in srgb, var(--maroon) 28%, var(--sand));
   background: color-mix(in srgb, var(--maroon-soft) 60%, var(--surface));
 }
 

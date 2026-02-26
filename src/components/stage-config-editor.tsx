@@ -1261,66 +1261,15 @@ export function StageConfigEditor({
     setStatusMessage("Orden de sección actualizado localmente. Guarda configuración para persistir.");
   }
 
-  function renderCustomSectionOrderActions(customSectionId: string) {
-    const position = customSectionPositionById.get(customSectionId);
-    if (!position) {
-      return null;
-    }
-
-    return (
-      <>
-        <button
-          type="button"
-          className="admin-stage-section-header-btn"
-          onClick={() => moveCustomSection(customSectionId, "up")}
-          disabled={position.index === 0}
-          title="Subir sección"
-          aria-label="Subir sección"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <path d="M12 19V5" />
-            <path d="m5 12 7-7 7 7" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="admin-stage-section-header-btn"
-          onClick={() => moveCustomSection(customSectionId, "down")}
-          disabled={position.index === position.total - 1}
-          title="Bajar sección"
-          aria-label="Bajar sección"
-        >
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            aria-hidden="true"
-          >
-            <path d="M12 5v14" />
-            <path d="m19 12-7 7-7-7" />
-          </svg>
-        </button>
-      </>
-    );
-  }
-
   function renderSectionHeading(
     heading: string,
     sectionId: EditorSectionId,
     options?: { canCollapse?: boolean },
   ) {
     const customSectionId = getCustomSectionIdFromEditorSectionId(sectionId);
+    const customSectionPosition = customSectionId
+      ? customSectionPositionById.get(customSectionId)
+      : undefined;
     const sectionKey = String(sectionId);
     const isCollapsed = collapsedSectionIdSet.has(sectionKey);
     const canCollapse = options?.canCollapse ?? true;
@@ -1329,7 +1278,67 @@ export function StageConfigEditor({
       <div className="admin-stage-section-heading-row">
         <div className="builder-section-title">{heading}</div>
         <div className="admin-stage-section-header-actions" role="group" aria-label="Acciones de sección">
-          {customSectionId ? renderCustomSectionOrderActions(customSectionId) : null}
+          <button
+            type="button"
+            className="admin-stage-section-header-btn"
+            onClick={() => {
+              if (customSectionId) {
+                moveCustomSection(customSectionId, "up");
+              }
+            }}
+            disabled={!customSectionPosition || customSectionPosition.index === 0}
+            title={
+              customSectionId
+                ? "Subir sección"
+                : "Las secciones base no se reordenan desde aquí"
+            }
+            aria-label="Subir sección"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M12 19V5" />
+              <path d="m5 12 7-7 7 7" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="admin-stage-section-header-btn"
+            onClick={() => {
+              if (customSectionId) {
+                moveCustomSection(customSectionId, "down");
+              }
+            }}
+            disabled={
+              !customSectionPosition ||
+              customSectionPosition.index === customSectionPosition.total - 1
+            }
+            title={
+              customSectionId
+                ? "Bajar sección"
+                : "Las secciones base no se reordenan desde aquí"
+            }
+            aria-label="Bajar sección"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M12 5v14" />
+              <path d="m19 12-7 7-7-7" />
+            </svg>
+          </button>
           {canCollapse ? (
             <button
               type="button"
@@ -1648,45 +1657,7 @@ export function StageConfigEditor({
                         : null}
                       {isSectionStart ? renderSectionHeading(sectionHeading, sectionId) : null}
                       {isSectionStart && isSectionCollapsed ? (
-                        <div className="admin-stage-collapsed-section">
-                          <button
-                            type="button"
-                            className="add-field-btn admin-stage-section-add-field"
-                            onClick={() => {
-                              const suffix = orderedFields.length + 1;
-                              const customSectionId =
-                                getCustomSectionIdFromEditorSectionId(sectionId);
-                              const seed = getNewFieldSeedForSection(
-                                customSectionId
-                                  ? { sectionId: "custom", suffix }
-                                  : {
-                                      sectionId: sectionId as ApplicantFormSectionId,
-                                      suffix,
-                                    },
-                              );
-                              const sectionInsertPosition =
-                                editorFieldSectionMeta.insertPositionBySectionId.get(sectionId) ??
-                                orderedFields.length;
-                              insertFieldAt(
-                                sectionInsertPosition,
-                                {
-                                  field_key: seed.field_key,
-                                  field_label: seed.field_label,
-                                  field_type: seed.field_type,
-                                  is_required: false,
-                                  placeholder: "",
-                                  help_text: "",
-                                  is_active: true,
-                                },
-                                { customSectionId },
-                              );
-                              expandSection(sectionKey);
-                            }}
-                          >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                            Añadir nuevo campo
-                          </button>
-                        </div>
+                        null
                       ) : null}
                       {isSectionCollapsed ? null : (
                       <div
