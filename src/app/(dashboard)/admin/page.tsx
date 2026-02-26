@@ -59,23 +59,24 @@ export default async function AdminPage() {
 
   const orderedCycles = (cycles as SelectionProcess[] | null) ?? [];
   const activeCycle = orderedCycles.find((cycle) => cycle.is_active) ?? orderedCycles[0] ?? null;
-  const { data: activeCycleTemplatesData } = activeCycle
-    ? await supabase
-        .from("cycle_stage_templates")
-        .select("id, cycle_id, stage_code, sort_order")
-        .eq("cycle_id", activeCycle.id)
-        .order("sort_order", { ascending: true })
-    : { data: [] as CycleStageTemplate[] };
+  const [activeCycleTemplatesData, activeCycleApplicationsData] = activeCycle
+    ? await Promise.all([
+        supabase
+          .from("cycle_stage_templates")
+          .select("id, cycle_id, stage_code, sort_order")
+          .eq("cycle_id", activeCycle.id)
+          .order("sort_order", { ascending: true })
+          .then((result) => result.data as CycleStageTemplate[] | null),
+        supabase
+          .from("applications")
+          .select("*")
+          .eq("cycle_id", activeCycle.id)
+          .order("updated_at", { ascending: false })
+          .then((result) => result.data as Application[] | null),
+      ])
+    : ([[] as CycleStageTemplate[], [] as Application[]] as const);
 
-  const { data: activeCycleApplicationsData } = activeCycle
-    ? await supabase
-        .from("applications")
-        .select("*")
-        .eq("cycle_id", activeCycle.id)
-        .order("updated_at", { ascending: false })
-    : { data: [] as Application[] };
-
-  const activeCycleApplications = (activeCycleApplicationsData as Application[] | null) ?? [];
+  const activeCycleApplications = activeCycleApplicationsData ?? [];
   const activeCycleTemplates =
     (activeCycleTemplatesData as Pick<CycleStageTemplate, "id" | "stage_code" | "sort_order">[] | null) ?? [];
   const primaryActiveTemplateId =

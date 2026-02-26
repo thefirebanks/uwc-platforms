@@ -1224,6 +1224,21 @@ export function StageConfigEditor({
     });
   }
 
+  function collapseSection(sectionKey: string) {
+    setCollapsedSectionIds((current) =>
+      current.includes(sectionKey) ? current : [...current, sectionKey],
+    );
+  }
+
+  function toggleSectionCollapse(sectionKey: string) {
+    if (collapsedSectionIdSet.has(sectionKey)) {
+      expandSection(sectionKey);
+      return;
+    }
+
+    collapseSection(sectionKey);
+  }
+
   function moveCustomSection(sectionId: string, direction: "up" | "down") {
     setCustomSections((current) => {
       const normalized = normalizePersistedCustomSections(current);
@@ -1253,34 +1268,100 @@ export function StageConfigEditor({
     }
 
     return (
-      <div className="admin-stage-section-order-actions" role="group" aria-label="Orden de sección">
+      <>
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="admin-stage-section-header-btn"
           onClick={() => moveCustomSection(customSectionId, "up")}
           disabled={position.index === 0}
+          title="Subir sección"
+          aria-label="Subir sección"
         >
-          Subir
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <path d="M12 19V5" />
+            <path d="m5 12 7-7 7 7" />
+          </svg>
         </button>
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="admin-stage-section-header-btn"
           onClick={() => moveCustomSection(customSectionId, "down")}
           disabled={position.index === position.total - 1}
+          title="Bajar sección"
+          aria-label="Bajar sección"
         >
-          Bajar
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <path d="M12 5v14" />
+            <path d="m19 12-7 7-7-7" />
+          </svg>
         </button>
-      </div>
+      </>
     );
   }
 
-  function renderSectionHeading(heading: string, sectionId: EditorSectionId) {
+  function renderSectionHeading(
+    heading: string,
+    sectionId: EditorSectionId,
+    options?: { canCollapse?: boolean },
+  ) {
     const customSectionId = getCustomSectionIdFromEditorSectionId(sectionId);
+    const sectionKey = String(sectionId);
+    const isCollapsed = collapsedSectionIdSet.has(sectionKey);
+    const canCollapse = options?.canCollapse ?? true;
+
     return (
-      <>
+      <div className="admin-stage-section-heading-row">
         <div className="builder-section-title">{heading}</div>
-        {customSectionId ? renderCustomSectionOrderActions(customSectionId) : null}
-      </>
+        <div className="admin-stage-section-header-actions" role="group" aria-label="Acciones de sección">
+          {customSectionId ? renderCustomSectionOrderActions(customSectionId) : null}
+          {canCollapse ? (
+            <button
+              type="button"
+              className={`admin-stage-section-header-btn ${isCollapsed ? "" : "is-active"}`.trim()}
+              onClick={() => toggleSectionCollapse(sectionKey)}
+              title={isCollapsed ? "Expandir sección" : "Colapsar sección"}
+              aria-label={isCollapsed ? "Expandir sección" : "Colapsar sección"}
+              aria-pressed={!isCollapsed}
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                aria-hidden="true"
+              >
+                {isCollapsed ? (
+                  <>
+                    <path d="m9 18 6-6-6-6" />
+                  </>
+                ) : (
+                  <>
+                    <path d="m6 9 6 6 6-6" />
+                  </>
+                )}
+              </svg>
+            </button>
+          ) : null}
+        </div>
+      </div>
     );
   }
 
@@ -1294,7 +1375,9 @@ export function StageConfigEditor({
 
     return (
       <div key={section.id} className="admin-stage-section-placeholder">
-        {renderSectionHeading(`Sección ${sectionNumber}: ${section.title}`, section.id)}
+        {renderSectionHeading(`Sección ${sectionNumber}: ${section.title}`, section.id, {
+          canCollapse: false,
+        })}
         <div className="settings-card admin-stage-empty-section-card">
           <div className="editor-grid">
             <div className="form-field full">
@@ -1566,15 +1649,6 @@ export function StageConfigEditor({
                       {isSectionStart ? renderSectionHeading(sectionHeading, sectionId) : null}
                       {isSectionStart && isSectionCollapsed ? (
                         <div className="admin-stage-collapsed-section">
-                          <div className="admin-stage-collapsed-section-actions">
-                            <button
-                              type="button"
-                              className="btn btn-ghost btn-sm"
-                              onClick={() => expandSection(sectionKey)}
-                            >
-                              Expandir sección
-                            </button>
-                          </div>
                           <button
                             type="button"
                             className="add-field-btn admin-stage-section-add-field"
@@ -1909,9 +1983,11 @@ export function StageConfigEditor({
                   );
                 })}
                 {sectionPlaceholders.map((placeholder, index) => (
-                  <div key={placeholder.localId} className="admin-stage-section-placeholder">
-                    <div className="builder-section-title">
-                      {`Sección ${editorSections.length + index + 1}: ${placeholder.title}`}
+                    <div key={placeholder.localId} className="admin-stage-section-placeholder">
+                    <div className="admin-stage-section-heading-row">
+                      <div className="builder-section-title">
+                        {`Sección ${editorSections.length + index + 1}: ${placeholder.title}`}
+                      </div>
                     </div>
                     <div className="settings-card admin-stage-empty-section-card">
                       <div className="editor-grid">

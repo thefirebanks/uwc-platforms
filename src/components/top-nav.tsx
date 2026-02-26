@@ -1,6 +1,6 @@
 "use client";
 
-import { type MouseEvent, useState } from "react";
+import { type MouseEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Divider, Popover } from "@mui/material";
@@ -16,8 +16,10 @@ import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 
 export function TopNav({ role }: { role: AppRole }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { t, language } = useAppLanguage();
   const isAdmin = role === "admin";
+  const [pendingNavHref, setPendingNavHref] = useState<string | null>(null);
   const [settingsAnchorEl, setSettingsAnchorEl] = useState<HTMLElement | null>(
     null,
   );
@@ -47,8 +49,23 @@ export function TopNav({ role }: { role: AppRole }) {
     setSettingsAnchorEl(null);
   }
 
+  useEffect(() => {
+    if (!isAdmin) return;
+
+    for (const href of ["/admin", "/admin/processes", "/admin/candidates", "/admin/audit"]) {
+      if (href !== pathname) {
+        router.prefetch(href);
+      }
+    }
+  }, [isAdmin, pathname, router]);
+
   return (
-    <header className={`topbar ${isAdmin ? "admin-topbar" : ""}`}>
+    <header
+      className={`topbar ${isAdmin ? "admin-topbar" : ""} ${
+        pendingNavHref && pendingNavHref !== pathname ? "is-route-pending" : ""
+      }`}
+      aria-busy={pendingNavHref && pendingNavHref !== pathname ? true : undefined}
+    >
       <div className="topbar-left">
         <Link href={isAdmin ? "/admin" : "/applicant"} className="topbar-brand">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
@@ -57,10 +74,33 @@ export function TopNav({ role }: { role: AppRole }) {
         <nav className="topbar-nav">
           {isAdmin ? (
             <>
-              <NavLink href="/admin" label={t("nav.home")} exact />
-              <NavLink href="/admin/processes" label={t("nav.processes")} />
-              <NavLink href="/admin/candidates" label={t("nav.candidates")} exact />
-              <NavLink href="/admin/audit" label={t("nav.audit")} exact />
+              <NavLink
+                href="/admin"
+                label={t("nav.home")}
+                exact
+                onNavigateStart={setPendingNavHref}
+                onPrefetch={router.prefetch}
+              />
+              <NavLink
+                href="/admin/processes"
+                label={t("nav.processes")}
+                onNavigateStart={setPendingNavHref}
+                onPrefetch={router.prefetch}
+              />
+              <NavLink
+                href="/admin/candidates"
+                label={t("nav.candidates")}
+                exact
+                onNavigateStart={setPendingNavHref}
+                onPrefetch={router.prefetch}
+              />
+              <NavLink
+                href="/admin/audit"
+                label={t("nav.audit")}
+                exact
+                onNavigateStart={setPendingNavHref}
+                onPrefetch={router.prefetch}
+              />
             </>
           ) : (
             <NavLink href="/applicant" label={t("nav.processes")} />
@@ -150,19 +190,54 @@ export function TopNav({ role }: { role: AppRole }) {
           </>
         )}
       </div>
+      <div className="topbar-route-progress" aria-hidden="true">
+        <div className="topbar-route-progress-bar" />
+      </div>
     </header>
   );
 }
 
-function NavLink({ href, label, exact }: { href: string; label: string; exact?: boolean }) {
+function NavLink({
+  href,
+  label,
+  exact,
+  onNavigateStart,
+  onPrefetch,
+}: {
+  href: string;
+  label: string;
+  exact?: boolean;
+  onNavigateStart?: (href: string) => void;
+  onPrefetch?: (href: string) => void;
+}) {
   const pathname = usePathname();
   const isProcessNav =
     href === "/admin/processes" &&
     (pathname === "/admin/processes" || pathname?.startsWith("/admin/process/"));
   const isActive = isProcessNav || (exact ? pathname === href : pathname?.startsWith(href));
-  
+
   return (
-    <Link href={href} className={isActive ? "active" : ""}>
+    <Link
+      href={href}
+      className={isActive ? "active" : ""}
+      onMouseEnter={() => onPrefetch?.(href)}
+      onFocus={() => onPrefetch?.(href)}
+      onClick={(event) => {
+        if (
+          event.defaultPrevented ||
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.altKey
+        ) {
+          return;
+        }
+
+        if (pathname !== href) {
+          onNavigateStart?.(href);
+        }
+      }}
+    >
       {label}
     </Link>
   );
