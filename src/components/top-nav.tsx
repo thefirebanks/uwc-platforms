@@ -59,12 +59,28 @@ export function TopNav({ role }: { role: AppRole }) {
     }
   }, [isAdmin, pathname, router]);
 
+  useEffect(() => {
+    if (!pendingNavHref) return;
+
+    const timeoutId = window.setTimeout(() => {
+      setPendingNavHref(null);
+    }, 2500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [pendingNavHref]);
+
   return (
     <header
       className={`topbar ${isAdmin ? "admin-topbar" : ""} ${
-        pendingNavHref && pendingNavHref !== pathname ? "is-route-pending" : ""
+        pendingNavHref && pathname && !navHrefMatchesPath(pendingNavHref, pathname)
+          ? "is-route-pending"
+          : ""
       }`}
-      aria-busy={pendingNavHref && pendingNavHref !== pathname ? true : undefined}
+      aria-busy={
+        pendingNavHref && pathname && !navHrefMatchesPath(pendingNavHref, pathname)
+          ? true
+          : undefined
+      }
     >
       <div className="topbar-left">
         <Link href={isAdmin ? "/admin" : "/applicant"} className="topbar-brand">
@@ -195,6 +211,18 @@ export function TopNav({ role }: { role: AppRole }) {
       </div>
     </header>
   );
+}
+
+function navHrefMatchesPath(href: string, pathname: string | null) {
+  if (!pathname) {
+    return false;
+  }
+
+  if (href === "/admin/processes") {
+    return pathname === "/admin/processes" || pathname.startsWith("/admin/process/");
+  }
+
+  return pathname === href;
 }
 
 function NavLink({

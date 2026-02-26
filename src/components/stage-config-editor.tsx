@@ -705,7 +705,7 @@ export function StageConfigEditor({
 
     if (hasUnsavedConfigChanges) {
       setStatusMessage("Guardando cambios antes de abrir la previsualización...");
-      const didSave = await saveStageConfig({ source: "preview" });
+      const didSave = await saveStageConfig();
       if (!didSave) {
         return;
       }
@@ -715,8 +715,6 @@ export function StageConfigEditor({
       setStatusMessage(
         "La previsualización muestra los cambios guardados. Las secciones nuevas sin campos aún no se incluyen.",
       );
-    } else if (!hasUnsavedConfigChanges) {
-      setStatusMessage("Abriendo previsualización de la versión guardada.");
     }
 
     router.push(`/admin/process/${cycleId}/stage/${stageId}/preview`);
@@ -799,6 +797,18 @@ export function StageConfigEditor({
     });
   }
 
+  function confirmAction(message: string) {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    try {
+      return window.confirm(message);
+    } catch {
+      return true;
+    }
+  }
+
   function reorderDraggedField(targetLocalId: string) {
     if (!draggedFieldId || draggedFieldId === targetLocalId) {
       return;
@@ -849,18 +859,30 @@ export function StageConfigEditor({
   function removeField(localId: string) {
     const removedField = orderedFields.find((field) => field.localId === localId);
     if (removedField) {
+      const confirmed = confirmAction(
+        `¿Eliminar el campo \"${removedField.field_label}\"?\n\nDebes usar \"Guardar configuración\" para publicar este cambio.`,
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    if (removedField) {
       removeFieldSectionAssignment(removedField.field_key);
     }
     applyOrderedFields(orderedFields.filter((field) => field.localId !== localId));
+    setStatusMessage(
+      removedField
+        ? `Campo eliminado localmente (${removedField.field_label}). Guarda configuración para persistir.`
+        : "Campo eliminado localmente. Guarda configuración para persistir.",
+    );
   }
 
   function removeAutomation(localId: string) {
     setAutomations((current) => current.filter((automation) => automation.localId !== localId));
   }
 
-  async function saveStageConfig(options?: {
-    source?: "manual" | "preview";
-  }) {
+  async function saveStageConfig() {
     let didSave = false;
     setError(null);
     setStatusMessage(null);
@@ -977,11 +999,6 @@ export function StageConfigEditor({
       });
       savedSettingsSnapshotRef.current = serializeSettingsDraft(nextSavedSettings);
       setLastSavedAtIso(new Date().toISOString());
-      setStatusMessage(
-        options?.source === "preview"
-          ? "Configuración guardada. Abriendo previsualización..."
-          : "Configuración guardada y publicada en la etapa.",
-      );
       didSave = true;
     } finally {
       setIsSaving(false);
@@ -1058,10 +1075,17 @@ export function StageConfigEditor({
     hasUnsavedCommsConfigChanges ||
     hasUnsavedSettingsConfigChanges;
   const canSavePersistedConfig = hasUnsavedConfigChanges && !isSaving;
+  const saveStatusTone = isSaving
+    ? "is-saving"
+    : hasUnsavedConfigChanges || hasUnsavedSectionDraftChanges
+      ? "is-dirty"
+      : "is-clean";
   const saveFeedbackLabel = isSaving
     ? "Guardando cambios..."
     : hasUnsavedConfigChanges
       ? "Hay cambios sin guardar"
+      : hasUnsavedSectionDraftChanges
+        ? "Hay cambios locales pendientes"
       : lastSavedAtIso
         ? "Configuración guardada"
         : "Sin cambios";
@@ -1074,6 +1098,16 @@ export function StageConfigEditor({
   const draftOnlyChangeLabels = [
     hasUnsavedSectionDraftChanges ? "Secciones nuevas (placeholder)" : null,
   ].filter(Boolean) as string[];
+  const saveFeedbackDetail = hasUnsavedConfigChanges
+    ? `Guardar configuración publicará: ${saveableChangeLabels.join(", ")}.`
+    : draftOnlyChangeLabels.length > 0
+      ? `Cambios locales no incluidos en Guardar configuración: ${draftOnlyChangeLabels.join(", ")}.`
+      : lastSavedAtIso
+        ? `Última publicación ${new Date(lastSavedAtIso).toLocaleTimeString("es-PE", {
+            hour: "2-digit",
+            minute: "2-digit",
+          })}.`
+        : "Sin cambios pendientes en configuración persistente.";
 
   const editorSections = useMemo(
     () => {
@@ -1300,6 +1334,43 @@ export function StageConfigEditor({
     setStatusMessage("Orden de sección actualizado localmente. Guarda configuración para persistir.");
   }
 
+  function removeCustomSection(sectionId: string) {
+    const section = customSections.find((item) => item.id === sectionId);
+    if (!section) {
+      return;
+    }
+
+    const movedFieldCount = Object.values(fieldSectionAssignments).filter(
+      (assignedSectionId) => assignedSectionId === sectionId,
+    ).length;
+    const confirmed = confirmAction(
+      movedFieldCount > 0
+        ? `¿Eliminar la sección \"${section.title}\"?\n\n${movedFieldCount} campo(s) se moverán a \"Otros campos\".\nDebes usar \"Guardar configuración\" para publicar este cambio.`
+        : `¿Eliminar la sección \"${section.title}\"?\n\nDebes usar \"Guardar configuración\" para publicar este cambio.`,
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    setCustomSections((current) =>
+      normalizePersistedCustomSections(current.filter((item) => item.id !== sectionId)),
+    );
+    setFieldSectionAssignments((current) => {
+      const next = { ...current };
+      for (const [fieldKey, assignedSectionId] of Object.entries(next)) {
+        if (assignedSectionId === sectionId) {
+          delete next[fieldKey];
+        }
+      }
+      return next;
+    });
+    setStatusMessage(
+      movedFieldCount > 0
+        ? `Sección eliminada localmente. ${movedFieldCount} campo(s) se movieron a "Otros campos". Guarda configuración para persistir.`
+        : "Sección eliminada localmente. Guarda configuración para persistir.",
+    );
+  }
+
   function renderSectionHeading(
     heading: string,
     sectionId: EditorSectionId,
@@ -1376,6 +1447,35 @@ export function StageConfigEditor({
             >
               <path d="M12 5v14" />
               <path d="m19 12-7 7-7-7" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="admin-stage-section-header-btn"
+            onClick={() => {
+              if (customSectionId) {
+                removeCustomSection(customSectionId);
+              }
+            }}
+            disabled={!customSectionId}
+            title={
+              customSectionId
+                ? "Eliminar sección"
+                : "Las secciones base no se eliminan desde aquí"
+            }
+            aria-label="Eliminar sección"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
             </svg>
           </button>
           {canCollapse ? (
@@ -1585,7 +1685,7 @@ export function StageConfigEditor({
                 type="button"
                 className="btn btn-primary"
                 onClick={() => {
-                  void saveStageConfig({ source: "manual" });
+                  void saveStageConfig();
                 }}
                 disabled={!canSavePersistedConfig}
                 title={
@@ -1600,39 +1700,13 @@ export function StageConfigEditor({
               </button>
             </div>
           </div>
-          <div className={`admin-stage-save-status ${isSaving ? "is-saving" : hasUnsavedConfigChanges ? "is-dirty" : "is-clean"}`}>
-            <span className="admin-stage-save-status-dot" aria-hidden="true" />
-            <span>{saveFeedbackLabel}</span>
-            {!hasUnsavedConfigChanges && lastSavedAtIso ? (
-              <span className="admin-stage-save-status-time">
-                {new Date(lastSavedAtIso).toLocaleTimeString("es-PE", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </span>
-            ) : null}
-          </div>
-          <div className="admin-stage-save-hint" aria-live="polite">
-            {hasUnsavedConfigChanges
-              ? "Cambios sin guardar (editor, ajustes y/o comunicaciones)."
-              : "Sin cambios pendientes en configuración persistente."}
-          </div>
-          {(saveableChangeLabels.length > 0 || draftOnlyChangeLabels.length > 0) && (
-            <div className="admin-stage-save-scope" aria-live="polite">
-              {saveableChangeLabels.length > 0 ? (
-                <div>
-                  <strong>Este botón publicará cambios en:</strong>{" "}
-                  {saveableChangeLabels.join(", ")}.
-                </div>
-              ) : null}
-              {draftOnlyChangeLabels.length > 0 ? (
-                <div>
-                  <strong>Cambios detectados pero aún no persistidos por este botón:</strong>{" "}
-                  {draftOnlyChangeLabels.join(", ")}.
-                </div>
-              ) : null}
+          <div className={`admin-stage-save-status ${saveStatusTone}`} aria-live="polite">
+            <div className="admin-stage-save-status-headline">
+              <span className="admin-stage-save-status-dot" aria-hidden="true" />
+              <span>{saveFeedbackLabel}</span>
             </div>
-          )}
+            <div className="admin-stage-save-status-detail">{saveFeedbackDetail}</div>
+          </div>
 
           <div className="page-tabs">
             <button
@@ -1640,21 +1714,18 @@ export function StageConfigEditor({
               onClick={() => switchToTab("editor")}
             >
               Editor de Formulario
-              {(hasUnsavedFieldConfigChanges || hasUnsavedSectionDraftChanges) ? " •" : ""}
             </button>
             <button
               className={`page-tab ${activeTab === "settings" ? "active" : ""}`}
               onClick={() => switchToTab("settings")}
             >
               Ajustes y Reglas
-              {hasUnsavedSettingsConfigChanges ? " •" : ""}
             </button>
             <button
               className={`page-tab ${activeTab === "comms" ? "active" : ""}`}
               onClick={() => switchToTab("comms")}
             >
               Comunicaciones
-              {hasUnsavedCommsConfigChanges ? " •" : ""}
             </button>
             <button
               className={`page-tab ${activeTab === "stats" ? "active" : ""}`}
@@ -1975,10 +2046,9 @@ export function StageConfigEditor({
                         )}
                       </div>
                       )}
-                      {isSectionEnd ? (
+                      {isSectionEnd && !isSectionCollapsed ? (
                         <button
                           className="add-field-btn admin-stage-section-add-field"
-                          style={isSectionCollapsed ? { display: "none" } : undefined}
                           onClick={() => {
                             const suffix = orderedFields.length + 1;
                             const customSectionId =
