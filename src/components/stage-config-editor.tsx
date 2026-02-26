@@ -1026,6 +1026,7 @@ export function StageConfigEditor({
     hasUnsavedCommsConfigChanges ||
     hasUnsavedSettingsConfigChanges;
   const canSavePersistedConfig = hasUnsavedConfigChanges && !isSaving;
+  const isLargeFormEditor = orderedFields.length >= 80;
   const saveableChangeLabels = [
     hasUnsavedFieldConfigChanges ? "Editor de Formulario" : null,
     hasUnsavedSettingsConfigChanges ? "Ajustes y Reglas" : null,
@@ -1057,13 +1058,28 @@ export function StageConfigEditor({
     ],
   );
 
-  const displayedEditorFields = useMemo(
+  const totalEditorFieldCount = useMemo(
     () =>
       activeTab === "editor"
-        ? editorSections.flatMap((section) => section.fields as EditableField[])
-        : [],
+        ? editorSections.reduce((sum, section) => sum + section.fields.length, 0)
+        : 0,
     [activeTab, editorSections],
   );
+  const displayedEditorFields = useMemo(() => {
+    if (activeTab !== "editor") {
+      return [];
+    }
+
+    const collapsedSet = new Set(collapsedSectionIds);
+    return editorSections.flatMap((section) => {
+      const sectionFields = section.fields as EditableField[];
+      if (!collapsedSet.has(String(section.id))) {
+        return sectionFields;
+      }
+
+      return sectionFields.slice(0, 1);
+    });
+  }, [activeTab, editorSections, collapsedSectionIds]);
   const emptyCustomEditorSections = useMemo(
     () =>
       activeTab === "editor"
@@ -1110,12 +1126,14 @@ export function StageConfigEditor({
     const sectionIdByLastFieldId = new Map<string, EditorSectionId>();
     const sectionIdByFieldId = new Map<string, EditorSectionId>();
     const fieldCountBySectionId = new Map<EditorSectionId, number>();
+    const collapsedSet = new Set(collapsedSectionIds);
 
     editorSections.forEach((section, index) => {
       const sectionFields = section.fields as EditableField[];
       const heading = `Sección ${index + 1}: ${section.title}`;
       const firstField = sectionFields[0];
       const lastField = sectionFields.at(-1);
+      const isSectionCollapsed = collapsedSet.has(String(section.id));
       fieldCountBySectionId.set(section.id, sectionFields.length);
 
       if (firstField) {
@@ -1138,9 +1156,16 @@ export function StageConfigEditor({
         insertPositionBySectionId.set(section.id, orderedFields.length);
       }
 
-      for (const field of sectionFields) {
-        headingByFieldId.set(field.localId, heading);
-        sectionIdByFieldId.set(field.localId, section.id);
+      if (isSectionCollapsed) {
+        if (firstField) {
+          headingByFieldId.set(firstField.localId, heading);
+          sectionIdByFieldId.set(firstField.localId, section.id);
+        }
+      } else {
+        for (const field of sectionFields) {
+          headingByFieldId.set(field.localId, heading);
+          sectionIdByFieldId.set(field.localId, section.id);
+        }
       }
     });
 
@@ -1154,7 +1179,13 @@ export function StageConfigEditor({
       sectionIdByFieldId,
       fieldCountBySectionId,
     };
-  }, [activeTab, editorSections, orderedFieldIndexByLocalId, orderedFields.length]);
+  }, [
+    activeTab,
+    editorSections,
+    collapsedSectionIds,
+    orderedFieldIndexByLocalId,
+    orderedFields.length,
+  ]);
 
   useEffect(() => {
     if (activeTab !== "editor") {
@@ -1169,17 +1200,29 @@ export function StageConfigEditor({
     }
 
     initializedSectionCollapseRef.current = true;
-    if (orderedFields.length < 80) {
+    if (!isLargeFormEditor) {
       return;
     }
 
-    setCollapsedSectionIds(editorSections.slice(2).map((section) => String(section.id)));
-  }, [activeTab, editorSections, orderedFields.length]);
+    setCollapsedSectionIds(editorSections.slice(1).map((section) => String(section.id)));
+  }, [activeTab, editorSections, isLargeFormEditor]);
 
   const collapsedSectionIdSet = useMemo(
     () => new Set(collapsedSectionIds),
     [collapsedSectionIds],
   );
+
+  function expandSection(sectionKey: string) {
+    setCollapsedSectionIds((current) => {
+      if (isLargeFormEditor) {
+        return editorSections
+          .map((section) => String(section.id))
+          .filter((id) => id !== sectionKey);
+      }
+
+      return current.filter((id) => id !== sectionKey);
+    });
+  }
 
   const sidebarTemplateStages = useMemo(
     () =>
@@ -1348,7 +1391,9 @@ export function StageConfigEditor({
                 {editorSections.length > 1 ? (
                   <div className="admin-stage-editor-toolbar">
                     <div className="admin-text-muted">
-                      {`${editorSections.length} secciones • ${displayedEditorFields.length} campos`}
+                      {isLargeFormEditor
+                        ? `${editorSections.length} secciones • ${totalEditorFieldCount} campos (${displayedEditorFields.length} visibles)`
+                        : `${editorSections.length} secciones • ${totalEditorFieldCount} campos`}
                     </div>
                     <div className="admin-stage-editor-toolbar-actions">
                       <button
@@ -1427,11 +1472,7 @@ export function StageConfigEditor({
                             <button
                               type="button"
                               className="btn btn-ghost btn-sm"
-                              onClick={() =>
-                                setCollapsedSectionIds((current) =>
-                                  current.filter((id) => id !== sectionKey),
-                                )
-                              }
+                              onClick={() => expandSection(sectionKey)}
                             >
                               Expandir sección
                             </button>
@@ -1466,9 +1507,7 @@ export function StageConfigEditor({
                                   },
                                   { customSectionId },
                                 );
-                                setCollapsedSectionIds((current) =>
-                                  current.filter((id) => id !== sectionKey),
-                                );
+                                expandSection(sectionKey);
                               }}
                             >
                               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
