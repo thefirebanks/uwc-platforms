@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 
 type AdminCandidateRow = {
   id: string;
@@ -109,16 +109,26 @@ export function AdminCandidatesDashboard({
   cycleOptions,
   initialRows,
   defaultCycleId,
+  defaultSearch = "",
+  focusApplicationId = "",
 }: {
   cycleOptions: CycleOption[];
   initialRows: AdminCandidateRow[];
   defaultCycleId: string | "all";
+  defaultSearch?: string;
+  focusApplicationId?: string;
 }) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(defaultSearch);
   const [cycleFilter, setCycleFilter] = useState<string>(defaultCycleId);
   const [stageFilter, setStageFilter] = useState<"all" | AdminCandidateRow["stageCode"]>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | AdminCandidateRow["status"]>("all");
+  const [rowHighlightId, setRowHighlightId] = useState(focusApplicationId);
   const deferredSearch = useDeferredValue(search.trim().toLowerCase());
+  const focusedRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    setRowHighlightId(focusApplicationId);
+  }, [focusApplicationId]);
 
   const filteredRows = useMemo(() => {
     return initialRows.filter((row) => {
@@ -153,6 +163,28 @@ export function AdminCandidatesDashboard({
     cycleFilter === "all"
       ? "Todos los procesos"
       : cycleOptions.find((cycle) => cycle.id === cycleFilter)?.name ?? "Proceso";
+
+  useEffect(() => {
+    if (!rowHighlightId) {
+      return;
+    }
+
+    if (!filteredRows.some((row) => row.id === rowHighlightId)) {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      focusedRowRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "nearest",
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [filteredRows, rowHighlightId]);
 
   return (
     <main className="main full-width">
@@ -243,8 +275,16 @@ export function AdminCandidatesDashboard({
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((row, index) => (
-                    <tr key={row.id}>
+                  filteredRows.map((row, index) => {
+                    const isFocusedRow = row.id === rowHighlightId;
+
+                    return (
+                    <tr
+                      key={row.id}
+                      ref={isFocusedRow ? focusedRowRef : null}
+                      className={`admin-candidate-row${isFocusedRow ? " is-focused" : ""}`}
+                      data-application-id={row.id}
+                    >
                       <td>
                         <div className="candidate-name">
                           <div className={`candidate-avatar ${getAvatarTone(index)}`}>
@@ -266,14 +306,15 @@ export function AdminCandidatesDashboard({
                       <td>{new Date(row.updatedAt).toLocaleString()}</td>
                       <td>
                         <Link
-                          href={`/admin/process/${row.cycleId}?section=applications`}
+                          href={`/admin/candidates?cycleId=${row.cycleId}&applicationId=${encodeURIComponent(row.id)}`}
                           className="btn btn-ghost"
                         >
                           Ver Perfil
                         </Link>
                       </td>
                     </tr>
-                  ))
+                  );
+                  })
                 )}
               </tbody>
             </table>

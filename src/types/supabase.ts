@@ -127,6 +127,7 @@ export interface Database {
           milestone_label: string;
           due_at: string | null;
           ocr_prompt_template: string | null;
+          admin_config: Json;
           sort_order: number;
           created_at: string;
         },
@@ -138,6 +139,7 @@ export interface Database {
           milestone_label: string;
           due_at?: string | null;
           ocr_prompt_template?: string | null;
+          admin_config?: Json;
           sort_order?: number;
           created_at?: string;
         },
@@ -146,6 +148,7 @@ export interface Database {
           milestone_label?: string;
           due_at?: string | null;
           ocr_prompt_template?: string | null;
+          admin_config?: Json;
           sort_order?: number;
         }
       >;

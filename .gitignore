@@ -46,3 +46,4 @@ test-results/
 playwright-report/
 output/
 supabase/.temp/
+.claude/

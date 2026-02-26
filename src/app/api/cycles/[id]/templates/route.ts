@@ -221,7 +221,7 @@ export async function POST(
 
     const existingTemplates = (existingRows as Pick<CycleTemplateRow, "sort_order" | "stage_code">[] | null) ?? [];
     const nextTemplateOrdinal = existingTemplates.length + 1;
-    const nextDisplayStageNumber = existingTemplates.length + 2;
+    const nextDisplayStageNumber = existingTemplates.length + 1;
     const nextSortOrder =
       existingTemplates.length === 0
         ? 1

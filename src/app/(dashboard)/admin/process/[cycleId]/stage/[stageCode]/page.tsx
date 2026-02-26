@@ -137,6 +137,7 @@ export default async function StageConfigPage({
       initialFields={(fieldsData as CycleStageField[] | null) ?? fallbackFields}
       initialAutomations={(automationsData as StageAutomationTemplate[] | null) ?? fallbackAutomations}
       initialOcrPromptTemplate={(templateData as CycleStageTemplate | null)?.ocr_prompt_template ?? null}
+      initialStageAdminConfig={(templateData as CycleStageTemplate | null)?.admin_config ?? null}
     />
   );
 }

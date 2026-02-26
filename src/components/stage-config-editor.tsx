@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState, type DragEvent } from "react";
+import {
+  startTransition,
+  useEffect,
+  useDeferredValue,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+} from "react";
 import type {
   CycleStageField,
   CycleStageTemplate,
@@ -35,11 +43,51 @@ type SectionPlaceholderDraft = {
   sectionId: ApplicantFormSectionId | "custom";
 };
 
+type StageEditorSettingsDraft = {
+  stageName: string;
+  description: string;
+  openDate: string;
+  closeDate: string;
+  previousStageRequirement: string;
+  blockIfPreviousNotMet: boolean;
+};
+
+type StageAdminConfigPayload = {
+  stageName?: string;
+  description?: string;
+  openDate?: string | null;
+  closeDate?: string | null;
+  previousStageRequirement?: string;
+  blockIfPreviousNotMet?: boolean;
+  customSections?: PersistedCustomSection[];
+  fieldSectionAssignments?: Record<string, string>;
+};
+
+type PersistedCustomSection = {
+  id: string;
+  title: string;
+  order: number;
+};
+
+type EditorSectionId = ApplicantFormSectionId | `custom:${string}`;
+
+type EditorSection = {
+  id: EditorSectionId;
+  title: string;
+  description: string;
+  fields: EditableField[];
+};
+
+const DEFAULT_OCR_PROMPT_TEMPLATE =
+  "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.";
+
 function mapFieldsWithLocalId(fields: CycleStageField[]) {
-  return fields.map((field) => ({
-    ...field,
-    localId: field.id,
-  }));
+  return [...fields]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((field) => ({
+      ...field,
+      localId: field.id,
+    }));
 }
 
 function mapAutomationsWithLocalId(automations: StageAutomationTemplate[]) {
@@ -53,6 +101,120 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+function serializePersistedCustomSections(customSections: PersistedCustomSection[]) {
+  return JSON.stringify(
+    [...customSections]
+      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
+      .map((section) => ({
+        id: section.id,
+        title: section.title.trim(),
+        order: section.order,
+      })),
+  );
+}
+
+function serializeFieldSectionAssignments(assignments: Record<string, string>) {
+  return JSON.stringify(
+    Object.entries(assignments)
+      .filter(([fieldKey, sectionId]) => fieldKey.trim().length > 0 && sectionId.trim().length > 0)
+      .sort(([a], [b]) => a.localeCompare(b)),
+  );
+}
+
+function normalizePersistedCustomSections(
+  sections: PersistedCustomSection[],
+): PersistedCustomSection[] {
+  return [...sections]
+    .map((section) => ({
+      id: section.id.trim(),
+      title: section.title.trim() || "Nueva sección",
+      order: Number.isFinite(section.order) ? section.order : 0,
+    }))
+    .filter((section) => section.id.length > 0)
+    .sort((a, b) => a.order - b.order)
+    .map((section, index) => ({ ...section, order: index + 1 }));
+}
+
+function sanitizeFieldSectionAssignments(
+  assignments: Record<string, string>,
+  customSections: PersistedCustomSection[],
+) {
+  const allowedIds = new Set(customSections.map((section) => section.id));
+  return Object.fromEntries(
+    Object.entries(assignments).filter(
+      ([fieldKey, sectionId]) =>
+        fieldKey.trim().length > 0 &&
+        sectionId.trim().length > 0 &&
+        allowedIds.has(sectionId),
+    ),
+  );
+}
+
+function deriveEditorSections(
+  fieldsForEditor: EditableField[],
+  documentsRouteRepresentsMainForm: boolean,
+  customSections: PersistedCustomSection[],
+  fieldSectionAssignments: Record<string, string>,
+): EditorSection[] {
+  const normalizedCustomSections = normalizePersistedCustomSections(customSections);
+  const customSectionIds = new Set(normalizedCustomSections.map((section) => section.id));
+  const normalizedAssignments = sanitizeFieldSectionAssignments(
+    fieldSectionAssignments,
+    normalizedCustomSections,
+  );
+  const customAssignedFieldKeys = new Set(
+    Object.entries(normalizedAssignments)
+      .filter(([, sectionId]) => customSectionIds.has(sectionId))
+      .map(([fieldKey]) => fieldKey),
+  );
+
+  const grouped = groupApplicantFormFields(
+    fieldsForEditor.filter((field) => !customAssignedFieldKeys.has(field.field_key)),
+    {
+    includeInactive: true,
+    includeFileFields: true,
+  });
+
+  const builtinSections = (
+    documentsRouteRepresentsMainForm
+      ? grouped.filter((section) => section.id !== "eligibility")
+      : grouped
+  ) as EditorSection[];
+
+  const otherSection = builtinSections.find((section) => section.id === "other");
+  const builtinWithoutOther = builtinSections.filter((section) => section.id !== "other");
+
+  const customSectionsWithFields: EditorSection[] = normalizedCustomSections
+    .map((section) => ({
+      id: `custom:${section.id}` as const,
+      title: section.title,
+      description: "Campos personalizados adicionales de esta etapa.",
+      fields: fieldsForEditor.filter(
+        (field) => normalizedAssignments[field.field_key] === section.id,
+      ),
+    }));
+
+  return otherSection
+    ? [...builtinWithoutOther, ...customSectionsWithFields, otherSection]
+    : [...builtinWithoutOther, ...customSectionsWithFields];
+}
+
+function isCustomEditorSectionId(sectionId: EditorSectionId): sectionId is `custom:${string}` {
+  return String(sectionId).startsWith("custom:");
+}
+
+function getCustomSectionIdFromEditorSectionId(sectionId: EditorSectionId): string | null {
+  if (!isCustomEditorSectionId(sectionId)) {
+    return null;
+  }
+
+  return sectionId.slice("custom:".length);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function getFieldTypeLabel(fieldType: CycleStageField["field_type"]) {
@@ -189,29 +351,30 @@ function getNewFieldSeedForSection({
   }
 }
 
-function serializePersistedStageConfig({
-  fields,
+function serializePersistedFields(fields: EditableField[]) {
+  return JSON.stringify(
+    fields.map((field) => ({
+      id: isUuid(field.id) ? field.id : null,
+      field_key: field.field_key,
+      field_label: field.field_label,
+      field_type: field.field_type,
+      is_required: field.is_required,
+      placeholder: field.placeholder ?? "",
+      help_text: field.help_text ?? "",
+      sort_order: field.sort_order,
+      is_active: field.is_active,
+    })),
+  );
+}
+
+function serializePersistedComms({
   automations,
   ocrPromptTemplate,
 }: {
-  fields: EditableField[];
   automations: EditableAutomation[];
   ocrPromptTemplate: string;
 }) {
   return JSON.stringify({
-    fields: [...fields]
-      .sort((a, b) => a.sort_order - b.sort_order)
-      .map((field) => ({
-        id: isUuid(field.id) ? field.id : null,
-        field_key: field.field_key,
-        field_label: field.field_label,
-        field_type: field.field_type,
-        is_required: field.is_required,
-        placeholder: field.placeholder ?? "",
-        help_text: field.help_text ?? "",
-        sort_order: field.sort_order,
-        is_active: field.is_active,
-      })),
     automations: automations.map((automation) => ({
       id: isUuid(automation.id) ? automation.id : null,
       trigger_event: automation.trigger_event,
@@ -222,6 +385,79 @@ function serializePersistedStageConfig({
     })),
     ocrPromptTemplate: ocrPromptTemplate.trim(),
   });
+}
+
+function serializeSettingsDraft(settings: StageEditorSettingsDraft) {
+  return JSON.stringify({
+    stageName: settings.stageName.trim(),
+    description: settings.description.trim(),
+    openDate: settings.openDate,
+    closeDate: settings.closeDate,
+    previousStageRequirement: settings.previousStageRequirement,
+    blockIfPreviousNotMet: settings.blockIfPreviousNotMet,
+  });
+}
+
+function parseStageAdminConfig(value: unknown): StageAdminConfigPayload {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return {
+    stageName:
+      typeof value.stageName === "string" ? value.stageName : undefined,
+    description:
+      typeof value.description === "string" ? value.description : undefined,
+    openDate:
+      typeof value.openDate === "string" || value.openDate === null
+        ? (value.openDate as string | null)
+        : undefined,
+    closeDate:
+      typeof value.closeDate === "string" || value.closeDate === null
+        ? (value.closeDate as string | null)
+        : undefined,
+    previousStageRequirement:
+      typeof value.previousStageRequirement === "string"
+        ? value.previousStageRequirement
+        : undefined,
+    blockIfPreviousNotMet:
+      typeof value.blockIfPreviousNotMet === "boolean"
+        ? value.blockIfPreviousNotMet
+        : undefined,
+    customSections: Array.isArray(value.customSections)
+      ? normalizePersistedCustomSections(
+          value.customSections.flatMap((item, index) => {
+            if (!isRecord(item)) {
+              return [];
+            }
+
+            const id = typeof item.id === "string" ? item.id : "";
+            const title = typeof item.title === "string" ? item.title : "";
+            const order =
+              typeof item.order === "number" && Number.isFinite(item.order)
+                ? item.order
+                : index + 1;
+
+            if (!id.trim()) {
+              return [];
+            }
+
+            return [{ id, title, order }];
+          }),
+        )
+      : undefined,
+    fieldSectionAssignments: isRecord(value.fieldSectionAssignments)
+      ? Object.fromEntries(
+          Object.entries(value.fieldSectionAssignments).flatMap(([fieldKey, sectionId]) => {
+            if (typeof sectionId !== "string" || !fieldKey.trim() || !sectionId.trim()) {
+              return [];
+            }
+
+            return [[fieldKey, sectionId]];
+          }),
+        )
+      : undefined,
+  };
 }
 
 export function StageConfigEditor({
@@ -236,6 +472,7 @@ export function StageConfigEditor({
   initialFields,
   initialAutomations,
   initialOcrPromptTemplate,
+  initialStageAdminConfig,
 }: {
   cycleId: string;
   cycleName: string;
@@ -248,6 +485,7 @@ export function StageConfigEditor({
   initialFields: CycleStageField[];
   initialAutomations: StageAutomationTemplate[];
   initialOcrPromptTemplate: string | null;
+  initialStageAdminConfig?: Record<string, unknown> | null;
 }) {
   const router = useRouter();
   const [fields, setFields] = useState<EditableField[]>(mapFieldsWithLocalId(initialFields));
@@ -260,8 +498,7 @@ export function StageConfigEditor({
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
   const [dragOverFieldId, setDragOverFieldId] = useState<string | null>(null);
   const [ocrPromptTemplate, setOcrPromptTemplate] = useState(
-    initialOcrPromptTemplate ??
-      "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.",
+    initialOcrPromptTemplate ?? DEFAULT_OCR_PROMPT_TEMPLATE,
   );
   const [activeTab, setActiveTab] = useState<
     "editor" | "settings" | "comms" | "stats"
@@ -269,34 +506,73 @@ export function StageConfigEditor({
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [sectionPlaceholders, setSectionPlaceholders] = useState<SectionPlaceholderDraft[]>([]);
   const [isCreatingStage, setIsCreatingStage] = useState(false);
+  const parsedStageAdminConfigRef = useRef(parseStageAdminConfig(initialStageAdminConfig));
+  const initialCustomSections = useMemo(
+    () =>
+      normalizePersistedCustomSections(
+        parsedStageAdminConfigRef.current.customSections ?? [],
+      ),
+    [],
+  );
+  const initialFieldSectionAssignments = useMemo(
+    () =>
+      sanitizeFieldSectionAssignments(
+        parsedStageAdminConfigRef.current.fieldSectionAssignments ?? {},
+        initialCustomSections,
+      ),
+    [initialCustomSections],
+  );
+  const [customSections, setCustomSections] = useState<PersistedCustomSection[]>(
+    initialCustomSections,
+  );
+  const [fieldSectionAssignments, setFieldSectionAssignments] = useState<Record<string, string>>(
+    initialFieldSectionAssignments,
+  );
+  const [collapsedSectionIds, setCollapsedSectionIds] = useState<string[]>([]);
+  const initializedSectionCollapseRef = useRef(false);
 
-  const savedConfigSnapshotRef = useRef(
-    serializePersistedStageConfig({
-      fields: mapFieldsWithLocalId(initialFields),
+  const savedFieldsSnapshotRef = useRef(
+    serializePersistedFields(mapFieldsWithLocalId(initialFields)),
+  );
+  const savedCustomSectionsSnapshotRef = useRef(
+    serializePersistedCustomSections(initialCustomSections),
+  );
+  const savedFieldSectionAssignmentsSnapshotRef = useRef(
+    serializeFieldSectionAssignments(initialFieldSectionAssignments),
+  );
+  const savedCommsSnapshotRef = useRef(
+    serializePersistedComms({
       automations: mapAutomationsWithLocalId(initialAutomations),
-      ocrPromptTemplate:
-        initialOcrPromptTemplate ??
-        "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.",
+      ocrPromptTemplate: initialOcrPromptTemplate ?? DEFAULT_OCR_PROMPT_TEMPLATE,
     }),
   );
+  const savedSettingsSnapshotRef = useRef<string | null>(null);
 
-  const orderedFields = useMemo(
-    () => [...fields].sort((a, b) => a.sort_order - b.sort_order),
-    [fields],
+  const orderedFields = fields;
+  const deferredOrderedFields = useDeferredValue(orderedFields);
+  const persistedFieldsSnapshot = useMemo(
+    () => serializePersistedFields(orderedFields),
+    [orderedFields],
   );
-
-  const persistedConfigSnapshot = useMemo(
+  const persistedCustomSectionsSnapshot = useMemo(
+    () => serializePersistedCustomSections(customSections),
+    [customSections],
+  );
+  const persistedFieldSectionAssignmentsSnapshot = useMemo(
     () =>
-      serializePersistedStageConfig({
-        fields: orderedFields,
+      serializeFieldSectionAssignments(
+        sanitizeFieldSectionAssignments(fieldSectionAssignments, customSections),
+      ),
+    [customSections, fieldSectionAssignments],
+  );
+  const persistedCommsSnapshot = useMemo(
+    () =>
+      serializePersistedComms({
         automations,
         ocrPromptTemplate,
       }),
-    [automations, ocrPromptTemplate, orderedFields],
+    [automations, ocrPromptTemplate],
   );
-
-  const hasUnsavedConfigChanges =
-    persistedConfigSnapshot !== savedConfigSnapshotRef.current;
 
   function createNewField(nextIndex: number): EditableField {
     const localId = `new-${crypto.randomUUID()}`;
@@ -332,6 +608,9 @@ export function StageConfigEditor({
           >
         >
       | undefined,
+    options?: {
+      customSectionId?: string | null;
+    },
   ) {
     const safePosition = Math.max(0, Math.min(position, orderedFields.length));
     const nextIndex = orderedFields.length + 1;
@@ -352,6 +631,12 @@ export function StageConfigEditor({
     ];
 
     applyOrderedFields(nextFields);
+    if (options?.customSectionId) {
+      setFieldSectionAssignments((current) => ({
+        ...current,
+        [insertedField.field_key]: options.customSectionId as string,
+      }));
+    }
     setActiveFieldId(insertedField.localId);
     setStatusMessage("Campo agregado localmente. Guarda configuración para persistir cambios.");
   }
@@ -360,7 +645,18 @@ export function StageConfigEditor({
     const sectionOrder: ApplicantFormSectionId[] = documentsRouteRepresentsMainForm
       ? ["identity", "family", "school", "motivation", "recommenders", "documents", "other"]
       : ["eligibility", "identity", "family", "school", "motivation", "recommenders", "documents", "other"];
-    const existingSectionIds = new Set(editorSections.map((section) => section.id));
+    const existingSectionIds = new Set<ApplicantFormSectionId>(
+      deriveEditorSections(
+        orderedFields,
+        documentsRouteRepresentsMainForm,
+        customSections,
+        fieldSectionAssignments,
+      )
+        .map((section) => section.id)
+        .filter(
+          (sectionId): sectionId is ApplicantFormSectionId => !isCustomEditorSectionId(sectionId),
+        ),
+    );
     const placeholderSectionIds = new Set(
       sectionPlaceholders
         .map((draft) => (draft.sectionId === "custom" ? null : draft.sectionId))
@@ -371,28 +667,42 @@ export function StageConfigEditor({
         !existingSectionIds.has(sectionId) && !placeholderSectionIds.has(sectionId),
     );
 
-    const nextPlaceholder: SectionPlaceholderDraft = nextMissingSectionId
+    const nextPlaceholder: SectionPlaceholderDraft | null = nextMissingSectionId
       ? {
           localId: `section-${crypto.randomUUID()}`,
           title: getBuiltinSectionTitle(nextMissingSectionId),
           sectionId: nextMissingSectionId,
         }
-      : {
-          localId: `section-${crypto.randomUUID()}`,
-          title: `Nueva sección ${sectionPlaceholders.length + 1}`,
-          sectionId: "custom",
-        };
+      : null;
 
-    setSectionPlaceholders((current) => [...current, nextPlaceholder]);
+    if (nextPlaceholder) {
+      setSectionPlaceholders((current) => [...current, nextPlaceholder]);
+      setStatusMessage(
+        `Se creó la sección “${nextPlaceholder.title}”. Agrega campos dentro de esa sección y luego guarda configuración.`,
+      );
+      return;
+    }
+
+    const customSectionCount = customSections.length + 1;
+    const newCustomSection: PersistedCustomSection = {
+      id: `custom-section-${crypto.randomUUID()}`,
+      title: `Nueva sección ${customSectionCount}`,
+      order: customSectionCount,
+    };
+    setCustomSections((current) =>
+      normalizePersistedCustomSections([...current, newCustomSection]),
+    );
     setStatusMessage(
-      nextMissingSectionId
-        ? `Se creó la sección “${nextPlaceholder.title}”. Agrega campos dentro de esa sección y luego guarda configuración.`
-        : "Se creó una nueva sección vacía. Agrega campos dentro de esa sección y luego guarda configuración.",
+      `Se creó la sección “${newCustomSection.title}”. Guarda configuración para persistir su estructura.`,
     );
   }
 
   function openPreview() {
     router.push(`/admin/process/${cycleId}/stage/${stageId}/preview`);
+  }
+
+  function switchToTab(nextTab: "editor" | "settings" | "comms" | "stats") {
+    startTransition(() => setActiveTab(nextTab));
   }
 
   async function createStage() {
@@ -436,6 +746,36 @@ export function StageConfigEditor({
     setSectionPlaceholders((current) =>
       current.filter((draft) => draft.localId !== placeholder.localId),
     );
+  }
+
+  function remapFieldSectionAssignmentKey(previousKey: string, nextKey: string) {
+    if (previousKey === nextKey) {
+      return;
+    }
+
+    setFieldSectionAssignments((current) => {
+      const sectionId = current[previousKey];
+      if (!sectionId) {
+        return current;
+      }
+
+      const nextAssignments = { ...current };
+      delete nextAssignments[previousKey];
+      nextAssignments[nextKey] = sectionId;
+      return nextAssignments;
+    });
+  }
+
+  function removeFieldSectionAssignment(fieldKey: string) {
+    setFieldSectionAssignments((current) => {
+      if (!current[fieldKey]) {
+        return current;
+      }
+
+      const nextAssignments = { ...current };
+      delete nextAssignments[fieldKey];
+      return nextAssignments;
+    });
   }
 
   function reorderDraggedField(targetLocalId: string) {
@@ -486,6 +826,10 @@ export function StageConfigEditor({
   }
 
   function removeField(localId: string) {
+    const removedField = orderedFields.find((field) => field.localId === localId);
+    if (removedField) {
+      removeFieldSectionAssignment(removedField.field_key);
+    }
     applyOrderedFields(orderedFields.filter((field) => field.localId !== localId));
   }
 
@@ -514,6 +858,15 @@ export function StageConfigEditor({
             sortOrder: index + 1,
             isActive: field.is_active,
           })),
+          customSections: customSections.map((section, index) => ({
+            id: section.id,
+            title: section.title.trim() || `Nueva sección ${index + 1}`,
+            order: index + 1,
+          })),
+          fieldSectionAssignments: sanitizeFieldSectionAssignments(
+            fieldSectionAssignments,
+            customSections,
+          ),
           automations: automations.map((automation) => ({
             id: isUuid(automation.id) ? automation.id : undefined,
             triggerEvent: automation.trigger_event,
@@ -524,6 +877,14 @@ export function StageConfigEditor({
           })),
           ocrPromptTemplate:
             ocrPromptTemplate.trim().length > 0 ? ocrPromptTemplate.trim() : null,
+          settings: {
+            stageName: settingsStageName.trim(),
+            description: settingsDescription.trim(),
+            openDate: settingsOpenDate || null,
+            closeDate: settingsCloseDate || null,
+            previousStageRequirement,
+            blockIfPreviousNotMet,
+          },
         }),
       });
       const body = await response.json();
@@ -536,15 +897,61 @@ export function StageConfigEditor({
       const nextSavedFields = mapFieldsWithLocalId(body.fields ?? []);
       const nextSavedAutomations = mapAutomationsWithLocalId(body.automations ?? []);
       const nextSavedOcrPrompt = body.ocrPromptTemplate ?? "";
+      const nextSavedCustomSections = normalizePersistedCustomSections(
+        Array.isArray(body.customSections) ? body.customSections : customSections,
+      );
+      const nextSavedFieldSectionAssignments = sanitizeFieldSectionAssignments(
+        typeof body.fieldSectionAssignments === "object" &&
+          body.fieldSectionAssignments &&
+          !Array.isArray(body.fieldSectionAssignments)
+          ? (body.fieldSectionAssignments as Record<string, string>)
+          : fieldSectionAssignments,
+        nextSavedCustomSections,
+      );
+      const nextSavedSettings = {
+        stageName:
+          typeof body.settings?.stageName === "string"
+            ? body.settings.stageName
+            : settingsStageName.trim(),
+        description:
+          typeof body.settings?.description === "string"
+            ? body.settings.description
+            : settingsDescription.trim(),
+        openDate:
+          typeof body.settings?.openDate === "string" ? body.settings.openDate : "",
+        closeDate:
+          typeof body.settings?.closeDate === "string" ? body.settings.closeDate : "",
+        previousStageRequirement:
+          typeof body.settings?.previousStageRequirement === "string"
+            ? body.settings.previousStageRequirement
+            : previousStageRequirement,
+        blockIfPreviousNotMet:
+          typeof body.settings?.blockIfPreviousNotMet === "boolean"
+            ? body.settings.blockIfPreviousNotMet
+            : blockIfPreviousNotMet,
+      } satisfies StageEditorSettingsDraft;
 
       setFields(nextSavedFields);
+      setCustomSections(nextSavedCustomSections);
+      setFieldSectionAssignments(nextSavedFieldSectionAssignments);
       setAutomations(nextSavedAutomations);
       setOcrPromptTemplate(nextSavedOcrPrompt);
-      savedConfigSnapshotRef.current = serializePersistedStageConfig({
-        fields: nextSavedFields,
+      setSettingsStageName(nextSavedSettings.stageName);
+      setSettingsDescription(nextSavedSettings.description);
+      setSettingsOpenDate(nextSavedSettings.openDate);
+      setSettingsCloseDate(nextSavedSettings.closeDate);
+      setPreviousStageRequirement(nextSavedSettings.previousStageRequirement);
+      setBlockIfPreviousNotMet(nextSavedSettings.blockIfPreviousNotMet);
+      savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
+      savedCustomSectionsSnapshotRef.current =
+        serializePersistedCustomSections(nextSavedCustomSections);
+      savedFieldSectionAssignmentsSnapshotRef.current =
+        serializeFieldSectionAssignments(nextSavedFieldSectionAssignments);
+      savedCommsSnapshotRef.current = serializePersistedComms({
         automations: nextSavedAutomations,
         ocrPromptTemplate: nextSavedOcrPrompt,
       });
+      savedSettingsSnapshotRef.current = serializeSettingsDraft(nextSavedSettings);
       setStatusMessage("Configuración de etapa guardada.");
     } finally {
       setIsSaving(false);
@@ -556,62 +963,160 @@ export function StageConfigEditor({
     : stageCode === "exam_placeholder"
       ? "Examen Académico"
       : stageLabel;
-  const [settingsStageName, setSettingsStageName] = useState(displayStageLabel);
-  const [settingsDescription, setSettingsDescription] = useState(
-    documentsRouteRepresentsMainForm
-      ? "Completa tu información familiar, académica y redacta tus ensayos de motivación."
-      : "Configura la captura de datos de esta etapa, reglas de acceso y notificaciones.",
+  const parsedStageAdminConfig = parsedStageAdminConfigRef.current;
+  const [settingsStageName, setSettingsStageName] = useState(
+    parsedStageAdminConfig.stageName ?? displayStageLabel,
   );
-  const [settingsOpenDate, setSettingsOpenDate] = useState(toDateInputValue(stageOpenAt));
-  const [settingsCloseDate, setSettingsCloseDate] = useState(toDateInputValue(stageCloseAt));
+  const [settingsDescription, setSettingsDescription] = useState(
+    parsedStageAdminConfig.description ??
+      (documentsRouteRepresentsMainForm
+        ? "Completa tu información familiar, académica y redacta tus ensayos de motivación."
+        : "Configura la captura de datos de esta etapa, reglas de acceso y notificaciones."),
+  );
+  const [settingsOpenDate, setSettingsOpenDate] = useState(
+    toDateInputValue(stageOpenAt) || (parsedStageAdminConfig.openDate ?? ""),
+  );
+  const [settingsCloseDate, setSettingsCloseDate] = useState(
+    toDateInputValue(stageCloseAt) || (parsedStageAdminConfig.closeDate ?? ""),
+  );
   const [previousStageRequirement, setPreviousStageRequirement] = useState(
-    documentsRouteRepresentsMainForm ? "eligibility" : "none",
+    parsedStageAdminConfig.previousStageRequirement ?? "none",
   );
   const [blockIfPreviousNotMet, setBlockIfPreviousNotMet] = useState(
-    documentsRouteRepresentsMainForm,
+    parsedStageAdminConfig.blockIfPreviousNotMet ?? documentsRouteRepresentsMainForm,
   );
+  const settingsDraftSnapshot = useMemo(
+    () =>
+      serializeSettingsDraft({
+        stageName: settingsStageName,
+        description: settingsDescription,
+        openDate: settingsOpenDate,
+        closeDate: settingsCloseDate,
+        previousStageRequirement,
+        blockIfPreviousNotMet,
+      }),
+    [
+      settingsStageName,
+      settingsDescription,
+      settingsOpenDate,
+      settingsCloseDate,
+      previousStageRequirement,
+      blockIfPreviousNotMet,
+    ],
+  );
+  if (savedSettingsSnapshotRef.current === null) {
+    savedSettingsSnapshotRef.current = settingsDraftSnapshot;
+  }
+  const hasUnsavedCustomSectionsChanges =
+    persistedCustomSectionsSnapshot !== savedCustomSectionsSnapshotRef.current;
+  const hasUnsavedFieldSectionAssignmentsChanges =
+    persistedFieldSectionAssignmentsSnapshot !==
+    savedFieldSectionAssignmentsSnapshotRef.current;
+  const hasUnsavedFieldConfigChanges =
+    persistedFieldsSnapshot !== savedFieldsSnapshotRef.current ||
+    hasUnsavedCustomSectionsChanges ||
+    hasUnsavedFieldSectionAssignmentsChanges;
+  const hasUnsavedCommsConfigChanges =
+    persistedCommsSnapshot !== savedCommsSnapshotRef.current;
+  const hasUnsavedSettingsConfigChanges =
+    settingsDraftSnapshot !== savedSettingsSnapshotRef.current;
+  const hasUnsavedSectionDraftChanges = sectionPlaceholders.length > 0;
+  const hasUnsavedConfigChanges =
+    hasUnsavedFieldConfigChanges ||
+    hasUnsavedCommsConfigChanges ||
+    hasUnsavedSettingsConfigChanges;
+  const canSavePersistedConfig = hasUnsavedConfigChanges && !isSaving;
+  const saveableChangeLabels = [
+    hasUnsavedFieldConfigChanges ? "Editor de Formulario" : null,
+    hasUnsavedSettingsConfigChanges ? "Ajustes y Reglas" : null,
+    hasUnsavedCommsConfigChanges ? "Comunicaciones" : null,
+  ].filter(Boolean) as string[];
+  const draftOnlyChangeLabels = [
+    hasUnsavedSectionDraftChanges ? "Secciones nuevas (placeholder)" : null,
+  ].filter(Boolean) as string[];
 
   const editorSections = useMemo(
     () => {
-      const grouped = groupApplicantFormFields(orderedFields, {
-        includeInactive: true,
-        includeFileFields: true,
-      });
-
-      if (documentsRouteRepresentsMainForm) {
-        return grouped.filter((section) => section.id !== "eligibility");
+      if (activeTab !== "editor") {
+        return [];
       }
 
-      return grouped;
+      return deriveEditorSections(
+        deferredOrderedFields,
+        documentsRouteRepresentsMainForm,
+        customSections,
+        fieldSectionAssignments,
+      );
     },
-    [documentsRouteRepresentsMainForm, orderedFields],
+    [
+      activeTab,
+      deferredOrderedFields,
+      documentsRouteRepresentsMainForm,
+      customSections,
+      fieldSectionAssignments,
+    ],
   );
 
   const displayedEditorFields = useMemo(
-    () => editorSections.flatMap((section) => section.fields as EditableField[]),
-    [editorSections],
+    () =>
+      activeTab === "editor"
+        ? editorSections.flatMap((section) => section.fields as EditableField[])
+        : [],
+    [activeTab, editorSections],
+  );
+  const emptyCustomEditorSections = useMemo(
+    () =>
+      activeTab === "editor"
+        ? editorSections.filter(
+            (section) =>
+              isCustomEditorSectionId(section.id) && section.fields.length === 0,
+          )
+        : [],
+    [activeTab, editorSections],
   );
 
   const orderedFieldIndexByLocalId = useMemo(
-    () =>
-      new Map(
+    () => {
+      if (activeTab !== "editor") {
+        return new Map<string, number>();
+      }
+
+      return new Map(
         orderedFields.map((field, index) => [field.localId, index] as const),
-      ),
-    [orderedFields],
+      );
+    },
+    [activeTab, orderedFields],
   );
 
   const editorFieldSectionMeta = useMemo(() => {
+    if (activeTab !== "editor") {
+      return {
+        headingByFieldId: new Map<string, string>(),
+        firstFieldIds: new Set<string>(),
+        lastFieldIds: new Set<string>(),
+        insertPositionByLastFieldId: new Map<string, number>(),
+        insertPositionBySectionId: new Map<EditorSectionId, number>(),
+        sectionIdByLastFieldId: new Map<string, EditorSectionId>(),
+        sectionIdByFieldId: new Map<string, EditorSectionId>(),
+        fieldCountBySectionId: new Map<EditorSectionId, number>(),
+      };
+    }
+
     const headingByFieldId = new Map<string, string>();
     const firstFieldIds = new Set<string>();
     const lastFieldIds = new Set<string>();
     const insertPositionByLastFieldId = new Map<string, number>();
-    const sectionIdByLastFieldId = new Map<string, ApplicantFormSectionId>();
+    const insertPositionBySectionId = new Map<EditorSectionId, number>();
+    const sectionIdByLastFieldId = new Map<string, EditorSectionId>();
+    const sectionIdByFieldId = new Map<string, EditorSectionId>();
+    const fieldCountBySectionId = new Map<EditorSectionId, number>();
 
     editorSections.forEach((section, index) => {
       const sectionFields = section.fields as EditableField[];
       const heading = `Sección ${index + 1}: ${section.title}`;
       const firstField = sectionFields[0];
       const lastField = sectionFields.at(-1);
+      fieldCountBySectionId.set(section.id, sectionFields.length);
 
       if (firstField) {
         firstFieldIds.add(firstField.localId);
@@ -625,10 +1130,17 @@ export function StageConfigEditor({
           lastField.localId,
           typeof lastIndex === "number" ? lastIndex + 1 : orderedFields.length,
         );
+        insertPositionBySectionId.set(
+          section.id,
+          typeof lastIndex === "number" ? lastIndex + 1 : orderedFields.length,
+        );
+      } else {
+        insertPositionBySectionId.set(section.id, orderedFields.length);
       }
 
       for (const field of sectionFields) {
         headingByFieldId.set(field.localId, heading);
+        sectionIdByFieldId.set(field.localId, section.id);
       }
     });
 
@@ -637,9 +1149,37 @@ export function StageConfigEditor({
       firstFieldIds,
       lastFieldIds,
       insertPositionByLastFieldId,
+      insertPositionBySectionId,
       sectionIdByLastFieldId,
+      sectionIdByFieldId,
+      fieldCountBySectionId,
     };
-  }, [editorSections, orderedFieldIndexByLocalId, orderedFields.length]);
+  }, [activeTab, editorSections, orderedFieldIndexByLocalId, orderedFields.length]);
+
+  useEffect(() => {
+    if (activeTab !== "editor") {
+      return;
+    }
+
+    const availableSectionIds = new Set(editorSections.map((section) => String(section.id)));
+    setCollapsedSectionIds((current) => current.filter((id) => availableSectionIds.has(id)));
+
+    if (initializedSectionCollapseRef.current || editorSections.length === 0) {
+      return;
+    }
+
+    initializedSectionCollapseRef.current = true;
+    if (orderedFields.length < 80) {
+      return;
+    }
+
+    setCollapsedSectionIds(editorSections.slice(2).map((section) => String(section.id)));
+  }, [activeTab, editorSections, orderedFields.length]);
+
+  const collapsedSectionIdSet = useMemo(
+    () => new Set(collapsedSectionIds),
+    [collapsedSectionIds],
+  );
 
   const sidebarTemplateStages = useMemo(
     () =>
@@ -647,7 +1187,7 @@ export function StageConfigEditor({
         .sort((a, b) => a.sort_order - b.sort_order)
         .map((template, index) => ({
           key: template.id,
-          number: index + 2,
+          number: index + 1,
           title:
             template.stage_code === "documents"
               ? "Formulario Principal"
@@ -681,17 +1221,6 @@ export function StageConfigEditor({
           <div className="builder-section-title admin-sidebar-section-title">
             Etapas del Proceso
           </div>
-          <button
-            className="stage-item"
-            type="button"
-            onClick={() => router.push(`/admin/process/${cycleId}/stage/${stageTemplates[0]?.id ?? stageId}`)}
-          >
-            <div className="stage-icon">1</div>
-            <div className="stage-info">
-              <div className="stage-title">Elegibilidad</div>
-              <div className="stage-type">Formulario base</div>
-            </div>
-          </button>
           {sidebarTemplateStages.map((item) => (
             <button
               key={item.key}
@@ -731,7 +1260,7 @@ export function StageConfigEditor({
           <div className="stage-status">Etapa Activa</div>
           <div className="canvas-title-row">
             <div>
-              <h1>{displayStageLabel}</h1>
+              <h1>{settingsStageName.trim() || displayStageLabel}</h1>
               <p>Configura la captura de datos de esta etapa, reglas de acceso y notificaciones.</p>
             </div>
             <div className="admin-stage-header-actions">
@@ -746,7 +1275,14 @@ export function StageConfigEditor({
                 type="button"
                 className="btn btn-primary"
                 onClick={saveStageConfig}
-                disabled={isSaving}
+                disabled={!canSavePersistedConfig}
+                title={
+                  isSaving
+                    ? "Guardando configuración..."
+                    : hasUnsavedConfigChanges
+                      ? undefined
+                      : "No hay cambios persistibles para guardar"
+                }
               >
                 {isSaving ? "Guardando..." : "Guardar configuración"}
               </button>
@@ -754,32 +1290,51 @@ export function StageConfigEditor({
           </div>
           <div className="admin-stage-save-hint" aria-live="polite">
             {hasUnsavedConfigChanges
-              ? "Cambios sin guardar (campos, orden, automatizaciones y OCR)."
+              ? "Cambios sin guardar (editor, ajustes y/o comunicaciones)."
               : "Sin cambios pendientes en configuración persistente."}
           </div>
+          {(saveableChangeLabels.length > 0 || draftOnlyChangeLabels.length > 0) && (
+            <div className="admin-stage-save-scope" aria-live="polite">
+              {saveableChangeLabels.length > 0 ? (
+                <div>
+                  <strong>Guardar configuración guardará:</strong>{" "}
+                  {saveableChangeLabels.join(", ")}.
+                </div>
+              ) : null}
+              {draftOnlyChangeLabels.length > 0 ? (
+                <div>
+                  <strong>Cambios detectados pero aún no persistidos por este botón:</strong>{" "}
+                  {draftOnlyChangeLabels.join(", ")}.
+                </div>
+              ) : null}
+            </div>
+          )}
 
           <div className="page-tabs">
             <button
               className={`page-tab ${activeTab === "editor" ? "active" : ""}`}
-              onClick={() => setActiveTab("editor")}
+              onClick={() => switchToTab("editor")}
             >
               Editor de Formulario
+              {(hasUnsavedFieldConfigChanges || hasUnsavedSectionDraftChanges) ? " •" : ""}
             </button>
             <button
               className={`page-tab ${activeTab === "settings" ? "active" : ""}`}
-              onClick={() => setActiveTab("settings")}
+              onClick={() => switchToTab("settings")}
             >
               Ajustes y Reglas
+              {hasUnsavedSettingsConfigChanges ? " •" : ""}
             </button>
             <button
               className={`page-tab ${activeTab === "comms" ? "active" : ""}`}
-              onClick={() => setActiveTab("comms")}
+              onClick={() => switchToTab("comms")}
             >
               Comunicaciones
+              {hasUnsavedCommsConfigChanges ? " •" : ""}
             </button>
             <button
               className={`page-tab ${activeTab === "stats" ? "active" : ""}`}
-              onClick={() => setActiveTab("stats")}
+              onClick={() => switchToTab("stats")}
             >
               Estadísticas
             </button>
@@ -790,11 +1345,38 @@ export function StageConfigEditor({
           {activeTab === "editor" && (
             <div id="tab-editor" className="tab-content active">
               <div className="field-list">
+                {editorSections.length > 1 ? (
+                  <div className="admin-stage-editor-toolbar">
+                    <div className="admin-text-muted">
+                      {`${editorSections.length} secciones • ${displayedEditorFields.length} campos`}
+                    </div>
+                    <div className="admin-stage-editor-toolbar-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() => setCollapsedSectionIds([])}
+                      >
+                        Expandir todo
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        onClick={() =>
+                          setCollapsedSectionIds(
+                            editorSections.map((section) => String(section.id)),
+                          )
+                        }
+                      >
+                        Colapsar todo
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
                 {displayedEditorFields.length === 0 ? (
                   <>
                     <div className="builder-section-title">Sección 1: Datos Personales</div>
                     <button
-                      className="add-field-btn"
+                      className="add-field-btn admin-stage-empty-add-field"
                       onClick={() => insertFieldAt(0)}
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -819,12 +1401,83 @@ export function StageConfigEditor({
                     ) ?? orderedFields.length;
                   const sectionIdForInsert =
                     editorFieldSectionMeta.sectionIdByLastFieldId.get(field.localId) ?? "other";
+                  const sectionId =
+                    editorFieldSectionMeta.sectionIdByFieldId.get(field.localId) ?? "other";
+                  const sectionKey = String(sectionId);
+                  const isSectionCollapsed = collapsedSectionIdSet.has(sectionKey);
+                  const sectionFieldCount =
+                    editorFieldSectionMeta.fieldCountBySectionId.get(sectionId) ?? 0;
+
+                  if (isSectionCollapsed && !isSectionStart) {
+                    return null;
+                  }
 
                   return (
                     <div key={field.localId}>
                       {isSectionStart ? (
                         <div className="builder-section-title">{sectionHeading}</div>
                       ) : null}
+                      {isSectionStart && isSectionCollapsed ? (
+                        <div className="admin-stage-collapsed-section">
+                          <div className="admin-stage-collapsed-section-meta">
+                            <span>{`${sectionFieldCount} campo${sectionFieldCount === 1 ? "" : "s"}`}</span>
+                            <span className="admin-text-muted">Sección colapsada para mejorar rendimiento</span>
+                          </div>
+                          <div className="admin-stage-collapsed-section-actions">
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() =>
+                                setCollapsedSectionIds((current) =>
+                                  current.filter((id) => id !== sectionKey),
+                                )
+                              }
+                            >
+                              Expandir sección
+                            </button>
+                            <button
+                              type="button"
+                              className="add-field-btn admin-stage-section-add-field compact"
+                              onClick={() => {
+                                const suffix = orderedFields.length + 1;
+                                const customSectionId =
+                                  getCustomSectionIdFromEditorSectionId(sectionId);
+                                const seed = getNewFieldSeedForSection(
+                                  customSectionId
+                                    ? { sectionId: "custom", suffix }
+                                    : {
+                                        sectionId: sectionId as ApplicantFormSectionId,
+                                        suffix,
+                                      },
+                                );
+                                const sectionInsertPosition =
+                                  editorFieldSectionMeta.insertPositionBySectionId.get(sectionId) ??
+                                  orderedFields.length;
+                                insertFieldAt(
+                                  sectionInsertPosition,
+                                  {
+                                    field_key: seed.field_key,
+                                    field_label: seed.field_label,
+                                    field_type: seed.field_type,
+                                    is_required: false,
+                                    placeholder: "",
+                                    help_text: "",
+                                    is_active: true,
+                                  },
+                                  { customSectionId },
+                                );
+                                setCollapsedSectionIds((current) =>
+                                  current.filter((id) => id !== sectionKey),
+                                );
+                              }}
+                            >
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                              Añadir nuevo campo
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {isSectionCollapsed ? null : (
                       <div
                         className={[
                           "field-card",
@@ -905,6 +1558,11 @@ export function StageConfigEditor({
                                   value={field.field_label}
                                   onChange={(event) => {
                                     const value = event.target.value;
+                                    const nextFieldKey =
+                                      field.id.startsWith("new-") || field.field_key.startsWith("nuevoCampo")
+                                        ? normalizeFieldKey(value)
+                                        : field.field_key;
+                                    remapFieldSectionAssignmentKey(field.field_key, nextFieldKey);
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId
@@ -928,7 +1586,9 @@ export function StageConfigEditor({
                                   id={`key-${field.localId}`}
                                   type="text"
                                   value={field.field_key}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    const nextFieldKey = normalizeFieldKey(event.target.value);
+                                    remapFieldSectionAssignmentKey(field.field_key, nextFieldKey);
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId
@@ -938,8 +1598,8 @@ export function StageConfigEditor({
                                             }
                                           : item,
                                       ),
-                                    )
-                                  }
+                                    );
+                                  }}
                                   style={{ fontFamily: "monospace", color: "var(--muted)", background: "var(--paper)" }}
                                 />
                               </div>
@@ -1073,15 +1733,26 @@ export function StageConfigEditor({
                           </div>
                         )}
                       </div>
+                      )}
                       {isSectionEnd ? (
                         <button
-                          className="add-field-btn"
+                          className="add-field-btn admin-stage-section-add-field"
+                          style={isSectionCollapsed ? { display: "none" } : undefined}
                           onClick={() => {
                             const suffix = orderedFields.length + 1;
-                            const seed = getNewFieldSeedForSection({
-                              sectionId: sectionIdForInsert,
-                              suffix,
-                            });
+                            const customSectionId =
+                              getCustomSectionIdFromEditorSectionId(sectionIdForInsert);
+                            const seed = getNewFieldSeedForSection(
+                              customSectionId
+                                ? {
+                                    sectionId: "custom",
+                                    suffix,
+                                  }
+                                : {
+                                    sectionId: sectionIdForInsert as ApplicantFormSectionId,
+                                    suffix,
+                                  },
+                            );
                             insertFieldAt(sectionInsertPosition, {
                               field_key: seed.field_key,
                               field_label: seed.field_label,
@@ -1090,7 +1761,7 @@ export function StageConfigEditor({
                               placeholder: "",
                               help_text: "",
                               is_active: true,
-                            });
+                            }, { customSectionId });
                           }}
                         >
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -1141,6 +1812,77 @@ export function StageConfigEditor({
                     </div>
                   </div>
                 ))}
+                {emptyCustomEditorSections.map((section) => {
+                  const customSectionId = getCustomSectionIdFromEditorSectionId(section.id);
+                  if (!customSectionId) {
+                    return null;
+                  }
+                  const sectionNumber =
+                    editorSections.findIndex((candidate) => candidate.id === section.id) + 1;
+
+                  return (
+                    <div key={section.id} className="admin-stage-section-placeholder">
+                      <div className="builder-section-title">
+                        {`Sección ${sectionNumber}: ${section.title}`}
+                      </div>
+                      <div className="settings-card admin-stage-empty-section-card">
+                        <div className="editor-grid">
+                          <div className="form-field full">
+                            <label htmlFor={`custom-section-title-${customSectionId}`}>
+                              Nombre de la sección
+                            </label>
+                            <input
+                              id={`custom-section-title-${customSectionId}`}
+                              type="text"
+                              value={section.title}
+                              onChange={(event) =>
+                                setCustomSections((current) =>
+                                  normalizePersistedCustomSections(
+                                    current.map((item) =>
+                                      item.id === customSectionId
+                                        ? { ...item, title: event.target.value }
+                                        : item,
+                                    ),
+                                  ),
+                                )
+                              }
+                            />
+                            <small className="admin-text-muted">
+                              Guarda configuración para persistir esta sección personalizada.
+                            </small>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className="add-field-btn"
+                          onClick={() => {
+                            const suffix = orderedFields.length + 1;
+                            const seed = getNewFieldSeedForSection({
+                              sectionId: "custom",
+                              suffix,
+                            });
+                            insertFieldAt(
+                              orderedFields.length,
+                              {
+                                field_key: seed.field_key,
+                                field_label: seed.field_label,
+                                field_type: seed.field_type,
+                                is_required: false,
+                                placeholder: "",
+                                help_text: "",
+                                is_active: true,
+                              },
+                              { customSectionId },
+                            );
+                          }}
+                        >
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          Añadir nuevo campo en esta sección
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
                 <div className="admin-stage-editor-add-section">
                   <button
                     type="button"
@@ -1163,32 +1905,36 @@ export function StageConfigEditor({
                 </div>
                 <div className="editor-grid">
                   <div className="form-field full">
-                    <label>Nombre de la etapa</label>
+                    <label htmlFor={`stage-name-${stageCode}`}>Nombre de la etapa</label>
                     <input
+                      id={`stage-name-${stageCode}`}
                       type="text"
                       value={settingsStageName}
                       onChange={(event) => setSettingsStageName(event.target.value)}
                     />
                   </div>
                   <div className="form-field full">
-                    <label>Descripción corta</label>
+                    <label htmlFor={`stage-description-${stageCode}`}>Descripción corta</label>
                     <textarea
+                      id={`stage-description-${stageCode}`}
                       rows={2}
                       value={settingsDescription}
                       onChange={(event) => setSettingsDescription(event.target.value)}
                     />
                   </div>
                   <div className="form-field">
-                    <label>Fecha de apertura</label>
+                    <label htmlFor={`stage-open-date-${stageCode}`}>Fecha de apertura</label>
                     <input
+                      id={`stage-open-date-${stageCode}`}
                       type="date"
                       value={settingsOpenDate}
                       onChange={(event) => setSettingsOpenDate(event.target.value)}
                     />
                   </div>
                   <div className="form-field">
-                    <label>Fecha de cierre</label>
+                    <label htmlFor={`stage-close-date-${stageCode}`}>Fecha de cierre</label>
                     <input
+                      id={`stage-close-date-${stageCode}`}
                       type="date"
                       value={settingsCloseDate}
                       onChange={(event) => setSettingsCloseDate(event.target.value)}
@@ -1213,8 +1959,21 @@ export function StageConfigEditor({
                       }
                     >
                       <option value="none">Ninguna (acceso directo)</option>
-                      <option value="eligibility">1. Elegibilidad</option>
-                      <option value="main_form">2. Formulario Principal</option>
+                      <option value="main_form">1. Formulario Principal</option>
+                      <option value="exam_placeholder">2. Examen Académico</option>
+                      {stageTemplates
+                        .filter((template) => template.id !== stageId)
+                        .filter(
+                          (template) =>
+                            template.stage_code !== "documents" &&
+                            template.stage_code !== "exam_placeholder",
+                        )
+                        .sort((a, b) => a.sort_order - b.sort_order)
+                        .map((template, index) => (
+                          <option key={template.id} value={template.id}>
+                            {`${index + 3}. ${template.stage_label}`}
+                          </option>
+                        ))}
                     </select>
                   </div>
                   <div className="switch-wrapper">

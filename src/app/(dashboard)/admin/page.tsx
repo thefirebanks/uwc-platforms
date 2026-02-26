@@ -138,7 +138,7 @@ export default async function AdminPage() {
       timeLabel: formatRelativeTime(application.updated_at),
       icon: isSubmittedLike ? "✓" : "📝",
       iconTone: isSubmittedLike ? "green" : "blue",
-      actionHref: `/admin/process/${application.cycle_id}?section=applications`,
+      actionHref: `/admin/candidates?cycleId=${application.cycle_id}&applicationId=${application.id}`,
       actionLabel: "Ver perfil",
     } satisfies AdminHomeActivity;
   });

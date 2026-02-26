@@ -1,31 +1,20 @@
 "use client";
-import { useDeferredValue, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import type {
   Application,
-  ApplicationOcrCheck,
   CommunicationLog,
   CycleStageTemplate,
   SelectionProcess,
   StageCode,
 } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
-import { canTransition } from "@/lib/stages/transition";
 
 interface ApiError {
   message: string;
   errorId?: string;
 }
-
-type StageFilter = StageCode | "all";
-type StatusFilter = Application["status"] | "all";
-type EligibilityFilter =
-  | "all"
-  | "eligible"
-  | "ineligible"
-  | "pending"
-  | "advanced";
 
 const EMPTY_COMMUNICATION_SUMMARY = {
   queued: 0,
@@ -55,153 +44,6 @@ function formatDate(value: string | null) {
   return new Date(value).toLocaleDateString();
 }
 
-function getApplicationFiles(application: Application) {
-  const files =
-    (application.files as Record<string, unknown> | undefined) ?? {};
-  const normalized: Record<string, string> = {};
-
-  for (const [key, value] of Object.entries(files)) {
-    if (typeof value === "string") {
-      normalized[key] = value;
-      continue;
-    }
-
-    if (
-      value &&
-      typeof value === "object" &&
-      typeof (value as Record<string, unknown>).path === "string"
-    ) {
-      normalized[key] = (value as Record<string, unknown>).path as string;
-    }
-  }
-
-  return normalized;
-}
-
-function getDefaultOcrFileKey(application: Application) {
-  const files = getApplicationFiles(application);
-  if (files.identificationDocument) {
-    return "identificationDocument";
-  }
-
-  const keys = Object.keys(files).filter((key) => Boolean(files[key]));
-  return keys[0] ?? null;
-}
-
-function getPayloadString(
-  payload: Application["payload"],
-  candidates: string[],
-): string | null {
-  for (const key of candidates) {
-    const value = payload[key];
-    if (typeof value === "string" && value.trim()) {
-      return value.trim();
-    }
-  }
-
-  return null;
-}
-
-function getApplicationDisplayName(application: Application) {
-  const payload = application.payload ?? {};
-  const firstName =
-    getPayloadString(payload, ["firstName", "givenName", "name"]) ?? "";
-  const paternalLastName =
-    getPayloadString(payload, ["paternalLastName", "lastName", "surname"]) ??
-    "";
-  const maternalLastName =
-    getPayloadString(payload, ["maternalLastName", "secondLastName"]) ?? "";
-
-  const fullName = [firstName, paternalLastName, maternalLastName]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  if (fullName) {
-    return fullName;
-  }
-
-  return getPayloadString(payload, ["fullName"]) ?? `Postulación ${application.id.slice(0, 8)}`;
-}
-
-function getApplicationDisplayEmail(application: Application) {
-  return (
-    getPayloadString(application.payload ?? {}, [
-      "email",
-      "personalEmail",
-      "applicantEmail",
-      "guardian1Email",
-    ]) ?? `${application.id.slice(0, 8)}@sin-correo.local`
-  );
-}
-
-function getApplicationRegion(application: Application) {
-  return (
-    getPayloadString(application.payload ?? {}, [
-      "department",
-      "region",
-      "city",
-      "schoolRegion",
-    ]) ?? "Sin región"
-  );
-}
-
-function getApplicationInitials(application: Application) {
-  const name = getApplicationDisplayName(application)
-    .replace(/\s+/g, " ")
-    .trim();
-  const parts = name.split(" ").filter(Boolean);
-
-  if (parts.length === 0) {
-    return "AP";
-  }
-
-  return parts
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-}
-
-function getStageLabel(stage: StageCode) {
-  if (stage === "documents") {
-    return "Stage 1: Documentos";
-  }
-
-  return "Stage 2: Examen (placeholder)";
-}
-
-function getStageShortLabel(stage: StageCode) {
-  return stage === "documents" ? "Stage 1" : "Stage 2";
-}
-
-function getStatusDisplayLabel(status: Application["status"]) {
-  switch (status) {
-    case "draft":
-      return "Borrador";
-    case "submitted":
-      return "Submitted";
-    case "eligible":
-      return "Elegible";
-    case "ineligible":
-      return "No elegible";
-    case "advanced":
-      return "Avanzada";
-    default:
-      return status;
-  }
-}
-
-function getStatusPillClass(status: Application["status"]) {
-  if (status === "ineligible") {
-    return "rejected";
-  }
-
-  if (status === "draft") {
-    return "progress";
-  }
-
-  return "complete";
-}
-
 export function AdminDashboard({
   initialApplications,
   cycleTemplates,
@@ -211,9 +53,9 @@ export function AdminDashboard({
   initialApplications: Application[];
   cycleTemplates: CycleStageTemplate[];
   cycle: SelectionProcess;
-  initialWorkspaceSection?: "process_config" | "stages" | "applications" | "communications";
+  initialWorkspaceSection?: "process_config" | "stages" | "communications";
 }) {
-  const [applications, setApplications] = useState(initialApplications);
+  const applications = initialApplications;
   const [templates, setTemplates] = useState(cycleTemplates);
   const [error, setError] = useState<ApiError | null>(null);
   const [csvData, setCsvData] = useState(
@@ -240,35 +82,19 @@ export function AdminDashboard({
   const [processingTargetStatus, setProcessingTargetStatus] = useState<
     "queued" | "failed" | null
   >(null);
-  const [ocrLoadingApplicationId, setOcrLoadingApplicationId] = useState<
-    string | null
-  >(null);
-  const [selectedOcrApplicationId, setSelectedOcrApplicationId] = useState<
-    string | null
-  >(null);
-  const [ocrChecks, setOcrChecks] = useState<ApplicationOcrCheck[]>([]);
-  const [isOcrHistoryLoading, setIsOcrHistoryLoading] = useState(false);
-  const [stageFilter, setStageFilter] = useState<StageFilter>("all");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [eligibilityFilter, setEligibilityFilter] =
-    useState<EligibilityFilter>("all");
   const [activeSection, setActiveSection] = useState<
-    "process_config" | "stages" | "applications" | "communications"
+    "process_config" | "stages" | "communications"
   >(initialWorkspaceSection);
-  const [searchQuery, setSearchQuery] = useState("");
-  const deferredSearchQuery = useDeferredValue(searchQuery.trim().toLowerCase());
 
   const sections = [
     "process_config",
     "stages",
-    "applications",
     "communications",
   ] as const;
 
   const SECTION_LABELS: Record<(typeof sections)[number], string> = {
     process_config: "Reglas generales",
     stages: "Etapas",
-    applications: "Postulaciones",
     communications: "Comunicaciones y Examen",
   };
 
@@ -279,12 +105,6 @@ export function AdminDashboard({
           title: "Etapas del Proceso",
           description:
             "Configura plantillas, hitos y fechas por etapa para el flujo de selección.",
-          subnote: null as string | null,
-        };
-      case "applications":
-        return {
-          title: "Candidatos",
-          description: cycle.name,
           subnote: null as string | null,
         };
       case "communications":
@@ -304,7 +124,7 @@ export function AdminDashboard({
             "`Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1.",
         };
     }
-  }, [activeSection, cycle.name]);
+  }, [activeSection]);
 
   const showSummaryCards = activeSection === "process_config";
 
@@ -367,13 +187,6 @@ export function AdminDashboard({
     stage2CloseAt,
   ]);
 
-  const orderedApplications = useMemo(
-    () =>
-      [...applications].sort((a, b) =>
-        b.updated_at.localeCompare(a.updated_at),
-      ),
-    [applications],
-  );
   const statusRollup = useMemo(() => {
     const counts: Record<Application["status"], number> = {
       draft: 0,
@@ -389,105 +202,6 @@ export function AdminDashboard({
 
     return counts;
   }, [applications]);
-
-  const filteredApplications = useMemo(() => {
-    return orderedApplications.filter((application) => {
-      if (stageFilter !== "all" && application.stage_code !== stageFilter) {
-        return false;
-      }
-
-      if (statusFilter !== "all" && application.status !== statusFilter) {
-        return false;
-      }
-
-      if (
-        eligibilityFilter === "eligible" &&
-        application.status !== "eligible"
-      ) {
-        return false;
-      }
-
-      if (
-        eligibilityFilter === "ineligible" &&
-        application.status !== "ineligible"
-      ) {
-        return false;
-      }
-
-      if (
-        eligibilityFilter === "advanced" &&
-        application.status !== "advanced"
-      ) {
-        return false;
-      }
-
-      if (
-        eligibilityFilter === "pending" &&
-        application.status !== "draft" &&
-        application.status !== "submitted"
-      ) {
-        return false;
-      }
-
-      if (deferredSearchQuery) {
-        const payloadValues = Object.values(application.payload ?? {}).map((value) =>
-          String(value ?? "").toLowerCase(),
-        );
-        const searchableValues = [
-          application.id,
-          application.applicant_id,
-          application.stage_code,
-          application.status,
-          ...payloadValues,
-        ];
-
-        if (
-          !searchableValues.some((value) =>
-            value.toLowerCase().includes(deferredSearchQuery),
-          )
-        ) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [
-    deferredSearchQuery,
-    eligibilityFilter,
-    orderedApplications,
-    stageFilter,
-    statusFilter,
-  ]);
-  const exportCsvHref = useMemo(() => {
-    const query = new URLSearchParams({
-      cycleId: cycle.id,
-    });
-
-    if (stageFilter !== "all") {
-      query.set("stageCode", stageFilter);
-    }
-
-    if (statusFilter !== "all") {
-      query.set("status", statusFilter);
-    } else if (eligibilityFilter !== "all") {
-      query.set("eligibility", eligibilityFilter);
-    }
-
-    return `/api/exports?${query.toString()}`;
-  }, [cycle.id, eligibilityFilter, stageFilter, statusFilter]);
-
-  async function refreshData() {
-    const response = await fetch(`/api/applications?cycleId=${cycle.id}`);
-    const body = await response.json();
-
-    if (!response.ok) {
-      setError(body);
-      return;
-    }
-
-    setApplications(body.applications ?? []);
-  }
 
   async function refreshCommunications() {
     setError(null);
@@ -565,60 +279,6 @@ export function AdminDashboard({
     }
 
     setStatusMessage("Fechas del proceso actualizadas.");
-  }
-
-  async function validateApplication(
-    applicationId: string,
-    status: "eligible" | "ineligible",
-  ) {
-    setError(null);
-    setStatusMessage(null);
-
-    const response = await fetch(
-      `/api/applications/${applicationId}/validate`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, notes: "Revisión manual del comité." }),
-      },
-    );
-
-    const body = await response.json();
-
-    if (!response.ok) {
-      setError(body);
-      return;
-    }
-
-    setStatusMessage("Validación guardada.");
-    await refreshData();
-  }
-
-  async function transition(applicationId: string, toStage: StageCode) {
-    setError(null);
-    setStatusMessage(null);
-
-    const response = await fetch(
-      `/api/applications/${applicationId}/transition`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          toStage,
-          reason: "Cambio ejecutado desde panel admin.",
-        }),
-      },
-    );
-
-    const body = await response.json();
-
-    if (!response.ok) {
-      setError(body);
-      return;
-    }
-
-    setStatusMessage("Etapa actualizada.");
-    await refreshData();
   }
 
   async function importExamCsv() {
@@ -699,78 +359,6 @@ export function AdminDashboard({
     }
   }
 
-  async function loadOcrHistory(
-    applicationId: string,
-    options?: { forceOpen?: boolean },
-  ) {
-    setError(null);
-
-    if (!options?.forceOpen && selectedOcrApplicationId === applicationId) {
-      setSelectedOcrApplicationId(null);
-      setOcrChecks([]);
-      return;
-    }
-
-    setSelectedOcrApplicationId(applicationId);
-    setIsOcrHistoryLoading(true);
-
-    try {
-      const response = await fetch(
-        `/api/applications/${applicationId}/ocr-check?limit=10`,
-      );
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        setOcrChecks([]);
-        return;
-      }
-
-      setOcrChecks(body.checks ?? []);
-    } finally {
-      setIsOcrHistoryLoading(false);
-    }
-  }
-
-  async function runOcrValidation(application: Application) {
-    setError(null);
-    setStatusMessage(null);
-
-    const fileKey = getDefaultOcrFileKey(application);
-    if (!fileKey) {
-      setError({
-        message: "Esta postulación no tiene archivos para validar con OCR.",
-      });
-      return;
-    }
-
-    setOcrLoadingApplicationId(application.id);
-
-    try {
-      const response = await fetch(
-        `/api/applications/${application.id}/ocr-check`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileKey }),
-        },
-      );
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
-
-      setStatusMessage(
-        `OCR completado (${Math.round((body.confidence ?? 0) * 100)}% confianza).`,
-      );
-      await loadOcrHistory(application.id, { forceOpen: true });
-    } finally {
-      setOcrLoadingApplicationId(null);
-    }
-  }
-
   function updateTemplate(
     templateId: string,
     field: "stage_label" | "milestone_label",
@@ -806,9 +394,7 @@ export function AdminDashboard({
               d =
                 "stages" === a
                   ? `${templates.length}/6 plantillas configuradas`
-                  : "applications" === a
-                    ? `${filteredApplications.length} resultado(s) filtrados`
-                    : "communications" === a
+                  : "communications" === a
                       ? `${communicationSummary.total} registros`
                       : "Reglas y configuración";
             return (
@@ -822,7 +408,6 @@ export function AdminDashboard({
                     {
                       process_config: "⚙",
                       stages: "📋",
-                      applications: "👥",
                       communications: "✉",
                     }[a]
                   }
@@ -834,6 +419,16 @@ export function AdminDashboard({
               </button>
             );
           })}
+          <Link
+            href={`/admin/candidates?cycleId=${cycle.id}`}
+            className="stage-item"
+          >
+            <div className="stage-icon">{"👥"}</div>
+            <div className="stage-info">
+              <div className="stage-title">{"Postulaciones"}</div>
+                  <div className="stage-type">{`${applications.length} resultado(s) en el proceso`}</div>
+                </div>
+              </Link>
         </div>
       </aside>
       <main className="main">
@@ -872,7 +467,7 @@ export function AdminDashboard({
             </div>
           </div>
         </div>
-        <div className={`canvas-body ${activeSection === "applications" ? "full" : "wide"}`}>
+        <div className="canvas-body wide">
           {showSummaryCards ? (
             <div className="dashboard-grid">
               <div className="stat-card">
@@ -1059,314 +654,6 @@ export function AdminDashboard({
                 })}
               </div>
             </div>
-          ) : null}
-          {"applications" === activeSection ? (
-            <>
-              <div className="settings-card">
-                <div className="settings-card-header">
-                  <div className="admin-toolbar">
-                    <div>
-                      <h3>{"Postulaciones"}</h3>
-                    </div>
-                    <div className="admin-toolbar-actions">
-                      <a href={exportCsvHref} className="btn btn-outline">
-                        {"Exportar CSV filtrado"}
-                      </a>
-                      <button onClick={refreshData} className="btn btn-outline">
-                        {"Refrescar"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="candidates-toolbar admin-candidates-toolbar">
-                  <input
-                    type="text"
-                    className="search-input"
-                    placeholder="Buscar por nombre, email o documento..."
-                    value={searchQuery}
-                    onChange={(a) => setSearchQuery(a.target.value)}
-                  />
-                  <div className="filters-group admin-candidates-filters">
-                    <select
-                      className="filter-select"
-                      value={stageFilter}
-                      onChange={(a) => setStageFilter(a.target.value as StageFilter)}
-                    >
-                      <option value="all">{"Todas las etapas"}</option>
-                      <option value="documents">{"1. Documentos"}</option>
-                      <option value="exam_placeholder">{"2. Examen"}</option>
-                    </select>
-                    <select
-                      className="filter-select"
-                      value={statusFilter}
-                      onChange={(a) => {
-                        const b = a.target.value as StatusFilter;
-                        setStatusFilter(b);
-                        if (b !== "all") {
-                          setEligibilityFilter("all");
-                        }
-                      }}
-                    >
-                      <option value="all">{"Todos los estados"}</option>
-                      <option value="draft">{"Borrador"}</option>
-                      <option value="submitted">{"Enviada"}</option>
-                      <option value="eligible">{"Elegible"}</option>
-                      <option value="ineligible">{"No elegible"}</option>
-                      <option value="advanced">{"Avanzada"}</option>
-                    </select>
-                    <select
-                      className="filter-select"
-                      value={eligibilityFilter}
-                      onChange={(a) => {
-                        const b = a.target.value as EligibilityFilter;
-                        setEligibilityFilter(b);
-                        if (b !== "all") {
-                          setStatusFilter("all");
-                        }
-                      }}
-                    >
-                      <option value="all">{"Todas las elegibilidades"}</option>
-                      <option value="pending">{"Pendiente de decisión"}</option>
-                      <option value="eligible">{"Elegible"}</option>
-                      <option value="ineligible">{"No elegible"}</option>
-                      <option value="advanced">{"Avanzada"}</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="table-container">
-                  <table className="candidates-table admin-candidates-table">
-                    <thead>
-                      <tr>
-                        <th>{"Candidato"}</th>
-                        <th>{"Región"}</th>
-                        <th>{"Etapa actual"}</th>
-                        <th>{"Estado"}</th>
-                        <th>{"Última actividad"}</th>
-                        <th>{"Acciones"}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filteredApplications.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="admin-empty-cell">
-                            {"No hay postulaciones para los filtros seleccionados."}
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredApplications.map((a, index) => {
-                          const avatarToneClass =
-                            index % 3 === 0
-                              ? "tone-blue"
-                              : index % 3 === 1
-                                ? "tone-maroon"
-                                : "tone-green";
-
-                          return (
-                            <tr key={a.id}>
-                              <td>
-                                <div className="candidate-name">
-                                  <div className={`candidate-avatar ${avatarToneClass}`}>
-                                    {getApplicationInitials(a)}
-                                  </div>
-                                  <div>
-                                    <div>{getApplicationDisplayName(a)}</div>
-                                    <div className="candidate-email">
-                                      {getApplicationDisplayEmail(a)}
-                                    </div>
-                                    <div className="candidate-email admin-mono">
-                                      {a.id.slice(0, 8)}
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td>{getApplicationRegion(a)}</td>
-                              <td>
-                                <span className="status-pill progress admin-stage-pill">
-                                  {getStageLabel(a.stage_code)}
-                                </span>
-                              </td>
-                              <td>
-                                <span className={`status-pill ${getStatusPillClass(a.status)}`}>
-                                  {getStatusDisplayLabel(a.status)}
-                                </span>
-                              </td>
-                              <td>{new Date(a.updated_at).toLocaleString()}</td>
-                              <td>
-                                <div className="admin-application-actions">
-                                  <div className="admin-application-actions-row">
-                                    <button
-                                      className="btn btn-outline admin-btn-success"
-                                      onClick={() => validateApplication(a.id, "eligible")}
-                                    >
-                                      {"Elegible"}
-                                    </button>
-                                    <button
-                                      className="btn btn-outline admin-btn-warning"
-                                      onClick={() => validateApplication(a.id, "ineligible")}
-                                    >
-                                      {"No elegible"}
-                                    </button>
-                                  </div>
-
-                                  <div className="admin-application-actions-row">
-                                    <select
-                                      className="filter-select admin-inline-select"
-                                      value={a.stage_code}
-                                      onChange={(b) =>
-                                        transition(a.id, b.target.value as StageCode)
-                                      }
-                                    >
-                                      <option value="documents">{getStageShortLabel("documents")}</option>
-                                      <option
-                                        value="exam_placeholder"
-                                        disabled={
-                                          !canTransition({
-                                            fromStage: a.stage_code,
-                                            toStage: "exam_placeholder",
-                                            status: a.status,
-                                          })
-                                        }
-                                      >
-                                        {getStageShortLabel("exam_placeholder")}
-                                      </option>
-                                    </select>
-                                    <button
-                                      className="btn btn-ghost admin-maroon-text"
-                                      onClick={() => void loadOcrHistory(a.id)}
-                                    >
-                                      {selectedOcrApplicationId === a.id ? "Ocultar OCR" : "Ver OCR"}
-                                    </button>
-                                  </div>
-
-                                  <div className="admin-application-actions-row">
-                                    <button
-                                      className="btn btn-outline"
-                                      onClick={() => void runOcrValidation(a)}
-                                      disabled={
-                                        !getDefaultOcrFileKey(a) ||
-                                        ocrLoadingApplicationId === a.id
-                                      }
-                                    >
-                                      {ocrLoadingApplicationId === a.id ? "OCR..." : "OCR"}
-                                    </button>
-                                    <a
-                                      href={`/api/exports?applicationId=${a.id}`}
-                                      className="btn btn-ghost"
-                                    >
-                                      {"Exportar JSON"}
-                                    </a>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              {selectedOcrApplicationId ? (
-                <div
-                  className="settings-card"
-                  style={{
-                    marginTop: "24px",
-                  }}
-                >
-                  <div className="settings-card-header">
-                    <h3>{"Historial OCR"}</h3>
-                    <p>
-                      {"Postulación seleccionada: "}
-                      <span
-                        style={{
-                          fontFamily: "monospace",
-                        }}
-                      >
-                        {selectedOcrApplicationId.slice(0, 8)}
-                      </span>
-                    </p>
-                  </div>
-                  {isOcrHistoryLoading ? (
-                    <p
-                      style={{
-                        color: "var(--muted)",
-                      }}
-                    >
-                      {"Cargando historial OCR..."}
-                    </p>
-                  ) : 0 === ocrChecks.length ? (
-                    <p
-                      style={{
-                        color: "var(--muted)",
-                      }}
-                    >
-                      {"Aún no existen validaciones OCR para esta postulación."}
-                    </p>
-                  ) : (
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "12px",
-                      }}
-                    >
-                      {ocrChecks.map((a) => (
-                        <div
-                          key={a.id}
-                          style={{
-                            border: "1px solid var(--sand)",
-                            borderRadius: "var(--radius)",
-                            padding: "16px",
-                            background: "var(--paper)",
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              marginBottom: "8px",
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontFamily: "monospace",
-                                fontSize: "0.85rem",
-                              }}
-                            >
-                              {new Date(a.created_at).toLocaleString()}
-                            </span>
-                            <span className="status-pill complete">
-                              {"Confianza "}
-                              {Math.round(100 * a.confidence)}
-                              {"%"}
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              fontSize: "0.85rem",
-                              color: "var(--muted)",
-                              marginBottom: "8px",
-                            }}
-                          >
-                            {"Archivo: "}
-                            {a.file_key}
-                          </div>
-                          <p
-                            style={{
-                              fontSize: "0.9rem",
-                            }}
-                          >
-                            {a.summary}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </>
           ) : null}
           {"communications" === activeSection ? (
             <>

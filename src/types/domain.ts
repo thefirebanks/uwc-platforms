@@ -96,6 +96,7 @@ export interface CycleStageTemplate {
   milestone_label: string;
   due_at: string | null;
   ocr_prompt_template?: string | null;
+  admin_config?: Record<string, unknown> | null;
   sort_order: number;
   created_at: string;
 }

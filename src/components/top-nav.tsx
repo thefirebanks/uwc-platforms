@@ -87,7 +87,7 @@ export function TopNav({ role }: { role: AppRole }) {
             <button
               type="button"
               className="admin-topbar-avatar admin-topbar-avatar-btn"
-              aria-label={settingsLabel}
+              aria-label={language === "en" ? "Admin profile menu" : "Menú de perfil de admin"}
               aria-haspopup="dialog"
               aria-expanded={settingsOpen}
               aria-controls={settingsPopoverId}

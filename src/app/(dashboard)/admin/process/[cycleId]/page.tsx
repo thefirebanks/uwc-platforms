@@ -19,6 +19,13 @@ export default async function AdminProcessPage({
 
   const { cycleId } = await params;
   const resolvedSearchParams = (await searchParams) ?? {};
+  const requestedSection = Array.isArray(resolvedSearchParams.section)
+    ? resolvedSearchParams.section[0]
+    : resolvedSearchParams.section;
+
+  if (requestedSection === "applications") {
+    redirect(`/admin/candidates?cycleId=${cycleId}`);
+  }
   const supabase = await getSupabaseServerClient();
   const { data: cycle } = await supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle();
 
@@ -49,9 +56,7 @@ export default async function AdminProcessPage({
           ? "process_config"
           : resolvedSearchParams.section === "stages"
             ? "stages"
-            : resolvedSearchParams.section === "applications"
-              ? "applications"
-              : resolvedSearchParams.section === "communications"
+            : resolvedSearchParams.section === "communications"
                 ? "communications"
                 : "process_config"
       }

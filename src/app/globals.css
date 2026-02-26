@@ -187,15 +187,23 @@ a {
 /* ─── Buttons ─── */
 .btn {
   padding: 8px 16px; font-family: var(--font-body); font-size: 0.82rem; font-weight: 500; border-radius: var(--radius);
-  cursor: pointer; transition: all 0.2s; border: none; display: inline-flex; align-items: center; gap: 6px; justify-content: center;
+  cursor: pointer; transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease; border: none; display: inline-flex; align-items: center; gap: 6px; justify-content: center;
 }
 .btn-primary { background: var(--maroon); color: white; }
-.btn-primary:hover { background: var(--maroon-dark); }
+.btn-primary:hover { background: var(--maroon-dark); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
 .btn-ghost { background: transparent; color: var(--ink-light); }
 .btn-ghost:hover { background: var(--cream); color: var(--ink); }
 .btn-outline { background: var(--surface); border: 1px solid var(--sand); color: var(--ink); }
-.btn-outline:hover { background: var(--sand-light); }
-.btn-icon { padding: 6px; color: var(--muted); border-radius: 6px; background: transparent; border: none; cursor: pointer; transition: all 0.15s; }
+.btn-outline:hover { background: var(--sand-light); transform: translateY(-1px); }
+.btn-icon {
+  padding: 6px;
+  color: var(--muted);
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, opacity 0.15s ease;
+}
 .btn-icon:hover { background: var(--cream); color: var(--ink); }
 .btn-icon.danger:hover { background: var(--danger-soft); color: var(--danger); }
 
@@ -213,9 +221,9 @@ a {
 .sidebar-nav { padding: 12px 0; flex: 1; overflow-y: auto; }
 .stage-item {
   display: flex; align-items: center; gap: 12px; padding: 10px 20px; cursor: pointer; border: none; background: none;
-  width: 100%; text-align: left; font-family: var(--font-body); transition: all 0.15s ease; position: relative;
+  width: 100%; text-align: left; font-family: var(--font-body); transition: background-color 0.16s ease, transform 0.16s ease; position: relative;
 }
-.stage-item:hover { background: var(--sand-light); }
+.stage-item:hover { background: var(--sand-light); transform: translateX(2px); }
 .stage-item.active { background: var(--maroon-soft); }
 .stage-item.active::before { content: ''; position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px; border-radius: 0 3px 3px 0; background: var(--maroon); }
 .stage-item .stage-icon {
@@ -245,7 +253,7 @@ a {
 .page-tabs { display: flex; gap: 24px; margin-top: 16px; }
 .page-tab {
   padding: 12px 0; font-size: 0.85rem; font-weight: 500; color: var(--muted); border: none; background: none;
-  cursor: pointer; border-bottom: 2px solid transparent; transition: all 0.2s; margin-bottom: -1px;
+  cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.2s ease, border-color 0.2s ease; margin-bottom: -1px;
 }
 .page-tab:hover { color: var(--ink); }
 .page-tab.active { color: var(--maroon); border-bottom-color: var(--maroon); }
@@ -281,7 +289,9 @@ a {
 .process-list-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
 .process-card {
   background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); padding: 24px;
-  display: flex; align-items: center; justify-content: space-between; transition: all 0.2s; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+  cursor: pointer;
 }
 .process-card:hover { border-color: var(--maroon); box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .process-card-left { display: flex; align-items: center; gap: 20px; }
@@ -317,6 +327,21 @@ a {
 .candidates-table td { padding: 16px 20px; font-size: 0.85rem; color: var(--ink); border-bottom: 1px solid var(--sand-light); vertical-align: middle; }
 .candidates-table tr:last-child td { border-bottom: none; }
 .candidates-table tr:hover td { background: var(--cream); }
+.admin-candidate-row {
+  scroll-margin-top: 112px;
+}
+.admin-candidate-row td {
+  transition: background-color 0.28s ease, box-shadow 0.28s ease;
+}
+.admin-candidate-row.is-focused td {
+  background: color-mix(in srgb, var(--maroon-soft) 72%, white);
+}
+.admin-candidate-row.is-focused td:first-child {
+  box-shadow: inset 3px 0 0 var(--maroon);
+}
+.admin-candidate-row.is-focused {
+  animation: candidateRowFlash 1.35s ease-out 1;
+}
 .candidate-name { font-weight: 500; display: flex; align-items: center; gap: 12px; }
 .candidate-avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--blue-soft); color: var(--blue); display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; }
 .candidate-email { font-size: 0.75rem; color: var(--muted); font-weight: 400; margin-top: 2px; }
@@ -332,9 +357,33 @@ a {
 }
 .builder-section-title::after { content: ''; flex: 1; height: 1px; background: var(--sand); }
 .field-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+.btn-sm { padding: 8px 12px; font-size: 0.75rem; }
+.admin-stage-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.admin-stage-editor-toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 
 /* Field Card (Viewing Mode) */
-.field-card { background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius); transition: all 0.2s; display: flex; flex-direction: column; }
+.field-card {
+  background: var(--surface);
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+  display: flex;
+  flex-direction: column;
+}
+.admin-stage-editor-view .field-card {
+  content-visibility: auto;
+  contain-intrinsic-size: 84px;
+}
 .field-card:hover { border-color: var(--muted); }
 .field-header { display: flex; align-items: center; padding: 12px 16px; gap: 12px; cursor: pointer; }
 .drag-handle { color: var(--muted); cursor: grab; padding: 4px; opacity: 0.5; transition: opacity 0.2s; display: flex; align-items: center; }
@@ -365,7 +414,8 @@ a {
 .form-field label { font-size: 0.8rem; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
 .form-field input[type="text"], .form-field input[type="date"], .form-field select, .form-field textarea {
   width: 100%; padding: 10px 14px; font-family: var(--font-body); font-size: 0.85rem; color: var(--ink); background: var(--surface);
-  border: 1.5px solid var(--sand); border-radius: var(--radius); outline: none; transition: all 0.15s;
+  border: 1.5px solid var(--sand); border-radius: var(--radius); outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 .form-field input:focus, .form-field select:focus, .form-field textarea:focus { border-color: var(--maroon); box-shadow: 0 0 0 3px rgba(154,37,69,0.08); }
 .form-field .hint { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
@@ -388,15 +438,60 @@ input:checked + .slider:before { transform: translateX(18px); }
 
 .add-field-btn {
   width: 100%; padding: 16px; border: 1.5px dashed var(--sand); border-radius: var(--radius); background: var(--surface);
-  color: var(--ink-light); font-family: var(--font-body); font-size: 0.85rem; font-weight: 500; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px;
+  color: var(--ink-light); font-family: var(--font-body); font-size: 0.85rem; font-weight: 500; cursor: pointer;
+  transition: border-color 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
   margin-top: 12px;
 }
 .add-field-btn:hover { border-color: var(--maroon); background: var(--maroon-soft); color: var(--maroon); }
+
+.admin-stage-section-add-field {
+  margin-top: 28px;
+  margin-bottom: 24px;
+}
+.admin-stage-section-add-field.compact {
+  margin: 0;
+  width: auto;
+  min-width: 220px;
+  padding: 10px 14px;
+}
+
+.admin-stage-empty-add-field {
+  margin-top: 16px;
+  margin-bottom: 10px;
+}
+
+.admin-stage-collapsed-section {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 1px dashed var(--sand);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 14px 16px;
+  margin-bottom: 8px;
+}
+.admin-stage-collapsed-section-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.admin-stage-collapsed-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 
 .admin-stage-section-placeholder {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  content-visibility: auto;
+  contain-intrinsic-size: 180px;
 }
 
 .admin-stage-empty-section-card {
@@ -437,6 +532,34 @@ input:checked + .slider:before { transform: translateX(18px); }
 .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+@keyframes candidateRowFlash {
+  0% { box-shadow: inset 0 0 0 0 rgba(154, 37, 69, 0.2); }
+  30% { box-shadow: inset 0 0 0 2px rgba(154, 37, 69, 0.28); }
+  100% { box-shadow: inset 0 0 0 0 rgba(154, 37, 69, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view.active,
+  .tab-content.active,
+  .admin-candidate-row.is-focused {
+    animation: none !important;
+  }
+
+  .btn,
+  .stage-item,
+  .page-tab,
+  .field-card,
+  .admin-candidate-row td {
+    transition: none !important;
+  }
+
+  .btn-primary:hover,
+  .btn-outline:hover,
+  .stage-item:hover {
+    transform: none !important;
+  }
+}
 
 /* ─── Admin polish (scoped) ─── */
 .admin-shell {
@@ -965,6 +1088,19 @@ input:checked + .slider:before { transform: translateX(18px); }
   margin-top: 10px;
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+.admin-stage-save-scope {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+  font-size: 0.76rem;
+  color: var(--ink-light);
+}
+
+.admin-stage-save-scope strong {
+  color: var(--ink);
+  font-weight: 600;
 }
 
 .admin-stage-template-list {

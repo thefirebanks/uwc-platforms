@@ -5,7 +5,7 @@ import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
-import type { Database } from "@/types/supabase";
+import type { Database, Json } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
 type StageAutomationRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
@@ -32,14 +32,121 @@ const automationSchema = z.object({
   templateBody: z.string().min(10).max(4000),
 });
 
+const settingsSchema = z.object({
+  stageName: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(500).nullable().optional(),
+  openDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  closeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  previousStageRequirement: z.string().min(1).max(160),
+  blockIfPreviousNotMet: z.boolean(),
+});
+
+const customSectionSchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  title: z.string().trim().min(1).max(120),
+  order: z.number().int().min(1).max(500),
+});
+
 const patchSchema = z.object({
   fields: z.array(fieldSchema),
   automations: z.array(automationSchema),
   ocrPromptTemplate: z.string().max(5000).nullable().optional(),
+  settings: settingsSchema.optional(),
+  customSections: z.array(customSectionSchema).optional(),
+  fieldSectionAssignments: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
 });
 
 const cycleIdSchema = z.string().uuid();
 const stageIdentifierSchema = z.string().min(1).max(160);
+
+function toIsoDateBoundary(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  return new Date(`${value}T00:00:00.000Z`).toISOString();
+}
+
+function parseStageAdminConfig(value: Json | null | undefined) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+
+  const record = value as Record<string, Json | undefined>;
+  const customSections = Array.isArray(record.customSections)
+    ? record.customSections.flatMap((item, index) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) {
+          return [];
+        }
+
+        const section = item as Record<string, Json | undefined>;
+        if (typeof section.id !== "string" || !section.id.trim()) {
+          return [];
+        }
+
+        return [
+          {
+            id: section.id.trim(),
+            title:
+              typeof section.title === "string" && section.title.trim()
+                ? section.title.trim()
+                : "Nueva sección",
+            order:
+              typeof section.order === "number" && Number.isFinite(section.order)
+                ? Math.max(1, Math.trunc(section.order))
+                : index + 1,
+          },
+        ];
+      })
+    : [];
+
+  const normalizedCustomSections = customSections
+    .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
+    .map((section, index) => ({ ...section, order: index + 1 }));
+  const allowedCustomSectionIds = new Set(normalizedCustomSections.map((section) => section.id));
+  const fieldSectionAssignments =
+    record.fieldSectionAssignments &&
+    typeof record.fieldSectionAssignments === "object" &&
+    !Array.isArray(record.fieldSectionAssignments)
+      ? Object.fromEntries(
+          Object.entries(record.fieldSectionAssignments as Record<string, Json>).flatMap(
+            ([fieldKey, sectionId]) => {
+              if (
+                typeof sectionId !== "string" ||
+                !fieldKey.trim() ||
+                !sectionId.trim() ||
+                !allowedCustomSectionIds.has(sectionId.trim())
+              ) {
+                return [];
+              }
+
+              return [[fieldKey.trim(), sectionId.trim()]];
+            },
+          ),
+        )
+      : {};
+
+  return {
+    stageName:
+      typeof record.stageName === "string" ? record.stageName : null,
+    description:
+      typeof record.description === "string" ? record.description : null,
+    openDate:
+      typeof record.openDate === "string" ? record.openDate : null,
+    closeDate:
+      typeof record.closeDate === "string" ? record.closeDate : null,
+    previousStageRequirement:
+      typeof record.previousStageRequirement === "string"
+        ? record.previousStageRequirement
+        : null,
+    blockIfPreviousNotMet:
+      typeof record.blockIfPreviousNotMet === "boolean"
+        ? record.blockIfPreviousNotMet
+        : null,
+    customSections: normalizedCustomSections,
+    fieldSectionAssignments,
+  };
+}
 
 async function ensureCycleExists({
   cycleId,
@@ -163,7 +270,7 @@ export async function GET(
           .order("created_at", { ascending: true }),
         supabase
           .from("cycle_stage_templates")
-          .select("id, ocr_prompt_template")
+          .select("id, stage_label, due_at, ocr_prompt_template, admin_config")
           .eq("id", stageTemplate.id)
           .eq("cycle_id", cycleId)
           .maybeSingle(),
@@ -195,11 +302,28 @@ export async function GET(
         })
       : rawFields;
 
+    const parsedAdminConfig = parseStageAdminConfig(
+      (templateData as (Pick<StageTemplateRow, "admin_config"> & Pick<StageTemplateRow, "stage_label" | "due_at" | "ocr_prompt_template">) | null)
+        ?.admin_config ?? null,
+    );
+
     return NextResponse.json({
       fields,
       automations: (automationsData as StageAutomationRow[] | null) ?? [],
       ocrPromptTemplate:
         ((templateData as Pick<StageTemplateRow, "ocr_prompt_template"> | null)?.ocr_prompt_template ?? null),
+      settings: {
+        stageName:
+          parsedAdminConfig.stageName ??
+          ((templateData as Pick<StageTemplateRow, "stage_label"> | null)?.stage_label ?? stageTemplate.stage_label),
+        description: parsedAdminConfig.description ?? "",
+        openDate: parsedAdminConfig.openDate ?? null,
+        closeDate: parsedAdminConfig.closeDate ?? null,
+        previousStageRequirement: parsedAdminConfig.previousStageRequirement ?? "none",
+        blockIfPreviousNotMet: parsedAdminConfig.blockIfPreviousNotMet ?? false,
+      },
+      customSections: parsedAdminConfig.customSections ?? [],
+      fieldSectionAssignments: parsedAdminConfig.fieldSectionAssignments ?? {},
     });
   }, { operation: "cycles.stage_config.get" });
 }
@@ -243,6 +367,38 @@ export async function PATCH(
       supabase,
     });
     const stageCode = stageTemplate.stage_code;
+    const parsedExistingAdminConfig = parseStageAdminConfig(stageTemplate.admin_config ?? null);
+    const incomingSettings = parsed.data.settings
+      ? {
+          stageName: parsed.data.settings.stageName.trim(),
+          description: (parsed.data.settings.description ?? "").trim(),
+          openDate: parsed.data.settings.openDate ?? null,
+          closeDate: parsed.data.settings.closeDate ?? null,
+          previousStageRequirement: parsed.data.settings.previousStageRequirement,
+          blockIfPreviousNotMet: parsed.data.settings.blockIfPreviousNotMet,
+        }
+      : {
+          stageName: stageTemplate.stage_label,
+          description: parsedExistingAdminConfig.description ?? "",
+          openDate: parsedExistingAdminConfig.openDate ?? null,
+          closeDate: parsedExistingAdminConfig.closeDate ?? null,
+          previousStageRequirement:
+            parsedExistingAdminConfig.previousStageRequirement ?? "none",
+          blockIfPreviousNotMet:
+            parsedExistingAdminConfig.blockIfPreviousNotMet ?? false,
+        };
+
+    const incomingCustomSections = (parsed.data.customSections ??
+      parsedExistingAdminConfig.customSections ??
+      [])
+      .map((section) => ({
+        id: section.id.trim(),
+        title: section.title.trim() || "Nueva sección",
+        order: Math.max(1, Math.trunc(section.order)),
+      }))
+      .filter((section) => section.id.length > 0)
+      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
+      .map((section, index) => ({ ...section, order: index + 1 }));
 
     const normalizedKeys = parsed.data.fields.map((field) => field.fieldKey.trim());
     if (new Set(normalizedKeys).size !== normalizedKeys.length) {
@@ -252,6 +408,32 @@ export async function PATCH(
         status: 400,
       });
     }
+
+    const incomingFieldKeysSet = new Set(normalizedKeys);
+    const incomingCustomSectionIdSet = new Set(
+      incomingCustomSections.map((section) => section.id),
+    );
+    const incomingFieldSectionAssignments = Object.fromEntries(
+      Object.entries(
+        parsed.data.fieldSectionAssignments ??
+          parsedExistingAdminConfig.fieldSectionAssignments ??
+          {},
+      ).flatMap(([fieldKey, sectionId]) => {
+        const normalizedFieldKey = fieldKey.trim();
+        const normalizedSectionId = sectionId.trim();
+
+        if (
+          !normalizedFieldKey ||
+          !normalizedSectionId ||
+          !incomingFieldKeysSet.has(normalizedFieldKey) ||
+          !incomingCustomSectionIdSet.has(normalizedSectionId)
+        ) {
+          return [];
+        }
+
+        return [[normalizedFieldKey, normalizedSectionId]];
+      }),
+    );
 
     const automationKeys = parsed.data.automations.map(
       (automation) => `${automation.triggerEvent}:${automation.channel}`,
@@ -379,6 +561,69 @@ export async function PATCH(
       });
     }
 
+    let savedCycleOpenDate: string | null = incomingSettings.openDate;
+    let savedCycleCloseDate: string | null = incomingSettings.closeDate;
+
+    if (parsed.data.settings && (stageCode === "documents" || stageCode === "exam_placeholder")) {
+      const cycleDatePatch =
+        stageCode === "documents"
+          ? {
+              stage1_open_at: toIsoDateBoundary(incomingSettings.openDate),
+              stage1_close_at: toIsoDateBoundary(incomingSettings.closeDate),
+            }
+          : {
+              stage2_open_at: toIsoDateBoundary(incomingSettings.openDate),
+              stage2_close_at: toIsoDateBoundary(incomingSettings.closeDate),
+            };
+
+      const { data: savedCycleData, error: savedCycleError } = await supabase
+        .from("cycles")
+        .update(cycleDatePatch)
+        .eq("id", cycleId)
+        .select("stage1_open_at, stage1_close_at, stage2_open_at, stage2_close_at")
+        .maybeSingle();
+
+      if (savedCycleError) {
+        throw new AppError({
+          message: "Failed saving cycle stage dates",
+          userMessage: "No se pudieron guardar las fechas de la etapa.",
+          status: 500,
+          details: savedCycleError,
+        });
+      }
+
+      if (savedCycleData) {
+        savedCycleOpenDate =
+          stageCode === "documents"
+            ? (savedCycleData.stage1_open_at?.slice(0, 10) ?? null)
+            : (savedCycleData.stage2_open_at?.slice(0, 10) ?? null);
+        savedCycleCloseDate =
+          stageCode === "documents"
+            ? (savedCycleData.stage1_close_at?.slice(0, 10) ?? null)
+            : (savedCycleData.stage2_close_at?.slice(0, 10) ?? null);
+      }
+    }
+
+    const nextAdminConfig: Record<string, Json> = {
+      ...(typeof stageTemplate.admin_config === "object" &&
+      stageTemplate.admin_config &&
+      !Array.isArray(stageTemplate.admin_config)
+        ? (stageTemplate.admin_config as Record<string, Json>)
+        : {}),
+      stageName: incomingSettings.stageName,
+      description: incomingSettings.description,
+      openDate:
+        (parsed.data.settings ? incomingSettings.openDate : parsedExistingAdminConfig.openDate) ??
+        null,
+      closeDate:
+        (parsed.data.settings ? incomingSettings.closeDate : parsedExistingAdminConfig.closeDate) ??
+        null,
+      previousStageRequirement: incomingSettings.previousStageRequirement,
+      blockIfPreviousNotMet: incomingSettings.blockIfPreviousNotMet,
+      customSections: incomingCustomSections as unknown as Json,
+      fieldSectionAssignments: incomingFieldSectionAssignments as unknown as Json,
+    };
+
     const [{ data: savedFieldsData, error: savedFieldsError }, { data: savedAutomationsData, error: savedAutomationsError }] =
       await Promise.all([
         supabase
@@ -398,14 +643,17 @@ export async function PATCH(
     const { data: savedTemplateData, error: savedTemplateError } = await supabase
       .from("cycle_stage_templates")
       .update({
+        stage_label: parsed.data.settings ? incomingSettings.stageName : stageTemplate.stage_label,
+        due_at: parsed.data.settings ? toIsoDateBoundary(incomingSettings.closeDate) : stageTemplate.due_at,
         ocr_prompt_template:
           parsed.data.ocrPromptTemplate && parsed.data.ocrPromptTemplate.trim().length > 0
             ? parsed.data.ocrPromptTemplate.trim()
             : null,
+        admin_config: nextAdminConfig,
       })
       .eq("cycle_id", cycleId)
       .eq("id", stageTemplate.id)
-      .select("id, ocr_prompt_template")
+      .select("id, stage_label, due_at, ocr_prompt_template, admin_config")
       .maybeSingle();
 
     if (savedFieldsError) {
@@ -437,7 +685,10 @@ export async function PATCH(
 
     const savedFields = (savedFieldsData as StageFieldRow[] | null) ?? [];
     const savedAutomations = (savedAutomationsData as StageAutomationRow[] | null) ?? [];
-    const savedTemplate = (savedTemplateData as Pick<StageTemplateRow, "ocr_prompt_template"> | null) ?? null;
+    const savedTemplate =
+      (savedTemplateData as Pick<StageTemplateRow, "stage_label" | "due_at" | "ocr_prompt_template" | "admin_config"> | null) ??
+      null;
+    const savedAdminConfig = parseStageAdminConfig(savedTemplate?.admin_config ?? null);
 
     await recordAuditEvent({
       supabase,
@@ -449,6 +700,7 @@ export async function PATCH(
         stageCode,
         fieldsSaved: savedFields.length,
         automationsSaved: savedAutomations.length,
+        stageSettingsSaved: Boolean(parsed.data.settings),
         hasOcrPromptTemplate: Boolean(savedTemplate?.ocr_prompt_template),
       },
       requestId,
@@ -458,6 +710,24 @@ export async function PATCH(
       fields: savedFields.sort((a, b) => a.sort_order - b.sort_order),
       automations: savedAutomations,
       ocrPromptTemplate: savedTemplate?.ocr_prompt_template ?? null,
+      settings: {
+        stageName: savedAdminConfig.stageName ?? savedTemplate?.stage_label ?? incomingSettings.stageName,
+        description: savedAdminConfig.description ?? "",
+        openDate:
+          (stageCode === "documents" || stageCode === "exam_placeholder"
+            ? savedCycleOpenDate
+            : (savedAdminConfig.openDate ?? incomingSettings.openDate)) ?? null,
+        closeDate:
+          (stageCode === "documents" || stageCode === "exam_placeholder"
+            ? savedCycleCloseDate
+            : (savedAdminConfig.closeDate ?? incomingSettings.closeDate)) ?? null,
+        previousStageRequirement:
+          savedAdminConfig.previousStageRequirement ?? incomingSettings.previousStageRequirement,
+        blockIfPreviousNotMet:
+          savedAdminConfig.blockIfPreviousNotMet ?? incomingSettings.blockIfPreviousNotMet,
+      },
+      customSections: savedAdminConfig.customSections ?? [],
+      fieldSectionAssignments: savedAdminConfig.fieldSectionAssignments ?? {},
     });
   }, { operation: "cycles.stage_config.patch" });
 }

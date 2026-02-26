@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   getSubGroupsForSection,
   isBooleanField,
-  type SubGroupDef,
 } from "@/lib/stages/field-sub-groups";
 import type { ApplicantFormSectionId } from "@/lib/stages/applicant-sections";
 

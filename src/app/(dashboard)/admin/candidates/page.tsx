@@ -45,7 +45,15 @@ function getCandidateRegion(application: Application) {
   );
 }
 
-export default async function AdminCandidatesPage() {
+export default async function AdminCandidatesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{
+    cycleId?: string | string[];
+    q?: string | string[];
+    applicationId?: string | string[];
+  }>;
+}) {
   const profile = await getSessionProfileOrRedirect();
 
   if (profile.role !== "admin") {
@@ -69,6 +77,26 @@ export default async function AdminCandidatesPage() {
   }));
 
   const activeCycle = cycles.find((cycle) => cycle.is_active) ?? cycles[0] ?? null;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const requestedCycleId = Array.isArray(resolvedSearchParams.cycleId)
+    ? resolvedSearchParams.cycleId[0]
+    : resolvedSearchParams.cycleId;
+  const requestedSearch = Array.isArray(resolvedSearchParams.q)
+    ? resolvedSearchParams.q[0]
+    : resolvedSearchParams.q;
+  const requestedApplicationId = Array.isArray(resolvedSearchParams.applicationId)
+    ? resolvedSearchParams.applicationId[0]
+    : resolvedSearchParams.applicationId;
+  const normalizedRequestedSearch =
+    typeof requestedSearch === "string" &&
+    requestedSearch.length > 0 &&
+    requestedSearch !== requestedApplicationId
+      ? requestedSearch
+      : "";
+  const initialCycleId =
+    requestedCycleId && cycleOptions.some((cycle) => cycle.id === requestedCycleId)
+      ? requestedCycleId
+      : (activeCycle?.id ?? "all");
 
   const rows: AdminCandidateRow[] = applications
     .filter((application) => cycleById.has(application.cycle_id))
@@ -92,7 +120,9 @@ export default async function AdminCandidatesPage() {
     <AdminCandidatesDashboard
       cycleOptions={cycleOptions}
       initialRows={rows}
-      defaultCycleId={activeCycle?.id ?? "all"}
+      defaultCycleId={initialCycleId}
+      defaultSearch={normalizedRequestedSearch}
+      focusApplicationId={typeof requestedApplicationId === "string" ? requestedApplicationId : ""}
     />
   );
 }
