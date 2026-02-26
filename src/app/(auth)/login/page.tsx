@@ -28,7 +28,9 @@ const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isResettingDemo, setIsResettingDemo] = useState(false);
   const [modeHint, setModeHint] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,6 +41,7 @@ export default function LoginPage() {
 
   async function loginWithGoogle() {
     setError(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
 
     try {
@@ -69,6 +72,7 @@ export default function LoginPage() {
     }
 
     setError(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
 
     try {
@@ -98,6 +102,38 @@ export default function LoginPage() {
     }
   }
 
+  async function resetDemoApplicantSubmission() {
+    setError(null);
+    setSuccessMessage(null);
+    setIsResettingDemo(true);
+
+    try {
+      const response = await fetch("/api/dev/reset-demo-applicant", {
+        method: "POST",
+      });
+      const body = (await response.json().catch(() => null)) as
+        | { message?: string; deletedByTable?: Record<string, number>; storage?: { warning?: string | null } }
+        | null;
+
+      if (!response.ok) {
+        setError(body?.message ?? "No se pudo reiniciar la postulación demo.");
+        return;
+      }
+
+      const deletedApplications = body?.deletedByTable?.applications ?? 0;
+      const storageWarning = body?.storage?.warning;
+      setSuccessMessage(
+        storageWarning
+          ? `Postulación demo reiniciada (${deletedApplications} postulación/es). Nota de almacenamiento: ${storageWarning}`
+          : `Postulación demo reiniciada (${deletedApplications} postulación/es). Ya puedes entrar como postulante demo y empezar desde cero.`,
+      );
+    } catch {
+      setError("Error inesperado al reiniciar la postulación demo.");
+    } finally {
+      setIsResettingDemo(false);
+    }
+  }
+
   return (
     <Container maxWidth="sm" sx={{ py: 10 }}>
       <Stack direction="row" justifyContent="flex-end" sx={{ mb: 2 }}>
@@ -117,6 +153,7 @@ export default function LoginPage() {
             ) : null}
 
             {error ? <Alert severity="error">{error}</Alert> : null}
+            {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
 
             <Button
               onClick={loginWithGoogle}
@@ -137,18 +174,27 @@ export default function LoginPage() {
                   <Button
                     variant="outlined"
                     onClick={() => loginWithDemo("admin")}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isResettingDemo}
                   >
                     Entrar como admin demo
                   </Button>
                   <Button
                     variant="outlined"
                     onClick={() => loginWithDemo("applicant")}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isResettingDemo}
                   >
                     Entrar como postulante demo
                   </Button>
                 </Stack>
+                <Button
+                  variant="text"
+                  color="inherit"
+                  onClick={resetDemoApplicantSubmission}
+                  disabled={isSubmitting || isResettingDemo}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  {isResettingDemo ? "Reiniciando postulación demo..." : "Reiniciar postulación demo"}
+                </Button>
               </>
             ) : null}
           </Stack>

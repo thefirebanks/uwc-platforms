@@ -4,6 +4,7 @@ import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { CycleStageField, CycleStageTemplate } from "@/types/domain";
 import { buildDefaultCycleStageFields } from "@/lib/stages/templates";
+import { parseStageAdminConfig } from "@/lib/stages/stage-admin-config";
 
 export default async function AdminStagePreviewPage({
   params,
@@ -65,6 +66,7 @@ export default async function AdminStagePreviewPage({
           created_at: new Date().toISOString(),
         }))
       : [];
+  const parsedAdminConfig = parseStageAdminConfig(selectedTemplate.admin_config ?? null);
 
   return (
     <AdminStageFormPreview
@@ -74,6 +76,8 @@ export default async function AdminStagePreviewPage({
       stageCode={selectedTemplate.stage_code}
       stageLabel={selectedTemplate.stage_label}
       fields={(fieldsData as CycleStageField[] | null) ?? fallbackFields}
+      customSections={parsedAdminConfig.customSections}
+      fieldSectionAssignments={parsedAdminConfig.fieldSectionAssignments}
     />
   );
 }

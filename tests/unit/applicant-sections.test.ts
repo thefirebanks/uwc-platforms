@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { classifyApplicantFieldKey, groupApplicantFormFields } from "@/lib/stages/applicant-sections";
+import {
+  classifyApplicantFieldKey,
+  groupApplicantFormFields,
+  groupApplicantFormFieldsWithCustomSections,
+} from "@/lib/stages/applicant-sections";
 import type { CycleStageField } from "@/types/domain";
 
 function makeField(fieldKey: string): CycleStageField {
@@ -52,5 +56,40 @@ describe("groupApplicantFormFields", () => {
       "documents",
       "other",
     ]);
+  });
+});
+
+describe("groupApplicantFormFieldsWithCustomSections", () => {
+  it("inserts custom sections before 'other' and moves assigned fields into them", () => {
+    const sections = groupApplicantFormFieldsWithCustomSections(
+      [
+        makeField("fullName"),
+        makeField("customFutureField"),
+        makeField("schoolCustom171"),
+      ],
+      {
+        customSections: [{ id: "qa", title: "QA", order: 1 }],
+        fieldSectionAssignments: {
+          customFutureField: "qa",
+        },
+      },
+    );
+
+    expect(sections.map((section) => section.id)).toEqual([
+      "identity",
+      "school",
+      "custom:qa",
+    ]);
+    expect(sections.find((section) => section.id === "custom:qa")?.fields.map((field) => field.field_key))
+      .toEqual(["customFutureField"]);
+  });
+
+  it("omits eligibility when requested", () => {
+    const sections = groupApplicantFormFieldsWithCustomSections(
+      [makeField("eligibilityBirthYear"), makeField("fullName")],
+      { omitEligibility: true },
+    );
+
+    expect(sections.map((section) => section.id)).toEqual(["identity"]);
   });
 });

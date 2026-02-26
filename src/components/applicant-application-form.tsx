@@ -28,10 +28,11 @@ import { ErrorCallout } from "@/components/error-callout";
 import { validateStagePayload } from "@/lib/stages/form-schema";
 import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
 import {
-  groupApplicantFormFields,
-  type ApplicantFormSection,
+  groupApplicantFormFieldsWithCustomSections,
   type ApplicantFormSectionId,
+  type ApplicantFormResolvedSection,
 } from "@/lib/stages/applicant-sections";
+import type { PersistedCustomSection } from "@/lib/stages/stage-admin-config";
 import { getSubGroupsForSection, isBooleanField, getBooleanFieldLabels, type SubGroupDef } from "@/lib/stages/field-sub-groups";
 
 interface ApiError {
@@ -68,17 +69,19 @@ type ApplicationFileValue =
 const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
 type ProgressState = "complete" | "in_progress" | "not_started";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
-type WizardSectionId =
+type StaticWizardSectionId =
   | "prep_intro"
   | ApplicantFormSectionId
   | "documents_uploads"
   | "recommenders_flow"
   | "review_submit";
+type CustomWizardSectionId = `custom:${string}`;
+type WizardSectionId = StaticWizardSectionId | CustomWizardSectionId;
 
 const PREP_SECTION_ID = "prep_intro" as const;
 const SIDEBAR_VISIBILITY_STORAGE_KEY = "uwc:applicant-sidebar-hidden";
 
-const SECTION_TITLES_ES: Record<WizardSectionId, string> = {
+const SECTION_TITLES_ES: Record<StaticWizardSectionId, string> = {
   prep_intro: "Antes de empezar",
   eligibility: "Elegibilidad",
   identity: "Datos personales",
@@ -93,7 +96,7 @@ const SECTION_TITLES_ES: Record<WizardSectionId, string> = {
   review_submit: "Revisión y envío",
 };
 
-const SECTION_TITLES_EN: Record<WizardSectionId, string> = {
+const SECTION_TITLES_EN: Record<StaticWizardSectionId, string> = {
   prep_intro: "Before you start",
   eligibility: "Eligibility",
   identity: "Personal details",
@@ -130,40 +133,6 @@ const ENGLISH_FIELD_LABEL_BY_KEY: Record<string, string> = {
   priorUwcPeruSelectionParticipation: "Previously participated in UWC Peru selection?",
   otherCountrySelection2025: "Participated in another country's selection in 2025?",
   uwcDiscoveryChannel: "How did you first hear about UWC?",
-};
-
-const SPANISH_FIELD_LABEL_BY_KEY: Partial<Record<string, string>> = {
-  firstName: "Nombre(s)",
-  dateOfBirth: "Fecha de nacimiento",
-  documentType: "Tipo de documento",
-  documentNumber: "Número de documento",
-  ageAtEndOf2025: "Edad al 31/12/2025",
-  guardianCivilStatus: "Estado civil de padres/apoderados",
-  guardian1FullName: "Nombres y apellidos",
-  guardian2FullName: "Nombres y apellidos",
-  guardian1HasLegalCustody: "¿Tiene custodia legal?",
-  guardian2HasLegalCustody: "¿Tiene custodia legal?",
-  guardian1Email: "Correo electrónico",
-  guardian2Email: "Correo electrónico",
-  guardian1MobilePhone: "Celular",
-  guardian2MobilePhone: "Celular",
-  gradeAverage: "Promedio general (0–20)",
-  schoolDirectorEmail: "Correo del director/a",
-  schoolAddressLine: "Dirección del colegio",
-  yearsInCurrentSchool: "Años en el colegio actual",
-  receivedSchoolScholarship: "¿Recibes o recibiste beca?",
-  officialGradesComments: "Comentarios sobre notas",
-  whyShouldBeSelected: "¿Por qué deberías ser seleccionado/a?",
-  preferredUwcColleges: "¿A qué colegio(s) UWC te gustaría ir?",
-  activityOne: "Curso o actividad destacada",
-  recognition: "Reconocimiento destacado",
-  favoriteKnowledgeArea: "Curso/tema/área favorita",
-  freeTimeActivities: "Actividades en tiempo libre",
-  selfDescriptionThreeWords: "Tres palabras que te describen + ejemplo",
-  paymentOperationNumber: "Número de operación",
-  receivedFinancialAidForFee: "¿Recibiste asistencia financiera?",
-  mentorRecommenderName: "Nombre",
-  friendRecommenderName: "Nombre",
 };
 
 const ENGLISH_FIELD_PLACEHOLDER_BY_KEY: Record<string, string> = {
@@ -316,7 +285,8 @@ function getLocalizedDisplayFieldLabel({
   });
 
   if (language === "es") {
-    return SPANISH_FIELD_LABEL_BY_KEY[field.field_key] ?? displayLabel;
+    // Respect admin-edited labels in Spanish (live form config should be source of truth).
+    return displayLabel;
   }
 
   return ENGLISH_FIELD_LABEL_BY_KEY[field.field_key] ?? humanizeFieldKey(field.field_key);
@@ -324,7 +294,8 @@ function getLocalizedDisplayFieldLabel({
 
 function getLocalizedFieldPlaceholder(field: CycleStageField, language: AppLanguage) {
   if (language === "es") {
-    return SPANISH_FIELD_PLACEHOLDER_BY_KEY[field.field_key] ?? field.placeholder ?? undefined;
+    // Respect admin-edited placeholders when present.
+    return field.placeholder ?? SPANISH_FIELD_PLACEHOLDER_BY_KEY[field.field_key] ?? undefined;
   }
 
   return ENGLISH_FIELD_PLACEHOLDER_BY_KEY[field.field_key];
@@ -599,6 +570,8 @@ export function ApplicantApplicationForm({
   stageFields,
   stageCloseAt,
   initialRecommenders = [],
+  customSections = [],
+  fieldSectionAssignments = {},
 }: {
   existingApplication: Application | null;
   cycleId: string;
@@ -606,6 +579,8 @@ export function ApplicantApplicationForm({
   stageFields?: CycleStageField[];
   stageCloseAt?: string | null;
   initialRecommenders?: RecommenderSummary[];
+  customSections?: PersistedCustomSection[];
+  fieldSectionAssignments?: Record<string, string>;
 }) {
   const { language } = useAppLanguage();
   const isEnglish = language === "en";
@@ -723,12 +698,19 @@ export function ApplicantApplicationForm({
   );
 
   const groupedFormSections = useMemo(
-    () => groupApplicantFormFields(formStageFields),
-    [formStageFields],
+    () =>
+      groupApplicantFormFieldsWithCustomSections(formStageFields, {
+        customSections,
+        fieldSectionAssignments,
+      }),
+    [customSections, fieldSectionAssignments, formStageFields],
   );
 
   const documentFormSection = useMemo(
-    () => groupedFormSections.find((section) => section.id === "documents") ?? null,
+    () =>
+      groupedFormSections.find(
+        (section) => section.kind === "builtin" && section.builtinSectionId === "documents",
+      ) ?? null,
     [groupedFormSections],
   );
 
@@ -737,7 +719,7 @@ export function ApplicantApplicationForm({
       id: WizardSectionId;
       title: string;
       description: string;
-      formSection: ApplicantFormSection | null;
+      formSection: ApplicantFormResolvedSection | null;
       status: ProgressState;
     }> = [];
 
@@ -753,14 +735,22 @@ export function ApplicantApplicationForm({
     });
 
     for (const section of groupedFormSections) {
-      if (section.id === "documents" || section.id === "recommenders") {
+      const builtInSectionId = section.kind === "builtin" ? section.builtinSectionId : null;
+
+      if (
+        builtInSectionId &&
+        (builtInSectionId === "documents" || builtInSectionId === "recommenders")
+      ) {
         continue;
       }
 
       sections.push({
-        id: section.id,
-        title: sectionTitles[section.id],
-        description: isEnglish ? SECTION_DESCRIPTIONS_EN[section.id] : section.description,
+        id: section.id as WizardSectionId,
+        title: builtInSectionId ? sectionTitles[builtInSectionId] : section.title,
+        description:
+          builtInSectionId && isEnglish
+            ? SECTION_DESCRIPTIONS_EN[builtInSectionId]
+            : section.description,
         formSection: section,
         status: getSectionFieldStatus({
           fields: section.fields,
@@ -794,7 +784,11 @@ export function ApplicantApplicationForm({
         "Registra un mentor y un amigo (no familiar). Les enviaremos una invitación por correo.",
         "Register a mentor and a friend (non-family). We will email them an invitation.",
       ),
-      formSection: groupedFormSections.find((section) => section.id === "recommenders") ?? null,
+      formSection:
+        groupedFormSections.find(
+          (section) =>
+            section.kind === "builtin" && section.builtinSectionId === "recommenders",
+        ) ?? null,
       status: "not_started",
     });
 
@@ -943,7 +937,11 @@ export function ApplicantApplicationForm({
     [fileStageFields, language],
   );
   const currentSection = wizardSections.find((section) => section.id === activeSectionId) ?? wizardSections[0] ?? null;
-  const currentFormSectionId = currentSection?.formSection?.id ?? null;
+  const currentFormSectionId = currentSection?.formSection
+    ? currentSection.formSection.kind === "builtin"
+      ? currentSection.formSection.builtinSectionId
+      : "other"
+    : null;
   const currentSectionIndex = currentSection
     ? wizardSections.findIndex((section) => section.id === currentSection.id)
     : -1;

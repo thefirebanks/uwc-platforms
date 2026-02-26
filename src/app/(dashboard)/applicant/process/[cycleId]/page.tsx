@@ -4,9 +4,11 @@ import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
+import { parseStageAdminConfig } from "@/lib/stages/stage-admin-config";
 import type {
   Application,
   CycleStageField,
+  CycleStageTemplate,
   RecommendationRequest,
   SelectionProcess,
 } from "@/types/domain";
@@ -24,7 +26,8 @@ export default async function ApplicantProcessPage({
 
   const { cycleId } = await params;
   const supabase = await getSupabaseServerClient();
-  const [{ data: cycle }, { data: application }, { data: stageFields }] = await Promise.all([
+  const [{ data: cycle }, { data: application }, { data: stageFields }, { data: stageTemplate }] =
+    await Promise.all([
     supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle(),
     supabase
       .from("applications")
@@ -39,6 +42,12 @@ export default async function ApplicantProcessPage({
       .eq("stage_code", "documents")
       .eq("is_active", true)
       .order("sort_order", { ascending: true }),
+    supabase
+      .from("cycle_stage_templates")
+      .select("admin_config")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", "documents")
+      .maybeSingle(),
   ]);
 
   if (!cycle) {
@@ -72,6 +81,9 @@ export default async function ApplicantProcessPage({
     cycleId,
     fields: ((stageFields as CycleStageField[] | null) ?? []),
   });
+  const parsedStageAdminConfig = parseStageAdminConfig(
+    (stageTemplate as Pick<CycleStageTemplate, "admin_config"> | null)?.admin_config ?? null,
+  );
 
   return (
     <ApplicantApplicationForm
@@ -81,6 +93,8 @@ export default async function ApplicantProcessPage({
       stageFields={resolvedStageFields}
       stageCloseAt={(cycle as SelectionProcess).stage1_close_at ?? null}
       initialRecommenders={initialRecommenders}
+      customSections={parsedStageAdminConfig.customSections}
+      fieldSectionAssignments={parsedStageAdminConfig.fieldSectionAssignments}
     />
   );
 }

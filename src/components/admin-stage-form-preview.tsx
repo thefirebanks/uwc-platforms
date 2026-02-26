@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { groupApplicantFormFields } from "@/lib/stages/applicant-sections";
+import { groupApplicantFormFieldsWithCustomSections } from "@/lib/stages/applicant-sections";
+import type { PersistedCustomSection } from "@/lib/stages/stage-admin-config";
 import type { CycleStageField, StageCode } from "@/types/domain";
 
 function getDisplayStageLabel(stageCode: StageCode, stageLabel: string) {
@@ -53,6 +54,8 @@ export function AdminStageFormPreview({
   stageCode,
   stageLabel,
   fields,
+  customSections = [],
+  fieldSectionAssignments = {},
 }: {
   cycleId: string;
   stageId: string;
@@ -60,11 +63,16 @@ export function AdminStageFormPreview({
   stageCode: StageCode;
   stageLabel: string;
   fields: CycleStageField[];
+  customSections?: PersistedCustomSection[];
+  fieldSectionAssignments?: Record<string, string>;
 }) {
-  const sections = groupApplicantFormFields(fields, {
+  const sections = groupApplicantFormFieldsWithCustomSections(fields, {
     includeInactive: false,
     includeFileFields: true,
-  }).filter((section) => (stageCode === "documents" ? section.id !== "eligibility" : true));
+    customSections,
+    fieldSectionAssignments,
+    omitEligibility: stageCode === "documents",
+  });
 
   const displayStageLabel = getDisplayStageLabel(stageCode, stageLabel);
 

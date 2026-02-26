@@ -1,4 +1,9 @@
 import type { CycleStageField } from "@/types/domain";
+import {
+  normalizePersistedCustomSections,
+  sanitizeFieldSectionAssignments,
+  type PersistedCustomSection,
+} from "@/lib/stages/stage-admin-config";
 
 export type ApplicantFormSectionId =
   | "eligibility"
@@ -20,6 +25,24 @@ export type ApplicantFormSection = {
 export type GroupApplicantFormFieldsOptions = {
   includeInactive?: boolean;
   includeFileFields?: boolean;
+};
+
+export type ApplicantFormResolvedSectionId = ApplicantFormSectionId | `custom:${string}`;
+
+export type ApplicantFormResolvedSection = {
+  id: ApplicantFormResolvedSectionId;
+  title: string;
+  description: string;
+  fields: CycleStageField[];
+  kind: "builtin" | "custom";
+  builtinSectionId: ApplicantFormSectionId | null;
+  customSectionId: string | null;
+};
+
+export type GroupApplicantFormFieldsWithCustomSectionsOptions = GroupApplicantFormFieldsOptions & {
+  customSections?: PersistedCustomSection[];
+  fieldSectionAssignments?: Record<string, string>;
+  omitEligibility?: boolean;
 };
 
 const SECTION_ORDER: ApplicantFormSectionId[] = [
@@ -257,4 +280,89 @@ export function groupApplicantFormFields(
   }
 
   return sections;
+}
+
+function shouldIncludeApplicantField(
+  field: CycleStageField,
+  options: GroupApplicantFormFieldsOptions,
+) {
+  const { includeInactive = false, includeFileFields = false } = options;
+
+  if (!includeInactive && !field.is_active) {
+    return false;
+  }
+
+  if (!includeFileFields && field.field_type === "file") {
+    return false;
+  }
+
+  return true;
+}
+
+export function groupApplicantFormFieldsWithCustomSections(
+  fields: CycleStageField[],
+  options: GroupApplicantFormFieldsWithCustomSectionsOptions = {},
+): ApplicantFormResolvedSection[] {
+  const {
+    customSections = [],
+    fieldSectionAssignments = {},
+    omitEligibility = false,
+    ...groupingOptions
+  } = options;
+  const normalizedCustomSections = normalizePersistedCustomSections(customSections);
+  const normalizedAssignments = sanitizeFieldSectionAssignments(
+    fieldSectionAssignments,
+    normalizedCustomSections,
+  );
+  const customSectionIds = new Set(normalizedCustomSections.map((section) => section.id));
+
+  const customAssignedFieldKeys = new Set(
+    Object.entries(normalizedAssignments)
+      .filter(([, sectionId]) => customSectionIds.has(sectionId))
+      .map(([fieldKey]) => fieldKey),
+  );
+
+  const builtInSections = groupApplicantFormFields(
+    fields.filter((field) => !customAssignedFieldKeys.has(field.field_key)),
+    groupingOptions,
+  );
+
+  const filteredBuiltInSections = omitEligibility
+    ? builtInSections.filter((section) => section.id !== "eligibility")
+    : builtInSections;
+
+  const builtInResolvedSections: ApplicantFormResolvedSection[] = filteredBuiltInSections.map(
+    (section) => ({
+      id: section.id,
+      title: section.title,
+      description: section.description,
+      fields: section.fields,
+      kind: "builtin",
+      builtinSectionId: section.id,
+      customSectionId: null,
+    }),
+  );
+
+  const customSectionsWithFields: ApplicantFormResolvedSection[] = normalizedCustomSections
+    .map((section) => ({
+      id: `custom:${section.id}` as const,
+      title: section.title,
+      description: "Campos personalizados adicionales de esta etapa.",
+      fields: fields.filter(
+        (field) =>
+          normalizedAssignments[field.field_key] === section.id &&
+          shouldIncludeApplicantField(field, groupingOptions),
+      ),
+      kind: "custom" as const,
+      builtinSectionId: null,
+      customSectionId: section.id,
+    }))
+    .filter((section) => section.fields.length > 0);
+
+  const otherSection = builtInResolvedSections.find((section) => section.id === "other");
+  const builtInWithoutOther = builtInResolvedSections.filter((section) => section.id !== "other");
+
+  return otherSection
+    ? [...builtInWithoutOther, ...customSectionsWithFields, otherSection]
+    : [...builtInWithoutOther, ...customSectionsWithFields];
 }
