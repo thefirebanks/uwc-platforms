@@ -149,7 +149,7 @@ const english: MessageMap = {
   "audit.next": "Next",
 };
 
-export const messages: Record<AppLanguage, MessageMap> = {
+const messages: Record<AppLanguage, MessageMap> = {
   es: spanish,
   en: english,
 };

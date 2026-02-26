@@ -1058,13 +1058,6 @@ export function StageConfigEditor({
     ],
   );
 
-  const totalEditorFieldCount = useMemo(
-    () =>
-      activeTab === "editor"
-        ? editorSections.reduce((sum, section) => sum + section.fields.length, 0)
-        : 0,
-    [activeTab, editorSections],
-  );
   const displayedEditorFields = useMemo(() => {
     if (activeTab !== "editor") {
       return [];
@@ -1090,6 +1083,17 @@ export function StageConfigEditor({
         : [],
     [activeTab, editorSections],
   );
+  const editorHasOtherSection = useMemo(
+    () => activeTab === "editor" && editorSections.some((section) => section.id === "other"),
+    [activeTab, editorSections],
+  );
+  const customSectionPositionById = useMemo(() => {
+    const normalized = normalizePersistedCustomSections(customSections);
+    const total = normalized.length;
+    return new Map(
+      normalized.map((section, index) => [section.id, { index, total }] as const),
+    );
+  }, [customSections]);
 
   const orderedFieldIndexByLocalId = useMemo(
     () => {
@@ -1114,7 +1118,6 @@ export function StageConfigEditor({
         insertPositionBySectionId: new Map<EditorSectionId, number>(),
         sectionIdByLastFieldId: new Map<string, EditorSectionId>(),
         sectionIdByFieldId: new Map<string, EditorSectionId>(),
-        fieldCountBySectionId: new Map<EditorSectionId, number>(),
       };
     }
 
@@ -1125,7 +1128,6 @@ export function StageConfigEditor({
     const insertPositionBySectionId = new Map<EditorSectionId, number>();
     const sectionIdByLastFieldId = new Map<string, EditorSectionId>();
     const sectionIdByFieldId = new Map<string, EditorSectionId>();
-    const fieldCountBySectionId = new Map<EditorSectionId, number>();
     const collapsedSet = new Set(collapsedSectionIds);
 
     editorSections.forEach((section, index) => {
@@ -1134,7 +1136,6 @@ export function StageConfigEditor({
       const firstField = sectionFields[0];
       const lastField = sectionFields.at(-1);
       const isSectionCollapsed = collapsedSet.has(String(section.id));
-      fieldCountBySectionId.set(section.id, sectionFields.length);
 
       if (firstField) {
         firstFieldIds.add(firstField.localId);
@@ -1177,7 +1178,6 @@ export function StageConfigEditor({
       insertPositionBySectionId,
       sectionIdByLastFieldId,
       sectionIdByFieldId,
-      fieldCountBySectionId,
     };
   }, [
     activeTab,
@@ -1222,6 +1222,136 @@ export function StageConfigEditor({
 
       return current.filter((id) => id !== sectionKey);
     });
+  }
+
+  function moveCustomSection(sectionId: string, direction: "up" | "down") {
+    setCustomSections((current) => {
+      const normalized = normalizePersistedCustomSections(current);
+      const currentIndex = normalized.findIndex((section) => section.id === sectionId);
+      if (currentIndex < 0) {
+        return current;
+      }
+
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= normalized.length) {
+        return current;
+      }
+
+      const next = [...normalized];
+      const [moved] = next.splice(currentIndex, 1);
+      next.splice(targetIndex, 0, moved);
+      const reordered = next.map((section, index) => ({ ...section, order: index + 1 }));
+      return normalizePersistedCustomSections(reordered);
+    });
+    setStatusMessage("Orden de sección actualizado localmente. Guarda configuración para persistir.");
+  }
+
+  function renderCustomSectionOrderActions(customSectionId: string) {
+    const position = customSectionPositionById.get(customSectionId);
+    if (!position) {
+      return null;
+    }
+
+    return (
+      <div className="admin-stage-section-order-actions" role="group" aria-label="Orden de sección">
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => moveCustomSection(customSectionId, "up")}
+          disabled={position.index === 0}
+        >
+          Subir
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost btn-sm"
+          onClick={() => moveCustomSection(customSectionId, "down")}
+          disabled={position.index === position.total - 1}
+        >
+          Bajar
+        </button>
+      </div>
+    );
+  }
+
+  function renderSectionHeading(heading: string, sectionId: EditorSectionId) {
+    const customSectionId = getCustomSectionIdFromEditorSectionId(sectionId);
+    return (
+      <>
+        <div className="builder-section-title">{heading}</div>
+        {customSectionId ? renderCustomSectionOrderActions(customSectionId) : null}
+      </>
+    );
+  }
+
+  function renderPersistedEmptyCustomSection(section: EditorSection) {
+    const customSectionId = getCustomSectionIdFromEditorSectionId(section.id);
+    if (!customSectionId) {
+      return null;
+    }
+
+    const sectionNumber = editorSections.findIndex((candidate) => candidate.id === section.id) + 1;
+
+    return (
+      <div key={section.id} className="admin-stage-section-placeholder">
+        {renderSectionHeading(`Sección ${sectionNumber}: ${section.title}`, section.id)}
+        <div className="settings-card admin-stage-empty-section-card">
+          <div className="editor-grid">
+            <div className="form-field full">
+              <label htmlFor={`custom-section-title-${customSectionId}`}>
+                Nombre de la sección
+              </label>
+              <input
+                id={`custom-section-title-${customSectionId}`}
+                type="text"
+                value={section.title}
+                onChange={(event) =>
+                  setCustomSections((current) =>
+                    normalizePersistedCustomSections(
+                      current.map((item) =>
+                        item.id === customSectionId
+                          ? { ...item, title: event.target.value }
+                          : item,
+                      ),
+                    ),
+                  )
+                }
+              />
+              <small className="admin-text-muted">
+                Guarda configuración para persistir esta sección personalizada.
+              </small>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="add-field-btn"
+            onClick={() => {
+              const suffix = orderedFields.length + 1;
+              const seed = getNewFieldSeedForSection({
+                sectionId: "custom",
+                suffix,
+              });
+              insertFieldAt(
+                orderedFields.length,
+                {
+                  field_key: seed.field_key,
+                  field_label: seed.field_label,
+                  field_type: seed.field_type,
+                  is_required: false,
+                  placeholder: "",
+                  help_text: "",
+                  is_active: true,
+                },
+                { customSectionId },
+              );
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Añadir nuevo campo en esta sección
+          </button>
+        </div>
+      </div>
+    );
   }
 
   const sidebarTemplateStages = useMemo(
@@ -1388,35 +1518,6 @@ export function StageConfigEditor({
           {activeTab === "editor" && (
             <div id="tab-editor" className="tab-content active">
               <div className="field-list">
-                {editorSections.length > 1 ? (
-                  <div className="admin-stage-editor-toolbar">
-                    <div className="admin-text-muted">
-                      {isLargeFormEditor
-                        ? `${editorSections.length} secciones • ${totalEditorFieldCount} campos (${displayedEditorFields.length} visibles)`
-                        : `${editorSections.length} secciones • ${totalEditorFieldCount} campos`}
-                    </div>
-                    <div className="admin-stage-editor-toolbar-actions">
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() => setCollapsedSectionIds([])}
-                      >
-                        Expandir todo
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        onClick={() =>
-                          setCollapsedSectionIds(
-                            editorSections.map((section) => String(section.id)),
-                          )
-                        }
-                      >
-                        Colapsar todo
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
                 {displayedEditorFields.length === 0 ? (
                   <>
                     <div className="builder-section-title">Sección 1: Datos Personales</div>
@@ -1450,8 +1551,6 @@ export function StageConfigEditor({
                     editorFieldSectionMeta.sectionIdByFieldId.get(field.localId) ?? "other";
                   const sectionKey = String(sectionId);
                   const isSectionCollapsed = collapsedSectionIdSet.has(sectionKey);
-                  const sectionFieldCount =
-                    editorFieldSectionMeta.fieldCountBySectionId.get(sectionId) ?? 0;
 
                   if (isSectionCollapsed && !isSectionStart) {
                     return null;
@@ -1459,15 +1558,14 @@ export function StageConfigEditor({
 
                   return (
                     <div key={field.localId}>
-                      {isSectionStart ? (
-                        <div className="builder-section-title">{sectionHeading}</div>
-                      ) : null}
+                      {isSectionStart && sectionId === "other" && emptyCustomEditorSections.length > 0
+                        ? emptyCustomEditorSections.map((section) =>
+                            renderPersistedEmptyCustomSection(section),
+                          )
+                        : null}
+                      {isSectionStart ? renderSectionHeading(sectionHeading, sectionId) : null}
                       {isSectionStart && isSectionCollapsed ? (
                         <div className="admin-stage-collapsed-section">
-                          <div className="admin-stage-collapsed-section-meta">
-                            <span>{`${sectionFieldCount} campo${sectionFieldCount === 1 ? "" : "s"}`}</span>
-                            <span className="admin-text-muted">Sección colapsada para mejorar rendimiento</span>
-                          </div>
                           <div className="admin-stage-collapsed-section-actions">
                             <button
                               type="button"
@@ -1476,44 +1574,44 @@ export function StageConfigEditor({
                             >
                               Expandir sección
                             </button>
-                            <button
-                              type="button"
-                              className="add-field-btn admin-stage-section-add-field compact"
-                              onClick={() => {
-                                const suffix = orderedFields.length + 1;
-                                const customSectionId =
-                                  getCustomSectionIdFromEditorSectionId(sectionId);
-                                const seed = getNewFieldSeedForSection(
-                                  customSectionId
-                                    ? { sectionId: "custom", suffix }
-                                    : {
-                                        sectionId: sectionId as ApplicantFormSectionId,
-                                        suffix,
-                                      },
-                                );
-                                const sectionInsertPosition =
-                                  editorFieldSectionMeta.insertPositionBySectionId.get(sectionId) ??
-                                  orderedFields.length;
-                                insertFieldAt(
-                                  sectionInsertPosition,
-                                  {
-                                    field_key: seed.field_key,
-                                    field_label: seed.field_label,
-                                    field_type: seed.field_type,
-                                    is_required: false,
-                                    placeholder: "",
-                                    help_text: "",
-                                    is_active: true,
-                                  },
-                                  { customSectionId },
-                                );
-                                expandSection(sectionKey);
-                              }}
-                            >
-                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                              Añadir nuevo campo
-                            </button>
                           </div>
+                          <button
+                            type="button"
+                            className="add-field-btn admin-stage-section-add-field"
+                            onClick={() => {
+                              const suffix = orderedFields.length + 1;
+                              const customSectionId =
+                                getCustomSectionIdFromEditorSectionId(sectionId);
+                              const seed = getNewFieldSeedForSection(
+                                customSectionId
+                                  ? { sectionId: "custom", suffix }
+                                  : {
+                                      sectionId: sectionId as ApplicantFormSectionId,
+                                      suffix,
+                                    },
+                              );
+                              const sectionInsertPosition =
+                                editorFieldSectionMeta.insertPositionBySectionId.get(sectionId) ??
+                                orderedFields.length;
+                              insertFieldAt(
+                                sectionInsertPosition,
+                                {
+                                  field_key: seed.field_key,
+                                  field_label: seed.field_label,
+                                  field_type: seed.field_type,
+                                  is_required: false,
+                                  placeholder: "",
+                                  help_text: "",
+                                  is_active: true,
+                                },
+                                { customSectionId },
+                              );
+                              expandSection(sectionKey);
+                            }}
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                            Añadir nuevo campo
+                          </button>
                         </div>
                       ) : null}
                       {isSectionCollapsed ? null : (
@@ -1851,77 +1949,11 @@ export function StageConfigEditor({
                     </div>
                   </div>
                 ))}
-                {emptyCustomEditorSections.map((section) => {
-                  const customSectionId = getCustomSectionIdFromEditorSectionId(section.id);
-                  if (!customSectionId) {
-                    return null;
-                  }
-                  const sectionNumber =
-                    editorSections.findIndex((candidate) => candidate.id === section.id) + 1;
-
-                  return (
-                    <div key={section.id} className="admin-stage-section-placeholder">
-                      <div className="builder-section-title">
-                        {`Sección ${sectionNumber}: ${section.title}`}
-                      </div>
-                      <div className="settings-card admin-stage-empty-section-card">
-                        <div className="editor-grid">
-                          <div className="form-field full">
-                            <label htmlFor={`custom-section-title-${customSectionId}`}>
-                              Nombre de la sección
-                            </label>
-                            <input
-                              id={`custom-section-title-${customSectionId}`}
-                              type="text"
-                              value={section.title}
-                              onChange={(event) =>
-                                setCustomSections((current) =>
-                                  normalizePersistedCustomSections(
-                                    current.map((item) =>
-                                      item.id === customSectionId
-                                        ? { ...item, title: event.target.value }
-                                        : item,
-                                    ),
-                                  ),
-                                )
-                              }
-                            />
-                            <small className="admin-text-muted">
-                              Guarda configuración para persistir esta sección personalizada.
-                            </small>
-                          </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="add-field-btn"
-                          onClick={() => {
-                            const suffix = orderedFields.length + 1;
-                            const seed = getNewFieldSeedForSection({
-                              sectionId: "custom",
-                              suffix,
-                            });
-                            insertFieldAt(
-                              orderedFields.length,
-                              {
-                                field_key: seed.field_key,
-                                field_label: seed.field_label,
-                                field_type: seed.field_type,
-                                is_required: false,
-                                placeholder: "",
-                                help_text: "",
-                                is_active: true,
-                              },
-                              { customSectionId },
-                            );
-                          }}
-                        >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                          Añadir nuevo campo en esta sección
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {!editorHasOtherSection
+                  ? emptyCustomEditorSections.map((section) =>
+                      renderPersistedEmptyCustomSection(section),
+                    )
+                  : null}
                 <div className="admin-stage-editor-add-section">
                   <button
                     type="button"

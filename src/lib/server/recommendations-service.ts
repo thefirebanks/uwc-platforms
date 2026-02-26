@@ -246,7 +246,7 @@ async function loadApplicationOwnership({
   return data;
 }
 
-export async function assertApplicantCycleIsOpenForEdits({
+async function assertApplicantCycleIsOpenForEdits({
   supabase,
   cycleId,
 }: {
