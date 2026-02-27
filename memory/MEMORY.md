@@ -33,10 +33,24 @@ This caused:
 - `moveBuiltinSection` uses `editorSections` for visible list; rebuild uses `visibleSet` to
   preserve all non-visible sections (hidden, empty) at their original positions in the order
 
+## Stage Editor Layout Architecture (updated Feb 2026)
+- **Persistent sidebar** lives in `src/app/(dashboard)/admin/process/[cycleId]/stage/layout.tsx`
+  - Server component: fetches cycle name + templates, renders `<AdminStageSidebar>` + `{children}`
+  - Sidebar never remounts during stage-to-stage navigation
+- **AdminStageSidebar** client component: `src/components/admin-stage-sidebar.tsx`
+  - Uses `usePathname()` for active state, `<Link>` for navigation (prefetching)
+  - Handles "Añadir etapa" via direct fetch to `/api/cycles/[cycleId]/templates`
+- **StageConfigEditor** no longer renders `<aside className="sidebar">` — sidebar is in the layout
+  - `stageTemplates` prop kept (used in settings dropdown at ~line 2540)
+  - `createStage()` and `isCreatingStage` removed from editor
+- **Loading skeleton**: `stage/[stageCode]/loading.tsx` — matches real editor structure (header + tabs + section cards with shimmer)
+- **Animation fix**: `globals.css` — `.view.active` uses `fadeInView` (opacity-only), not `fadeIn` (which had `translateY` that displaced fixed sidebar)
+
 ## Demo Navigation
 1. Log in via "Entrar como admin demo"
 2. Go to Procesos → "Formulario Principal" → Editor de Formulario
 3. URL pattern: `/admin/process/[cycleId]/stage/[stageId-or-code]`
+4. Demo cycleId: `98b2f8e4-7266-44b0-acb2-566e2fb2d50e`
 
 ## CSS Classes for Section Editor
 - `.admin-stage-section-heading-row` — flex row with title + action buttons
