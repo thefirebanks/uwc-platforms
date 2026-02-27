@@ -154,10 +154,6 @@ export function TopNav({ role }: { role: AppRole }) {
       <div className="topbar-right">
         {isAdmin ? (
           <>
-            <div className="admin-topbar-status" aria-label="Estado del sistema: en línea">
-              <span className="admin-topbar-status-dot" aria-hidden="true" />
-              <span>Online</span>
-            </div>
             <button
               type="button"
               className="btn btn-ghost admin-topbar-settings-trigger"
