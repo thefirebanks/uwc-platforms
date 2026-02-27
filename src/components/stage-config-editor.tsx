@@ -1411,16 +1411,14 @@ export function StageConfigEditor({
     );
   }, [customSections]);
   const builtinSectionPositionById = useMemo(() => {
-    const normalized = normalizeBuiltinSectionOrder(builtinSectionOrder).filter(
-      (sectionId) =>
-        !(documentsRouteRepresentsMainForm && sectionId === "eligibility") &&
-        !hiddenBuiltinSectionIds.includes(sectionId),
-    );
-    const total = normalized.length;
+    const visibleBuiltinIds = editorSections
+      .filter((section) => !isCustomEditorSectionId(section.id))
+      .map((section) => section.id as ApplicantFormSectionId);
+    const total = visibleBuiltinIds.length;
     return new Map(
-      normalized.map((sectionId, index) => [sectionId, { index, total }] as const),
+      visibleBuiltinIds.map((sectionId, index) => [sectionId, { index, total }] as const),
     );
-  }, [builtinSectionOrder, documentsRouteRepresentsMainForm, hiddenBuiltinSectionIds]);
+  }, [editorSections]);
 
   const orderedFieldIndexByLocalId = useMemo(
     () => {
@@ -1589,13 +1587,12 @@ export function StageConfigEditor({
   }
 
   function moveBuiltinSection(sectionId: ApplicantFormSectionId, direction: "up" | "down") {
+    const visibleBuiltinIds = editorSections
+      .filter((section) => !isCustomEditorSectionId(section.id))
+      .map((section) => section.id as ApplicantFormSectionId);
+
     setBuiltinSectionOrder((current) => {
       const normalized = normalizeBuiltinSectionOrder(current);
-      const visibleBuiltinIds = normalized.filter(
-        (candidate) =>
-          !(documentsRouteRepresentsMainForm && candidate === "eligibility") &&
-          !hiddenBuiltinSectionIds.includes(candidate),
-      );
       const currentIndex = visibleBuiltinIds.findIndex((candidate) => candidate === sectionId);
       if (currentIndex < 0) {
         return current;
@@ -1610,14 +1607,13 @@ export function StageConfigEditor({
       const [moved] = nextVisible.splice(currentIndex, 1);
       nextVisible.splice(targetIndex, 0, moved);
 
+      const visibleSet = new Set<ApplicantFormSectionId>(visibleBuiltinIds);
       let visiblePointer = 0;
       const rebuilt = normalized.map((candidate) => {
-        if (documentsRouteRepresentsMainForm && candidate === "eligibility") {
-          return candidate;
+        if (!visibleSet.has(candidate)) {
+          return candidate; // preserve hidden, empty, and eligibility sections in place
         }
-        const replacement = nextVisible[visiblePointer];
-        visiblePointer += 1;
-        return replacement;
+        return nextVisible[visiblePointer++];
       });
 
       return normalizeBuiltinSectionOrder(rebuilt);
