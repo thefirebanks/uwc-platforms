@@ -267,6 +267,18 @@ function deriveEditorSections(
     builtinBuckets.get(assignedSectionId as ApplicantFormSectionId)?.push(field);
   }
 
+  // Re-sort each bucket by the field's original position in fieldsForEditor (= sort_order).
+  // Without this, fields that gain an explicit section assignment (e.g. after editing the
+  // Clave) get appended at the end of the bucket by the push loop above, overriding the
+  // user's intended order.
+  const fieldPositionMap = new Map(fieldsForEditor.map((f, idx) => [f.localId, idx]));
+  for (const bucket of builtinBuckets.values()) {
+    bucket.sort(
+      (a, b) =>
+        (fieldPositionMap.get(a.localId) ?? 0) - (fieldPositionMap.get(b.localId) ?? 0),
+    );
+  }
+
   const effectiveBuiltinOrder = documentsRouteRepresentsMainForm
     ? normalizedBuiltinOrder.filter((sectionId) => sectionId !== "eligibility")
     : normalizedBuiltinOrder;
@@ -2043,6 +2055,7 @@ export function StageConfigEditor({
                       ) : null}
                       {isSectionCollapsed ? null : (
                       <div
+                        key={`${field.localId}-${isEditing ? "ed" : "st"}`}
                         className={[
                           "field-card",
                           isEditing ? "editing" : "",
@@ -2112,15 +2125,15 @@ export function StageConfigEditor({
                         </div>
 
                         {isEditing && (
-                          <div className="field-editor">
+                          <div className="field-editor" key={`editor-${field.localId}`}>
                             <div className="editor-grid">
                               <div className="form-field full">
                                 <label htmlFor={`title-${field.localId}`}>Título</label>
                                 <input
                                   id={`title-${field.localId}`}
                                   type="text"
-                                  value={field.field_label}
-                                  onChange={(event) => {
+                                  defaultValue={field.field_label}
+                                  onBlur={(event) => {
                                     const value = event.target.value;
                                     const nextFieldKey =
                                       field.id.startsWith("new-") || field.field_key.startsWith("nuevoCampo")
@@ -2155,8 +2168,8 @@ export function StageConfigEditor({
                                 <input
                                   id={`key-${field.localId}`}
                                   type="text"
-                                  value={field.field_key}
-                                  onChange={(event) => {
+                                  defaultValue={field.field_key}
+                                  onBlur={(event) => {
                                     const nextFieldKey = normalizeFieldKey(event.target.value);
                                     remapFieldSectionAssignmentKey(
                                       field.field_key,
@@ -2210,8 +2223,8 @@ export function StageConfigEditor({
                                 <input
                                   id={`placeholder-${field.localId}`}
                                   type="text"
-                                  value={field.placeholder ?? ""}
-                                  onChange={(event) =>
+                                  defaultValue={field.placeholder ?? ""}
+                                  onBlur={(event) =>
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId ? { ...item, placeholder: event.target.value } : item,
@@ -2225,8 +2238,8 @@ export function StageConfigEditor({
                                 <input
                                   id={`help-${field.localId}`}
                                   type="text"
-                                  value={field.help_text ?? ""}
-                                  onChange={(event) =>
+                                  defaultValue={field.help_text ?? ""}
+                                  onBlur={(event) =>
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId ? { ...item, help_text: event.target.value } : item,
