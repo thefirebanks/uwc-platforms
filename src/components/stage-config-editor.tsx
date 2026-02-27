@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   startTransition,
@@ -630,7 +629,7 @@ export function StageConfigEditor({
   >("editor");
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [sectionPlaceholders, setSectionPlaceholders] = useState<SectionPlaceholderDraft[]>([]);
-  const [isCreatingStage, setIsCreatingStage] = useState(false);
+
   const parsedStageAdminConfigRef = useRef(parseStageAdminConfig(initialStageAdminConfig));
   const initialCustomSections = useMemo(
     () =>
@@ -884,31 +883,6 @@ export function StageConfigEditor({
     startTransition(() => setActiveTab(nextTab));
   }
 
-  async function createStage() {
-    setError(null);
-    setStatusMessage(null);
-    setIsCreatingStage(true);
-
-    try {
-      const response = await fetch(`/api/cycles/${cycleId}/templates`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
-
-      const createdTemplate = body.template as CycleStageTemplate;
-      setStatusMessage("Nueva etapa creada. Abriendo editor de etapa...");
-      router.push(`/admin/process/${cycleId}/stage/${createdTemplate.id}`);
-      router.refresh();
-    } finally {
-      setIsCreatingStage(false);
-    }
-  }
 
   function addFieldToPlaceholder(placeholder: SectionPlaceholderDraft) {
     const suffix = orderedFields.length + 1;
@@ -1928,73 +1902,8 @@ export function StageConfigEditor({
     );
   }
 
-  const sidebarTemplateStages = useMemo(
-    () =>
-      [...stageTemplates]
-        .sort((a, b) => a.sort_order - b.sort_order)
-        .map((template, index) => ({
-          key: template.id,
-          number: index + 1,
-          title:
-            template.stage_code === "documents"
-              ? "Formulario Principal"
-              : template.stage_code === "exam_placeholder"
-                ? "Examen Académico"
-                : template.stage_label,
-          subtitle:
-            template.stage_code === "documents"
-              ? "Formulario extenso"
-              : template.stage_code === "exam_placeholder"
-                ? "Evaluación externa"
-                : "Etapa personalizada",
-          active: template.id === stageId,
-          templateId: template.id,
-        })),
-    [stageId, stageTemplates],
-  );
-
   return (
     <div id="view-process" className="view active admin-stage-editor-view">
-      {/* Contextual Sidebar */}
-      <aside className="sidebar">
-        <div className="sidebar-header">
-          <Link href="/admin/processes" className="admin-sidebar-backlink">
-            <div className="eyebrow">← Volver a procesos</div>
-          </Link>
-          <h2 className="admin-sidebar-title">{cycleName}</h2>
-        </div>
-        
-        <div className="sidebar-nav">
-          <div className="builder-section-title admin-sidebar-section-title">
-            Etapas del Proceso
-          </div>
-          {sidebarTemplateStages.map((item) => (
-            <button
-              key={item.key}
-              className={`stage-item ${item.active ? "active" : ""}`}
-              type="button"
-              onClick={() => router.push(`/admin/process/${cycleId}/stage/${item.templateId}`)}
-            >
-              <div className="stage-icon">{item.number}</div>
-              <div className="stage-info">
-                <div className="stage-title">{item.title}</div>
-                <div className="stage-type">{item.subtitle}</div>
-              </div>
-            </button>
-          ))}
-          <div className="admin-sidebar-footer">
-            <button
-              type="button"
-              className="btn btn-ghost admin-sidebar-add-stage"
-              onClick={() => void createStage()}
-              disabled={isCreatingStage}
-            >
-              {isCreatingStage ? "Creando etapa..." : "+ Añadir etapa"}
-            </button>
-          </div>
-        </div>
-      </aside>
-
       {/* Main Workspace */}
       <main className="main">
         <div className="canvas-header">

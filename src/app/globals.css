@@ -384,6 +384,51 @@ a {
   margin-top: 10px;
 }
 
+/* ─── Stage Editor Loading Skeleton ─── */
+.admin-stage-loading-body {
+  padding: 28px 40px 40px;
+  background: var(--cream);
+  flex: 1;
+}
+
+.admin-stage-loading-section {
+  background: var(--surface);
+  border: 1px solid var(--sand);
+  border-radius: var(--radius-lg);
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.admin-stage-loading-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--sand);
+}
+
+.admin-stage-loading-field-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 14px 20px;
+}
+
+.admin-stage-loading-field-row + .admin-stage-loading-field-row {
+  border-top: 1px solid var(--sand-light);
+}
+
+.admin-stage-loading-field-label {
+  flex-shrink: 0;
+  width: 120px;
+}
+
+.admin-stage-loading-field-input {
+  flex: 1;
+  height: 34px;
+  border-radius: var(--radius);
+}
+
 .canvas-header { padding: 32px 40px 0; border-bottom: 1px solid var(--sand); background: var(--surface); }
 .canvas-title-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 24px; }
 .canvas-title-row h1 { font-family: var(--font-display); font-size: 1.8rem; font-weight: 400; color: var(--ink); letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 4px; }
@@ -687,11 +732,12 @@ input:checked + .slider:before { transform: translateX(18px); }
 
 /* ─── View Toggler ─── */
 .view { display: none; }
-.view.active { display: flex; flex-direction: column; animation: fadeIn 0.3s ease; }
+.view.active { display: flex; flex-direction: column; animation: fadeInView 0.3s ease; }
 .tab-content { display: none; }
 .tab-content.active { display: block; animation: fadeIn 0.3s ease; }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes fadeInView { from { opacity: 0; } to { opacity: 1; } }
 
 @keyframes topbarRouteProgress {
   0% { transform: translateX(-55%); }
