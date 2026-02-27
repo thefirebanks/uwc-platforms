@@ -72,10 +72,36 @@ export function TopNav({ role }: { role: AppRole }) {
     return () => window.clearTimeout(timeoutId);
   }, [pendingNav]);
 
-  const isRoutePending =
-    pendingNav !== null &&
-    pathname === pendingNav.sourcePath &&
-    !navHrefMatchesPath(pendingNav.href, pathname);
+  useEffect(() => {
+    if (!pendingNav) return;
+
+    const navigationSettled =
+      pathname === pendingNav.href || pathname !== pendingNav.sourcePath;
+    if (!navigationSettled) {
+      return;
+    }
+
+    const clearId = window.setTimeout(() => {
+      setPendingNav((current) => {
+        if (!current) {
+          return null;
+        }
+
+        if (
+          current.href === pendingNav.href &&
+          current.sourcePath === pendingNav.sourcePath
+        ) {
+          return null;
+        }
+
+        return current;
+      });
+    }, 0);
+
+    return () => window.clearTimeout(clearId);
+  }, [pathname, pendingNav]);
+
+  const isRoutePending = pendingNav !== null && pathname === pendingNav.sourcePath;
 
   return (
     <header
@@ -213,18 +239,6 @@ export function TopNav({ role }: { role: AppRole }) {
       </div>
     </header>
   );
-}
-
-function navHrefMatchesPath(href: string, pathname: string | null) {
-  if (!pathname) {
-    return false;
-  }
-
-  if (href === "/admin/processes") {
-    return pathname === "/admin/processes" || pathname.startsWith("/admin/process/");
-  }
-
-  return pathname === href;
 }
 
 function NavLink({

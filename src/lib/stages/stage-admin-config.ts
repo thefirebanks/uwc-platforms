@@ -4,6 +4,19 @@ export type PersistedCustomSection = {
   order: number;
 };
 
+export const BUILTIN_SECTION_IDS = [
+  "eligibility",
+  "identity",
+  "family",
+  "school",
+  "motivation",
+  "recommenders",
+  "documents",
+  "other",
+] as const;
+
+export type BuiltinStageSectionId = (typeof BUILTIN_SECTION_IDS)[number];
+
 export type ParsedStageAdminConfig = {
   stageName?: string | null;
   description?: string | null;
@@ -12,6 +25,8 @@ export type ParsedStageAdminConfig = {
   previousStageRequirement?: string | null;
   blockIfPreviousNotMet?: boolean | null;
   customSections: PersistedCustomSection[];
+  builtinSectionOrder: BuiltinStageSectionId[];
+  hiddenBuiltinSectionIds: BuiltinStageSectionId[];
   fieldSectionAssignments: Record<string, string>;
 };
 
@@ -36,11 +51,55 @@ export function normalizePersistedCustomSections(
     }));
 }
 
+export function isBuiltinStageSectionId(value: string): value is BuiltinStageSectionId {
+  return (BUILTIN_SECTION_IDS as readonly string[]).includes(value);
+}
+
+export function normalizeBuiltinSectionOrder(
+  sectionOrder: readonly string[] | null | undefined,
+): BuiltinStageSectionId[] {
+  const seen = new Set<string>();
+  const normalized: BuiltinStageSectionId[] = [];
+
+  for (const rawId of sectionOrder ?? []) {
+    const id = rawId.trim();
+    if (!isBuiltinStageSectionId(id) || seen.has(id)) {
+      continue;
+    }
+    normalized.push(id);
+    seen.add(id);
+  }
+
+  for (const defaultId of BUILTIN_SECTION_IDS) {
+    if (!seen.has(defaultId)) {
+      normalized.push(defaultId);
+    }
+  }
+
+  return normalized;
+}
+
+export function sanitizeHiddenBuiltinSectionIds(
+  hiddenSectionIds: readonly string[] | null | undefined,
+) {
+  return Array.from(
+    new Set(
+      (hiddenSectionIds ?? [])
+        .map((value) => value.trim())
+        .filter((value): value is BuiltinStageSectionId => isBuiltinStageSectionId(value))
+        .filter((value) => value !== "other"),
+    ),
+  );
+}
+
 export function sanitizeFieldSectionAssignments(
   assignments: Record<string, string>,
   customSections: PersistedCustomSection[],
 ) {
-  const allowedIds = new Set(customSections.map((section) => section.id));
+  const allowedIds = new Set<string>([
+    ...customSections.map((section) => section.id),
+    ...BUILTIN_SECTION_IDS,
+  ]);
   return Object.fromEntries(
     Object.entries(assignments).flatMap(([fieldKey, sectionId]) => {
       const normalizedFieldKey = fieldKey.trim();
@@ -63,6 +122,8 @@ export function parseStageAdminConfig(value: unknown): ParsedStageAdminConfig {
   if (!isRecord(value)) {
     return {
       customSections: [],
+      builtinSectionOrder: normalizeBuiltinSectionOrder(undefined),
+      hiddenBuiltinSectionIds: [],
       fieldSectionAssignments: {},
     };
   }
@@ -90,6 +151,16 @@ export function parseStageAdminConfig(value: unknown): ParsedStageAdminConfig {
     : [];
 
   const customSections = normalizePersistedCustomSections(rawCustomSections);
+  const builtinSectionOrder = Array.isArray(value.builtinSectionOrder)
+    ? normalizeBuiltinSectionOrder(
+        value.builtinSectionOrder.filter((entry): entry is string => typeof entry === "string"),
+      )
+    : normalizeBuiltinSectionOrder(undefined);
+  const hiddenBuiltinSectionIds = Array.isArray(value.hiddenBuiltinSectionIds)
+    ? sanitizeHiddenBuiltinSectionIds(
+        value.hiddenBuiltinSectionIds.filter((entry): entry is string => typeof entry === "string"),
+      )
+    : [];
   const rawAssignments =
     isRecord(value.fieldSectionAssignments) &&
     Object.values(value.fieldSectionAssignments).every((entry) => typeof entry === "string")
@@ -108,6 +179,8 @@ export function parseStageAdminConfig(value: unknown): ParsedStageAdminConfig {
     blockIfPreviousNotMet:
       typeof value.blockIfPreviousNotMet === "boolean" ? value.blockIfPreviousNotMet : null,
     customSections,
+    builtinSectionOrder,
+    hiddenBuiltinSectionIds,
     fieldSectionAssignments: sanitizeFieldSectionAssignments(rawAssignments, customSections),
   };
 }

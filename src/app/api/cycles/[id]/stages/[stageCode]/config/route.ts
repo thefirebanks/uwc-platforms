@@ -47,17 +47,78 @@ const customSectionSchema = z.object({
   order: z.number().int().min(1).max(500),
 });
 
+const builtinSectionIdSchema = z.enum([
+  "eligibility",
+  "identity",
+  "family",
+  "school",
+  "motivation",
+  "recommenders",
+  "documents",
+  "other",
+]);
+
 const patchSchema = z.object({
   fields: z.array(fieldSchema),
   automations: z.array(automationSchema),
   ocrPromptTemplate: z.string().max(5000).nullable().optional(),
   settings: settingsSchema.optional(),
   customSections: z.array(customSectionSchema).optional(),
+  builtinSectionOrder: z.array(builtinSectionIdSchema).optional(),
+  hiddenBuiltinSectionIds: z.array(builtinSectionIdSchema).optional(),
   fieldSectionAssignments: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
 });
 
 const cycleIdSchema = z.string().uuid();
 const stageIdentifierSchema = z.string().min(1).max(160);
+const BUILTIN_SECTION_IDS = [
+  "eligibility",
+  "identity",
+  "family",
+  "school",
+  "motivation",
+  "recommenders",
+  "documents",
+  "other",
+] as const;
+type BuiltinSectionId = (typeof BUILTIN_SECTION_IDS)[number];
+
+function isBuiltinSectionId(value: string): value is BuiltinSectionId {
+  return (BUILTIN_SECTION_IDS as readonly string[]).includes(value);
+}
+
+function normalizeBuiltinSectionOrder(sectionOrder: string[] | null | undefined): BuiltinSectionId[] {
+  const seen = new Set<string>();
+  const normalized: BuiltinSectionId[] = [];
+
+  for (const rawId of sectionOrder ?? []) {
+    const id = rawId.trim();
+    if (!isBuiltinSectionId(id) || seen.has(id)) {
+      continue;
+    }
+    normalized.push(id);
+    seen.add(id);
+  }
+
+  for (const defaultId of BUILTIN_SECTION_IDS) {
+    if (!seen.has(defaultId)) {
+      normalized.push(defaultId);
+    }
+  }
+
+  return normalized;
+}
+
+function sanitizeHiddenBuiltinSectionIds(hiddenIds: string[] | null | undefined) {
+  return Array.from(
+    new Set(
+      (hiddenIds ?? [])
+        .map((value) => value.trim())
+        .filter((value): value is BuiltinSectionId => isBuiltinSectionId(value))
+        .filter((value) => value !== "other"),
+    ),
+  );
+}
 
 function toIsoDateBoundary(value: string | null | undefined) {
   if (!value) {
@@ -103,7 +164,18 @@ function parseStageAdminConfig(value: Json | null | undefined) {
   const normalizedCustomSections = customSections
     .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
     .map((section, index) => ({ ...section, order: index + 1 }));
+  const builtinSectionOrder = Array.isArray(record.builtinSectionOrder)
+    ? normalizeBuiltinSectionOrder(
+        record.builtinSectionOrder.filter((value): value is string => typeof value === "string"),
+      )
+    : normalizeBuiltinSectionOrder(undefined);
+  const hiddenBuiltinSectionIds = Array.isArray(record.hiddenBuiltinSectionIds)
+    ? sanitizeHiddenBuiltinSectionIds(
+        record.hiddenBuiltinSectionIds.filter((value): value is string => typeof value === "string"),
+      )
+    : [];
   const allowedCustomSectionIds = new Set(normalizedCustomSections.map((section) => section.id));
+  const allowedSectionIds = new Set<string>([...allowedCustomSectionIds, ...BUILTIN_SECTION_IDS]);
   const fieldSectionAssignments =
     record.fieldSectionAssignments &&
     typeof record.fieldSectionAssignments === "object" &&
@@ -115,7 +187,7 @@ function parseStageAdminConfig(value: Json | null | undefined) {
                 typeof sectionId !== "string" ||
                 !fieldKey.trim() ||
                 !sectionId.trim() ||
-                !allowedCustomSectionIds.has(sectionId.trim())
+                !allowedSectionIds.has(sectionId.trim())
               ) {
                 return [];
               }
@@ -144,6 +216,8 @@ function parseStageAdminConfig(value: Json | null | undefined) {
         ? record.blockIfPreviousNotMet
         : null,
     customSections: normalizedCustomSections,
+    builtinSectionOrder,
+    hiddenBuiltinSectionIds,
     fieldSectionAssignments,
   };
 }
@@ -323,6 +397,9 @@ export async function GET(
         blockIfPreviousNotMet: parsedAdminConfig.blockIfPreviousNotMet ?? false,
       },
       customSections: parsedAdminConfig.customSections ?? [],
+      builtinSectionOrder:
+        parsedAdminConfig.builtinSectionOrder ?? normalizeBuiltinSectionOrder(undefined),
+      hiddenBuiltinSectionIds: parsedAdminConfig.hiddenBuiltinSectionIds ?? [],
       fieldSectionAssignments: parsedAdminConfig.fieldSectionAssignments ?? {},
     });
   }, { operation: "cycles.stage_config.get" });
@@ -399,13 +476,33 @@ export async function PATCH(
       .filter((section) => section.id.length > 0)
       .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
       .map((section, index) => ({ ...section, order: index + 1 }));
+    const incomingBuiltinSectionOrder = normalizeBuiltinSectionOrder(
+      parsed.data.builtinSectionOrder ??
+        parsedExistingAdminConfig.builtinSectionOrder ??
+        normalizeBuiltinSectionOrder(undefined),
+    );
+    const incomingHiddenBuiltinSectionIds = sanitizeHiddenBuiltinSectionIds(
+      parsed.data.hiddenBuiltinSectionIds ??
+        parsedExistingAdminConfig.hiddenBuiltinSectionIds ??
+        [],
+    );
 
     const normalizedKeys = parsed.data.fields.map((field) => field.fieldKey.trim());
     if (new Set(normalizedKeys).size !== normalizedKeys.length) {
+      const duplicateKeys = Array.from(
+        normalizedKeys.reduce((map, key) => {
+          map.set(key, (map.get(key) ?? 0) + 1);
+          return map;
+        }, new Map<string, number>()),
+      )
+        .filter(([, count]) => count > 1)
+        .map(([key]) => key)
+        .sort();
       throw new AppError({
         message: "Duplicate field keys",
-        userMessage: "No puedes repetir claves técnicas de campos.",
+        userMessage: `No puedes repetir claves técnicas de campos. Claves duplicadas: ${duplicateKeys.join(", ")}.`,
         status: 400,
+        details: { duplicateKeys },
       });
     }
 
@@ -413,6 +510,10 @@ export async function PATCH(
     const incomingCustomSectionIdSet = new Set(
       incomingCustomSections.map((section) => section.id),
     );
+    const allowedIncomingSectionIds = new Set<string>([
+      ...incomingCustomSectionIdSet,
+      ...BUILTIN_SECTION_IDS,
+    ]);
     const incomingFieldSectionAssignments = Object.fromEntries(
       Object.entries(
         parsed.data.fieldSectionAssignments ??
@@ -426,7 +527,7 @@ export async function PATCH(
           !normalizedFieldKey ||
           !normalizedSectionId ||
           !incomingFieldKeysSet.has(normalizedFieldKey) ||
-          !incomingCustomSectionIdSet.has(normalizedSectionId)
+          !allowedIncomingSectionIds.has(normalizedSectionId)
         ) {
           return [];
         }
@@ -621,6 +722,8 @@ export async function PATCH(
       previousStageRequirement: incomingSettings.previousStageRequirement,
       blockIfPreviousNotMet: incomingSettings.blockIfPreviousNotMet,
       customSections: incomingCustomSections as unknown as Json,
+      builtinSectionOrder: incomingBuiltinSectionOrder as unknown as Json,
+      hiddenBuiltinSectionIds: incomingHiddenBuiltinSectionIds as unknown as Json,
       fieldSectionAssignments: incomingFieldSectionAssignments as unknown as Json,
     };
 
@@ -727,6 +830,9 @@ export async function PATCH(
           savedAdminConfig.blockIfPreviousNotMet ?? incomingSettings.blockIfPreviousNotMet,
       },
       customSections: savedAdminConfig.customSections ?? [],
+      builtinSectionOrder:
+        savedAdminConfig.builtinSectionOrder ?? normalizeBuiltinSectionOrder(undefined),
+      hiddenBuiltinSectionIds: savedAdminConfig.hiddenBuiltinSectionIds ?? [],
       fieldSectionAssignments: savedAdminConfig.fieldSectionAssignments ?? {},
     });
   }, { operation: "cycles.stage_config.patch" });

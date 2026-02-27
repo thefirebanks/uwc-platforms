@@ -77,6 +77,8 @@ export default async function AdminStagePreviewPage({
       stageLabel={selectedTemplate.stage_label}
       fields={(fieldsData as CycleStageField[] | null) ?? fallbackFields}
       customSections={parsedAdminConfig.customSections}
+      builtinSectionOrder={parsedAdminConfig.builtinSectionOrder}
+      hiddenBuiltinSectionIds={parsedAdminConfig.hiddenBuiltinSectionIds}
       fieldSectionAssignments={parsedAdminConfig.fieldSectionAssignments}
     />
   );

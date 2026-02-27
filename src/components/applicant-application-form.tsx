@@ -32,7 +32,10 @@ import {
   type ApplicantFormSectionId,
   type ApplicantFormResolvedSection,
 } from "@/lib/stages/applicant-sections";
-import type { PersistedCustomSection } from "@/lib/stages/stage-admin-config";
+import type {
+  BuiltinStageSectionId,
+  PersistedCustomSection,
+} from "@/lib/stages/stage-admin-config";
 import { getSubGroupsForSection, isBooleanField, getBooleanFieldLabels, type SubGroupDef } from "@/lib/stages/field-sub-groups";
 
 interface ApiError {
@@ -571,6 +574,8 @@ export function ApplicantApplicationForm({
   stageCloseAt,
   initialRecommenders = [],
   customSections = [],
+  builtinSectionOrder = [],
+  hiddenBuiltinSectionIds = [],
   fieldSectionAssignments = {},
 }: {
   existingApplication: Application | null;
@@ -580,6 +585,8 @@ export function ApplicantApplicationForm({
   stageCloseAt?: string | null;
   initialRecommenders?: RecommenderSummary[];
   customSections?: PersistedCustomSection[];
+  builtinSectionOrder?: BuiltinStageSectionId[];
+  hiddenBuiltinSectionIds?: BuiltinStageSectionId[];
   fieldSectionAssignments?: Record<string, string>;
 }) {
   const { language } = useAppLanguage();
@@ -701,9 +708,17 @@ export function ApplicantApplicationForm({
     () =>
       groupApplicantFormFieldsWithCustomSections(formStageFields, {
         customSections,
+        builtinSectionOrder,
+        hiddenBuiltinSectionIds,
         fieldSectionAssignments,
       }),
-    [customSections, fieldSectionAssignments, formStageFields],
+    [
+      builtinSectionOrder,
+      customSections,
+      fieldSectionAssignments,
+      formStageFields,
+      hiddenBuiltinSectionIds,
+    ],
   );
 
   const documentFormSection = useMemo(

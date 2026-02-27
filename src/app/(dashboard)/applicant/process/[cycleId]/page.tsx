@@ -94,6 +94,8 @@ export default async function ApplicantProcessPage({
       stageCloseAt={(cycle as SelectionProcess).stage1_close_at ?? null}
       initialRecommenders={initialRecommenders}
       customSections={parsedStageAdminConfig.customSections}
+      builtinSectionOrder={parsedStageAdminConfig.builtinSectionOrder}
+      hiddenBuiltinSectionIds={parsedStageAdminConfig.hiddenBuiltinSectionIds}
       fieldSectionAssignments={parsedStageAdminConfig.fieldSectionAssignments}
     />
   );

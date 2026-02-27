@@ -1,6 +1,9 @@
 import type { CycleStageField } from "@/types/domain";
 import {
+  BUILTIN_SECTION_IDS,
+  normalizeBuiltinSectionOrder,
   normalizePersistedCustomSections,
+  sanitizeHiddenBuiltinSectionIds,
   sanitizeFieldSectionAssignments,
   type PersistedCustomSection,
 } from "@/lib/stages/stage-admin-config";
@@ -42,6 +45,8 @@ export type ApplicantFormResolvedSection = {
 export type GroupApplicantFormFieldsWithCustomSectionsOptions = GroupApplicantFormFieldsOptions & {
   customSections?: PersistedCustomSection[];
   fieldSectionAssignments?: Record<string, string>;
+  builtinSectionOrder?: ApplicantFormSectionId[];
+  hiddenBuiltinSectionIds?: ApplicantFormSectionId[];
   omitEligibility?: boolean;
 };
 
@@ -306,53 +311,94 @@ export function groupApplicantFormFieldsWithCustomSections(
   const {
     customSections = [],
     fieldSectionAssignments = {},
+    builtinSectionOrder,
+    hiddenBuiltinSectionIds,
     omitEligibility = false,
     ...groupingOptions
   } = options;
   const normalizedCustomSections = normalizePersistedCustomSections(customSections);
+  const normalizedBuiltinSectionOrder = normalizeBuiltinSectionOrder(
+    builtinSectionOrder ?? (SECTION_ORDER as ApplicantFormSectionId[]),
+  ) as ApplicantFormSectionId[];
+  const hiddenBuiltinSectionIdSet = new Set<ApplicantFormSectionId>(
+    sanitizeHiddenBuiltinSectionIds(
+      hiddenBuiltinSectionIds ?? ([] as ApplicantFormSectionId[]),
+    ) as ApplicantFormSectionId[],
+  );
   const normalizedAssignments = sanitizeFieldSectionAssignments(
     fieldSectionAssignments,
     normalizedCustomSections,
   );
   const customSectionIds = new Set(normalizedCustomSections.map((section) => section.id));
+  const builtinBuckets = new Map<ApplicantFormSectionId, CycleStageField[]>();
+  const customBuckets = new Map<string, CycleStageField[]>();
 
-  const customAssignedFieldKeys = new Set(
-    Object.entries(normalizedAssignments)
-      .filter(([, sectionId]) => customSectionIds.has(sectionId))
-      .map(([fieldKey]) => fieldKey),
-  );
+  for (const sectionId of SECTION_ORDER) {
+    builtinBuckets.set(sectionId, []);
+  }
+  for (const section of normalizedCustomSections) {
+    customBuckets.set(section.id, []);
+  }
 
-  const builtInSections = groupApplicantFormFields(
-    fields.filter((field) => !customAssignedFieldKeys.has(field.field_key)),
-    groupingOptions,
-  );
+  for (const field of fields) {
+    if (!shouldIncludeApplicantField(field, groupingOptions)) {
+      continue;
+    }
 
-  const filteredBuiltInSections = omitEligibility
-    ? builtInSections.filter((section) => section.id !== "eligibility")
-    : builtInSections;
+    const assignedSectionId = normalizedAssignments[field.field_key];
+    if (assignedSectionId) {
+      if (customSectionIds.has(assignedSectionId)) {
+        customBuckets.get(assignedSectionId)?.push(field);
+        continue;
+      }
 
-  const builtInResolvedSections: ApplicantFormResolvedSection[] = filteredBuiltInSections.map(
-    (section) => ({
-      id: section.id,
-      title: section.title,
-      description: section.description,
-      fields: section.fields,
+      if ((BUILTIN_SECTION_IDS as readonly string[]).includes(assignedSectionId)) {
+        builtinBuckets.get(assignedSectionId as ApplicantFormSectionId)?.push(field);
+        continue;
+      }
+    }
+
+    builtinBuckets.get(classifyApplicantFieldKey(field.field_key))?.push(field);
+  }
+
+  const builtInResolvedSections: ApplicantFormResolvedSection[] = [];
+  const otherFields = builtinBuckets.get("other") ?? [];
+
+  for (const sectionId of normalizedBuiltinSectionOrder) {
+    if (omitEligibility && sectionId === "eligibility") {
+      continue;
+    }
+
+    const sectionFields = builtinBuckets.get(sectionId) ?? [];
+
+    if (hiddenBuiltinSectionIdSet.has(sectionId)) {
+      if (sectionFields.length > 0) {
+        otherFields.push(...sectionFields);
+      }
+      continue;
+    }
+
+    if (sectionFields.length === 0) {
+      continue;
+    }
+
+    builtInResolvedSections.push({
+      id: sectionId,
+      title: SECTION_META[sectionId].title,
+      description: SECTION_META[sectionId].description,
+      fields: sectionFields,
       kind: "builtin",
-      builtinSectionId: section.id,
+      builtinSectionId: sectionId,
       customSectionId: null,
-    }),
-  );
+    });
+  }
 
   const customSectionsWithFields: ApplicantFormResolvedSection[] = normalizedCustomSections
     .map((section) => ({
       id: `custom:${section.id}` as const,
       title: section.title,
       description: "Campos personalizados adicionales de esta etapa.",
-      fields: fields.filter(
-        (field) =>
-          normalizedAssignments[field.field_key] === section.id &&
-          shouldIncludeApplicantField(field, groupingOptions),
-      ),
+      fields: customBuckets.get(section.id) ?? [],
       kind: "custom" as const,
       builtinSectionId: null,
       customSectionId: section.id,

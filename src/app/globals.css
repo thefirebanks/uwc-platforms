@@ -1351,19 +1351,25 @@ input:checked + .slider:before { transform: translateX(18px); }
 
 .error-callout-report-form {
   margin-top: 6px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px 12px;
 }
 
 .error-callout-input-label {
   display: block;
-  margin-bottom: 6px;
+  grid-column: 1 / -1;
+  margin: 0;
   font-size: 0.8rem;
   font-weight: 500;
   color: var(--ink);
 }
 
 .error-callout-input {
+  grid-column: 1;
   width: 100%;
-  min-height: 70px;
+  min-height: 88px;
   resize: vertical;
   padding: 10px 12px;
   border-radius: var(--radius);
@@ -1383,7 +1389,11 @@ input:checked + .slider:before { transform: translateX(18px); }
 }
 
 .error-callout-report-btn {
-  margin-top: 10px;
+  grid-column: 2;
+  align-self: stretch;
+  min-width: 190px;
+  min-height: 42px;
+  margin-top: 0;
   border-color: color-mix(in srgb, var(--danger) 24%, var(--sand));
   color: var(--danger);
 }
@@ -1392,6 +1402,22 @@ input:checked + .slider:before { transform: translateX(18px); }
   border-color: color-mix(in srgb, var(--danger) 38%, var(--sand));
   background: color-mix(in srgb, var(--danger) 6%, var(--surface));
   color: var(--danger);
+}
+
+@media (max-width: 720px) {
+  .error-callout-report-form {
+    grid-template-columns: 1fr;
+  }
+
+  .error-callout-input {
+    grid-column: 1;
+  }
+
+  .error-callout-report-btn {
+    grid-column: 1;
+    justify-self: start;
+    min-width: 0;
+  }
 }
 
 .admin-stage-preview-btn {
