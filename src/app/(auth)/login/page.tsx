@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Alert,
@@ -28,17 +28,13 @@ const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
 export default function LoginPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [modeHint, setModeHint] = useState<string | null>(null);
-
-  useEffect(() => {
-    const search = typeof window === "undefined" ? "" : window.location.search;
-    const mode = new URLSearchParams(search).get("mode");
-    setModeHint(mode);
-  }, []);
+  const [isResettingDemo, setIsResettingDemo] = useState(false);
 
   async function loginWithGoogle() {
     setError(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
 
     try {
@@ -69,6 +65,7 @@ export default function LoginPage() {
     }
 
     setError(null);
+    setSuccessMessage(null);
     setIsSubmitting(true);
 
     try {
@@ -98,6 +95,38 @@ export default function LoginPage() {
     }
   }
 
+  async function resetDemoApplicantSubmission() {
+    setError(null);
+    setSuccessMessage(null);
+    setIsResettingDemo(true);
+
+    try {
+      const response = await fetch("/api/dev/reset-demo-applicant", {
+        method: "POST",
+      });
+      const body = (await response.json().catch(() => null)) as
+        | { message?: string; deletedByTable?: Record<string, number>; storage?: { warning?: string | null } }
+        | null;
+
+      if (!response.ok) {
+        setError(body?.message ?? "No se pudo reiniciar la postulación demo.");
+        return;
+      }
+
+      const deletedApplications = body?.deletedByTable?.applications ?? 0;
+      const storageWarning = body?.storage?.warning;
+      setSuccessMessage(
+        storageWarning
+          ? `Postulación demo reiniciada (${deletedApplications} postulación/es). Nota de almacenamiento: ${storageWarning}`
+          : `Postulación demo reiniciada (${deletedApplications} postulación/es). Ya puedes entrar como postulante demo y empezar desde cero.`,
+      );
+    } catch {
+      setError("Error inesperado al reiniciar la postulación demo.");
+    } finally {
+      setIsResettingDemo(false);
+    }
+  }
+
   return (
     <Container maxWidth="sm" sx={{ py: 10 }}>
       <Stack direction="row" justifyContent="flex-end" sx={{ mb: 2 }}>
@@ -107,16 +136,9 @@ export default function LoginPage() {
         <CardContent>
           <Stack spacing={2.5}>
             <Typography variant="h4">Iniciar sesión</Typography>
-            <Typography color="text.secondary">
-              Autenticación oficial del MVP: Google OAuth con Supabase.
-            </Typography>
-            {modeHint === "admin" || modeHint === "applicant" ? (
-              <Typography variant="body2" color="text.secondary">
-                Modo sugerido: {modeHint === "admin" ? "admin" : "postulante"}.
-              </Typography>
-            ) : null}
 
             {error ? <Alert severity="error">{error}</Alert> : null}
+            {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
 
             <Button
               onClick={loginWithGoogle}
@@ -130,25 +152,31 @@ export default function LoginPage() {
             {devBypassEnabled ? (
               <>
                 <Divider />
-                <Typography variant="body2" color="text.secondary">
-                  Bypass temporal de desarrollo (desactivar en producción).
-                </Typography>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                   <Button
                     variant="outlined"
                     onClick={() => loginWithDemo("admin")}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isResettingDemo}
                   >
                     Entrar como admin demo
                   </Button>
                   <Button
                     variant="outlined"
                     onClick={() => loginWithDemo("applicant")}
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || isResettingDemo}
                   >
                     Entrar como postulante demo
                   </Button>
                 </Stack>
+                <Button
+                  variant="text"
+                  color="inherit"
+                  onClick={resetDemoApplicantSubmission}
+                  disabled={isSubmitting || isResettingDemo}
+                  sx={{ alignSelf: "flex-start" }}
+                >
+                  {isResettingDemo ? "Reiniciando postulación demo..." : "Reiniciar postulación demo"}
+                </Button>
               </>
             ) : null}
           </Stack>

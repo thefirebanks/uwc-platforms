@@ -83,8 +83,9 @@ Every feature ships with tests at the most appropriate level. No feature is cons
 ## Runner Stability Notes
 - Test runner is pinned to `vitest@2.1.8` (with `vite@5.x` / `esbuild@0.21.x`) because `vitest@3.x` requires `esbuild@0.27.3`, which can hang indefinitely on some local macOS setups.
 - If tests appear frozen at `RUN vX`, check `esbuild --version`. If it hangs, do not upgrade Vitest/Vite until the esbuild issue is resolved upstream.
-- Playwright now starts the app automatically via `webServer` in `playwright.config.ts`.
-- Access-control E2E test that uses demo bypass is automatically skipped when bypass env vars are not present.
+- Playwright starts the app automatically via `webServer` in `playwright.config.ts`.
+- Playwright E2E defaults to port `3001` to avoid collisions with other local apps.
+- Access-control E2E that depends on demo bypass auto-skips when bypass env vars are missing.
 
 ## Manual QA Requirement
 If a feature changes user-visible behavior, update `docs/MANUAL_TEST_FLOWS.md` in the same PR.

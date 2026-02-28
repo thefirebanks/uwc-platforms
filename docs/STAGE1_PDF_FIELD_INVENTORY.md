@@ -1,7 +1,7 @@
 # Stage 1 Field Inventory (From Official PDF)
 
 Source PDF:
-- `/Users/dafirebanks/Downloads/UWC_DUMMY_APPLICATION_1st-STAGE_PS2026-9446653533_202602191958.pdf`
+- `UWC_DUMMY_APPLICATION_1st-STAGE_PS2026-9446653533_202602191958.pdf` (local reference PDF)
 
 Extraction basis:
 - Text extracted from flattened PDF export (no embedded AcroForm metadata available).

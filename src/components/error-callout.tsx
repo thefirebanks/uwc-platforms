@@ -4,10 +4,7 @@ import { useState } from "react";
 import {
   Alert,
   AlertTitle,
-  Box,
-  Button,
   Stack,
-  TextField,
   Typography,
 } from "@mui/material";
 import { useAppLanguage } from "@/components/language-provider";
@@ -54,24 +51,29 @@ export function ErrorCallout({
           </Typography>
         ) : null}
         {errorId ? (
-          <Box>
-            <TextField
+          <div className="error-callout-report-form">
+            <label
+              className="error-callout-input-label"
+              htmlFor={`error-notes-${errorId}`}
+            >
+              {t("error.commentLabel")}
+            </label>
+            <textarea
+              id={`error-notes-${errorId}`}
+              className="error-callout-input"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
-              size="small"
-              label={t("error.commentLabel")}
-              fullWidth
+              rows={2}
             />
-            <Button
-              sx={{ mt: 1 }}
+            <button
+              type="button"
+              className="btn btn-outline error-callout-report-btn"
               onClick={reportIssue}
               disabled={isSubmitting || submitted}
-              variant="outlined"
-              color="error"
             >
               {submitted ? t("error.reportSent") : t("error.reportIssue")}
-            </Button>
-          </Box>
+            </button>
+          </div>
         ) : null}
       </Stack>
     </Alert>

@@ -1,217 +1,100 @@
-import type { CycleStageField } from "@/types/domain";
+import type { CycleStageField, StageSection } from "@/types/domain";
 
-export type ApplicantFormSectionId =
-  | "eligibility"
-  | "identity"
-  | "family"
-  | "school"
-  | "motivation"
-  | "recommenders"
-  | "documents"
-  | "other";
+// ─── Resolved Section (output of groupFieldsBySections) ──────
 
-export type ApplicantFormSection = {
-  id: ApplicantFormSectionId;
+export type ResolvedSection = {
+  id: string;
+  sectionKey: string;
   title: string;
   description: string;
   fields: CycleStageField[];
 };
 
-const SECTION_ORDER: ApplicantFormSectionId[] = [
-  "eligibility",
-  "identity",
-  "family",
-  "school",
-  "motivation",
-  "recommenders",
-  "documents",
-  "other",
-];
-
-const SECTION_META: Record<
-  ApplicantFormSectionId,
-  { title: string; description: string }
-> = {
-  eligibility: {
-    title: "Elegibilidad",
-    description: "Validamos criterios base del proceso 2026.",
-  },
-  identity: {
-    title: "Datos personales",
-    description: "Información de identidad, contacto y contexto personal.",
-  },
-  family: {
-    title: "Familia y apoderados",
-    description: "Datos de madre/padre/apoderado y custodia legal.",
-  },
-  school: {
-    title: "Colegio y rendimiento académico",
-    description: "Datos del colegio y notas oficiales por año. Ingresa tus calificaciones en la escala 0–20.",
-  },
-  motivation: {
-    title: "Motivación y perfil",
-    description: "Comparte tu historia, intereses y por qué UWC es tu camino.",
-  },
-  recommenders: {
-    title: "Contexto de recomendadores",
-    description: "Datos de referencia para coordinar recomendaciones.",
-  },
-  documents: {
-    title: "Documentos y pagos",
-    description: "Información de pago y documentación requerida.",
-  },
-  other: {
-    title: "Otros campos",
-    description: "Campos activos personalizados fuera del esquema base.",
-  },
+export type GroupFieldsBySectionsOptions = {
+  includeInactive?: boolean;
+  includeFileFields?: boolean;
 };
 
-const ELIGIBILITY_PREFIX = "eligibility";
-const ELIGIBILITY_KEYS = new Set([
-  "secondNationality",
-  "secondaryYear2025",
-  "isUpperThird",
-  "hasMinimumAverage14",
-  "hasStudiedIb",
-  "ibInstructionYear",
-  "priorUwcPeruSelectionParticipation",
-  "otherCountrySelection2025",
-  "uwcDiscoveryChannel",
-]);
+// ─── Core Grouping Function ──────────────────────────────────
+// Groups fields into sections using the DB-stored section_id on
+// each field. No more hardcoded prefix matching.
 
-const IDENTITY_KEYS = new Set([
-  "fullName",
-  "firstName",
-  "paternalLastName",
-  "maternalLastName",
-  "documentType",
-  "documentNumber",
-  "dateOfBirth",
-  "ageAtEndOf2025",
-  "gender",
-  "nationality",
-  "countryOfBirth",
-  "countryOfResidence",
-  "homeAddressLine",
-  "homeAddressNumber",
-  "homeDistrict",
-  "homeProvince",
-  "homeRegion",
-  "mobilePhone",
-  "landlineOrAlternativePhone",
-  "hasDisability",
-  "hasLearningDisability",
-]);
+export function groupFieldsBySections(
+  fields: CycleStageField[],
+  sections: StageSection[],
+  options: GroupFieldsBySectionsOptions = {},
+): ResolvedSection[] {
+  const { includeInactive = false, includeFileFields = false } = options;
 
-const FAMILY_PREFIX = "guardian";
+  // Sort sections by sort_order
+  const sortedSections = [...sections].sort((a, b) => a.sort_order - b.sort_order);
 
-const SCHOOL_KEYS = new Set([
-  "schoolName",
-  "gradeAverage",
-  "schoolDirectorName",
-  "schoolDirectorEmail",
-  "schoolAddressLine",
-  "schoolAddressNumber",
-  "schoolDistrict",
-  "schoolProvince",
-  "schoolRegion",
-  "schoolCountry",
-  "yearsInCurrentSchool",
-  "schoolPublicOrPrivate",
-  "schoolTypeDetails",
-  "receivedSchoolScholarship",
-  "officialGradesComments",
-]);
+  // Find the "other" section (fallback for unassigned fields + hidden section fields)
+  const otherSection = sortedSections.find((s) => s.section_key === "other");
 
-const DOCUMENT_KEYS = new Set([
-  "paymentOperationNumber",
-  "receivedFinancialAidForFee",
-]);
+  // Build section ID → section lookup
+  const sectionById = new Map(sortedSections.map((s) => [s.id, s]));
 
-const RECOMMENDER_KEYS = new Set([
-  "recommenderRequestMessage",
-  "mentorRecommenderName",
-  "friendRecommenderName",
-]);
+  // Determine which section IDs are hidden
+  const hiddenSectionIds = new Set(
+    sortedSections.filter((s) => !s.is_visible).map((s) => s.id),
+  );
 
-const MOTIVATION_KEYS = new Set([
-  "essay",
-  "whyShouldBeSelected",
-  "preferredUwcColleges",
-  "activityOne",
-  "recognition",
-  "favoriteKnowledgeArea",
-  "freeTimeActivities",
-  "selfDescriptionThreeWords",
-]);
-
-function isOfficialGradesKey(key: string) {
-  return key.startsWith("officialGrade_") || key.startsWith("officialGradeAverage_");
-}
-
-export function classifyApplicantFieldKey(fieldKey: string): ApplicantFormSectionId {
-  if (fieldKey.startsWith(ELIGIBILITY_PREFIX) || ELIGIBILITY_KEYS.has(fieldKey)) {
-    return "eligibility";
+  // Initialize buckets for each visible section
+  const buckets = new Map<string, CycleStageField[]>();
+  for (const section of sortedSections) {
+    if (section.is_visible) {
+      buckets.set(section.id, []);
+    }
   }
 
-  if (fieldKey.startsWith(FAMILY_PREFIX)) {
-    return "family";
-  }
-
-  if (isOfficialGradesKey(fieldKey) || SCHOOL_KEYS.has(fieldKey)) {
-    return "school";
-  }
-
-  if (RECOMMENDER_KEYS.has(fieldKey)) {
-    return "recommenders";
-  }
-
-  if (DOCUMENT_KEYS.has(fieldKey)) {
-    return "documents";
-  }
-
-  if (MOTIVATION_KEYS.has(fieldKey)) {
-    return "motivation";
-  }
-
-  if (IDENTITY_KEYS.has(fieldKey)) {
-    return "identity";
-  }
-
-  return "other";
-}
-
-export function groupApplicantFormFields(fields: CycleStageField[]): ApplicantFormSection[] {
-  const grouped = new Map<ApplicantFormSectionId, CycleStageField[]>();
-
-  for (const sectionId of SECTION_ORDER) {
-    grouped.set(sectionId, []);
-  }
-
+  // Distribute fields into buckets
   for (const field of fields) {
-    if (!field.is_active || field.field_type === "file") {
+    if (!includeInactive && !field.is_active) continue;
+    if (!includeFileFields && field.field_type === "file") continue;
+
+    const sectionId = field.section_id;
+
+    // If field has a section_id and that section is visible, use it
+    if (sectionId && buckets.has(sectionId)) {
+      buckets.get(sectionId)!.push(field);
       continue;
     }
 
-    const sectionId = classifyApplicantFieldKey(field.field_key);
-    grouped.get(sectionId)?.push(field);
+    // If field's section is hidden, or field has no section_id → "other"
+    if (otherSection && buckets.has(otherSection.id)) {
+      buckets.get(otherSection.id)!.push(field);
+    }
   }
 
-  const sections: ApplicantFormSection[] = [];
+  // Build resolved sections (skip empty, keep "other" at end)
+  const result: ResolvedSection[] = [];
+  let otherResolved: ResolvedSection | null = null;
 
-  for (const sectionId of SECTION_ORDER) {
-    const sectionFields = grouped.get(sectionId) ?? [];
-    if (sectionFields.length === 0) {
-      continue;
-    }
+  for (const section of sortedSections) {
+    if (!section.is_visible) continue;
+    const sectionFields = buckets.get(section.id) ?? [];
+    if (sectionFields.length === 0) continue;
 
-    sections.push({
-      id: sectionId,
-      title: SECTION_META[sectionId].title,
-      description: SECTION_META[sectionId].description,
+    const resolved: ResolvedSection = {
+      id: section.id,
+      sectionKey: section.section_key,
+      title: section.title,
+      description: section.description,
       fields: sectionFields,
-    });
+    };
+
+    if (section.section_key === "other") {
+      otherResolved = resolved;
+    } else {
+      result.push(resolved);
+    }
   }
 
-  return sections;
+  // "other" always goes last
+  if (otherResolved) {
+    result.push(otherResolved);
+  }
+
+  return result;
 }

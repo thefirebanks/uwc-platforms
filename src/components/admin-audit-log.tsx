@@ -1,22 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Box,
-  Button,
-  Card,
-  CardContent,
-  CircularProgress,
-  MenuItem,
-  Stack,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableRow,
-  TextField,
-  Typography,
-} from "@mui/material";
 import type { AuditEventListItem } from "@/lib/server/audit-service";
 import { ErrorCallout } from "@/components/error-callout";
 import { useAppLanguage } from "@/components/language-provider";
@@ -195,90 +179,128 @@ export function AdminAuditLog() {
   }
 
   return (
-    <Stack spacing={3}>
-      <Card>
-        <CardContent>
-          <Stack
-            direction={{ xs: "column", md: "row" }}
-            spacing={2}
-            alignItems={{ xs: "flex-start", md: "center" }}
-            justifyContent="space-between"
-          >
-            <Box>
-              <Typography variant="h5">{t("audit.title")}</Typography>
-              <Typography color="text.secondary">
-                {t("audit.description")}
-              </Typography>
-            </Box>
-            <Button component="a" href={exportHref} variant="outlined">
-              {t("audit.exportCsv")}
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
+    <main className="main full-width">
+      <div className="canvas-header">
+        <div className="canvas-title-row">
+          <div>
+            <h1>{t("audit.title")}</h1>
+            <p>{t("audit.description")}</p>
+          </div>
+          <a className="btn btn-outline" href={exportHref}>
+            {t("audit.exportCsv")}
+          </a>
+        </div>
+      </div>
 
-      {error ? <ErrorCallout message={error.message} errorId={error.errorId} context="admin_audit" /> : null}
+      <div className="canvas-body full admin-page-stack">
+        {error ? (
+          <ErrorCallout
+            message={error.message}
+            errorId={error.errorId}
+            context="admin_audit"
+          />
+        ) : null}
 
-      <Card>
-        <CardContent>
-          <Stack spacing={2}>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5}>
-              <TextField
-                select
-                label={t("audit.action")}
+        <section className="settings-card" aria-labelledby="audit-filters-title">
+          <div className="settings-card-header">
+            <h3 id="audit-filters-title">{t("audit.search")}</h3>
+            <p>Filtra eventos por acción, IDs y rango de fechas.</p>
+          </div>
+
+          <div className="admin-filter-grid">
+            <div className="admin-form-field">
+              <label htmlFor="audit-action">{t("audit.action")}</label>
+              <select
+                id="audit-action"
+                className="admin-form-control"
                 value={filters.action}
-                onChange={(event) => setFilters((current) => ({ ...current, action: event.target.value }))}
-                size="small"
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, action: event.target.value }))
+                }
               >
                 {actionOptions.map((action) => (
-                  <MenuItem key={action || "all"} value={action}>
+                  <option key={action || "all"} value={action}>
                     {action || t("audit.allActions")}
-                  </MenuItem>
+                  </option>
                 ))}
-              </TextField>
-              <TextField
-                label={t("audit.requestId")}
+              </select>
+            </div>
+
+            <div className="admin-form-field">
+              <label htmlFor="audit-request-id">{t("audit.requestId")}</label>
+              <input
+                id="audit-request-id"
+                className="admin-form-control"
+                type="text"
                 value={filters.requestId}
                 onChange={(event) =>
                   setFilters((current) => ({ ...current, requestId: event.target.value }))
                 }
-                size="small"
               />
-              <TextField
-                label={t("audit.applicationId")}
+            </div>
+
+            <div className="admin-form-field">
+              <label htmlFor="audit-application-id">{t("audit.applicationId")}</label>
+              <input
+                id="audit-application-id"
+                className="admin-form-control"
+                type="text"
                 value={filters.applicationId}
                 onChange={(event) =>
-                  setFilters((current) => ({ ...current, applicationId: event.target.value }))
+                  setFilters((current) => ({
+                    ...current,
+                    applicationId: event.target.value,
+                  }))
                 }
-                size="small"
               />
-              <TextField
-                label={t("audit.actorId")}
+            </div>
+
+            <div className="admin-form-field">
+              <label htmlFor="audit-actor-id">{t("audit.actorId")}</label>
+              <input
+                id="audit-actor-id"
+                className="admin-form-control"
+                type="text"
                 value={filters.actorId}
-                onChange={(event) => setFilters((current) => ({ ...current, actorId: event.target.value }))}
-                size="small"
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, actorId: event.target.value }))
+                }
               />
-            </Stack>
-            <Stack direction={{ xs: "column", md: "row" }} spacing={1.5} alignItems="center">
-              <TextField
-                label={t("audit.from")}
+            </div>
+          </div>
+
+          <div className="admin-filter-grid admin-filter-grid-secondary">
+            <div className="admin-form-field admin-filter-span-2">
+              <label htmlFor="audit-from">{t("audit.from")}</label>
+              <input
+                id="audit-from"
+                className="admin-form-control"
                 type="datetime-local"
                 value={filters.from}
-                onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))}
-                size="small"
-                InputLabelProps={{ shrink: true }}
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, from: event.target.value }))
+                }
               />
-              <TextField
-                label={t("audit.to")}
+            </div>
+
+            <div className="admin-form-field admin-filter-span-2">
+              <label htmlFor="audit-to">{t("audit.to")}</label>
+              <input
+                id="audit-to"
+                className="admin-form-control"
                 type="datetime-local"
                 value={filters.to}
-                onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))}
-                size="small"
-                InputLabelProps={{ shrink: true }}
+                onChange={(event) =>
+                  setFilters((current) => ({ ...current, to: event.target.value }))
+                }
               />
-              <TextField
-                select
-                label={t("audit.rowsPerPage")}
+            </div>
+
+            <div className="admin-form-field">
+              <label htmlFor="audit-page-size">{t("audit.rowsPerPage")}</label>
+              <select
+                id="audit-page-size"
+                className="admin-form-control"
                 value={String(applied.pageSize)}
                 onChange={(event) =>
                   setApplied((current) => ({
@@ -287,108 +309,116 @@ export function AdminAuditLog() {
                     page: 1,
                   }))
                 }
-                size="small"
               >
-                <MenuItem value="10">10</MenuItem>
-                <MenuItem value="25">25</MenuItem>
-                <MenuItem value="50">50</MenuItem>
-                <MenuItem value="100">100</MenuItem>
-              </TextField>
-              <Button variant="contained" onClick={applyFilters}>
-                {t("audit.search")}
-              </Button>
-              <Button variant="text" onClick={clearFilters}>
-                {t("audit.clear")}
-              </Button>
-            </Stack>
-          </Stack>
-        </CardContent>
-      </Card>
+                <option value="10">10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </div>
 
-      <Card>
-        <CardContent>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-            <Typography variant="h6">{t("audit.events")}</Typography>
-            <Typography color="text.secondary">
-              {t("audit.totalPage", {
-                total,
-                page: applied.page,
-                pages: Math.max(totalPages, 1),
-              })}
-            </Typography>
-          </Stack>
+            <div className="admin-form-actions admin-form-actions-inline">
+              <button type="button" className="btn btn-primary" onClick={applyFilters}>
+                {t("audit.search")}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={clearFilters}>
+                {t("audit.clear")}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-card" aria-labelledby="audit-events-title">
+          <div className="settings-card-header">
+            <div className="admin-toolbar">
+              <h3 id="audit-events-title" className="admin-toolbar-heading">
+                {t("audit.events")}
+              </h3>
+              <p className="admin-toolbar-caption">
+                {t("audit.totalPage", {
+                  total,
+                  page: applied.page,
+                  pages: Math.max(totalPages, 1),
+                })}
+              </p>
+            </div>
+          </div>
 
           {isLoading ? (
-            <Stack direction="row" spacing={1} alignItems="center">
-              <CircularProgress size={18} />
-              <Typography color="text.secondary">{t("audit.loading")}</Typography>
-            </Stack>
-          ) : (
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>{t("audit.date")}</TableCell>
-                  <TableCell>{t("audit.action")}</TableCell>
-                  <TableCell>{t("audit.requestId")}</TableCell>
-                  <TableCell>{t("audit.application")}</TableCell>
-                  <TableCell>{t("audit.actor")}</TableCell>
-                  <TableCell>{t("audit.metadata")}</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {events.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={6}>{t("audit.empty")}</TableCell>
-                  </TableRow>
+            <div className="admin-loading-row" role="status" aria-live="polite">
+              <span className="admin-spinner" aria-hidden="true"></span>
+              <span>{t("audit.loading")}</span>
+            </div>
+          ) : null}
+
+          <div className="table-container">
+            <table className="candidates-table">
+              <thead>
+                <tr>
+                  <th>{t("audit.date")}</th>
+                  <th>{t("audit.action")}</th>
+                  <th>{t("audit.requestId")}</th>
+                  <th>{t("audit.application")}</th>
+                  <th>{t("audit.actor")}</th>
+                  <th>{t("audit.metadata")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="admin-empty-cell">
+                      {t("audit.loading")}
+                    </td>
+                  </tr>
+                ) : events.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="admin-empty-cell">
+                      {t("audit.empty")}
+                    </td>
+                  </tr>
                 ) : (
                   events.map((event) => (
-                    <TableRow key={event.id}>
-                      <TableCell>{new Date(event.createdAt).toLocaleString()}</TableCell>
-                      <TableCell>{event.action}</TableCell>
-                      <TableCell sx={{ fontFamily: "monospace" }}>{shortId(event.requestId)}</TableCell>
-                      <TableCell sx={{ fontFamily: "monospace" }}>
-                        {shortId(event.applicationId)}
-                      </TableCell>
-                      <TableCell>
-                        {event.actorName || "-"}
-                        <Typography variant="caption" display="block" color="text.secondary">
-                          {event.actorEmail || event.actorId || "-"}
-                        </Typography>
-                      </TableCell>
-                      <TableCell sx={{ maxWidth: 320 }}>
-                        <Typography
-                          variant="caption"
-                          component="pre"
-                          sx={{ m: 0, whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-                        >
-                          {JSON.stringify(event.metadata)}
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
+                    <tr key={event.id}>
+                      <td>{new Date(event.createdAt).toLocaleString()}</td>
+                      <td>{event.action}</td>
+                      <td className="admin-mono">{shortId(event.requestId)}</td>
+                      <td className="admin-mono">{shortId(event.applicationId)}</td>
+                      <td>
+                        <div>{event.actorName || "-"}</div>
+                        <div className="admin-text-muted">{event.actorEmail || event.actorId || "-"}</div>
+                      </td>
+                      <td>
+                        <pre className="admin-audit-metadata">
+                          {JSON.stringify(event.metadata ?? {}, null, 2)}
+                        </pre>
+                      </td>
+                    </tr>
                   ))
                 )}
-              </TableBody>
-            </Table>
-          )}
+              </tbody>
+            </table>
+          </div>
 
-          <Stack direction="row" spacing={1} justifyContent="flex-end" sx={{ mt: 2 }}>
-            <Button
-              variant="outlined"
+          <div className="admin-pagination">
+            <button
+              type="button"
+              className="btn btn-outline"
               disabled={isLoading || applied.page <= 1}
               onClick={() => goToPage(applied.page - 1)}
             >
               {t("audit.previous")}
-            </Button>
-            <Button
-              variant="outlined"
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
               disabled={isLoading || totalPages === 0 || applied.page >= totalPages}
               onClick={() => goToPage(applied.page + 1)}
             >
               {t("audit.next")}
-            </Button>
-          </Stack>
-        </CardContent>
-      </Card>
-    </Stack>
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
   );
 }

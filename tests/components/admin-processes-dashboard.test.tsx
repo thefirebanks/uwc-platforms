@@ -50,6 +50,7 @@ describe("AdminProcessesDashboard", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "+ Nuevo Proceso" }));
     fireEvent.click(screen.getByRole("button", { name: "Crear proceso" }));
 
     await waitFor(() => {

@@ -374,28 +374,27 @@ Expected:
 5. Verify those default fields render in applicant mode without manual admin bootstrapping.
 
 Expected:
+- Legacy 7-field cycles are auto-expanded to the full Stage 1 default schema.
 - New/empty Stage 1 configs bootstrap to the full official default schema.
 - Admin can edit/reorder/remove the expanded defaults as usual.
 - Applicant form reflects the same expanded schema.
 
 ## Flow 30: Applicant Section Wizard + Autosave
 1. Login as applicant and open `/applicant/process/:cycleId`.
-2. Verify `Antes de empezar` appears as a collapsible panel:
-   - existing application: starts collapsed
-   - first-time application: starts expanded
-3. Expand the panel and verify checklist + required document hints are present.
-4. **Desktop:** Verify fixed sidebar (280px left) shows numbered step list with active step highlighted (maroon left border, filled circle). **Mobile:** Verify collapsible progress panel shows circular SVG progress and current step label.
+2. Verify `Antes de empezar` appears as its own dedicated intro step before `Elegibilidad` (not repeated inside every section).
+3. Open that intro step and verify checklist + required document hints are present.
+4. **Desktop:** Verify fixed sidebar (280px left) shows clickable step list with active step highlighted. **Mobile:** Verify collapsible progress panel shows progress and current step label.
 5. In section `Elegibilidad`, edit one field and stop typing.
-6. Verify draft status indicator shows `Cambios pendientes` (visible in both sidebar and mobile progress panel) then transitions to `Guardando borrador...` and finally `Borrador guardado`.
+6. Verify draft status indicator shows `Cambios pendientes` then transitions to `Guardando...` and finally `Borrador guardado` (status visible in top nav and mobile progress panel on mobile).
 7. Click `Siguiente` in the fixed bottom action bar and confirm section navigation works without losing values.
 8. **Desktop:** Use sidebar step list to jump directly to `Recomendadores`, then back to `Datos personales`. **Mobile:** Expand progress panel and tap steps to navigate.
-9. In any field, blur input and verify draft is persisted without pressing submit.
+9. In any field, make another edit and pause (without pressing submit); verify debounced autosave persists the draft.
 
 Expected:
 - Applicant sees one section at a time (reduced cognitive load).
 - Desktop sidebar and mobile progress panel both reflect current section and completion status.
 - Autosave persists partial drafts without forcing all required fields immediately.
-- Draft status dot/label updates in sidebar (desktop) and mobile progress panel simultaneously.
+- Draft status label updates clearly while editing/saving and after save completes.
 - Manual `Guardar borrador` in the fixed bottom action bar remains available and uses same draft pipeline.
 - Section navigation via sidebar (desktop), mobile progress panel, or action bar buttons keeps data intact and progress statuses update.
 

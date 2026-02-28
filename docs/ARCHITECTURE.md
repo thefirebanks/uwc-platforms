@@ -78,9 +78,9 @@
   - stage templates include OCR prompt template configurable per stage
   - stage field schema is editable by admin and drives applicant form rendering
   - default Stage 1 schema is now bootstrapped from official UWC PDF inventory (`docs/STAGE1_PDF_FIELD_INVENTORY.md`) and includes the full notes matrix
-  - applicant Stage 1 UX is sectioned (wizard-style) with clickable section progress, normalized field labels, and a collapsible `Antes de empezar` checklist
-  - section action bar is sticky on desktop and non-sticky on mobile to avoid content overlap
-  - applicant drafts autosave (debounced + blur + explicit save) using partial-save mode; full required validation remains enforced at submit time
+  - applicant Stage 1 UX is sectioned (wizard-style) with clickable section progress, normalized field labels, and a dedicated `Antes de empezar` intro step
+  - section action bar is fixed at the bottom with responsive desktop sidebar offset and mobile full-width behavior
+  - applicant drafts autosave (debounced + explicit save, with queued single-flight saves) using partial-save mode; full required validation remains enforced at submit time
   - required file fields are validated before submit
   - file uploads store path + UX metadata (title, original name, mime, upload timestamp)
   - applicant submit now requires both recommender roles submitted (`mentor` + `friend`)

@@ -10,6 +10,20 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "**/.next/**",
+        "**/.claude/**",
+        "**/*.d.ts",
+        "next.config.ts",
+        "playwright.config.ts",
+        "eslint.config.mjs",
+        "scripts/**",
+        "src/types/**",
+        "src/styles/**",
+        "src/app/layout.tsx",
+        "src/app/page.tsx",
+      ],
     },
   },
   resolve: {

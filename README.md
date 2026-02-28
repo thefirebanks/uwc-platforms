@@ -1,24 +1,24 @@
-# UWC Peru Selection Platform (MVP)
+# UWC Peru Selection Platform
 
-Spanish-first MVP for UWC Peru selection management with:
+Platform for UWC Peru selection management with:
 - Applicant mode (Stage 1 document submission)
 - Admin mode (validation + stage management)
-- Two-stage flow (`documents` -> `exam_placeholder`)
+- Multi-stage flow (`documents` -> `exam_placeholder`)
 - Structured runtime logs (Cloudflare-ready), audit trail, and reportable error IDs
 
 ## Tech Stack
 - Next.js 16 + TypeScript + Tailwind
 - Material UI (hybrid custom look)
 - Supabase (Google OAuth, Postgres, Storage)
-- Cloudflare deployment target
+- Cloudflare Pages deployment
 - Bun runtime/package manager
 - Vitest + Testing Library + Playwright
 
 ## Documentation
-- Canonical project docs live in `/Users/dafirebanks/Projects/uwc-platforms/docs/`.
-- Start at `/Users/dafirebanks/Projects/uwc-platforms/docs/README.md`.
+- Canonical project docs live in `./docs/`.
+- Start at `./docs/README.md`.
 
-## MVP Features Implemented
+## Features
 - Role-based login (`admin`, `applicant`)
 - Google OAuth sign-in via Supabase
 - OAuth callback profile provisioning with admin allowlist support
@@ -45,7 +45,7 @@ Spanish-first MVP for UWC Peru selection management with:
 - Recommendation request registration + persisted recommender list display
 - Admin queue for applications
 - Admin validation (`eligible` / `ineligible`)
-- Stage management for 2 stages (Stage 2 is placeholder)
+- Multi-stage management
 - Admin audit viewer with filters + CSV export (`/admin/audit`)
 - External exam CSV import (modo simulación)
 - CSV export endpoint
@@ -71,23 +71,15 @@ cp .env.example .env.local
      - `RESEND_API_KEY`
      - `RESEND_FROM_EMAIL`
      - `RESEND_FROM_NAME` (optional, defaults to `UWC Peru`)
-4. Use UWC Supabase profile commands for this repo:
+4. Link to the Supabase project:
 ```bash
-sbu link --project-ref lnuugnvwjyndvxhzbuib
+supabase link --project-ref <your-project-ref>
 ```
-5. Run DB migrations in Supabase SQL editor (or via Supabase CLI):
-- `supabase/migrations/20260217001000_init_mvp.sql`
-- `supabase/migrations/20260217002000_storage_policies.sql`
-- `supabase/migrations/20260217013000_add_profiles_insert_policy.sql`
-- `supabase/migrations/20260218001000_add_audit_events_indexes.sql`
-- `supabase/migrations/20260218002000_add_cycle_stage_configuration.sql`
-- `supabase/migrations/20260218003000_add_cycle_stage_templates.sql`
-- `supabase/migrations/20260218004000_add_stage_form_and_automation_configs.sql`
-- `supabase/migrations/20260218005000_add_communications_lifecycle_and_ocr_checks.sql`
+5. Run DB migrations:
 ```bash
-sbu db push
+supabase db push
 ```
-6. Create fake accounts (requires `SUPABASE_SECRET_KEY`):
+6. Create demo accounts (requires `SUPABASE_SECRET_KEY`):
 ```bash
 bun run seed:fake-users
 ```
@@ -98,10 +90,16 @@ bun run dev
 ```
 
 ## Supabase CLI Profiles
-This project should always use the UWC Supabase profile.
 
-- `sbu` = `supabase --profile /Users/dafirebanks/.config/supabase/uwc.toml`
-- `sbp` = `supabase --profile /Users/dafirebanks/.config/supabase/personal.toml`
+If you use named Supabase CLI profiles, you can set up aliases in your shell:
+
+```bash
+# Add to ~/.zshrc or ~/.bashrc
+alias sbu="supabase --profile uwc"
+alias sbp="supabase --profile personal"
+```
+
+Profile config files live at `~/.config/supabase/<profile-name>.toml`.
 
 Examples:
 ```bash
@@ -124,13 +122,37 @@ If OAuth keys are not ready yet:
 - `NEXT_PUBLIC_DEMO_APPLICANT_EMAIL`
 - `NEXT_PUBLIC_DEMO_PASSWORD`
 
+## Cloudflare Deployment
+
+This app deploys to Cloudflare Pages via GitHub Actions. On every push to `main`, the app is built and deployed automatically.
+
+### Required GitHub Secrets
+
+| Secret | Description |
+|--------|-------------|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Pages permissions |
+| `CLOUDFLARE_ACCOUNT_ID` | Your Cloudflare account ID |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anonymous/publishable key |
+| `NEXT_PUBLIC_APP_URL` | Production URL (e.g. `https://uwc-platforms.pages.dev`) |
+| `NEXT_PUBLIC_ENABLE_DEV_BYPASS` | `"true"` for staging preview |
+| `NEXT_PUBLIC_DEMO_ADMIN_EMAIL` | Demo admin email for bypass |
+| `NEXT_PUBLIC_DEMO_APPLICANT_EMAIL` | Demo applicant email for bypass |
+| `NEXT_PUBLIC_DEMO_PASSWORD` | Demo password for bypass |
+
+Runtime secrets (set in Cloudflare Pages dashboard, not GitHub Actions):
+- `SUPABASE_SECRET_KEY`
+- `RESEND_API_KEY`
+- `RESEND_FROM_EMAIL`
+- `GEMINI_API_KEY`
+
 ## Observability
 - Runtime logs:
   - Local development: emitted to terminal (`bun run dev`).
   - Cloudflare environments: same structured logs are captured in Cloudflare Logs / Log Explorer.
 - Business audit:
   - Critical actions are stored in `audit_events` in Supabase for process accountability.
-- See `/Users/dafirebanks/Projects/uwc-platforms/docs/OBSERVABILITY.md` for commands and retention guidance.
+- See `./docs/OBSERVABILITY.md` for commands and retention guidance.
 
 ## Provider Notes
 - OCR provider: Gemini `gemini-3-flash-preview`.
@@ -144,7 +166,10 @@ bun run test
 bun run test:coverage
 bun run test:e2e
 bun run build
+bun run build:cf   # Cloudflare build
 ```
+
+See `./docs/E2E_TEST_GUIDE.md` for E2E test documentation.
 
 ## Important Endpoints
 - `GET /api/me`
@@ -172,12 +197,12 @@ bun run build
 
 ## Git Workflow (Feature Branch + PR)
 - Main branch: `main`
-- Feature branch prefix: `codex/`
+- Feature branch prefix: `feature/` or `fix/`
 - Example:
 ```bash
-git checkout -b codex/mvp-stage1-admin-applicant
+git checkout -b feature/my-new-feature
 git add .
-git commit -m "feat: implement stage1 mvp with admin/applicant flows"
-git push -u origin codex/mvp-stage1-admin-applicant
+git commit -m "feat: add my new feature"
+git push -u origin feature/my-new-feature
 ```
 Then open a PR into `main`.

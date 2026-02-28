@@ -20,7 +20,7 @@ const dmSans = DM_Sans({
 
 export const metadata: Metadata = {
   title: "UWC Peru Selection Platform",
-  description: "MVP para postulaciones, validación y gestión de etapas",
+  description: "Plataforma de selección UWC Perú — gestión de postulaciones, validaciones y etapas",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

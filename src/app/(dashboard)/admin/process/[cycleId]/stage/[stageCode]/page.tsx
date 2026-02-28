@@ -6,14 +6,12 @@ import type {
   CycleStageField,
   CycleStageTemplate,
   StageAutomationTemplate,
-  StageCode,
+  StageSection,
 } from "@/types/domain";
 import {
   buildDefaultCycleStageFields,
   buildDefaultStageAutomationTemplates,
 } from "@/lib/stages/templates";
-
-const validStages: StageCode[] = ["documents", "exam_placeholder"];
 
 export default async function StageConfigPage({
   params,
@@ -27,42 +25,68 @@ export default async function StageConfigPage({
   }
 
   const { cycleId, stageCode } = await params;
-  if (!validStages.includes(stageCode as StageCode)) {
-    redirect(`/admin/process/${cycleId}`);
-  }
-  const parsedStageCode = stageCode as StageCode;
 
   const supabase = await getSupabaseServerClient();
-  const { data: cycleData } = await supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle();
-  const cycle = cycleData as { name: string } | null;
-
-  if (!cycle) {
-    redirect("/admin");
-  }
-
-  const [{ data: templateData }, { data: fieldsData }, { data: automationsData }] = await Promise.all([
+  const [{ data: cycleData }, { data: templateRows }] = await Promise.all([
+    supabase
+      .from("cycles")
+      .select("*")
+      .eq("id", cycleId)
+      .maybeSingle(),
     supabase
       .from("cycle_stage_templates")
       .select("*")
       .eq("cycle_id", cycleId)
-      .eq("stage_code", parsedStageCode)
-      .maybeSingle(),
+      .order("sort_order", { ascending: true }),
+  ]);
+  const cycle = cycleData as {
+    name: string;
+    stage1_open_at: string | null;
+    stage1_close_at: string | null;
+    stage2_open_at: string | null;
+    stage2_close_at: string | null;
+  } | null;
+
+  if (!cycle) {
+    redirect("/admin/processes");
+  }
+
+  const templates = (templateRows as CycleStageTemplate[] | null) ?? [];
+  const selectedTemplate =
+    templates.find((template) => template.id === stageCode) ??
+    templates.find((template) => template.stage_code === stageCode) ??
+    null;
+
+  if (!selectedTemplate) {
+    redirect(`/admin/process/${cycleId}`);
+  }
+
+  const resolvedStageCode = selectedTemplate.stage_code;
+
+  const [{ data: templateData }, { data: fieldsData }, { data: automationsData }, { data: sectionsData }] = await Promise.all([
+    Promise.resolve({ data: selectedTemplate }),
     supabase
       .from("cycle_stage_fields")
       .select("*")
       .eq("cycle_id", cycleId)
-      .eq("stage_code", parsedStageCode)
+      .eq("stage_code", resolvedStageCode)
       .order("sort_order", { ascending: true }),
     supabase
       .from("stage_automation_templates")
       .select("*")
       .eq("cycle_id", cycleId)
-      .eq("stage_code", parsedStageCode)
+      .eq("stage_code", resolvedStageCode)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("stage_sections")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", resolvedStageCode)
+      .order("sort_order", { ascending: true }),
   ]);
 
   const fallbackFields =
-    parsedStageCode === "documents"
+    resolvedStageCode === "documents"
       ? buildDefaultCycleStageFields({ cycleId }).map((field, index) => ({
           id: `fallback-field-${index + 1}`,
           cycle_id: field.cycle_id,
@@ -75,12 +99,13 @@ export default async function StageConfigPage({
           help_text: field.help_text ?? null,
           sort_order: field.sort_order ?? index + 1,
           is_active: field.is_active ?? true,
+          section_id: null,
           created_at: new Date().toISOString(),
         }))
       : [];
 
   const fallbackAutomations =
-    parsedStageCode === "documents"
+    resolvedStageCode === "documents"
       ? buildDefaultStageAutomationTemplates({ cycleId }).map((automation, index) => ({
           id: `fallback-automation-${index + 1}`,
           cycle_id: automation.cycle_id,
@@ -99,11 +124,29 @@ export default async function StageConfigPage({
     <StageConfigEditor
       cycleId={cycleId}
       cycleName={cycle.name}
-      stageCode={parsedStageCode}
-      stageLabel={(templateData as CycleStageTemplate | null)?.stage_label ?? parsedStageCode}
+      stageId={selectedTemplate.id}
+      stageCode={resolvedStageCode}
+      stageLabel={(templateData as CycleStageTemplate | null)?.stage_label ?? resolvedStageCode}
+      stageOpenAt={
+        resolvedStageCode === "documents"
+          ? cycle.stage1_open_at
+          : resolvedStageCode === "exam_placeholder"
+            ? cycle.stage2_open_at
+            : null
+      }
+      stageCloseAt={
+        resolvedStageCode === "documents"
+          ? cycle.stage1_close_at
+          : resolvedStageCode === "exam_placeholder"
+            ? cycle.stage2_close_at
+            : null
+      }
+      stageTemplates={templates}
       initialFields={(fieldsData as CycleStageField[] | null) ?? fallbackFields}
       initialAutomations={(automationsData as StageAutomationTemplate[] | null) ?? fallbackAutomations}
       initialOcrPromptTemplate={(templateData as CycleStageTemplate | null)?.ocr_prompt_template ?? null}
+      initialStageAdminConfig={(templateData as CycleStageTemplate | null)?.admin_config ?? null}
+      initialSections={(sectionsData as StageSection[] | null) ?? []}
     />
   );
 }

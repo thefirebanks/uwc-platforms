@@ -3,7 +3,7 @@
 ## 1) Supabase Project
 - This repository is pinned to UWC Supabase project:
   - project ref: `lnuugnvwjyndvxhzbuib`
-  - CLI profile: `/Users/dafirebanks/.config/supabase/uwc.toml`
+  - CLI profile: `~/.config/supabase/uwc.toml`
 - Keep these in `.env.local`:
   - `NEXT_PUBLIC_SUPABASE_URL`
   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -45,8 +45,8 @@ bun run seed:fake-users
 ```
 
 ## 2.1) Supabase Profile Shortcuts
-- `sbu` (UWC): `supabase --profile /Users/dafirebanks/.config/supabase/uwc.toml`
-- `sbp` (personal): `supabase --profile /Users/dafirebanks/.config/supabase/personal.toml`
+- `sbu` (UWC): `supabase --profile uwc` (profile config at `~/.config/supabase/uwc.toml`)
+- `sbp` (personal): `supabase --profile personal` (profile config at `~/.config/supabase/personal.toml`)
 - Always use `sbu` for this repository unless explicitly working on a different project.
 
 ## 3) Cloudflare Hosting

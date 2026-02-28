@@ -23,9 +23,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <LanguageProvider canUseEnglish={canUseEnglish}>
       <TopNav role={profile.role} />
-      <main style={{ paddingTop: 72 }}>
-        {children}
-      </main>
+      {children}
     </LanguageProvider>
   );
 }

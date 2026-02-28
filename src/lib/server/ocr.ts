@@ -3,7 +3,7 @@ import { AppError } from "@/lib/errors/app-error";
 const GEMINI_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
 
-export const DEFAULT_OCR_PROMPT =
+const DEFAULT_OCR_PROMPT =
   "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.";
 
 function clampConfidence(value: unknown) {

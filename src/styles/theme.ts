@@ -9,16 +9,20 @@ const lightColors = {
   uwcBlue: "#004E89",
   uwcBlueSoft: "#EDF4F9",
   ink: "#2C2825",
+  inkLight: "#5A5450",
   paper: "#FFFBF8",
   surface: "#FFFFFF",
   cream: "#FBF7F4",
   sand: "#EBE6E0",
+  sandLight: "#F3EFEB",
   muted: "#9A9590",
   success: "#2D6A4F",
   successSoft: "#E8F5EE",
   warning: "#B45309",
   warningSoft: "#FEF3C7",
-  menuShadow: "0 4px 12px rgba(44, 40, 37, 0.08)",
+  danger: "#DC2626",
+  dangerSoft: "#FEF2F2",
+  menuShadow: "0 8px 24px rgba(44,40,37,0.08), 0 2px 6px rgba(44,40,37,0.04)",
 };
 
 const darkColors = {
@@ -28,16 +32,20 @@ const darkColors = {
   uwcBlue: "#5C9DD2",
   uwcBlueSoft: "rgba(92, 157, 210, 0.18)",
   ink: "#F2ECE7",
+  inkLight: "#B8AEA8",
   paper: "#141313",
   surface: "#1D1B1A",
   cream: "#23201E",
   sand: "#3B3532",
+  sandLight: "#2A2523",
   muted: "#B8AEA8",
   success: "#56B589",
   successSoft: "rgba(86, 181, 137, 0.16)",
   warning: "#E6A65C",
   warningSoft: "rgba(230, 166, 92, 0.18)",
-  menuShadow: "0 6px 16px rgba(0, 0, 0, 0.32)",
+  danger: "#EF4444",
+  dangerSoft: "rgba(239, 68, 68, 0.16)",
+  menuShadow: "0 8px 24px rgba(0, 0, 0, 0.32)",
 };
 
 function getColors(mode: PaletteMode) {
@@ -76,13 +84,17 @@ export function createAppTheme(mode: PaletteMode = "light") {
         main: colors.warning,
         light: colors.warningSoft,
       },
+      error: {
+        main: colors.danger,
+        light: colors.dangerSoft,
+      },
       divider: colors.sand,
     },
     shape: {
       borderRadius,
     },
     typography: {
-      fontFamily: "var(--font-body, 'DM Sans'), -apple-system, sans-serif",
+      fontFamily: "var(--font-body), 'DM Sans', -apple-system, sans-serif",
       h1: {
         fontFamily: "var(--font-newsreader), 'Newsreader', Georgia, serif",
         fontWeight: 400,

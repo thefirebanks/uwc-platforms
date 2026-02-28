@@ -30,3 +30,30 @@ jobs:
 
       - name: Unit and component tests
         run: bun run test
+
+  build:
+    runs-on: ubuntu-latest
+    needs: verify
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Build for Cloudflare Pages
+        run: bunx @cloudflare/next-on-pages
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          NEXT_PUBLIC_APP_URL: ${{ secrets.NEXT_PUBLIC_APP_URL }}
+          NEXT_PUBLIC_ENABLE_DEV_BYPASS: ${{ secrets.NEXT_PUBLIC_ENABLE_DEV_BYPASS }}
+          NEXT_PUBLIC_DEMO_ADMIN_EMAIL: ${{ secrets.NEXT_PUBLIC_DEMO_ADMIN_EMAIL }}
+          NEXT_PUBLIC_DEMO_APPLICANT_EMAIL: ${{ secrets.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL }}
+          NEXT_PUBLIC_DEMO_PASSWORD: ${{ secrets.NEXT_PUBLIC_DEMO_PASSWORD }}

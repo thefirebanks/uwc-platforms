@@ -1,6 +1,7 @@
 export type AppRole = "admin" | "applicant";
 
-export type StageCode = "documents" | "exam_placeholder";
+export type BuiltinStageCode = "documents" | "exam_placeholder";
+export type StageCode = BuiltinStageCode | (string & {});
 export type StageFieldType = "short_text" | "long_text" | "number" | "date" | "email" | "file";
 export type StageAutomationTrigger = "application_submitted" | "stage_result";
 export type CommunicationStatus = "queued" | "processing" | "sent" | "failed";
@@ -95,6 +96,7 @@ export interface CycleStageTemplate {
   milestone_label: string;
   due_at: string | null;
   ocr_prompt_template?: string | null;
+  admin_config?: Record<string, unknown> | null;
   sort_order: number;
   created_at: string;
 }
@@ -111,6 +113,19 @@ export interface CycleStageField {
   help_text: string | null;
   sort_order: number;
   is_active: boolean;
+  section_id: string | null;
+  created_at: string;
+}
+
+export interface StageSection {
+  id: string;
+  cycle_id: string;
+  stage_code: string;
+  section_key: string;
+  title: string;
+  description: string;
+  sort_order: number;
+  is_visible: boolean;
   created_at: string;
 }
 

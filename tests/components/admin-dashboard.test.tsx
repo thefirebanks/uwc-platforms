@@ -37,24 +37,6 @@ const cycleTemplates = [
   },
 ] as const;
 
-const applications = [
-  {
-    id: "app-1",
-    applicant_id: "applicant-1",
-    cycle_id: "cycle-1",
-    stage_code: "documents",
-    status: "submitted",
-    payload: {},
-    files: {
-      identificationDocument: "app-1/identification.pdf",
-    },
-    validation_notes: null,
-    error_report_count: 0,
-    created_at: "2026-01-01T00:00:00.000Z",
-    updated_at: "2026-01-02T00:00:00.000Z",
-  },
-] as const;
-
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -72,10 +54,10 @@ describe("AdminDashboard", () => {
         initialApplications={[]}
         cycle={cycle}
         cycleTemplates={[...cycleTemplates]}
+        initialWorkspaceSection="communications"
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Operaciones avanzadas" }));
     fireEvent.click(screen.getByRole("button", { name: "Importar CSV" }));
 
     expect(fetchMock).toHaveBeenCalledWith(
@@ -101,6 +83,7 @@ describe("AdminDashboard", () => {
         initialApplications={[]}
         cycle={cycle}
         cycleTemplates={[...cycleTemplates]}
+        initialWorkspaceSection="stages"
       />,
     );
 
@@ -141,10 +124,10 @@ describe("AdminDashboard", () => {
         initialApplications={[]}
         cycle={cycle}
         cycleTemplates={[...cycleTemplates]}
+        initialWorkspaceSection="communications"
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Operaciones avanzadas" }));
     fireEvent.click(screen.getByRole("button", { name: "Procesar cola" }));
 
     await waitFor(() => {
@@ -161,65 +144,4 @@ describe("AdminDashboard", () => {
     });
   });
 
-  it("runs OCR validation for an application with files", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            confidence: 0.9,
-            summary: "Documento válido",
-          }),
-          { status: 200 },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            checks: [],
-          }),
-          { status: 200 },
-        ),
-      );
-
-    render(
-      <AdminDashboard
-        initialApplications={[...applications]}
-        cycle={cycle}
-        cycleTemplates={[...cycleTemplates]}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: "OCR" }));
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/applications/app-1/ocr-check",
-        expect.objectContaining({ method: "POST" }),
-      );
-    });
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith("/api/applications/app-1/ocr-check?limit=10");
-    });
-  });
-
-  it("renders export links for filtered csv and individual json", () => {
-    render(
-      <AdminDashboard
-        initialApplications={[...applications]}
-        cycle={cycle}
-        cycleTemplates={[...cycleTemplates]}
-      />,
-    );
-
-    expect(screen.getByRole("link", { name: "Exportar CSV filtrado" })).toHaveAttribute(
-      "href",
-      "/api/exports?cycleId=cycle-1",
-    );
-    expect(screen.getByRole("link", { name: "Exportar JSON" })).toHaveAttribute(
-      "href",
-      "/api/exports?applicationId=app-1",
-    );
-  });
 });

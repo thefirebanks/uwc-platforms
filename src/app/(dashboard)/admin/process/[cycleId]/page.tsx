@@ -6,8 +6,10 @@ import type { Application, CycleStageTemplate, SelectionProcess } from "@/types/
 
 export default async function AdminProcessPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ cycleId: string }>;
+  searchParams?: Promise<{ section?: string | string[] }>;
 }) {
   const profile = await getSessionProfileOrRedirect();
 
@@ -16,11 +18,19 @@ export default async function AdminProcessPage({
   }
 
   const { cycleId } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const requestedSection = Array.isArray(resolvedSearchParams.section)
+    ? resolvedSearchParams.section[0]
+    : resolvedSearchParams.section;
+
+  if (requestedSection === "applications") {
+    redirect(`/admin/candidates?cycleId=${cycleId}`);
+  }
   const supabase = await getSupabaseServerClient();
   const { data: cycle } = await supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle();
 
   if (!cycle) {
-    redirect("/admin");
+    redirect("/admin/processes");
   }
 
   const [{ data: applications }, { data: templates }] = await Promise.all([
@@ -41,6 +51,15 @@ export default async function AdminProcessPage({
       initialApplications={(applications as Application[] | null) ?? []}
       cycleTemplates={(templates as CycleStageTemplate[] | null) ?? []}
       cycle={cycle as SelectionProcess}
+      initialWorkspaceSection={
+        Array.isArray(resolvedSearchParams.section)
+          ? "process_config"
+          : resolvedSearchParams.section === "stages"
+            ? "stages"
+            : resolvedSearchParams.section === "communications"
+                ? "communications"
+                : "process_config"
+      }
     />
   );
 }

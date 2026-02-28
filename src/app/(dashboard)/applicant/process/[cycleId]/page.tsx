@@ -9,6 +9,7 @@ import type {
   CycleStageField,
   RecommendationRequest,
   SelectionProcess,
+  StageSection,
 } from "@/types/domain";
 
 export default async function ApplicantProcessPage({
@@ -24,7 +25,8 @@ export default async function ApplicantProcessPage({
 
   const { cycleId } = await params;
   const supabase = await getSupabaseServerClient();
-  const [{ data: cycle }, { data: application }, { data: stageFields }] = await Promise.all([
+  const [{ data: cycle }, { data: application }, { data: stageFields }, { data: stageSections }] =
+    await Promise.all([
     supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle(),
     supabase
       .from("applications")
@@ -38,6 +40,12 @@ export default async function ApplicantProcessPage({
       .eq("cycle_id", cycleId)
       .eq("stage_code", "documents")
       .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("stage_sections")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", "documents")
       .order("sort_order", { ascending: true }),
   ]);
 
@@ -81,6 +89,7 @@ export default async function ApplicantProcessPage({
       stageFields={resolvedStageFields}
       stageCloseAt={(cycle as SelectionProcess).stage1_close_at ?? null}
       initialRecommenders={initialRecommenders}
+      sections={(stageSections as StageSection[] | null) ?? []}
     />
   );
 }

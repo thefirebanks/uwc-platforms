@@ -33,8 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
-# vercel
+# vercel / cloudflare build output
 .vercel
+.wrangler/
 
 # typescript
 *.tsbuildinfo
@@ -46,3 +47,4 @@ test-results/
 playwright-report/
 output/
 supabase/.temp/
+.claude/
