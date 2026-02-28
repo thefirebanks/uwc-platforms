@@ -108,7 +108,8 @@ select
   cs->>'id',
   coalesce(nullif(trim(cs->>'title'), ''), 'Nueva seccion'),
   'Campos personalizados adicionales de esta etapa.',
-  8 + coalesce((cs->>'order')::int, 1)
+  8 + coalesce((cs->>'order')::int, 1),
+  true
 from public.cycle_stage_templates t,
   jsonb_array_elements(
     case
