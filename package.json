@@ -12,7 +12,8 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "seed:fake-users": "bun --env-file=.env.local scripts/create-fake-users.ts"
+    "seed:fake-users": "bun --env-file=.env.local scripts/create-fake-users.ts",
+    "build:cf": "bunx @cloudflare/next-on-pages"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -30,6 +31,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@cloudflare/next-on-pages": "^1.13.16",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
@@ -46,6 +48,7 @@
     "jsdom": "^27.0.1",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "2.1.8"
+    "vitest": "2.1.8",
+    "wrangler": "^4.69.0"
   }
 }

@@ -72,9 +72,9 @@ Tasks:
 3. Keep default behavior explicit (no implicit fallback to applicant mode).
 
 Suggested implementation points:
-- `/Users/dafirebanks/Projects/uwc-platforms/src/components/applicant-application-form.tsx`
-- `/Users/dafirebanks/Projects/uwc-platforms/src/lib/stages/applicant-sections.ts`
-- `/Users/dafirebanks/Projects/uwc-platforms/src/lib/stages/field-sub-groups.ts`
+- `src/components/applicant-application-form.tsx`
+- `src/lib/stages/applicant-sections.ts`
+- `src/lib/stages/field-sub-groups.ts`
 
 Acceptance criteria:
 - Admin preview can render canonical labels/placeholders when requested.

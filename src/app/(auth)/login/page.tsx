@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Alert,
@@ -31,13 +31,6 @@ export default function LoginPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResettingDemo, setIsResettingDemo] = useState(false);
-  const [modeHint, setModeHint] = useState<string | null>(null);
-
-  useEffect(() => {
-    const search = typeof window === "undefined" ? "" : window.location.search;
-    const mode = new URLSearchParams(search).get("mode");
-    setModeHint(mode);
-  }, []);
 
   async function loginWithGoogle() {
     setError(null);
@@ -143,14 +136,6 @@ export default function LoginPage() {
         <CardContent>
           <Stack spacing={2.5}>
             <Typography variant="h4">Iniciar sesión</Typography>
-            <Typography color="text.secondary">
-              Autenticación oficial del MVP: Google OAuth con Supabase.
-            </Typography>
-            {modeHint === "admin" || modeHint === "applicant" ? (
-              <Typography variant="body2" color="text.secondary">
-                Modo sugerido: {modeHint === "admin" ? "admin" : "postulante"}.
-              </Typography>
-            ) : null}
 
             {error ? <Alert severity="error">{error}</Alert> : null}
             {successMessage ? <Alert severity="success">{successMessage}</Alert> : null}
@@ -167,9 +152,6 @@ export default function LoginPage() {
             {devBypassEnabled ? (
               <>
                 <Divider />
-                <Typography variant="body2" color="text.secondary">
-                  Bypass temporal de desarrollo (desactivar en producción).
-                </Typography>
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
                   <Button
                     variant="outlined"

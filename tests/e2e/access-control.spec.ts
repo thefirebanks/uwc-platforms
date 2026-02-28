@@ -1,9 +1,5 @@
 import { expect, test } from "@playwright/test";
-
-const bypassReady =
-  process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true" &&
-  Boolean(process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL) &&
-  Boolean(process.env.NEXT_PUBLIC_DEMO_PASSWORD);
+import { bypassReady } from "./helpers";
 
 test("demo applicant cannot invoke admin APIs", async ({ page }) => {
   test.skip(

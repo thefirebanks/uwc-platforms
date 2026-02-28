@@ -1,37 +1,5 @@
 import { expect, test } from "@playwright/test";
-
-const bypassReady =
-  process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true" &&
-  Boolean(process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL) &&
-  Boolean(process.env.NEXT_PUBLIC_DEMO_PASSWORD);
-
-/**
- * Helper: log in as the demo applicant via the dev bypass button,
- * then navigate to the first available process form.
- */
-async function loginAndOpenForm(page: import("@playwright/test").Page) {
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
-  await expect(page).toHaveURL(/\/applicant/);
-
-  const processLink = page.getByRole("link").filter({
-    hasText: /Abrir postulación|Iniciar postulación|Open application|Start application/,
-  }).first();
-  await expect(processLink).toBeVisible({ timeout: 15_000 });
-  await processLink.click();
-  await expect(page).toHaveURL(/\/applicant\/process\//);
-}
-
-/**
- * Click a sidebar nav button by matching its visible text.
- * The sidebar uses native <button> elements (MUI Box component="button").
- */
-async function clickSidebarStepByLabel(page: import("@playwright/test").Page, textPattern: RegExp) {
-  const sidebar = page.locator("aside");
-  const btn = sidebar.locator("button").filter({ hasText: textPattern });
-  await btn.scrollIntoViewIfNeeded();
-  await btn.click();
-}
+import { bypassReady, clickSidebarStepByLabel, loginAndOpenForm } from "./helpers";
 
 test.describe("Applicant form – sidebar redesign", () => {
   test.beforeEach(async () => {

@@ -5,7 +5,7 @@ describe("resolveRoleFromEmail", () => {
   it("returns admin when email is allowlisted", () => {
     const role = resolveRoleFromEmail({
       email: "Comite@pe.uwc.org",
-      allowlist: "dafirebanks@gmail.com, comite@pe.uwc.org",
+      allowlist: "test-admin@example.com, comite@pe.uwc.org",
     });
 
     expect(role).toBe("admin");
@@ -14,7 +14,7 @@ describe("resolveRoleFromEmail", () => {
   it("returns applicant when email is not allowlisted", () => {
     const role = resolveRoleFromEmail({
       email: "applicant@uwc.org",
-      allowlist: "dafirebanks@gmail.com, comite@pe.uwc.org",
+      allowlist: "test-admin@example.com, comite@pe.uwc.org",
     });
 
     expect(role).toBe("applicant");

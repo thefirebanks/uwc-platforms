@@ -119,7 +119,7 @@ export function AdminDashboard({
         return {
           title: "Resumen del Proceso",
           description:
-            "Gestiona validaciones, transición de etapas (2 etapas MVP) e importación de examen externo.",
+            "Gestiona validaciones, transición de etapas e importación de examen externo.",
           subnote:
             "`Elegible` habilita avance a Stage 2. `No elegible` mantiene la postulación en Stage 1.",
         };
@@ -533,7 +533,7 @@ export function AdminDashboard({
                     <h3>{"Plantillas de etapas"}</h3>
                     <p>
                       {
-                        "Personaliza etiquetas, hitos y fechas por etapa. Se incluyen placeholders hasta Stage 6 para planear el flujo completo, aunque el MVP tenga menos etapas activas."
+                        "Personaliza etiquetas, hitos y fechas por etapa. Se incluyen placeholders hasta Stage 6 para planear el flujo completo."
                       }
                     </p>
                   </div>
