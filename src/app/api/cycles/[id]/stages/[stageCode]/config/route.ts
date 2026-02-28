@@ -21,6 +21,7 @@ const fieldSchema = z.object({
   helpText: z.string().max(220).nullable().optional(),
   sortOrder: z.number().int().min(1).max(200),
   isActive: z.boolean().optional().default(true),
+  sectionKey: z.string().min(1).max(120).nullable().optional(),
 });
 
 const automationSchema = z.object({
@@ -41,84 +42,24 @@ const settingsSchema = z.object({
   blockIfPreviousNotMet: z.boolean(),
 });
 
-const customSectionSchema = z.object({
-  id: z.string().trim().min(1).max(120),
+const sectionSchema = z.object({
+  sectionKey: z.string().trim().min(1).max(120),
   title: z.string().trim().min(1).max(120),
-  order: z.number().int().min(1).max(500),
+  description: z.string().trim().max(500).optional().default(""),
+  sortOrder: z.number().int().min(0).max(500),
+  isVisible: z.boolean().optional().default(true),
 });
-
-const builtinSectionIdSchema = z.enum([
-  "eligibility",
-  "identity",
-  "family",
-  "school",
-  "motivation",
-  "recommenders",
-  "documents",
-  "other",
-]);
 
 const patchSchema = z.object({
   fields: z.array(fieldSchema),
   automations: z.array(automationSchema),
   ocrPromptTemplate: z.string().max(5000).nullable().optional(),
   settings: settingsSchema.optional(),
-  customSections: z.array(customSectionSchema).optional(),
-  builtinSectionOrder: z.array(builtinSectionIdSchema).optional(),
-  hiddenBuiltinSectionIds: z.array(builtinSectionIdSchema).optional(),
-  fieldSectionAssignments: z.record(z.string().trim().min(1), z.string().trim().min(1)).optional(),
+  sections: z.array(sectionSchema).optional(),
 });
 
 const cycleIdSchema = z.string().uuid();
 const stageIdentifierSchema = z.string().min(1).max(160);
-const BUILTIN_SECTION_IDS = [
-  "eligibility",
-  "identity",
-  "family",
-  "school",
-  "motivation",
-  "recommenders",
-  "documents",
-  "other",
-] as const;
-type BuiltinSectionId = (typeof BUILTIN_SECTION_IDS)[number];
-
-function isBuiltinSectionId(value: string): value is BuiltinSectionId {
-  return (BUILTIN_SECTION_IDS as readonly string[]).includes(value);
-}
-
-function normalizeBuiltinSectionOrder(sectionOrder: string[] | null | undefined): BuiltinSectionId[] {
-  const seen = new Set<string>();
-  const normalized: BuiltinSectionId[] = [];
-
-  for (const rawId of sectionOrder ?? []) {
-    const id = rawId.trim();
-    if (!isBuiltinSectionId(id) || seen.has(id)) {
-      continue;
-    }
-    normalized.push(id);
-    seen.add(id);
-  }
-
-  for (const defaultId of BUILTIN_SECTION_IDS) {
-    if (!seen.has(defaultId)) {
-      normalized.push(defaultId);
-    }
-  }
-
-  return normalized;
-}
-
-function sanitizeHiddenBuiltinSectionIds(hiddenIds: string[] | null | undefined) {
-  return Array.from(
-    new Set(
-      (hiddenIds ?? [])
-        .map((value) => value.trim())
-        .filter((value): value is BuiltinSectionId => isBuiltinSectionId(value))
-        .filter((value) => value !== "other"),
-    ),
-  );
-}
 
 function toIsoDateBoundary(value: string | null | undefined) {
   if (!value) {
@@ -134,69 +75,6 @@ function parseStageAdminConfig(value: Json | null | undefined) {
   }
 
   const record = value as Record<string, Json | undefined>;
-  const customSections = Array.isArray(record.customSections)
-    ? record.customSections.flatMap((item, index) => {
-        if (!item || typeof item !== "object" || Array.isArray(item)) {
-          return [];
-        }
-
-        const section = item as Record<string, Json | undefined>;
-        if (typeof section.id !== "string" || !section.id.trim()) {
-          return [];
-        }
-
-        return [
-          {
-            id: section.id.trim(),
-            title:
-              typeof section.title === "string" && section.title.trim()
-                ? section.title.trim()
-                : "Nueva sección",
-            order:
-              typeof section.order === "number" && Number.isFinite(section.order)
-                ? Math.max(1, Math.trunc(section.order))
-                : index + 1,
-          },
-        ];
-      })
-    : [];
-
-  const normalizedCustomSections = customSections
-    .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
-    .map((section, index) => ({ ...section, order: index + 1 }));
-  const builtinSectionOrder = Array.isArray(record.builtinSectionOrder)
-    ? normalizeBuiltinSectionOrder(
-        record.builtinSectionOrder.filter((value): value is string => typeof value === "string"),
-      )
-    : normalizeBuiltinSectionOrder(undefined);
-  const hiddenBuiltinSectionIds = Array.isArray(record.hiddenBuiltinSectionIds)
-    ? sanitizeHiddenBuiltinSectionIds(
-        record.hiddenBuiltinSectionIds.filter((value): value is string => typeof value === "string"),
-      )
-    : [];
-  const allowedCustomSectionIds = new Set(normalizedCustomSections.map((section) => section.id));
-  const allowedSectionIds = new Set<string>([...allowedCustomSectionIds, ...BUILTIN_SECTION_IDS]);
-  const fieldSectionAssignments =
-    record.fieldSectionAssignments &&
-    typeof record.fieldSectionAssignments === "object" &&
-    !Array.isArray(record.fieldSectionAssignments)
-      ? Object.fromEntries(
-          Object.entries(record.fieldSectionAssignments as Record<string, Json>).flatMap(
-            ([fieldKey, sectionId]) => {
-              if (
-                typeof sectionId !== "string" ||
-                !fieldKey.trim() ||
-                !sectionId.trim() ||
-                !allowedSectionIds.has(sectionId.trim())
-              ) {
-                return [];
-              }
-
-              return [[fieldKey.trim(), sectionId.trim()]];
-            },
-          ),
-        )
-      : {};
 
   return {
     stageName:
@@ -215,10 +93,6 @@ function parseStageAdminConfig(value: Json | null | undefined) {
       typeof record.blockIfPreviousNotMet === "boolean"
         ? record.blockIfPreviousNotMet
         : null,
-    customSections: normalizedCustomSections,
-    builtinSectionOrder,
-    hiddenBuiltinSectionIds,
-    fieldSectionAssignments,
   };
 }
 
@@ -318,12 +192,23 @@ export async function GET(
     });
     const stageCode = stageTemplate.stage_code;
 
-    const { data: fieldsData, error: fieldsError } = await supabase
-      .from("cycle_stage_fields")
-      .select("*")
-      .eq("cycle_id", cycleId)
-      .eq("stage_code", stageCode)
-      .order("sort_order", { ascending: true });
+    const [
+      { data: fieldsData, error: fieldsError },
+      { data: sectionsData, error: sectionsError },
+    ] = await Promise.all([
+      supabase
+        .from("cycle_stage_fields")
+        .select("*")
+        .eq("cycle_id", cycleId)
+        .eq("stage_code", stageCode)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("stage_sections")
+        .select("*")
+        .eq("cycle_id", cycleId)
+        .eq("stage_code", stageCode)
+        .order("sort_order", { ascending: true }),
+    ]);
 
     if (fieldsError) {
       throw new AppError({
@@ -331,6 +216,15 @@ export async function GET(
         userMessage: "No se pudieron cargar los campos de la etapa.",
         status: 500,
         details: fieldsError,
+      });
+    }
+
+    if (sectionsError) {
+      throw new AppError({
+        message: "Failed loading stage sections",
+        userMessage: "No se pudieron cargar las secciones de la etapa.",
+        status: 500,
+        details: sectionsError,
       });
     }
 
@@ -368,7 +262,10 @@ export async function GET(
       });
     }
 
-    const rawFields = (fieldsData as StageFieldRow[] | null) ?? [];
+    const rawFields = ((fieldsData as StageFieldRow[] | null) ?? []).map((row) => ({
+      ...row,
+      section_id: (row as Record<string, unknown>).section_id as string | null ?? null,
+    }));
     const fields = stageCode === "documents"
       ? resolveDocumentStageFields({
           cycleId,
@@ -383,6 +280,17 @@ export async function GET(
 
     return NextResponse.json({
       fields,
+      sections: (sectionsData ?? []) as Array<{
+        id: string;
+        cycle_id: string;
+        stage_code: string;
+        section_key: string;
+        title: string;
+        description: string;
+        sort_order: number;
+        is_visible: boolean;
+        created_at: string;
+      }>,
       automations: (automationsData as StageAutomationRow[] | null) ?? [],
       ocrPromptTemplate:
         ((templateData as Pick<StageTemplateRow, "ocr_prompt_template"> | null)?.ocr_prompt_template ?? null),
@@ -396,11 +304,6 @@ export async function GET(
         previousStageRequirement: parsedAdminConfig.previousStageRequirement ?? "none",
         blockIfPreviousNotMet: parsedAdminConfig.blockIfPreviousNotMet ?? false,
       },
-      customSections: parsedAdminConfig.customSections ?? [],
-      builtinSectionOrder:
-        parsedAdminConfig.builtinSectionOrder ?? normalizeBuiltinSectionOrder(undefined),
-      hiddenBuiltinSectionIds: parsedAdminConfig.hiddenBuiltinSectionIds ?? [],
-      fieldSectionAssignments: parsedAdminConfig.fieldSectionAssignments ?? {},
     });
   }, { operation: "cycles.stage_config.get" });
 }
@@ -465,28 +368,7 @@ export async function PATCH(
             parsedExistingAdminConfig.blockIfPreviousNotMet ?? false,
         };
 
-    const incomingCustomSections = (parsed.data.customSections ??
-      parsedExistingAdminConfig.customSections ??
-      [])
-      .map((section) => ({
-        id: section.id.trim(),
-        title: section.title.trim() || "Nueva sección",
-        order: Math.max(1, Math.trunc(section.order)),
-      }))
-      .filter((section) => section.id.length > 0)
-      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
-      .map((section, index) => ({ ...section, order: index + 1 }));
-    const incomingBuiltinSectionOrder = normalizeBuiltinSectionOrder(
-      parsed.data.builtinSectionOrder ??
-        parsedExistingAdminConfig.builtinSectionOrder ??
-        normalizeBuiltinSectionOrder(undefined),
-    );
-    const incomingHiddenBuiltinSectionIds = sanitizeHiddenBuiltinSectionIds(
-      parsed.data.hiddenBuiltinSectionIds ??
-        parsedExistingAdminConfig.hiddenBuiltinSectionIds ??
-        [],
-    );
-
+    // ── Validate field keys ────────────────────────────────────
     const normalizedKeys = parsed.data.fields.map((field) => field.fieldKey.trim());
     if (new Set(normalizedKeys).size !== normalizedKeys.length) {
       const duplicateKeys = Array.from(
@@ -506,36 +388,6 @@ export async function PATCH(
       });
     }
 
-    const incomingFieldKeysSet = new Set(normalizedKeys);
-    const incomingCustomSectionIdSet = new Set(
-      incomingCustomSections.map((section) => section.id),
-    );
-    const allowedIncomingSectionIds = new Set<string>([
-      ...incomingCustomSectionIdSet,
-      ...BUILTIN_SECTION_IDS,
-    ]);
-    const incomingFieldSectionAssignments = Object.fromEntries(
-      Object.entries(
-        parsed.data.fieldSectionAssignments ??
-          parsedExistingAdminConfig.fieldSectionAssignments ??
-          {},
-      ).flatMap(([fieldKey, sectionId]) => {
-        const normalizedFieldKey = fieldKey.trim();
-        const normalizedSectionId = sectionId.trim();
-
-        if (
-          !normalizedFieldKey ||
-          !normalizedSectionId ||
-          !incomingFieldKeysSet.has(normalizedFieldKey) ||
-          !allowedIncomingSectionIds.has(normalizedSectionId)
-        ) {
-          return [];
-        }
-
-        return [[normalizedFieldKey, normalizedSectionId]];
-      }),
-    );
-
     const automationKeys = parsed.data.automations.map(
       (automation) => `${automation.triggerEvent}:${automation.channel}`,
     );
@@ -547,6 +399,85 @@ export async function PATCH(
       });
     }
 
+    // ── Upsert sections ────────────────────────────────────────
+    // Get existing sections
+    const { data: existingSectionsData } = await supabase
+      .from("stage_sections")
+      .select("id, section_key")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", stageCode);
+
+    const existingSections = (existingSectionsData ?? []) as Array<{ id: string; section_key: string }>;
+    const existingSectionByKey = new Map(existingSections.map((s) => [s.section_key, s.id]));
+
+    if (parsed.data.sections) {
+      const incomingSectionKeys = new Set(parsed.data.sections.map((s) => s.sectionKey.trim()));
+
+      // Delete sections no longer in the incoming list (but never delete 'other')
+      const sectionKeysToDelete = existingSections
+        .filter((s) => !incomingSectionKeys.has(s.section_key) && s.section_key !== "other")
+        .map((s) => s.id);
+
+      if (sectionKeysToDelete.length > 0) {
+        const { error: deleteSectionsError } = await supabase
+          .from("stage_sections")
+          .delete()
+          .in("id", sectionKeysToDelete);
+
+        if (deleteSectionsError) {
+          throw new AppError({
+            message: "Failed deleting removed sections",
+            userMessage: "No se pudieron guardar las secciones de la etapa.",
+            status: 500,
+            details: deleteSectionsError,
+          });
+        }
+      }
+
+      // Upsert remaining sections
+      const sectionRows = parsed.data.sections.map((section) => ({
+        cycle_id: cycleId,
+        stage_code: stageCode,
+        section_key: section.sectionKey.trim(),
+        title: section.title.trim(),
+        description: (section.description ?? "").trim(),
+        sort_order: section.sortOrder,
+        is_visible: section.isVisible ?? true,
+      }));
+
+      if (sectionRows.length > 0) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stage_sections table exists via migration but Supabase types not yet regenerated
+        const { error: upsertSectionsError } = await (supabase as any)
+          .from("stage_sections")
+          .upsert(sectionRows, {
+            onConflict: "cycle_id,stage_code,section_key",
+          });
+
+        if (upsertSectionsError) {
+          throw new AppError({
+            message: "Failed upserting sections",
+            userMessage: "No se pudieron guardar las secciones de la etapa.",
+            status: 500,
+            details: upsertSectionsError,
+          });
+        }
+      }
+    }
+
+    // Refresh section mapping after upsert
+    const { data: refreshedSectionsData } = await supabase
+      .from("stage_sections")
+      .select("id, section_key")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", stageCode);
+
+    const sectionKeyToId = new Map(
+      ((refreshedSectionsData ?? []) as Array<{ id: string; section_key: string }>).map(
+        (s) => [s.section_key, s.id],
+      ),
+    );
+
+    // ── Delete removed fields and automations ──────────────────
     const [{ data: existingFieldsData }, { data: existingAutomationsData }] = await Promise.all([
       supabase
         .from("cycle_stage_fields")
@@ -605,19 +536,27 @@ export async function PATCH(
       });
     }
 
-    const fieldRows = parsed.data.fields.map((field) => ({
-      ...(field.id ? { id: field.id } : {}),
-      cycle_id: cycleId,
-      stage_code: stageCode,
-      field_key: field.fieldKey.trim(),
-      field_label: field.fieldLabel.trim(),
-      field_type: field.fieldType,
-      is_required: field.isRequired,
-      placeholder: field.placeholder ?? null,
-      help_text: field.helpText ?? null,
-      sort_order: field.sortOrder,
-      is_active: field.isActive,
-    }));
+    // ── Upsert fields and automations ──────────────────────────
+    const fieldRows = parsed.data.fields.map((field) => {
+      const resolvedSectionId = field.sectionKey
+        ? (sectionKeyToId.get(field.sectionKey.trim()) ?? null)
+        : null;
+
+      return {
+        ...(field.id ? { id: field.id } : {}),
+        cycle_id: cycleId,
+        stage_code: stageCode,
+        field_key: field.fieldKey.trim(),
+        field_label: field.fieldLabel.trim(),
+        field_type: field.fieldType,
+        is_required: field.isRequired,
+        placeholder: field.placeholder ?? null,
+        help_text: field.helpText ?? null,
+        sort_order: field.sortOrder,
+        is_active: field.isActive,
+        section_id: resolvedSectionId,
+      };
+    });
 
     const automationRows = parsed.data.automations.map((automation) => ({
       ...(automation.id ? { id: automation.id } : {}),
@@ -662,6 +601,7 @@ export async function PATCH(
       });
     }
 
+    // ── Sync cycle dates ───────────────────────────────────────
     let savedCycleOpenDate: string | null = incomingSettings.openDate;
     let savedCycleCloseDate: string | null = incomingSettings.closeDate;
 
@@ -705,12 +645,8 @@ export async function PATCH(
       }
     }
 
+    // ── Update admin_config (non-section settings only) ────────
     const nextAdminConfig: Record<string, Json> = {
-      ...(typeof stageTemplate.admin_config === "object" &&
-      stageTemplate.admin_config &&
-      !Array.isArray(stageTemplate.admin_config)
-        ? (stageTemplate.admin_config as Record<string, Json>)
-        : {}),
       stageName: incomingSettings.stageName,
       description: incomingSettings.description,
       openDate:
@@ -721,27 +657,33 @@ export async function PATCH(
         null,
       previousStageRequirement: incomingSettings.previousStageRequirement,
       blockIfPreviousNotMet: incomingSettings.blockIfPreviousNotMet,
-      customSections: incomingCustomSections as unknown as Json,
-      builtinSectionOrder: incomingBuiltinSectionOrder as unknown as Json,
-      hiddenBuiltinSectionIds: incomingHiddenBuiltinSectionIds as unknown as Json,
-      fieldSectionAssignments: incomingFieldSectionAssignments as unknown as Json,
     };
 
-    const [{ data: savedFieldsData, error: savedFieldsError }, { data: savedAutomationsData, error: savedAutomationsError }] =
-      await Promise.all([
-        supabase
-          .from("cycle_stage_fields")
-          .select("*")
-          .eq("cycle_id", cycleId)
-          .eq("stage_code", stageCode)
-          .order("sort_order", { ascending: true }),
-        supabase
-          .from("stage_automation_templates")
-          .select("*")
-          .eq("cycle_id", cycleId)
-          .eq("stage_code", stageCode)
-          .order("created_at", { ascending: true }),
-      ]);
+    // ── Read back saved state ──────────────────────────────────
+    const [
+      { data: savedFieldsData, error: savedFieldsError },
+      { data: savedAutomationsData, error: savedAutomationsError },
+      { data: savedSectionsData, error: savedSectionsError },
+    ] = await Promise.all([
+      supabase
+        .from("cycle_stage_fields")
+        .select("*")
+        .eq("cycle_id", cycleId)
+        .eq("stage_code", stageCode)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("stage_automation_templates")
+        .select("*")
+        .eq("cycle_id", cycleId)
+        .eq("stage_code", stageCode)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("stage_sections")
+        .select("*")
+        .eq("cycle_id", cycleId)
+        .eq("stage_code", stageCode)
+        .order("sort_order", { ascending: true }),
+    ]);
 
     const { data: savedTemplateData, error: savedTemplateError } = await supabase
       .from("cycle_stage_templates")
@@ -777,6 +719,15 @@ export async function PATCH(
       });
     }
 
+    if (savedSectionsError) {
+      throw new AppError({
+        message: "Failed loading saved stage sections",
+        userMessage: "No se pudieron guardar las secciones de la etapa.",
+        status: 500,
+        details: savedSectionsError,
+      });
+    }
+
     if (savedTemplateError) {
       throw new AppError({
         message: "Failed saving OCR prompt template",
@@ -803,6 +754,7 @@ export async function PATCH(
         stageCode,
         fieldsSaved: savedFields.length,
         automationsSaved: savedAutomations.length,
+        sectionsSaved: (savedSectionsData ?? []).length,
         stageSettingsSaved: Boolean(parsed.data.settings),
         hasOcrPromptTemplate: Boolean(savedTemplate?.ocr_prompt_template),
       },
@@ -811,6 +763,17 @@ export async function PATCH(
 
     return NextResponse.json({
       fields: savedFields.sort((a, b) => a.sort_order - b.sort_order),
+      sections: (savedSectionsData ?? []) as Array<{
+        id: string;
+        cycle_id: string;
+        stage_code: string;
+        section_key: string;
+        title: string;
+        description: string;
+        sort_order: number;
+        is_visible: boolean;
+        created_at: string;
+      }>,
       automations: savedAutomations,
       ocrPromptTemplate: savedTemplate?.ocr_prompt_template ?? null,
       settings: {
@@ -829,11 +792,6 @@ export async function PATCH(
         blockIfPreviousNotMet:
           savedAdminConfig.blockIfPreviousNotMet ?? incomingSettings.blockIfPreviousNotMet,
       },
-      customSections: savedAdminConfig.customSections ?? [],
-      builtinSectionOrder:
-        savedAdminConfig.builtinSectionOrder ?? normalizeBuiltinSectionOrder(undefined),
-      hiddenBuiltinSectionIds: savedAdminConfig.hiddenBuiltinSectionIds ?? [],
-      fieldSectionAssignments: savedAdminConfig.fieldSectionAssignments ?? {},
     });
   }, { operation: "cycles.stage_config.patch" });
 }

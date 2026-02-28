@@ -41,7 +41,10 @@ async function getConfiguredStageFields({
     });
   }
 
-  const rows = ((data as Database["public"]["Tables"]["cycle_stage_fields"]["Row"][] | null) ?? []);
+  const rows = ((data as Database["public"]["Tables"]["cycle_stage_fields"]["Row"][] | null) ?? []).map((row) => ({
+    ...row,
+    section_id: (row as Record<string, unknown>).section_id as string | null ?? null,
+  }));
   if (stageCode !== "documents") {
     return rows;
   }

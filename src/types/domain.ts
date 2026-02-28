@@ -113,6 +113,19 @@ export interface CycleStageField {
   help_text: string | null;
   sort_order: number;
   is_active: boolean;
+  section_id: string | null;
+  created_at: string;
+}
+
+export interface StageSection {
+  id: string;
+  cycle_id: string;
+  stage_code: string;
+  section_key: string;
+  title: string;
+  description: string;
+  sort_order: number;
+  is_visible: boolean;
   created_at: string;
 }
 

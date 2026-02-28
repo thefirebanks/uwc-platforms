@@ -6,7 +6,8 @@
  * sub-groups.
  */
 
-import type { ApplicantFormSectionId } from "@/lib/stages/applicant-sections";
+// Section keys are now strings (DB-driven). Known section keys still
+// get visual sub-groups for the applicant form.
 
 export interface SubGroupDef {
   key: string;
@@ -186,7 +187,7 @@ const SCHOOL_SUB_GROUPS: SubGroupDef[] = [
 
 /* ── Export ──────────────────────────────────────────────────── */
 
-const SUB_GROUPS_BY_SECTION: Partial<Record<ApplicantFormSectionId, SubGroupDef[]>> = {
+const SUB_GROUPS_BY_SECTION: Record<string, SubGroupDef[]> = {
   eligibility: ELIGIBILITY_SUB_GROUPS,
   identity: IDENTITY_SUB_GROUPS,
   family: FAMILY_SUB_GROUPS,
@@ -194,9 +195,9 @@ const SUB_GROUPS_BY_SECTION: Partial<Record<ApplicantFormSectionId, SubGroupDef[
 };
 
 export function getSubGroupsForSection(
-  sectionId: ApplicantFormSectionId,
+  sectionKey: string,
 ): SubGroupDef[] {
-  return SUB_GROUPS_BY_SECTION[sectionId] ?? [];
+  return SUB_GROUPS_BY_SECTION[sectionKey] ?? [];
 }
 
 /** Recognized boolean-like field keys that render as toggle pills */

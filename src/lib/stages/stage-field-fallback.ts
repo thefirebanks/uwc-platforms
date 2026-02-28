@@ -14,6 +14,7 @@ export function buildFallbackStageFields(cycleId: string): CycleStageField[] {
     help_text: preset.helpText,
     sort_order: preset.sortOrder ?? index + 1,
     is_active: true,
+    section_id: null,
     created_at: new Date().toISOString(),
   }));
 }

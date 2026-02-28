@@ -15,12 +15,9 @@ import type {
   CycleStageTemplate,
   StageAutomationTemplate,
   StageCode,
+  StageSection,
 } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
-import {
-  groupApplicantFormFields,
-  type ApplicantFormSectionId,
-} from "@/lib/stages/applicant-sections";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
 
 interface ApiError {
@@ -39,7 +36,7 @@ type EditableAutomation = StageAutomationTemplate & {
 type SectionPlaceholderDraft = {
   localId: string;
   title: string;
-  sectionId: ApplicantFormSectionId | "custom";
+  sectionKey: string;
 };
 
 type StageEditorSettingsDraft = {
@@ -58,22 +55,11 @@ type StageAdminConfigPayload = {
   closeDate?: string | null;
   previousStageRequirement?: string;
   blockIfPreviousNotMet?: boolean;
-  customSections?: PersistedCustomSection[];
-  builtinSectionOrder?: ApplicantFormSectionId[];
-  hiddenBuiltinSectionIds?: ApplicantFormSectionId[];
-  fieldSectionAssignments?: Record<string, string>;
 };
-
-type PersistedCustomSection = {
-  id: string;
-  title: string;
-  order: number;
-};
-
-type EditorSectionId = ApplicantFormSectionId | `custom:${string}`;
 
 type EditorSection = {
-  id: EditorSectionId;
+  id: string;
+  sectionKey: string;
   title: string;
   description: string;
   fields: EditableField[];
@@ -82,16 +68,6 @@ type EditorSection = {
 const DEFAULT_OCR_PROMPT_TEMPLATE =
   "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.";
 
-const BUILTIN_SECTION_ORDER_DEFAULT: ApplicantFormSectionId[] = [
-  "eligibility",
-  "identity",
-  "family",
-  "school",
-  "motivation",
-  "recommenders",
-  "documents",
-  "other",
-];
 
 function mapFieldsWithLocalId(fields: CycleStageField[]) {
   return [...fields]
@@ -115,227 +91,70 @@ function isUuid(value: string) {
   );
 }
 
-function serializePersistedCustomSections(customSections: PersistedCustomSection[]) {
+function serializeSections(sections: StageSection[]): string {
   return JSON.stringify(
-    [...customSections]
-      .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
-      .map((section) => ({
-        id: section.id,
-        title: section.title.trim(),
-        order: section.order,
+    [...sections]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((s) => ({
+        section_key: s.section_key,
+        title: s.title,
+        description: s.description,
+        sort_order: s.sort_order,
+        is_visible: s.is_visible,
       })),
   );
 }
 
-function serializeFieldSectionAssignments(assignments: Record<string, string>) {
-  return JSON.stringify(
-    Object.entries(assignments)
-      .filter(([fieldKey, sectionId]) => fieldKey.trim().length > 0 && sectionId.trim().length > 0)
-      .sort(([a], [b]) => a.localeCompare(b)),
-  );
-}
-
-function serializeBuiltinSectionOrder(sectionOrder: ApplicantFormSectionId[]) {
-  return JSON.stringify(sectionOrder);
-}
-
-function serializeHiddenBuiltinSectionIds(sectionIds: ApplicantFormSectionId[]) {
-  return JSON.stringify([...sectionIds].sort());
-}
-
-function normalizePersistedCustomSections(
-  sections: PersistedCustomSection[],
-): PersistedCustomSection[] {
-  return [...sections]
-    .map((section) => ({
-      id: section.id.trim(),
-      title: section.title.trim() || "Nueva sección",
-      order: Number.isFinite(section.order) ? section.order : 0,
-    }))
-    .filter((section) => section.id.length > 0)
-    .sort((a, b) => a.order - b.order)
-    .map((section, index) => ({ ...section, order: index + 1 }));
-}
-
-function normalizeBuiltinSectionOrder(
-  sectionOrder: readonly string[] | undefined,
-): ApplicantFormSectionId[] {
-  const seen = new Set<string>();
-  const normalized: ApplicantFormSectionId[] = [];
-
-  for (const rawId of sectionOrder ?? []) {
-    const id = rawId.trim();
-    if (
-      !BUILTIN_SECTION_ORDER_DEFAULT.includes(id as ApplicantFormSectionId) ||
-      seen.has(id)
-    ) {
-      continue;
-    }
-
-    normalized.push(id as ApplicantFormSectionId);
-    seen.add(id);
-  }
-
-  for (const defaultId of BUILTIN_SECTION_ORDER_DEFAULT) {
-    if (!seen.has(defaultId)) {
-      normalized.push(defaultId);
-    }
-  }
-
-  return normalized;
-}
-
-function sanitizeHiddenBuiltinSectionIds(sectionIds: readonly string[] | undefined) {
-  return Array.from(
-    new Set(
-      (sectionIds ?? [])
-        .map((sectionId) => sectionId.trim())
-        .filter((sectionId): sectionId is ApplicantFormSectionId =>
-          BUILTIN_SECTION_ORDER_DEFAULT.includes(sectionId as ApplicantFormSectionId),
-        )
-        .filter((sectionId) => sectionId !== "other"),
-    ),
-  );
-}
-
-function sanitizeFieldSectionAssignments(
-  assignments: Record<string, string>,
-  customSections: PersistedCustomSection[],
-) {
-  const allowedIds = new Set<string>([
-    ...customSections.map((section) => section.id),
-    ...BUILTIN_SECTION_ORDER_DEFAULT,
-  ]);
-  return Object.fromEntries(
-    Object.entries(assignments).filter(
-      ([fieldKey, sectionId]) =>
-        fieldKey.trim().length > 0 &&
-        sectionId.trim().length > 0 &&
-        allowedIds.has(sectionId),
-    ),
-  );
-}
-
 function deriveEditorSections(
-  fieldsForEditor: EditableField[],
+  fields: EditableField[],
+  sections: StageSection[],
   documentsRouteRepresentsMainForm: boolean,
-  customSections: PersistedCustomSection[],
-  builtinSectionOrder: ApplicantFormSectionId[],
-  hiddenBuiltinSectionIds: ApplicantFormSectionId[],
-  fieldSectionAssignments: Record<string, string>,
 ): EditorSection[] {
-  const normalizedCustomSections = normalizePersistedCustomSections(customSections);
-  const customSectionIds = new Set(normalizedCustomSections.map((section) => section.id));
-  const normalizedBuiltinOrder = normalizeBuiltinSectionOrder(builtinSectionOrder);
-  const hiddenBuiltinSet = new Set(sanitizeHiddenBuiltinSectionIds(hiddenBuiltinSectionIds));
-  const normalizedAssignments = sanitizeFieldSectionAssignments(
-    fieldSectionAssignments,
-    normalizedCustomSections,
-  );
-  const assignedFieldKeys = new Set(
-    Object.entries(normalizedAssignments)
-      .filter(
-        ([, sectionId]) =>
-          customSectionIds.has(sectionId) ||
-          BUILTIN_SECTION_ORDER_DEFAULT.includes(sectionId as ApplicantFormSectionId),
-      )
-      .map(([fieldKey]) => fieldKey),
-  );
+  const sortedSections = [...sections]
+    .filter((s) => s.is_visible)
+    .filter((s) => !(documentsRouteRepresentsMainForm && s.section_key === "eligibility"))
+    .sort((a, b) => a.sort_order - b.sort_order);
 
-  const grouped = groupApplicantFormFields(
-    fieldsForEditor.filter((field) => !assignedFieldKeys.has(field.field_key)),
-    {
-      includeInactive: true,
-      includeFileFields: true,
-    },
-  );
-  const builtinBuckets = new Map<ApplicantFormSectionId, EditableField[]>();
-  for (const sectionId of BUILTIN_SECTION_ORDER_DEFAULT) {
-    builtinBuckets.set(sectionId, []);
-  }
-  for (const section of grouped) {
-    builtinBuckets.set(section.id, [...(section.fields as EditableField[])]);
-  }
-  for (const field of fieldsForEditor) {
-    const assignedSectionId = normalizedAssignments[field.field_key];
-    if (!assignedSectionId || customSectionIds.has(assignedSectionId)) {
-      continue;
-    }
-    if (!BUILTIN_SECTION_ORDER_DEFAULT.includes(assignedSectionId as ApplicantFormSectionId)) {
-      continue;
-    }
-    builtinBuckets.get(assignedSectionId as ApplicantFormSectionId)?.push(field);
+  const otherSection = sortedSections.find((s) => s.section_key === "other");
+  const buckets = new Map<string, EditableField[]>();
+  for (const s of sortedSections) {
+    buckets.set(s.id, []);
   }
 
-  // Re-sort each bucket by the field's original position in fieldsForEditor (= sort_order).
-  // Without this, fields that gain an explicit section assignment (e.g. after editing the
-  // Clave) get appended at the end of the bucket by the push loop above, overriding the
-  // user's intended order.
-  const fieldPositionMap = new Map(fieldsForEditor.map((f, idx) => [f.localId, idx]));
-  for (const bucket of builtinBuckets.values()) {
-    bucket.sort(
-      (a, b) =>
-        (fieldPositionMap.get(a.localId) ?? 0) - (fieldPositionMap.get(b.localId) ?? 0),
-    );
+  for (const field of fields) {
+    if (field.section_id && buckets.has(field.section_id)) {
+      buckets.get(field.section_id)!.push(field);
+    } else if (otherSection) {
+      buckets.get(otherSection.id)?.push(field);
+    }
   }
 
-  const effectiveBuiltinOrder = documentsRouteRepresentsMainForm
-    ? normalizedBuiltinOrder.filter((sectionId) => sectionId !== "eligibility")
-    : normalizedBuiltinOrder;
-  const effectiveHiddenSet = new Set<string>(
-    [...hiddenBuiltinSet].filter(
-      (sectionId) => !(documentsRouteRepresentsMainForm && sectionId === "eligibility"),
-    ),
-  );
-  const otherBucket = builtinBuckets.get("other") ?? [];
-  const builtinSections: EditorSection[] = [];
-  for (const sectionId of effectiveBuiltinOrder) {
-    const sectionFields = builtinBuckets.get(sectionId) ?? [];
-    if (effectiveHiddenSet.has(sectionId)) {
-      if (sectionId !== "other" && sectionFields.length > 0) {
-        otherBucket.push(...sectionFields);
-      }
-      continue;
-    }
-    if (sectionFields.length === 0) {
-      continue;
-    }
-    builtinSections.push({
-      id: sectionId,
-      title: getBuiltinSectionTitle(sectionId),
-      description: "",
+  const result: EditorSection[] = [];
+  let otherResolved: EditorSection | null = null;
+
+  for (const s of sortedSections) {
+    const sectionFields = buckets.get(s.id) ?? [];
+
+    const resolved: EditorSection = {
+      id: s.id,
+      sectionKey: s.section_key,
+      title: s.title,
+      description: s.description,
       fields: sectionFields,
-    });
+    };
+
+    if (s.section_key === "other") {
+      otherResolved = resolved;
+    } else {
+      result.push(resolved);
+    }
   }
 
-  const otherSection = builtinSections.find((section) => section.id === "other");
-  const builtinWithoutOther = builtinSections.filter((section) => section.id !== "other");
-
-  const customSectionsWithFields: EditorSection[] = normalizedCustomSections
-    .map((section) => ({
-      id: `custom:${section.id}` as const,
-      title: section.title,
-      description: "Campos personalizados adicionales de esta etapa.",
-      fields: fieldsForEditor.filter(
-        (field) => normalizedAssignments[field.field_key] === section.id,
-      ),
-    }));
-
-  return otherSection
-    ? [...builtinWithoutOther, ...customSectionsWithFields, otherSection]
-    : [...builtinWithoutOther, ...customSectionsWithFields];
-}
-
-function isCustomEditorSectionId(sectionId: EditorSectionId): sectionId is `custom:${string}` {
-  return String(sectionId).startsWith("custom:");
-}
-
-function getCustomSectionIdFromEditorSectionId(sectionId: EditorSectionId): string | null {
-  if (!isCustomEditorSectionId(sectionId)) {
-    return null;
+  if (otherResolved) {
+    result.push(otherResolved);
   }
 
-  return sectionId.slice("custom:".length);
+  return result;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -388,36 +207,14 @@ function toDateInputValue(value: string | null) {
   return value.slice(0, 10);
 }
 
-function getBuiltinSectionTitle(sectionId: ApplicantFormSectionId) {
-  switch (sectionId) {
-    case "identity":
-      return "Datos personales";
-    case "family":
-      return "Familia y apoderados";
-    case "school":
-      return "Colegio y rendimiento académico";
-    case "motivation":
-      return "Motivación y perfil";
-    case "recommenders":
-      return "Contexto de recomendadores";
-    case "documents":
-      return "Documentos y pagos";
-    case "eligibility":
-      return "Elegibilidad";
-    case "other":
-    default:
-      return "Otros campos";
-  }
-}
-
 function getNewFieldSeedForSection({
-  sectionId,
+  sectionKey,
   suffix,
 }: {
-  sectionId: ApplicantFormSectionId | "custom";
+  sectionKey: string;
   suffix: number;
 }) {
-  switch (sectionId) {
+  switch (sectionKey) {
     case "eligibility":
       return {
         field_key: `eligibilityCustom${suffix}`,
@@ -458,12 +255,6 @@ function getNewFieldSeedForSection({
       return {
         field_key: `docsCustom${suffix}`,
         field_label: "Nuevo campo de documentos",
-        field_type: "short_text" as const,
-      };
-    case "custom":
-      return {
-        field_key: `customSectionField${suffix}`,
-        field_label: "Nuevo campo de sección adicional",
         field_type: "short_text" as const,
       };
     case "other":
@@ -549,49 +340,6 @@ function parseStageAdminConfig(value: unknown): StageAdminConfigPayload {
       typeof value.blockIfPreviousNotMet === "boolean"
         ? value.blockIfPreviousNotMet
         : undefined,
-    customSections: Array.isArray(value.customSections)
-      ? normalizePersistedCustomSections(
-          value.customSections.flatMap((item, index) => {
-            if (!isRecord(item)) {
-              return [];
-            }
-
-            const id = typeof item.id === "string" ? item.id : "";
-            const title = typeof item.title === "string" ? item.title : "";
-            const order =
-              typeof item.order === "number" && Number.isFinite(item.order)
-                ? item.order
-                : index + 1;
-
-            if (!id.trim()) {
-              return [];
-            }
-
-            return [{ id, title, order }];
-          }),
-        )
-      : undefined,
-    builtinSectionOrder: Array.isArray(value.builtinSectionOrder)
-      ? normalizeBuiltinSectionOrder(
-          value.builtinSectionOrder.filter((entry): entry is string => typeof entry === "string"),
-        )
-      : undefined,
-    hiddenBuiltinSectionIds: Array.isArray(value.hiddenBuiltinSectionIds)
-      ? sanitizeHiddenBuiltinSectionIds(
-          value.hiddenBuiltinSectionIds.filter((entry): entry is string => typeof entry === "string"),
-        )
-      : undefined,
-    fieldSectionAssignments: isRecord(value.fieldSectionAssignments)
-      ? Object.fromEntries(
-          Object.entries(value.fieldSectionAssignments).flatMap(([fieldKey, sectionId]) => {
-            if (typeof sectionId !== "string" || !fieldKey.trim() || !sectionId.trim()) {
-              return [];
-            }
-
-            return [[fieldKey, sectionId]];
-          }),
-        )
-      : undefined,
   };
 }
 
@@ -605,6 +353,7 @@ export function StageConfigEditor({
   stageCloseAt,
   stageTemplates,
   initialFields,
+  initialSections,
   initialAutomations,
   initialOcrPromptTemplate,
   initialStageAdminConfig,
@@ -618,6 +367,7 @@ export function StageConfigEditor({
   stageCloseAt: string | null;
   stageTemplates: CycleStageTemplate[];
   initialFields: CycleStageField[];
+  initialSections: StageSection[];
   initialAutomations: StageAutomationTemplate[];
   initialOcrPromptTemplate: string | null;
   initialStageAdminConfig?: Record<string, unknown> | null;
@@ -643,65 +393,14 @@ export function StageConfigEditor({
   const [sectionPlaceholders, setSectionPlaceholders] = useState<SectionPlaceholderDraft[]>([]);
 
   const parsedStageAdminConfigRef = useRef(parseStageAdminConfig(initialStageAdminConfig));
-  const initialCustomSections = useMemo(
-    () =>
-      normalizePersistedCustomSections(
-        parsedStageAdminConfigRef.current.customSections ?? [],
-      ),
-    [],
-  );
-  const initialFieldSectionAssignments = useMemo(
-    () =>
-      sanitizeFieldSectionAssignments(
-        parsedStageAdminConfigRef.current.fieldSectionAssignments ?? {},
-        initialCustomSections,
-      ),
-    [initialCustomSections],
-  );
-  const initialBuiltinSectionOrder = useMemo(
-    () =>
-      normalizeBuiltinSectionOrder(
-        parsedStageAdminConfigRef.current.builtinSectionOrder ?? BUILTIN_SECTION_ORDER_DEFAULT,
-      ),
-    [],
-  );
-  const initialHiddenBuiltinSectionIds = useMemo(
-    () =>
-      sanitizeHiddenBuiltinSectionIds(
-        parsedStageAdminConfigRef.current.hiddenBuiltinSectionIds ?? [],
-      ),
-    [],
-  );
-  const [customSections, setCustomSections] = useState<PersistedCustomSection[]>(
-    initialCustomSections,
-  );
-  const [builtinSectionOrder, setBuiltinSectionOrder] = useState<ApplicantFormSectionId[]>(
-    initialBuiltinSectionOrder,
-  );
-  const [hiddenBuiltinSectionIds, setHiddenBuiltinSectionIds] = useState<ApplicantFormSectionId[]>(
-    initialHiddenBuiltinSectionIds,
-  );
-  const [fieldSectionAssignments, setFieldSectionAssignments] = useState<Record<string, string>>(
-    initialFieldSectionAssignments,
-  );
+  const [sections, setSections] = useState<StageSection[]>(initialSections);
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<string[]>([]);
   const initializedSectionCollapseRef = useRef(false);
 
   const savedFieldsSnapshotRef = useRef(
     serializePersistedFields(mapFieldsWithLocalId(initialFields)),
   );
-  const savedCustomSectionsSnapshotRef = useRef(
-    serializePersistedCustomSections(initialCustomSections),
-  );
-  const savedBuiltinSectionOrderSnapshotRef = useRef(
-    serializeBuiltinSectionOrder(initialBuiltinSectionOrder),
-  );
-  const savedHiddenBuiltinSectionIdsSnapshotRef = useRef(
-    serializeHiddenBuiltinSectionIds(initialHiddenBuiltinSectionIds),
-  );
-  const savedFieldSectionAssignmentsSnapshotRef = useRef(
-    serializeFieldSectionAssignments(initialFieldSectionAssignments),
-  );
+  const savedSectionsSnapshotRef = useRef(serializeSections(initialSections));
   const savedCommsSnapshotRef = useRef(
     serializePersistedComms({
       automations: mapAutomationsWithLocalId(initialAutomations),
@@ -716,24 +415,9 @@ export function StageConfigEditor({
     () => serializePersistedFields(orderedFields),
     [orderedFields],
   );
-  const persistedCustomSectionsSnapshot = useMemo(
-    () => serializePersistedCustomSections(customSections),
-    [customSections],
-  );
-  const persistedBuiltinSectionOrderSnapshot = useMemo(
-    () => serializeBuiltinSectionOrder(builtinSectionOrder),
-    [builtinSectionOrder],
-  );
-  const persistedHiddenBuiltinSectionIdsSnapshot = useMemo(
-    () => serializeHiddenBuiltinSectionIds(hiddenBuiltinSectionIds),
-    [hiddenBuiltinSectionIds],
-  );
-  const persistedFieldSectionAssignmentsSnapshot = useMemo(
-    () =>
-      serializeFieldSectionAssignments(
-        sanitizeFieldSectionAssignments(fieldSectionAssignments, customSections),
-      ),
-    [customSections, fieldSectionAssignments],
+  const persistedSectionsSnapshot = useMemo(
+    () => serializeSections(sections),
+    [sections],
   );
   const persistedCommsSnapshot = useMemo(
     () =>
@@ -760,6 +444,7 @@ export function StageConfigEditor({
       help_text: "",
       sort_order: nextIndex,
       is_active: true,
+      section_id: null,
       created_at: new Date().toISOString(),
     };
   }
@@ -779,7 +464,7 @@ export function StageConfigEditor({
         >
       | undefined,
     options?: {
-      sectionAssignmentId?: string | null;
+      sectionId?: string | null;
     },
   ) {
     const safePosition = Math.max(0, Math.min(position, orderedFields.length));
@@ -794,6 +479,11 @@ export function StageConfigEditor({
       stage_code: stageCode,
       created_at: baseField.created_at,
     };
+
+    if (options?.sectionId) {
+      insertedField.section_id = options.sectionId;
+    }
+
     const nextFields = [
       ...orderedFields.slice(0, safePosition),
       insertedField,
@@ -801,72 +491,24 @@ export function StageConfigEditor({
     ];
 
     applyOrderedFields(nextFields);
-    if (options?.sectionAssignmentId) {
-      setFieldSectionAssignments((current) => ({
-        ...current,
-        [insertedField.field_key]: options.sectionAssignmentId as string,
-      }));
-    }
     setActiveFieldId(insertedField.localId);
     setStatusMessage("Campo agregado localmente. Guarda configuración para persistir cambios.");
   }
 
   function addNextSection() {
-    const sectionOrder: ApplicantFormSectionId[] = documentsRouteRepresentsMainForm
-      ? ["identity", "family", "school", "motivation", "recommenders", "documents", "other"]
-      : ["eligibility", "identity", "family", "school", "motivation", "recommenders", "documents", "other"];
-    const existingSectionIds = new Set<ApplicantFormSectionId>(
-      deriveEditorSections(
-        orderedFields,
-        documentsRouteRepresentsMainForm,
-        customSections,
-        builtinSectionOrder,
-        hiddenBuiltinSectionIds,
-        fieldSectionAssignments,
-      )
-        .map((section) => section.id)
-        .filter(
-          (sectionId): sectionId is ApplicantFormSectionId => !isCustomEditorSectionId(sectionId),
-        ),
-    );
-    const placeholderSectionIds = new Set(
-      sectionPlaceholders
-        .map((draft) => (draft.sectionId === "custom" ? null : draft.sectionId))
-        .filter(Boolean) as ApplicantFormSectionId[],
-    );
-    const nextMissingSectionId = sectionOrder.find(
-      (sectionId) =>
-        !existingSectionIds.has(sectionId) && !placeholderSectionIds.has(sectionId),
-    );
-
-    const nextPlaceholder: SectionPlaceholderDraft | null = nextMissingSectionId
-      ? {
-          localId: `section-${crypto.randomUUID()}`,
-          title: getBuiltinSectionTitle(nextMissingSectionId),
-          sectionId: nextMissingSectionId,
-        }
-      : null;
-
-    if (nextPlaceholder) {
-      setSectionPlaceholders((current) => [...current, nextPlaceholder]);
-      setStatusMessage(
-        `Se creó la sección “${nextPlaceholder.title}”. Agrega campos dentro de esa sección y luego guarda configuración.`,
-      );
-      return;
-    }
-
-    const customSectionCount = customSections.length + 1;
-    const newCustomSection: PersistedCustomSection = {
-      id: `custom-section-${crypto.randomUUID()}`,
-      title: `Nueva sección ${customSectionCount}`,
-      order: customSectionCount,
+    const newSection: StageSection = {
+      id: crypto.randomUUID(),
+      cycle_id: cycleId,
+      stage_code: stageCode,
+      section_key: `custom-${crypto.randomUUID().slice(0, 8)}`,
+      title: `Nueva sección ${sections.length + 1}`,
+      description: "",
+      sort_order: sections.length + 1,
+      is_visible: true,
+      created_at: new Date().toISOString(),
     };
-    setCustomSections((current) =>
-      normalizePersistedCustomSections([...current, newCustomSection]),
-    );
-    setStatusMessage(
-      `Se creó la sección “${newCustomSection.title}”. Guarda configuración para persistir su estructura.`,
-    );
+    setSections((current) => [...current, newSection]);
+    setStatusMessage(`Se creó la sección “${newSection.title}”. Guarda configuración para persistir.`);
   }
 
   async function openPreview() {
@@ -897,8 +539,10 @@ export function StageConfigEditor({
 
 
   function addFieldToPlaceholder(placeholder: SectionPlaceholderDraft) {
+    // Find or create a section matching the placeholder's sectionKey
+    const matchingSection = sections.find((s) => s.section_key === placeholder.sectionKey);
     const suffix = orderedFields.length + 1;
-    const seed = getNewFieldSeedForSection({ sectionId: placeholder.sectionId, suffix });
+    const seed = getNewFieldSeedForSection({ sectionKey: placeholder.sectionKey, suffix });
     insertFieldAt(orderedFields.length, {
       field_key: seed.field_key,
       field_label: seed.field_label,
@@ -908,51 +552,11 @@ export function StageConfigEditor({
       help_text: "",
       is_active: true,
     }, {
-      sectionAssignmentId:
-        placeholder.sectionId === "custom" ? null : placeholder.sectionId,
+      sectionId: matchingSection?.id ?? null,
     });
-    if (placeholder.sectionId !== "custom") {
-      setHiddenBuiltinSectionIds((current) =>
-        current.filter((sectionId) => sectionId !== placeholder.sectionId),
-      );
-    }
     setSectionPlaceholders((current) =>
       current.filter((draft) => draft.localId !== placeholder.localId),
     );
-  }
-
-  function remapFieldSectionAssignmentKey(
-    previousKey: string,
-    nextKey: string,
-    fallbackSectionId?: string | null,
-  ) {
-    if (previousKey === nextKey) {
-      return;
-    }
-
-    setFieldSectionAssignments((current) => {
-      const sectionId = current[previousKey] ?? (fallbackSectionId?.trim() || undefined);
-      if (!sectionId) {
-        return current;
-      }
-
-      const nextAssignments = { ...current };
-      delete nextAssignments[previousKey];
-      nextAssignments[nextKey] = sectionId;
-      return nextAssignments;
-    });
-  }
-
-  function removeFieldSectionAssignment(fieldKey: string) {
-    setFieldSectionAssignments((current) => {
-      if (!current[fieldKey]) {
-        return current;
-      }
-
-      const nextAssignments = { ...current };
-      delete nextAssignments[fieldKey];
-      return nextAssignments;
-    });
   }
 
   function confirmAction(message: string) {
@@ -1046,9 +650,6 @@ export function StageConfigEditor({
       }
     }
 
-    if (removedField) {
-      removeFieldSectionAssignment(removedField.field_key);
-    }
     applyOrderedFields(orderedFields.filter((field) => field.localId !== localId));
     setStatusMessage(
       removedField
@@ -1100,18 +701,15 @@ export function StageConfigEditor({
             helpText: field.help_text,
             sortOrder: index + 1,
             isActive: field.is_active,
+            sectionKey: sections.find((s) => s.id === field.section_id)?.section_key ?? null,
           })),
-          customSections: customSections.map((section, index) => ({
-            id: section.id,
-            title: section.title.trim() || `Nueva sección ${index + 1}`,
-            order: index + 1,
+          sections: sections.map((s, index) => ({
+            sectionKey: s.section_key,
+            title: s.title.trim(),
+            description: s.description.trim(),
+            sortOrder: index + 1,
+            isVisible: s.is_visible,
           })),
-          builtinSectionOrder,
-          hiddenBuiltinSectionIds,
-          fieldSectionAssignments: sanitizeFieldSectionAssignments(
-            fieldSectionAssignments,
-            customSections,
-          ),
           automations: automations.map((automation) => ({
             id: isUuid(automation.id) ? automation.id : undefined,
             triggerEvent: automation.trigger_event,
@@ -1139,28 +737,12 @@ export function StageConfigEditor({
         return false;
       }
 
+      const nextSavedSections = Array.isArray(body.sections)
+        ? (body.sections as StageSection[])
+        : sections;
       const nextSavedFields = mapFieldsWithLocalId(body.fields ?? []);
       const nextSavedAutomations = mapAutomationsWithLocalId(body.automations ?? []);
       const nextSavedOcrPrompt = body.ocrPromptTemplate ?? "";
-      const nextSavedCustomSections = normalizePersistedCustomSections(
-        Array.isArray(body.customSections) ? body.customSections : customSections,
-      );
-      const nextSavedBuiltinSectionOrder = normalizeBuiltinSectionOrder(
-        Array.isArray(body.builtinSectionOrder) ? body.builtinSectionOrder : builtinSectionOrder,
-      );
-      const nextSavedHiddenBuiltinSectionIds = sanitizeHiddenBuiltinSectionIds(
-        Array.isArray(body.hiddenBuiltinSectionIds)
-          ? body.hiddenBuiltinSectionIds
-          : hiddenBuiltinSectionIds,
-      );
-      const nextSavedFieldSectionAssignments = sanitizeFieldSectionAssignments(
-        typeof body.fieldSectionAssignments === "object" &&
-          body.fieldSectionAssignments &&
-          !Array.isArray(body.fieldSectionAssignments)
-          ? (body.fieldSectionAssignments as Record<string, string>)
-          : fieldSectionAssignments,
-        nextSavedCustomSections,
-      );
       const nextSavedSettings = {
         stageName:
           typeof body.settings?.stageName === "string"
@@ -1184,11 +766,8 @@ export function StageConfigEditor({
             : blockIfPreviousNotMet,
       } satisfies StageEditorSettingsDraft;
 
+      setSections(nextSavedSections);
       setFields(nextSavedFields);
-      setCustomSections(nextSavedCustomSections);
-      setBuiltinSectionOrder(nextSavedBuiltinSectionOrder);
-      setHiddenBuiltinSectionIds(nextSavedHiddenBuiltinSectionIds);
-      setFieldSectionAssignments(nextSavedFieldSectionAssignments);
       setAutomations(nextSavedAutomations);
       setOcrPromptTemplate(nextSavedOcrPrompt);
       setSettingsStageName(nextSavedSettings.stageName);
@@ -1197,15 +776,8 @@ export function StageConfigEditor({
       setSettingsCloseDate(nextSavedSettings.closeDate);
       setPreviousStageRequirement(nextSavedSettings.previousStageRequirement);
       setBlockIfPreviousNotMet(nextSavedSettings.blockIfPreviousNotMet);
+      savedSectionsSnapshotRef.current = serializeSections(nextSavedSections);
       savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
-      savedCustomSectionsSnapshotRef.current =
-        serializePersistedCustomSections(nextSavedCustomSections);
-      savedBuiltinSectionOrderSnapshotRef.current =
-        serializeBuiltinSectionOrder(nextSavedBuiltinSectionOrder);
-      savedHiddenBuiltinSectionIdsSnapshotRef.current =
-        serializeHiddenBuiltinSectionIds(nextSavedHiddenBuiltinSectionIds);
-      savedFieldSectionAssignmentsSnapshotRef.current =
-        serializeFieldSectionAssignments(nextSavedFieldSectionAssignments);
       savedCommsSnapshotRef.current = serializePersistedComms({
         automations: nextSavedAutomations,
         ocrPromptTemplate: nextSavedOcrPrompt,
@@ -1269,22 +841,11 @@ export function StageConfigEditor({
   if (savedSettingsSnapshotRef.current === null) {
     savedSettingsSnapshotRef.current = settingsDraftSnapshot;
   }
-  const hasUnsavedCustomSectionsChanges =
-    persistedCustomSectionsSnapshot !== savedCustomSectionsSnapshotRef.current;
-  const hasUnsavedBuiltinSectionOrderChanges =
-    persistedBuiltinSectionOrderSnapshot !== savedBuiltinSectionOrderSnapshotRef.current;
-  const hasUnsavedHiddenBuiltinSectionIdsChanges =
-    persistedHiddenBuiltinSectionIdsSnapshot !==
-    savedHiddenBuiltinSectionIdsSnapshotRef.current;
-  const hasUnsavedFieldSectionAssignmentsChanges =
-    persistedFieldSectionAssignmentsSnapshot !==
-    savedFieldSectionAssignmentsSnapshotRef.current;
+  const hasUnsavedSectionsChanges =
+    persistedSectionsSnapshot !== savedSectionsSnapshotRef.current;
   const hasUnsavedFieldConfigChanges =
     persistedFieldsSnapshot !== savedFieldsSnapshotRef.current ||
-    hasUnsavedCustomSectionsChanges ||
-    hasUnsavedBuiltinSectionOrderChanges ||
-    hasUnsavedHiddenBuiltinSectionIdsChanges ||
-    hasUnsavedFieldSectionAssignmentsChanges;
+    hasUnsavedSectionsChanges;
   const hasUnsavedCommsConfigChanges =
     persistedCommsSnapshot !== savedCommsSnapshotRef.current;
   const hasUnsavedSettingsConfigChanges =
@@ -1340,24 +901,9 @@ export function StageConfigEditor({
         return [];
       }
 
-      return deriveEditorSections(
-        deferredOrderedFields,
-        documentsRouteRepresentsMainForm,
-        customSections,
-        builtinSectionOrder,
-        hiddenBuiltinSectionIds,
-        fieldSectionAssignments,
-      );
+      return deriveEditorSections(deferredOrderedFields, sections, documentsRouteRepresentsMainForm);
     },
-    [
-      activeTab,
-      deferredOrderedFields,
-      documentsRouteRepresentsMainForm,
-      customSections,
-      builtinSectionOrder,
-      hiddenBuiltinSectionIds,
-      fieldSectionAssignments,
-    ],
+    [activeTab, deferredOrderedFields, sections, documentsRouteRepresentsMainForm],
   );
 
   const displayedEditorFields = useMemo(() => {
@@ -1375,34 +921,21 @@ export function StageConfigEditor({
       return sectionFields.slice(0, 1);
     });
   }, [activeTab, editorSections, collapsedSectionIds]);
-  const emptyCustomEditorSections = useMemo(
+  const emptySections = useMemo(
     () =>
       activeTab === "editor"
-        ? editorSections.filter(
-            (section) =>
-              isCustomEditorSectionId(section.id) && section.fields.length === 0,
-          )
+        ? editorSections.filter((section) => section.fields.length === 0)
         : [],
     [activeTab, editorSections],
   );
   const editorHasOtherSection = useMemo(
-    () => activeTab === "editor" && editorSections.some((section) => section.id === "other"),
+    () => activeTab === "editor" && editorSections.some((section) => section.sectionKey === "other"),
     [activeTab, editorSections],
   );
-  const customSectionPositionById = useMemo(() => {
-    const normalized = normalizePersistedCustomSections(customSections);
-    const total = normalized.length;
+  const sectionPositionById = useMemo(() => {
+    const total = editorSections.length;
     return new Map(
-      normalized.map((section, index) => [section.id, { index, total }] as const),
-    );
-  }, [customSections]);
-  const builtinSectionPositionById = useMemo(() => {
-    const visibleBuiltinIds = editorSections
-      .filter((section) => !isCustomEditorSectionId(section.id))
-      .map((section) => section.id as ApplicantFormSectionId);
-    const total = visibleBuiltinIds.length;
-    return new Map(
-      visibleBuiltinIds.map((sectionId, index) => [sectionId, { index, total }] as const),
+      editorSections.map((section, index) => [section.id, { index, total }] as const),
     );
   }, [editorSections]);
 
@@ -1426,9 +959,9 @@ export function StageConfigEditor({
         firstFieldIds: new Set<string>(),
         lastFieldIds: new Set<string>(),
         insertPositionByLastFieldId: new Map<string, number>(),
-        insertPositionBySectionId: new Map<EditorSectionId, number>(),
-        sectionIdByLastFieldId: new Map<string, EditorSectionId>(),
-        sectionIdByFieldId: new Map<string, EditorSectionId>(),
+        insertPositionBySectionId: new Map<string, number>(),
+        sectionIdByLastFieldId: new Map<string, string>(),
+        sectionIdByFieldId: new Map<string, string>(),
       };
     }
 
@@ -1436,9 +969,9 @@ export function StageConfigEditor({
     const firstFieldIds = new Set<string>();
     const lastFieldIds = new Set<string>();
     const insertPositionByLastFieldId = new Map<string, number>();
-    const insertPositionBySectionId = new Map<EditorSectionId, number>();
-    const sectionIdByLastFieldId = new Map<string, EditorSectionId>();
-    const sectionIdByFieldId = new Map<string, EditorSectionId>();
+    const insertPositionBySectionId = new Map<string, number>();
+    const sectionIdByLastFieldId = new Map<string, string>();
+    const sectionIdByFieldId = new Map<string, string>();
     const collapsedSet = new Set(collapsedSectionIds);
 
     editorSections.forEach((section, index) => {
@@ -1550,167 +1083,68 @@ export function StageConfigEditor({
     collapseSection(sectionKey);
   }
 
-  function moveCustomSection(sectionId: string, direction: "up" | "down") {
-    setCustomSections((current) => {
-      const normalized = normalizePersistedCustomSections(current);
-      const currentIndex = normalized.findIndex((section) => section.id === sectionId);
-      if (currentIndex < 0) {
-        return current;
-      }
+  function moveSection(sectionId: string, direction: "up" | "down") {
+    setSections((current) => {
+      const visible = current.filter((s) => s.is_visible).sort((a, b) => a.sort_order - b.sort_order);
+      const idx = visible.findIndex((s) => s.id === sectionId);
+      if (idx < 0) return current;
+      const target = direction === "up" ? idx - 1 : idx + 1;
+      if (target < 0 || target >= visible.length) return current;
 
-      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-      if (targetIndex < 0 || targetIndex >= normalized.length) {
-        return current;
-      }
+      const next = [...visible];
+      const [moved] = next.splice(idx, 1);
+      next.splice(target, 0, moved);
 
-      const next = [...normalized];
-      const [moved] = next.splice(currentIndex, 1);
-      next.splice(targetIndex, 0, moved);
-      const reordered = next.map((section, index) => ({ ...section, order: index + 1 }));
-      return normalizePersistedCustomSections(reordered);
+      const reordered = next.map((s, i) => ({ ...s, sort_order: i + 1 }));
+      const hiddenSections = current.filter((s) => !s.is_visible);
+      return [...reordered, ...hiddenSections];
     });
     setStatusMessage("Orden de sección actualizado localmente. Guarda configuración para persistir.");
   }
 
-  function moveBuiltinSection(sectionId: ApplicantFormSectionId, direction: "up" | "down") {
-    const visibleBuiltinIds = editorSections
-      .filter((section) => !isCustomEditorSectionId(section.id))
-      .map((section) => section.id as ApplicantFormSectionId);
+  function removeSection(sectionId: string) {
+    const section = sections.find((s) => s.id === sectionId);
+    if (!section || section.section_key === "other") return;
 
-    setBuiltinSectionOrder((current) => {
-      const normalized = normalizeBuiltinSectionOrder(current);
-      const currentIndex = visibleBuiltinIds.findIndex((candidate) => candidate === sectionId);
-      if (currentIndex < 0) {
-        return current;
-      }
+    const fieldCount = fields.filter((f) => f.section_id === sectionId).length;
+    const otherSection = sections.find((s) => s.section_key === "other");
 
-      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-      if (targetIndex < 0 || targetIndex >= visibleBuiltinIds.length) {
-        return current;
-      }
-
-      const nextVisible = [...visibleBuiltinIds];
-      const [moved] = nextVisible.splice(currentIndex, 1);
-      nextVisible.splice(targetIndex, 0, moved);
-
-      const visibleSet = new Set<ApplicantFormSectionId>(visibleBuiltinIds);
-      let visiblePointer = 0;
-      const rebuilt = normalized.map((candidate) => {
-        if (!visibleSet.has(candidate)) {
-          return candidate; // preserve hidden, empty, and eligibility sections in place
-        }
-        return nextVisible[visiblePointer++];
-      });
-
-      return normalizeBuiltinSectionOrder(rebuilt);
-    });
-    setStatusMessage("Orden de sección actualizado localmente. Guarda configuración para persistir.");
-  }
-
-  function removeCustomSection(sectionId: string) {
-    const section = customSections.find((item) => item.id === sectionId);
-    if (!section) {
-      return;
-    }
-
-    const movedFieldCount = Object.values(fieldSectionAssignments).filter(
-      (assignedSectionId) => assignedSectionId === sectionId,
-    ).length;
     const confirmed = confirmAction(
-      movedFieldCount > 0
-        ? `¿Eliminar la sección \"${section.title}\"?\n\n${movedFieldCount} campo(s) se moverán a \"Otros campos\".\nDebes usar \"Guardar configuración\" para publicar este cambio.`
-        : `¿Eliminar la sección \"${section.title}\"?\n\nDebes usar \"Guardar configuración\" para publicar este cambio.`,
+      fieldCount > 0
+        ? `¿Eliminar la sección "${section.title}"?\n\n${fieldCount} campo(s) se moverán a "Otros campos".`
+        : `¿Eliminar la sección "${section.title}"?`,
     );
-    if (!confirmed) {
-      return;
+    if (!confirmed) return;
+
+    setSections((current) => current.filter((s) => s.id !== sectionId));
+
+    if (otherSection && fieldCount > 0) {
+      setFields((current) =>
+        current.map((f) =>
+          f.section_id === sectionId ? { ...f, section_id: otherSection.id } : f,
+        ),
+      );
     }
 
-    setCustomSections((current) =>
-      normalizePersistedCustomSections(current.filter((item) => item.id !== sectionId)),
-    );
-    setFieldSectionAssignments((current) => {
-      const next = { ...current };
-      for (const [fieldKey, assignedSectionId] of Object.entries(next)) {
-        if (assignedSectionId === sectionId) {
-          delete next[fieldKey];
-        }
-      }
-      return next;
-    });
     setStatusMessage(
-      movedFieldCount > 0
-        ? `Sección eliminada localmente. ${movedFieldCount} campo(s) se movieron a "Otros campos". Guarda configuración para persistir.`
-        : "Sección eliminada localmente. Guarda configuración para persistir.",
-    );
-  }
-
-  function removeBuiltinSection(sectionId: ApplicantFormSectionId) {
-    if (sectionId === "other") {
-      return;
-    }
-
-    const section = editorSections.find((candidate) => candidate.id === sectionId);
-    const movedFieldCount = section?.fields.length ?? 0;
-    const title = getBuiltinSectionTitle(sectionId);
-    const confirmed = confirmAction(
-      movedFieldCount > 0
-        ? `¿Eliminar la sección \"${title}\"?\n\n${movedFieldCount} campo(s) se moverán a \"Otros campos\".\nDebes usar \"Guardar configuración\" para publicar este cambio.`
-        : `¿Eliminar la sección \"${title}\"?\n\nDebes usar \"Guardar configuración\" para publicar este cambio.`,
-    );
-    if (!confirmed) {
-      return;
-    }
-
-    setHiddenBuiltinSectionIds((current) =>
-      sanitizeHiddenBuiltinSectionIds([...current, sectionId]),
-    );
-    if (section && section.fields.length > 0) {
-      setFieldSectionAssignments((current) => {
-        const next = { ...current };
-        for (const field of section.fields) {
-          next[field.field_key] = "other";
-        }
-        return next;
-      });
-    }
-    setStatusMessage(
-      movedFieldCount > 0
-        ? `Sección eliminada localmente. ${movedFieldCount} campo(s) se movieron a "Otros campos". Guarda configuración para persistir.`
-        : "Sección eliminada localmente. Guarda configuración para persistir.",
+      fieldCount > 0
+        ? `Sección eliminada. ${fieldCount} campo(s) movidos a "Otros campos". Guarda para persistir.`
+        : "Sección eliminada. Guarda configuración para persistir.",
     );
   }
 
   function renderSectionHeading(
     heading: string,
-    sectionId: EditorSectionId,
+    sectionId: string,
     options?: { canCollapse?: boolean },
   ) {
-    const customSectionId = getCustomSectionIdFromEditorSectionId(sectionId);
-    const builtinSectionId = customSectionId ? null : (sectionId as ApplicantFormSectionId);
-    const customSectionPosition = customSectionId
-      ? customSectionPositionById.get(customSectionId)
-      : undefined;
-    const builtinSectionPosition = builtinSectionId
-      ? builtinSectionPositionById.get(builtinSectionId)
-      : undefined;
-    const sectionKey = String(sectionId);
-    const isCollapsed = collapsedSectionIdSet.has(sectionKey);
+    const section = sections.find((s) => s.id === sectionId);
+    const position = sectionPositionById.get(sectionId);
+    const isCollapsed = collapsedSectionIdSet.has(sectionId);
     const canCollapse = options?.canCollapse ?? true;
-    const canMoveUp = customSectionId
-      ? Boolean(customSectionPosition && customSectionPosition.index > 0)
-      : Boolean(builtinSectionPosition && builtinSectionPosition.index > 0);
-    const canMoveDown = customSectionId
-      ? Boolean(
-          customSectionPosition &&
-            customSectionPosition.index < customSectionPosition.total - 1,
-        )
-      : Boolean(
-          builtinSectionPosition &&
-            builtinSectionPosition.index < builtinSectionPosition.total - 1,
-        );
-    const canDelete = customSectionId
-      ? true
-      : Boolean(builtinSectionId && builtinSectionId !== "other");
+    const canMoveUp = Boolean(position && position.index > 0);
+    const canMoveDown = Boolean(position && position.index < position.total - 1);
+    const canDelete = section?.section_key !== "other";
 
     return (
       <div className="admin-stage-section-heading-row">
@@ -1719,15 +1153,7 @@ export function StageConfigEditor({
           <button
             type="button"
             className="admin-stage-section-header-btn"
-            onClick={() => {
-              if (customSectionId) {
-                moveCustomSection(customSectionId, "up");
-                return;
-              }
-              if (builtinSectionId) {
-                moveBuiltinSection(builtinSectionId, "up");
-              }
-            }}
+            onClick={() => moveSection(sectionId, "up")}
             disabled={!canMoveUp}
             title="Subir sección"
             aria-label="Subir sección"
@@ -1748,15 +1174,7 @@ export function StageConfigEditor({
           <button
             type="button"
             className="admin-stage-section-header-btn"
-            onClick={() => {
-              if (customSectionId) {
-                moveCustomSection(customSectionId, "down");
-                return;
-              }
-              if (builtinSectionId) {
-                moveBuiltinSection(builtinSectionId, "down");
-              }
-            }}
+            onClick={() => moveSection(sectionId, "down")}
             disabled={!canMoveDown}
             title="Bajar sección"
             aria-label="Bajar sección"
@@ -1777,15 +1195,7 @@ export function StageConfigEditor({
           <button
             type="button"
             className="admin-stage-section-header-btn"
-            onClick={() => {
-              if (customSectionId) {
-                removeCustomSection(customSectionId);
-                return;
-              }
-              if (builtinSectionId) {
-                removeBuiltinSection(builtinSectionId);
-              }
-            }}
+            onClick={() => removeSection(sectionId)}
             disabled={!canDelete}
             title={
               canDelete
@@ -1811,7 +1221,7 @@ export function StageConfigEditor({
             <button
               type="button"
               className={`admin-stage-section-header-btn ${isCollapsed ? "" : "is-active"}`.trim()}
-              onClick={() => toggleSectionCollapse(sectionKey)}
+              onClick={() => toggleSectionCollapse(sectionId)}
               title={isCollapsed ? "Expandir sección" : "Colapsar sección"}
               aria-label={isCollapsed ? "Expandir sección" : "Colapsar sección"}
               aria-pressed={!isCollapsed}
@@ -1842,12 +1252,7 @@ export function StageConfigEditor({
     );
   }
 
-  function renderPersistedEmptyCustomSection(section: EditorSection) {
-    const customSectionId = getCustomSectionIdFromEditorSectionId(section.id);
-    if (!customSectionId) {
-      return null;
-    }
-
+  function renderEmptySection(section: EditorSection) {
     const sectionNumber = editorSections.findIndex((candidate) => candidate.id === section.id) + 1;
 
     return (
@@ -1858,27 +1263,25 @@ export function StageConfigEditor({
         <div className="settings-card admin-stage-empty-section-card">
           <div className="editor-grid">
             <div className="form-field full">
-              <label htmlFor={`custom-section-title-${customSectionId}`}>
+              <label htmlFor={`section-title-${section.id}`}>
                 Nombre de la sección
               </label>
               <input
-                id={`custom-section-title-${customSectionId}`}
+                id={`section-title-${section.id}`}
                 type="text"
                 value={section.title}
                 onChange={(event) =>
-                  setCustomSections((current) =>
-                    normalizePersistedCustomSections(
-                      current.map((item) =>
-                        item.id === customSectionId
-                          ? { ...item, title: event.target.value }
-                          : item,
-                      ),
+                  setSections((current) =>
+                    current.map((item) =>
+                      item.id === section.id
+                        ? { ...item, title: event.target.value }
+                        : item,
                     ),
                   )
                 }
               />
               <small className="admin-text-muted">
-                Guarda configuración para persistir esta sección personalizada.
+                Guarda configuración para persistir esta sección.
               </small>
             </div>
           </div>
@@ -1888,7 +1291,7 @@ export function StageConfigEditor({
             onClick={() => {
               const suffix = orderedFields.length + 1;
               const seed = getNewFieldSeedForSection({
-                sectionId: "custom",
+                sectionKey: section.sectionKey,
                 suffix,
               });
               insertFieldAt(
@@ -1902,7 +1305,7 @@ export function StageConfigEditor({
                   help_text: "",
                   is_active: true,
                 },
-                { sectionAssignmentId: customSectionId },
+                { sectionId: section.id },
               );
             }}
           >
@@ -2032,11 +1435,13 @@ export function StageConfigEditor({
                       field.localId,
                     ) ?? orderedFields.length;
                   const sectionIdForInsert =
-                    editorFieldSectionMeta.sectionIdByLastFieldId.get(field.localId) ?? "other";
+                    editorFieldSectionMeta.sectionIdByLastFieldId.get(field.localId) ?? null;
                   const sectionId =
-                    editorFieldSectionMeta.sectionIdByFieldId.get(field.localId) ?? "other";
-                  const sectionKey = String(sectionId);
-                  const isSectionCollapsed = collapsedSectionIdSet.has(sectionKey);
+                    editorFieldSectionMeta.sectionIdByFieldId.get(field.localId) ?? null;
+                  const currentEditorSection = sectionId
+                    ? editorSections.find((s) => s.id === sectionId)
+                    : null;
+                  const isSectionCollapsed = sectionId ? collapsedSectionIdSet.has(sectionId) : false;
 
                   if (isSectionCollapsed && !isSectionStart) {
                     return null;
@@ -2044,12 +1449,12 @@ export function StageConfigEditor({
 
                   return (
                     <div key={field.localId}>
-                      {isSectionStart && sectionId === "other" && emptyCustomEditorSections.length > 0
-                        ? emptyCustomEditorSections.map((section) =>
-                            renderPersistedEmptyCustomSection(section),
+                      {isSectionStart && currentEditorSection?.sectionKey === "other" && emptySections.length > 0
+                        ? emptySections.map((emptySection) =>
+                            renderEmptySection(emptySection),
                           )
                         : null}
-                      {isSectionStart ? renderSectionHeading(sectionHeading, sectionId) : null}
+                      {isSectionStart && sectionId ? renderSectionHeading(sectionHeading, sectionId) : null}
                       {isSectionStart && isSectionCollapsed ? (
                         null
                       ) : null}
@@ -2135,17 +1540,6 @@ export function StageConfigEditor({
                                   defaultValue={field.field_label}
                                   onBlur={(event) => {
                                     const value = event.target.value;
-                                    const nextFieldKey =
-                                      field.id.startsWith("new-") || field.field_key.startsWith("nuevoCampo")
-                                        ? ensureUniqueFieldKey(value, field.localId)
-                                        : field.field_key;
-                                    remapFieldSectionAssignmentKey(
-                                      field.field_key,
-                                      nextFieldKey,
-                                      isCustomEditorSectionId(sectionId)
-                                        ? getCustomSectionIdFromEditorSectionId(sectionId)
-                                        : sectionId,
-                                    );
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId
@@ -2171,13 +1565,6 @@ export function StageConfigEditor({
                                   defaultValue={field.field_key}
                                   onBlur={(event) => {
                                     const nextFieldKey = normalizeFieldKey(event.target.value);
-                                    remapFieldSectionAssignmentKey(
-                                      field.field_key,
-                                      nextFieldKey,
-                                      isCustomEditorSectionId(sectionId)
-                                        ? getCustomSectionIdFromEditorSectionId(sectionId)
-                                        : sectionId,
-                                    );
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId
@@ -2328,19 +1715,13 @@ export function StageConfigEditor({
                           className="add-field-btn admin-stage-section-add-field"
                           onClick={() => {
                             const suffix = orderedFields.length + 1;
-                            const customSectionId =
-                              getCustomSectionIdFromEditorSectionId(sectionIdForInsert);
-                            const seed = getNewFieldSeedForSection(
-                              customSectionId
-                                ? {
-                                    sectionId: "custom",
-                                    suffix,
-                                  }
-                                : {
-                                    sectionId: sectionIdForInsert as ApplicantFormSectionId,
-                                    suffix,
-                                  },
-                            );
+                            const insertSection = sectionIdForInsert
+                              ? editorSections.find((s) => s.id === sectionIdForInsert)
+                              : null;
+                            const seed = getNewFieldSeedForSection({
+                              sectionKey: insertSection?.sectionKey ?? "other",
+                              suffix,
+                            });
                             insertFieldAt(sectionInsertPosition, {
                               field_key: seed.field_key,
                               field_label: seed.field_label,
@@ -2350,7 +1731,7 @@ export function StageConfigEditor({
                               help_text: "",
                               is_active: true,
                             }, {
-                              sectionAssignmentId: customSectionId ?? (sectionIdForInsert as string),
+                              sectionId: sectionIdForInsert,
                             });
                           }}
                         >
@@ -2405,8 +1786,8 @@ export function StageConfigEditor({
                   </div>
                 ))}
                 {!editorHasOtherSection
-                  ? emptyCustomEditorSections.map((section) =>
-                      renderPersistedEmptyCustomSection(section),
+                  ? emptySections.map((section) =>
+                      renderEmptySection(section),
                     )
                   : null}
                 <div className="admin-stage-editor-add-section">

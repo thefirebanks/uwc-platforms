@@ -1,10 +1,6 @@
 import Link from "next/link";
-import { groupApplicantFormFieldsWithCustomSections } from "@/lib/stages/applicant-sections";
-import type {
-  BuiltinStageSectionId,
-  PersistedCustomSection,
-} from "@/lib/stages/stage-admin-config";
-import type { CycleStageField, StageCode } from "@/types/domain";
+import { groupFieldsBySections } from "@/lib/stages/applicant-sections";
+import type { CycleStageField, StageCode, StageSection } from "@/types/domain";
 
 function getDisplayStageLabel(stageCode: StageCode, stageLabel: string) {
   const normalizedLabel = stageLabel.trim();
@@ -14,7 +10,7 @@ function getDisplayStageLabel(stageCode: StageCode, stageLabel: string) {
   }
 
   if (stageCode === "exam_placeholder") {
-    return normalizedLabel || "Examen Académico";
+    return normalizedLabel || "Examen Acad\u00e9mico";
   }
 
   return normalizedLabel;
@@ -36,7 +32,7 @@ function renderPreviewControl(field: CycleStageField) {
   if (field.field_type === "file") {
     return (
       <div className="upload-zone" aria-disabled="true">
-        <div className="upload-text">Subir archivo (previsualización)</div>
+        <div className="upload-text">Subir archivo (previsualizaci\u00f3n)</div>
       </div>
     );
   }
@@ -59,10 +55,7 @@ export function AdminStageFormPreview({
   stageCode,
   stageLabel,
   fields,
-  customSections = [],
-  builtinSectionOrder = [],
-  hiddenBuiltinSectionIds = [],
-  fieldSectionAssignments = {},
+  sections = [],
 }: {
   cycleId: string;
   stageId: string;
@@ -70,19 +63,11 @@ export function AdminStageFormPreview({
   stageCode: StageCode;
   stageLabel: string;
   fields: CycleStageField[];
-  customSections?: PersistedCustomSection[];
-  builtinSectionOrder?: BuiltinStageSectionId[];
-  hiddenBuiltinSectionIds?: BuiltinStageSectionId[];
-  fieldSectionAssignments?: Record<string, string>;
+  sections?: StageSection[];
 }) {
-  const sections = groupApplicantFormFieldsWithCustomSections(fields, {
+  const resolvedSections = groupFieldsBySections(fields, sections, {
     includeInactive: false,
     includeFileFields: true,
-    customSections,
-    builtinSectionOrder,
-    hiddenBuiltinSectionIds,
-    fieldSectionAssignments,
-    omitEligibility: stageCode === "documents",
   });
 
   const displayStageLabel = getDisplayStageLabel(stageCode, stageLabel);
@@ -92,10 +77,10 @@ export function AdminStageFormPreview({
       <div className="canvas-header">
         <div className="canvas-title-row">
           <div>
-            <div className="stage-status">Previsualización</div>
+            <div className="stage-status">Previsualizaci\u00f3n</div>
             <h1>{displayStageLabel}</h1>
             <p>
-              Vista previa de solo lectura usando la misma agrupación de secciones del formulario del postulante.
+              Vista previa de solo lectura usando la misma agrupaci\u00f3n de secciones del formulario del postulante.
             </p>
           </div>
           <div className="admin-stage-header-actions">
@@ -116,22 +101,22 @@ export function AdminStageFormPreview({
         <section className="settings-card">
           <div className="settings-card-header">
             <h3>{cycleName}</h3>
-            <p>Los controles están deshabilitados porque esta vista no guarda respuestas.</p>
+            <p>Los controles est\u00e1n deshabilitados porque esta vista no guarda respuestas.</p>
           </div>
         </section>
 
-        {sections.length === 0 ? (
+        {resolvedSections.length === 0 ? (
           <section className="settings-card">
             <div className="settings-card-header">
               <h3>Sin campos activos</h3>
-              <p>Activa o agrega campos en el editor para previsualizarlos aquí.</p>
+              <p>Activa o agrega campos en el editor para previsualizarlos aqu\u00ed.</p>
             </div>
           </section>
         ) : (
-          sections.map((section, index) => (
+          resolvedSections.map((section, index) => (
             <section key={section.id} className="settings-card">
               <div className="settings-card-header">
-                <h3>{`Sección ${index + 1}: ${section.title}`}</h3>
+                <h3>{`Secci\u00f3n ${index + 1}: ${section.title}`}</h3>
                 <p>{section.description}</p>
               </div>
               <div className="editor-grid">

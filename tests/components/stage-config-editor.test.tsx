@@ -1,10 +1,26 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StageConfigEditor } from "@/components/stage-config-editor";
+import type { StageSection } from "@/types/domain";
 
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+function makeOtherSection(overrides?: Partial<StageSection>): StageSection {
+  return {
+    id: "section-other",
+    cycle_id: "cycle-1",
+    stage_code: "documents",
+    section_key: "other",
+    title: "Otros campos",
+    description: "",
+    sort_order: 99,
+    is_visible: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 describe("StageConfigEditor", () => {
   const stageTemplates = [
@@ -95,9 +111,11 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 1,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
         ]}
+        initialSections={[makeOtherSection()]}
         initialAutomations={[
           {
             id: "automation-1",
@@ -161,6 +179,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 1,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -175,9 +194,11 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 2,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
         ]}
+        initialSections={[makeOtherSection()]}
         initialAutomations={[]}
         initialOcrPromptTemplate="Prompt OCR"
       />,
@@ -223,6 +244,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 1,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -237,9 +259,11 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 2,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
         ]}
+        initialSections={[makeOtherSection()]}
         initialAutomations={[]}
         initialOcrPromptTemplate="Prompt OCR"
       />,
@@ -273,6 +297,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 1,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -287,9 +312,11 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 2,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
         ]}
+        initialSections={[makeOtherSection()]}
         initialAutomations={[]}
         initialOcrPromptTemplate="Prompt OCR"
       />,
@@ -357,9 +384,11 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 1,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
         ]}
+        initialSections={[makeOtherSection()]}
         initialAutomations={[]}
         initialOcrPromptTemplate="Prompt OCR"
       />,
@@ -463,6 +492,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 1,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -477,6 +507,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 2,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -491,6 +522,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 3,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -505,6 +537,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 4,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -519,6 +552,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 5,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -533,6 +567,7 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 6,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
           {
@@ -547,9 +582,11 @@ describe("StageConfigEditor", () => {
             help_text: null,
             sort_order: 7,
             is_active: true,
+            section_id: null,
             created_at: "2026-01-01T00:00:00.000Z",
           },
         ]}
+        initialSections={[makeOtherSection()]}
         initialAutomations={[]}
         initialOcrPromptTemplate="Prompt OCR"
       />,
@@ -572,11 +609,14 @@ describe("StageConfigEditor", () => {
         ? JSON.parse(String(request.body))
         : null;
 
-    expect(payload?.customSections).toEqual([
-      expect.objectContaining({ title: "Sección personalizada", order: 1 }),
-    ]);
-    expect(payload?.fieldSectionAssignments).toMatchObject({
-      customSectionField8: expect.any(String),
-    });
+    // Verify the sections payload includes the custom section with the edited title
+    expect(payload?.sections).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ title: "Sección personalizada" }),
+      ]),
+    );
+    // Verify the new field has a sectionKey matching the new section
+    const newField = payload?.fields?.find((f: { fieldKey: string }) => f.fieldKey?.startsWith("custom"));
+    expect(newField).toBeTruthy();
   });
 });

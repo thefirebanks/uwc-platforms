@@ -22,20 +22,15 @@ import { TogglePill } from "@/components/toggle-pill";
 import { GradesTable, isGradeField } from "@/components/grades-table";
 import { UploadZone } from "@/components/upload-zone";
 import type { AppLanguage } from "@/lib/i18n/messages";
-import type { Application, CycleStageField, RecommendationStatus, RecommenderRole } from "@/types/domain";
+import type { Application, CycleStageField, RecommendationStatus, RecommenderRole, StageSection } from "@/types/domain";
 import { StatusBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
 import { validateStagePayload } from "@/lib/stages/form-schema";
 import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
 import {
-  groupApplicantFormFieldsWithCustomSections,
-  type ApplicantFormSectionId,
-  type ApplicantFormResolvedSection,
+  groupFieldsBySections,
+  type ResolvedSection,
 } from "@/lib/stages/applicant-sections";
-import type {
-  BuiltinStageSectionId,
-  PersistedCustomSection,
-} from "@/lib/stages/stage-admin-config";
 import { getSubGroupsForSection, isBooleanField, getBooleanFieldLabels, type SubGroupDef } from "@/lib/stages/field-sub-groups";
 
 interface ApiError {
@@ -74,26 +69,16 @@ type ProgressState = "complete" | "in_progress" | "not_started";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 type StaticWizardSectionId =
   | "prep_intro"
-  | ApplicantFormSectionId
   | "documents_uploads"
   | "recommenders_flow"
   | "review_submit";
-type CustomWizardSectionId = `custom:${string}`;
-type WizardSectionId = StaticWizardSectionId | CustomWizardSectionId;
+type WizardSectionId = StaticWizardSectionId | string;
 
 const PREP_SECTION_ID = "prep_intro" as const;
 const SIDEBAR_VISIBILITY_STORAGE_KEY = "uwc:applicant-sidebar-hidden";
 
 const SECTION_TITLES_ES: Record<StaticWizardSectionId, string> = {
   prep_intro: "Antes de empezar",
-  eligibility: "Elegibilidad",
-  identity: "Datos personales",
-  family: "Familia y apoderados",
-  school: "Colegio y notas",
-  motivation: "Motivación",
-  recommenders: "Datos de recomendadores",
-  documents: "Pago y soporte",
-  other: "Campos adicionales",
   documents_uploads: "Documentos",
   recommenders_flow: "Recomendadores",
   review_submit: "Revisión y envío",
@@ -101,20 +86,12 @@ const SECTION_TITLES_ES: Record<StaticWizardSectionId, string> = {
 
 const SECTION_TITLES_EN: Record<StaticWizardSectionId, string> = {
   prep_intro: "Before you start",
-  eligibility: "Eligibility",
-  identity: "Personal details",
-  family: "Family and guardians",
-  school: "School and grades",
-  motivation: "Motivation",
-  recommenders: "Recommender details",
-  documents: "Payment and support",
-  other: "Additional fields",
   documents_uploads: "Documents",
   recommenders_flow: "Recommenders",
   review_submit: "Review and submit",
 };
 
-const FIELD_LABEL_PREFIX_BY_SECTION: Partial<Record<ApplicantFormSectionId, string[]>> = {
+const FIELD_LABEL_PREFIX_BY_SECTION: Partial<Record<string, string[]>> = {
   eligibility: ["Cumplimiento de requisitos - "],
   identity: ["Información personal - "],
   family: ["Información familiar y apoderados - "],
@@ -208,7 +185,7 @@ const ENGLISH_FIELD_HELP_BY_KEY: Record<string, string> = {
   ibInstructionYear: "Only if you answered yes to studying/studied IB.",
 };
 
-const SECTION_DESCRIPTIONS_EN: Record<ApplicantFormSectionId, string> = {
+const SECTION_DESCRIPTIONS_EN: Record<string, string> = {
   eligibility: "Validate baseline eligibility criteria for the 2026 process.",
   identity: "Identity, contact, and personal context information.",
   family: "Parent/guardian and legal custody details.",
@@ -223,7 +200,7 @@ function getDisplayFieldLabel({
   sectionId,
   fieldLabel,
 }: {
-  sectionId: ApplicantFormSectionId;
+  sectionId: string;
   fieldLabel: string;
 }) {
   const prefixes = FIELD_LABEL_PREFIX_BY_SECTION[sectionId];
@@ -278,7 +255,7 @@ function getLocalizedDisplayFieldLabel({
   field,
   language,
 }: {
-  sectionId: ApplicantFormSectionId;
+  sectionId: string;
   field: CycleStageField;
   language: AppLanguage;
 }) {
@@ -573,10 +550,7 @@ export function ApplicantApplicationForm({
   stageFields,
   stageCloseAt,
   initialRecommenders = [],
-  customSections = [],
-  builtinSectionOrder = [],
-  hiddenBuiltinSectionIds = [],
-  fieldSectionAssignments = {},
+  sections = [],
 }: {
   existingApplication: Application | null;
   cycleId: string;
@@ -584,16 +558,13 @@ export function ApplicantApplicationForm({
   stageFields?: CycleStageField[];
   stageCloseAt?: string | null;
   initialRecommenders?: RecommenderSummary[];
-  customSections?: PersistedCustomSection[];
-  builtinSectionOrder?: BuiltinStageSectionId[];
-  hiddenBuiltinSectionIds?: BuiltinStageSectionId[];
-  fieldSectionAssignments?: Record<string, string>;
+  sections?: StageSection[];
 }) {
   const { language } = useAppLanguage();
   const isEnglish = language === "en";
   const locale = isEnglish ? "en-US" : "es-PE";
   const copy = useCallback((spanish: string, english: string) => (isEnglish ? english : spanish), [isEnglish]);
-  const sectionTitles = isEnglish ? SECTION_TITLES_EN : SECTION_TITLES_ES;
+  const staticSectionTitles: Record<string, string> = isEnglish ? SECTION_TITLES_EN : SECTION_TITLES_ES;
 
   const LOCKED_STATUSES = new Set<Application["status"]>([
     "submitted",
@@ -706,41 +677,33 @@ export function ApplicantApplicationForm({
 
   const groupedFormSections = useMemo(
     () =>
-      groupApplicantFormFieldsWithCustomSections(formStageFields, {
-        customSections,
-        builtinSectionOrder,
-        hiddenBuiltinSectionIds,
-        fieldSectionAssignments,
+      groupFieldsBySections(formStageFields, sections, {
+        includeInactive: false,
+        includeFileFields: false,
       }),
-    [
-      builtinSectionOrder,
-      customSections,
-      fieldSectionAssignments,
-      formStageFields,
-      hiddenBuiltinSectionIds,
-    ],
+    [formStageFields, sections],
   );
 
   const documentFormSection = useMemo(
     () =>
       groupedFormSections.find(
-        (section) => section.kind === "builtin" && section.builtinSectionId === "documents",
+        (section) => section.sectionKey === "documents",
       ) ?? null,
     [groupedFormSections],
   );
 
   const wizardSections = useMemo(() => {
-    const sections: Array<{
+    const wizardSteps: Array<{
       id: WizardSectionId;
       title: string;
       description: string;
-      formSection: ApplicantFormResolvedSection | null;
+      formSection: ResolvedSection | null;
       status: ProgressState;
     }> = [];
 
-    sections.push({
+    wizardSteps.push({
       id: PREP_SECTION_ID,
-      title: sectionTitles.prep_intro,
+      title: staticSectionTitles.prep_intro,
       description: copy(
         "Checklist rápida de preparación para enviar sin fricción.",
         "Quick checklist to prepare and submit smoothly.",
@@ -750,21 +713,17 @@ export function ApplicantApplicationForm({
     });
 
     for (const section of groupedFormSections) {
-      const builtInSectionId = section.kind === "builtin" ? section.builtinSectionId : null;
-
-      if (
-        builtInSectionId &&
-        (builtInSectionId === "documents" || builtInSectionId === "recommenders")
-      ) {
+      // "documents" and "recommenders" are rendered as special wizard steps below
+      if (section.sectionKey === "documents" || section.sectionKey === "recommenders") {
         continue;
       }
 
-      sections.push({
-        id: section.id as WizardSectionId,
-        title: builtInSectionId ? sectionTitles[builtInSectionId] : section.title,
+      wizardSteps.push({
+        id: section.sectionKey as WizardSectionId,
+        title: section.title,
         description:
-          builtInSectionId && isEnglish
-            ? SECTION_DESCRIPTIONS_EN[builtInSectionId]
+          isEnglish && SECTION_DESCRIPTIONS_EN[section.sectionKey]
+            ? SECTION_DESCRIPTIONS_EN[section.sectionKey]
             : section.description,
         formSection: section,
         status: getSectionFieldStatus({
@@ -780,9 +739,9 @@ export function ApplicantApplicationForm({
         fields: docFields,
         payload: application?.payload ?? {},
       });
-      sections.push({
+      wizardSteps.push({
         id: "documents_uploads",
-        title: sectionTitles.documents_uploads,
+        title: staticSectionTitles.documents_uploads,
         description: copy(
           "Sube los archivos solicitados para esta etapa. Formatos aceptados: PDF, PNG, JPG.",
           "Upload the files requested for this stage. Accepted formats: PDF, PNG, JPG.",
@@ -792,24 +751,23 @@ export function ApplicantApplicationForm({
       });
     }
 
-    sections.push({
+    wizardSteps.push({
       id: "recommenders_flow",
-      title: sectionTitles.recommenders_flow,
+      title: staticSectionTitles.recommenders_flow,
       description: copy(
         "Registra un mentor y un amigo (no familiar). Les enviaremos una invitación por correo.",
         "Register a mentor and a friend (non-family). We will email them an invitation.",
       ),
       formSection:
         groupedFormSections.find(
-          (section) =>
-            section.kind === "builtin" && section.builtinSectionId === "recommenders",
+          (section) => section.sectionKey === "recommenders",
         ) ?? null,
       status: "not_started",
     });
 
-    sections.push({
+    wizardSteps.push({
       id: "review_submit",
-      title: sectionTitles.review_submit,
+      title: staticSectionTitles.review_submit,
       description: copy(
         "Revisa que toda la información esté correcta antes de enviar tu postulación.",
         "Review that all information is correct before submitting your application.",
@@ -818,8 +776,8 @@ export function ApplicantApplicationForm({
       status: "not_started",
     });
 
-    return sections;
-  }, [application?.payload, copy, documentFormSection, fileStageFields.length, groupedFormSections, isEnglish, sectionTitles]);
+    return wizardSteps;
+  }, [application?.payload, copy, documentFormSection, fileStageFields.length, groupedFormSections, isEnglish, staticSectionTitles]);
 
   const documentsStatus = useMemo(() => {
     const requiredFileFields = fileStageFields.filter((field) => field.is_required);
@@ -953,9 +911,7 @@ export function ApplicantApplicationForm({
   );
   const currentSection = wizardSections.find((section) => section.id === activeSectionId) ?? wizardSections[0] ?? null;
   const currentFormSectionId = currentSection?.formSection
-    ? currentSection.formSection.kind === "builtin"
-      ? currentSection.formSection.builtinSectionId
-      : "other"
+    ? currentSection.formSection.sectionKey
     : null;
   const currentSectionIndex = currentSection
     ? wizardSections.findIndex((section) => section.id === currentSection.id)
@@ -1231,7 +1187,7 @@ export function ApplicantApplicationForm({
     setActiveSectionId(sectionId);
   }
 
-  function renderSingleField(field: CycleStageField, sectionId: ApplicantFormSectionId) {
+  function renderSingleField(field: CycleStageField, sectionId: string) {
     const displayLabel = getLocalizedDisplayFieldLabel({
       sectionId,
       field,
@@ -1438,7 +1394,7 @@ export function ApplicantApplicationForm({
     );
   }
 
-  function renderFieldGrid(fields: CycleStageField[], sectionId: ApplicantFormSectionId) {
+  function renderFieldGrid(fields: CycleStageField[], sectionId: string) {
     return (
       <Box
         sx={{
@@ -1475,7 +1431,7 @@ export function ApplicantApplicationForm({
     );
   }
 
-  function renderSubGroupCard(subGroup: SubGroupDef, fields: CycleStageField[], sectionId: ApplicantFormSectionId) {
+  function renderSubGroupCard(subGroup: SubGroupDef, fields: CycleStageField[], sectionId: string) {
     const sgLabel = isEnglish ? subGroup.labelEn : subGroup.label;
 
     if (subGroup.variant === "guardian") {
@@ -1598,7 +1554,7 @@ export function ApplicantApplicationForm({
     sectionId,
   }: {
     fields: CycleStageField[];
-    sectionId: ApplicantFormSectionId;
+    sectionId: string;
   }) {
     const subGroups = getSubGroupsForSection(sectionId);
 
@@ -1607,7 +1563,7 @@ export function ApplicantApplicationForm({
     const allNonGradeFields = sectionId === "school" ? fields.filter((f) => !isGradeField(f.field_key)) : fields;
 
     // Hide school address sub-fields and school type details that are not in the mockup design
-    const HIDDEN_FIELDS_BY_SECTION: Partial<Record<ApplicantFormSectionId, Set<string>>> = {
+    const HIDDEN_FIELDS_BY_SECTION: Partial<Record<string, Set<string>>> = {
       identity: new Set([
         "fullName",
         "countryOfBirth",

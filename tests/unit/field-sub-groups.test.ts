@@ -3,7 +3,6 @@ import {
   getSubGroupsForSection,
   isBooleanField,
 } from "@/lib/stages/field-sub-groups";
-import type { ApplicantFormSectionId } from "@/lib/stages/applicant-sections";
 
 describe("getSubGroupsForSection", () => {
   it("returns eligibility sub-groups with expected keys", () => {
@@ -43,7 +42,7 @@ describe("getSubGroupsForSection", () => {
   });
 
   it("returns empty array for sections without sub-groups", () => {
-    const noGroupSections: ApplicantFormSectionId[] = [
+    const noGroupSections: string[] = [
       "motivation",
       "recommenders",
       "documents",
@@ -55,7 +54,7 @@ describe("getSubGroupsForSection", () => {
   });
 
   it("each sub-group has both es and en labels", () => {
-    const allSections: ApplicantFormSectionId[] = [
+    const allSections: string[] = [
       "eligibility",
       "identity",
       "family",

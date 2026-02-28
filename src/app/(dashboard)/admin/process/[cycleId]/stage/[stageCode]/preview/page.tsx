@@ -2,9 +2,8 @@ import { redirect } from "next/navigation";
 import { AdminStageFormPreview } from "@/components/admin-stage-form-preview";
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { CycleStageField, CycleStageTemplate } from "@/types/domain";
+import type { CycleStageField, CycleStageTemplate, StageSection } from "@/types/domain";
 import { buildDefaultCycleStageFields } from "@/lib/stages/templates";
-import { parseStageAdminConfig } from "@/lib/stages/stage-admin-config";
 
 export default async function AdminStagePreviewPage({
   params,
@@ -42,12 +41,20 @@ export default async function AdminStagePreviewPage({
     redirect(`/admin/process/${cycleId}`);
   }
 
-  const { data: fieldsData } = await supabase
-    .from("cycle_stage_fields")
-    .select("*")
-    .eq("cycle_id", cycleId)
-    .eq("stage_code", selectedTemplate.stage_code)
-    .order("sort_order", { ascending: true });
+  const [{ data: fieldsData }, { data: sectionsData }] = await Promise.all([
+    supabase
+      .from("cycle_stage_fields")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", selectedTemplate.stage_code)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("stage_sections")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", selectedTemplate.stage_code)
+      .order("sort_order", { ascending: true }),
+  ]);
 
   const fallbackFields =
     selectedTemplate.stage_code === "documents"
@@ -63,10 +70,10 @@ export default async function AdminStagePreviewPage({
           help_text: field.help_text ?? null,
           sort_order: field.sort_order ?? index + 1,
           is_active: field.is_active ?? true,
+          section_id: null,
           created_at: new Date().toISOString(),
         }))
       : [];
-  const parsedAdminConfig = parseStageAdminConfig(selectedTemplate.admin_config ?? null);
 
   return (
     <AdminStageFormPreview
@@ -76,10 +83,7 @@ export default async function AdminStagePreviewPage({
       stageCode={selectedTemplate.stage_code}
       stageLabel={selectedTemplate.stage_label}
       fields={(fieldsData as CycleStageField[] | null) ?? fallbackFields}
-      customSections={parsedAdminConfig.customSections}
-      builtinSectionOrder={parsedAdminConfig.builtinSectionOrder}
-      hiddenBuiltinSectionIds={parsedAdminConfig.hiddenBuiltinSectionIds}
-      fieldSectionAssignments={parsedAdminConfig.fieldSectionAssignments}
+      sections={(sectionsData as StageSection[] | null) ?? []}
     />
   );
 }

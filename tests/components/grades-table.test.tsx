@@ -18,6 +18,7 @@ function makeGradeField(fieldKey: string): CycleStageField {
     help_text: null,
     sort_order: 1,
     is_active: true,
+    section_id: null,
     created_at: "2026-01-01T00:00:00.000Z",
   };
 }

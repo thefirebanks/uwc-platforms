@@ -6,6 +6,7 @@ import type {
   CycleStageField,
   CycleStageTemplate,
   StageAutomationTemplate,
+  StageSection,
 } from "@/types/domain";
 import {
   buildDefaultCycleStageFields,
@@ -62,7 +63,7 @@ export default async function StageConfigPage({
 
   const resolvedStageCode = selectedTemplate.stage_code;
 
-  const [{ data: templateData }, { data: fieldsData }, { data: automationsData }] = await Promise.all([
+  const [{ data: templateData }, { data: fieldsData }, { data: automationsData }, { data: sectionsData }] = await Promise.all([
     Promise.resolve({ data: selectedTemplate }),
     supabase
       .from("cycle_stage_fields")
@@ -76,6 +77,12 @@ export default async function StageConfigPage({
       .eq("cycle_id", cycleId)
       .eq("stage_code", resolvedStageCode)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("stage_sections")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .eq("stage_code", resolvedStageCode)
+      .order("sort_order", { ascending: true }),
   ]);
 
   const fallbackFields =
@@ -92,6 +99,7 @@ export default async function StageConfigPage({
           help_text: field.help_text ?? null,
           sort_order: field.sort_order ?? index + 1,
           is_active: field.is_active ?? true,
+          section_id: null,
           created_at: new Date().toISOString(),
         }))
       : [];
@@ -138,6 +146,7 @@ export default async function StageConfigPage({
       initialAutomations={(automationsData as StageAutomationTemplate[] | null) ?? fallbackAutomations}
       initialOcrPromptTemplate={(templateData as CycleStageTemplate | null)?.ocr_prompt_template ?? null}
       initialStageAdminConfig={(templateData as CycleStageTemplate | null)?.admin_config ?? null}
+      initialSections={(sectionsData as StageSection[] | null) ?? []}
     />
   );
 }
