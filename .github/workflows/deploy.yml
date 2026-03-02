@@ -12,7 +12,7 @@ jobs:
     permissions:
       contents: read
       deployments: write
-    name: Deploy to Cloudflare Pages
+    name: Deploy to Cloudflare Workers
 
     steps:
       - name: Checkout
@@ -26,8 +26,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build for Cloudflare Pages
-        run: bunx @cloudflare/next-on-pages
+      - name: Build for Cloudflare Workers
+        run: bunx opennextjs-cloudflare build
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
@@ -37,9 +37,9 @@ jobs:
           NEXT_PUBLIC_DEMO_APPLICANT_EMAIL: ${{ secrets.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL }}
           NEXT_PUBLIC_DEMO_PASSWORD: ${{ secrets.NEXT_PUBLIC_DEMO_PASSWORD }}
 
-      - name: Deploy to Cloudflare Pages
+      - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy .vercel/output/static --project-name=uwc-platforms --branch=${{ github.head_ref || github.ref_name }}
+          command: deploy --name=uwc-platforms
