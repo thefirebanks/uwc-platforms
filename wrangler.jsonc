@@ -12,6 +12,6 @@
     "binding": "ASSETS"
   },
   "alias": {
-    "next/dist/compiled/@vercel/og/index.edge.js": "./src/lib/empty-module.js"
+    "next/dist/compiled/@vercel/og/index.edge.js": "./empty-module.js"
   }
 }
