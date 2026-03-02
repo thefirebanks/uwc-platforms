@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { LanguageProvider } from "@/components/language-provider";
 import { TopNav } from "@/components/top-nav";
 import { canUseEnglishLanguageToggle } from "@/lib/i18n/access";
@@ -14,6 +15,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (profile.role === "applicant") {
     return (
       <LanguageProvider canUseEnglish={canUseEnglish}>
+        {children}
+      </LanguageProvider>
+    );
+  }
+
+  // Reviewers: render reviewer shell (each page guards its own role)
+  if (profile.role === "reviewer") {
+    return (
+      <LanguageProvider canUseEnglish={canUseEnglish}>
+        <TopNav role={profile.role} />
         {children}
       </LanguageProvider>
     );

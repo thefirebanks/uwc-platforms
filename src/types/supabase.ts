@@ -2,11 +2,14 @@ import type {
   ApplicationStatus,
   AppRole,
   CommunicationStatus,
+  PermissionScope,
   RecommendationStatus,
   RecommenderRole,
+  ReviewerPermission,
   StageAutomationTrigger,
   StageCode,
   StageFieldType,
+  SupportTicketStatus,
 } from "@/types/domain";
 
 export type Json =
@@ -33,6 +36,7 @@ export interface Database {
           email: string;
           full_name: string;
           role: AppRole;
+          search_vector: unknown;
           created_at: string;
         },
         {
@@ -128,6 +132,7 @@ export interface Database {
           due_at: string | null;
           ocr_prompt_template: string | null;
           admin_config: Json;
+          model_id: string;
           sort_order: number;
           created_at: string;
         },
@@ -140,6 +145,7 @@ export interface Database {
           due_at?: string | null;
           ocr_prompt_template?: string | null;
           admin_config?: Json;
+          model_id?: string;
           sort_order?: number;
           created_at?: string;
         },
@@ -149,6 +155,7 @@ export interface Database {
           due_at?: string | null;
           ocr_prompt_template?: string | null;
           admin_config?: Json;
+          model_id?: string;
           sort_order?: number;
         }
       >;
@@ -285,6 +292,7 @@ export interface Database {
           last_attempt_at: string | null;
           delivered_at: string | null;
           provider_message_id: string | null;
+          is_applicant_visible: boolean;
           created_at: string;
         },
         {
@@ -303,6 +311,7 @@ export interface Database {
           last_attempt_at?: string | null;
           delivered_at?: string | null;
           provider_message_id?: string | null;
+          is_applicant_visible?: boolean;
           created_at?: string;
         },
         {
@@ -312,6 +321,7 @@ export interface Database {
           last_attempt_at?: string | null;
           delivered_at?: string | null;
           provider_message_id?: string | null;
+          is_applicant_visible?: boolean;
         }
       >;
       cycle_stage_fields: TableDef<
@@ -447,6 +457,138 @@ export interface Database {
           context: string;
           notes: string;
           created_at?: string;
+        },
+        never
+      >;
+      support_tickets: TableDef<
+        {
+          id: string;
+          application_id: string;
+          applicant_id: string;
+          subject: string;
+          body: string;
+          status: SupportTicketStatus;
+          admin_reply: string | null;
+          replied_by: string | null;
+          replied_at: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          application_id: string;
+          applicant_id: string;
+          subject: string;
+          body: string;
+          status?: SupportTicketStatus;
+          admin_reply?: string | null;
+          replied_by?: string | null;
+          replied_at?: string | null;
+          created_at?: string;
+        },
+        {
+          status?: SupportTicketStatus;
+          admin_reply?: string | null;
+          replied_by?: string | null;
+          replied_at?: string | null;
+        }
+      >;
+      admin_edit_log: TableDef<
+        {
+          id: string;
+          application_id: string;
+          actor_id: string;
+          edit_type: string;
+          field_key: string | null;
+          old_value: Json | null;
+          new_value: Json | null;
+          reason: string;
+          created_at: string;
+        },
+        {
+          id?: string;
+          application_id: string;
+          actor_id: string;
+          edit_type: string;
+          field_key?: string | null;
+          old_value?: Json | null;
+          new_value?: Json | null;
+          reason?: string;
+          created_at?: string;
+        },
+        {
+          edit_type?: string;
+          field_key?: string | null;
+          old_value?: Json | null;
+          new_value?: Json | null;
+          reason?: string;
+        }
+      >;
+      ocr_test_runs: TableDef<
+        {
+          id: string;
+          cycle_id: string | null;
+          stage_code: string;
+          actor_id: string;
+          file_name: string;
+          file_path: string;
+          prompt_template: string;
+          model_id: string;
+          summary: string | null;
+          confidence: number | null;
+          raw_response: Json;
+          duration_ms: number | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          cycle_id?: string | null;
+          stage_code: string;
+          actor_id: string;
+          file_name: string;
+          file_path: string;
+          prompt_template: string;
+          model_id?: string;
+          summary?: string | null;
+          confidence?: number | null;
+          raw_response?: Json;
+          duration_ms?: number | null;
+          created_at?: string;
+        },
+        never
+      >;
+      role_permissions: TableDef<
+        {
+          role: AppRole;
+          permission: ReviewerPermission;
+          scope: PermissionScope;
+        },
+        {
+          role: AppRole;
+          permission: ReviewerPermission;
+          scope?: PermissionScope;
+        },
+        {
+          scope?: PermissionScope;
+        }
+      >;
+      reviewer_assignments: TableDef<
+        {
+          id: string;
+          reviewer_id: string;
+          application_id: string;
+          cycle_id: string;
+          stage_code: string;
+          assigned_by: string;
+          assigned_at: string;
+        },
+        {
+          id?: string;
+          reviewer_id: string;
+          application_id: string;
+          cycle_id: string;
+          stage_code: string;
+          assigned_by: string;
+          assigned_at?: string;
         },
         never
       >;
