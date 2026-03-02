@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import ExcelJS from "exceljs";
 import { AppError } from "@/lib/errors/app-error";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
 import type { Database, Json } from "@/types/supabase";
@@ -85,6 +86,33 @@ export type ApplicationExportPackage = {
   >;
   ocrChecks: Array<Pick<OcrRow, "id" | "file_key" | "summary" | "confidence" | "created_at">>;
 };
+
+/* -------------------------------------------------------------------------- */
+/*  Exportable column registry (drives column picker UI + xlsx builder)       */
+/* -------------------------------------------------------------------------- */
+
+export type ExportableColumn = {
+  key: keyof ApplicationExportRow;
+  label: string;
+};
+
+export const EXPORTABLE_COLUMNS: ExportableColumn[] = [
+  { key: "applicationId", label: "ID Postulación" },
+  { key: "cycleId", label: "ID Ciclo" },
+  { key: "cycleName", label: "Nombre del Ciclo" },
+  { key: "applicantId", label: "ID Postulante" },
+  { key: "applicantEmail", label: "Email Postulante" },
+  { key: "applicantName", label: "Nombre Postulante" },
+  { key: "stageCode", label: "Etapa" },
+  { key: "status", label: "Estado" },
+  { key: "validationNotes", label: "Notas de Validación" },
+  { key: "mentorRecommendationSubmitted", label: "Rec. Mentor Enviada" },
+  { key: "friendRecommendationSubmitted", label: "Rec. Amigo Enviada" },
+  { key: "recommendationCompletion", label: "Recomendaciones" },
+  { key: "fileCount", label: "Archivos Subidos" },
+  { key: "createdAt", label: "Fecha Creación" },
+  { key: "updatedAt", label: "Última Actualización" },
+];
 
 function clean(value: string | null) {
   const trimmed = value?.trim();
@@ -390,50 +418,84 @@ export async function getApplicationsForExport({
   };
 }
 
-export function buildApplicationsCsv(rows: ApplicationExportRow[]) {
-  const header = [
-    "application_id",
-    "cycle_id",
-    "cycle_name",
-    "applicant_id",
-    "applicant_email",
-    "applicant_name",
-    "stage_code",
-    "status",
-    "validation_notes",
-    "mentor_recommendation_submitted",
-    "friend_recommendation_submitted",
-    "recommendation_completion",
-    "file_count",
-    "created_at",
-    "updated_at",
-  ]
-    .map(csvCell)
+export function buildApplicationsCsv(
+  rows: ApplicationExportRow[],
+  columnKeys?: Array<keyof ApplicationExportRow>,
+) {
+  const selectedKeys = columnKeys ?? EXPORTABLE_COLUMNS.map((c) => c.key);
+  const keyToLabel = new Map(EXPORTABLE_COLUMNS.map((c) => [c.key, c.label]));
+
+  const header = selectedKeys
+    .map((k) => csvCell(keyToLabel.get(k) ?? String(k)))
     .join(",");
 
   const lines = rows.map((row) =>
-    [
-      row.applicationId,
-      row.cycleId,
-      row.cycleName,
-      row.applicantId,
-      row.applicantEmail,
-      row.applicantName,
-      row.stageCode,
-      row.status,
-      row.validationNotes,
-      String(row.mentorRecommendationSubmitted),
-      String(row.friendRecommendationSubmitted),
-      row.recommendationCompletion,
-      String(row.fileCount),
-      row.createdAt,
-      row.updatedAt,
-    ]
-      .map(csvCell)
+    selectedKeys
+      .map((key) => {
+        const val = row[key];
+        return csvCell(typeof val === "boolean" ? String(val) : String(val ?? ""));
+      })
       .join(","),
   );
 
   return [header, ...lines].join("\n");
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Excel export                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Build an .xlsx workbook for the given rows.
+ * `columnKeys` controls which columns appear and in what order.
+ * Defaults to all EXPORTABLE_COLUMNS when omitted.
+ */
+export async function buildApplicationsXlsx(
+  rows: ApplicationExportRow[],
+  columnKeys?: Array<keyof ApplicationExportRow>,
+): Promise<Buffer> {
+  const selectedKeys = columnKeys ?? EXPORTABLE_COLUMNS.map((c) => c.key);
+  const keyToLabel = new Map(EXPORTABLE_COLUMNS.map((c) => [c.key, c.label]));
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "UWC Peru Platform";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("Postulaciones");
+
+  /* Header row */
+  sheet.columns = selectedKeys.map((key) => ({
+    header: keyToLabel.get(key) ?? String(key),
+    key: String(key),
+    width: 22,
+  }));
+
+  /* Style header row */
+  sheet.getRow(1).font = { bold: true };
+  sheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFD6E4F7" },
+  };
+
+  /* Data rows */
+  for (const row of rows) {
+    const record: Record<string, string | number | boolean> = {};
+    for (const key of selectedKeys) {
+      const raw = row[key];
+      record[String(key)] = typeof raw === "boolean" ? String(raw) : (raw as string | number);
+    }
+    sheet.addRow(record);
+  }
+
+  /* Auto-filter on header */
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: selectedKeys.length },
+  };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }
 
 export async function getApplicationExportPackage({
