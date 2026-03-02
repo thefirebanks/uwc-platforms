@@ -1,4 +1,3 @@
-import { redirect } from "next/navigation";
 import { LanguageProvider } from "@/components/language-provider";
 import { TopNav } from "@/components/top-nav";
 import { canUseEnglishLanguageToggle } from "@/lib/i18n/access";

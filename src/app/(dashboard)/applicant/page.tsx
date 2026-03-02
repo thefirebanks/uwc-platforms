@@ -34,6 +34,9 @@ export default async function ApplicantPage() {
 
   const applicationIds = ((applications ?? []) as ApplicantApplicationSummary[]).map((a) => a.id);
 
+  // eslint-disable-next-line react-hooks/purity -- server component; Date.now() is safe here
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
   // Fetch stage templates and recent transitions only if there are applications
   const [{ data: stageTemplates }, { data: recentTransitions }] =
     applicationIds.length > 0
@@ -51,7 +54,7 @@ export default async function ApplicantPage() {
             .in("application_id", applicationIds)
             .gte(
               "created_at",
-              new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+              sevenDaysAgo,
             )
             .order("created_at", { ascending: false })
             .limit(10),

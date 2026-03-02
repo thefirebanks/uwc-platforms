@@ -159,12 +159,11 @@ afterEach(() => {
 /* ================================================================== */
 describe("createSupportTicket", () => {
   it("creates a ticket when ownership and count limits pass", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const supabase = createTicketMock({
       applicationRow: APP_ROW,
       openCount: 0,
       insertedTicket: BASE_TICKET,
-    }) as any;
+    }) as unknown as Parameters<typeof createSupportTicket>[0]["supabase"];
 
     const result = await createSupportTicket({
       supabase,
@@ -182,12 +181,11 @@ describe("createSupportTicket", () => {
   });
 
   it("throws AppError(403) when application does not belong to applicant", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const supabase = createTicketMock({
       applicationRow: null,   // ownership check fails
       openCount: 0,
       insertedTicket: null,
-    }) as any;
+    }) as unknown as Parameters<typeof createSupportTicket>[0]["supabase"];
 
     await expect(
       createSupportTicket({
@@ -205,12 +203,11 @@ describe("createSupportTicket", () => {
   });
 
   it("throws AppError(422) when applicant already has 3 open tickets", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const supabase = createTicketMock({
       applicationRow: APP_ROW,
       openCount: 3,           // at the limit
       insertedTicket: null,
-    }) as any;
+    }) as unknown as Parameters<typeof createSupportTicket>[0]["supabase"];
 
     await expect(
       createSupportTicket({

@@ -44,10 +44,15 @@ export function ApplicantCommunicationsDashboard({
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
 
-    fetch(`/api/applicant/communications?applicationId=${applicationId}`)
+    Promise.resolve()
+      .then(() => {
+        if (!cancelled) {
+          setLoading(true);
+          setError(null);
+        }
+        return fetch(`/api/applicant/communications?applicationId=${applicationId}`);
+      })
       .then(async (res) => {
         if (!res.ok) {
           const json = (await res.json()) as { userMessage?: string };

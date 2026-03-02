@@ -9,7 +9,7 @@ const promoteSchema = z.object({
   email: z.string().email("Correo electrónico inválido."),
 });
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   return withErrorHandling(
     async () => {
       await requireAuth(["admin"]);

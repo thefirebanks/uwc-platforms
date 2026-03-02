@@ -207,7 +207,7 @@ export async function searchApplications({
   }
 
   /* ---- Step 5: map to AdminCandidateRow ---- */
-  let rows: AdminCandidateRow[] = appRows.map((app) => {
+  const rows: AdminCandidateRow[] = appRows.map((app) => {
     const profile = profileMap.get(app.applicant_id);
     const payload = (app.payload ?? {}) as Record<string, unknown>;
 
