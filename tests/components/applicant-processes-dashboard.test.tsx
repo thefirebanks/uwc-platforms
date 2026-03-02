@@ -73,6 +73,28 @@ describe("ApplicantProcessesDashboard", () => {
     expect(screen.getByRole("link", { name: /Continuar postulación/i })).toBeInTheDocument();
   });
 
+  it("uses continue CTA for draft applications in the active process", () => {
+    render(
+      <ApplicantProcessesDashboard
+        processes={[ACTIVE_CYCLE]}
+        applications={[
+          {
+            id: "app-draft",
+            cycle_id: "cycle-1",
+            status: "draft",
+            stage_code: "documents",
+            updated_at: "2026-02-01T12:00:00.000Z",
+          },
+        ]}
+        stageTemplates={[]}
+        recentTransitions={[]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /Continuar postulación/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /Iniciar postulación/i })).not.toBeInTheDocument();
+  });
+
   it("shows congratulations banner when a recent stage transition exists", () => {
     render(
       <ApplicantProcessesDashboard

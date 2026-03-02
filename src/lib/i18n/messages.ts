@@ -51,6 +51,7 @@ const spanish: MessageMap = {
   "applicantProcesses.open": "Abrir postulación",
   "applicantProcesses.start": "Iniciar postulación",
   "applicantProcesses.limit": "Límite alcanzado",
+  "applicantProcesses.orphanedDraftNotice": "Tienes un borrador de postulación de un proceso anterior. Puedes verlo en la sección \"Procesos anteriores\" más abajo.",
   "comms.title": "Notificaciones",
   "comms.noComms": "No hay notificaciones aún.",
   "dashboard.congrats": "¡Felicitaciones! Has avanzado a {stage}",

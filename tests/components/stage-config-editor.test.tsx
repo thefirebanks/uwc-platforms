@@ -416,6 +416,16 @@ describe("StageConfigEditor", () => {
       );
     });
 
+    await waitFor(() => {
+      expect(screen.getByText(/^Configuración guardada$/i)).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByText(/Hay cambios sin guardar en Ajustes y Reglas/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    ).toBeDisabled();
+
     const request = fetchMock.mock.calls.at(-1)?.[1];
     const payload =
       request && typeof request === "object" && "body" in request

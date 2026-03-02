@@ -538,7 +538,10 @@ function getSectionFieldStatus({
   const hasAnyValue = fields.some((field) => isMeaningfulValue((payload as Record<string, unknown>)[field.field_key]));
 
   return getStepState({
-    complete: requiredFields.length === 0 || completedRequired === requiredFields.length,
+    complete:
+      requiredFields.length > 0
+        ? completedRequired === requiredFields.length
+        : hasAnyValue,
     inProgress: hasAnyValue,
   });
 }

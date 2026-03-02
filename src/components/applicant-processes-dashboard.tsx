@@ -106,6 +106,11 @@ export function ApplicantProcessesDashboard({
   const activeCycle = processes.find((p) => p.is_active && applicationMap.has(p.id));
   const activeApplication = activeCycle ? applicationMap.get(activeCycle.id) : undefined;
 
+  // Drafts the user has on inactive cycles (orphaned drafts)
+  const orphanedDrafts = applications.filter(
+    (a) => a.status === "draft" && !processes.some((p) => p.is_active && p.id === a.cycle_id),
+  );
+
   const stageLabel = activeApplication
     ? (templateMap.get(`${activeCycle?.id}:${activeApplication.stage_code}`) ??
         activeApplication.stage_code)
@@ -258,6 +263,21 @@ export function ApplicantProcessesDashboard({
           <p style={{ fontSize: "13px", color: "var(--ink-light)", marginBottom: "16px" }}>
             {t("applicantProcesses.description", { count: maxApplications })}
           </p>
+          {orphanedDrafts.length > 0 && (
+            <div
+              style={{
+                background: "var(--uwc-blue-soft)",
+                border: "1px solid var(--uwc-blue)",
+                borderRadius: "var(--radius)",
+                padding: "12px 16px",
+                fontSize: "13px",
+                color: "var(--uwc-blue)",
+                marginBottom: "8px",
+              }}
+            >
+              {t("applicantProcesses.orphanedDraftNotice")}
+            </div>
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             {processes.filter((p) => p.is_active).map((process) => {
               const app = applicationMap.get(process.id);
@@ -295,7 +315,13 @@ export function ApplicantProcessesDashboard({
                       pointerEvents: reachedLimit && !app ? "none" : "auto",
                     }}
                   >
-                    {app ? t("applicantProcesses.open") : reachedLimit ? t("applicantProcesses.limit") : t("applicantProcesses.start")}
+                    {app
+                      ? app.status === "draft"
+                        ? t("dashboard.continuarPostulacion")
+                        : t("applicantProcesses.open")
+                      : reachedLimit
+                        ? t("applicantProcesses.limit")
+                        : t("applicantProcesses.start")}
                   </Link>
                 </div>
               );

@@ -203,22 +203,26 @@ export function AdminCandidatesDashboard({
     params.set("sortBy", sortBy);
     params.set("sortOrder", sortOrder);
 
-    fetch(`/api/applications/search?${params}`, { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error("Search failed");
-        return r.json();
-      })
-      .then((data: SearchResult) => {
+    void (async () => {
+      try {
+        const r = await fetch(`/api/applications/search?${params}`, { signal: controller.signal });
+        const body = await r.json();
+        if (!r.ok) {
+          throw new Error(
+            typeof body?.userMessage === "string" ? body.userMessage : (body?.message ?? "Error al buscar candidatos"),
+          );
+        }
+        const data = body as SearchResult;
         setRows(data.rows);
         setTotal(data.total);
         setTotalPages(data.totalPages);
         setLoading(false);
-      })
-      .catch((err) => {
-        if (err.name === "AbortError") return;
-        setFetchError(String(err.message ?? err));
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        setFetchError(String(err instanceof Error ? err.message : err));
         setLoading(false);
-      });
+      }
+    })();
 
     return () => controller.abort();
   }, [cycleFilter, deferredSearch, stageFilter, statusFilter, page, sortBy, sortOrder]);
