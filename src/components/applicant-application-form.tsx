@@ -547,6 +547,8 @@ export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
   cycleName,
+  stageCode,
+  stageLabel,
   stageFields,
   stageCloseAt,
   initialRecommenders = [],
@@ -555,6 +557,8 @@ export function ApplicantApplicationForm({
   existingApplication: Application | null;
   cycleId: string;
   cycleName?: string;
+  stageCode?: string;
+  stageLabel?: string;
   stageFields?: CycleStageField[];
   stageCloseAt?: string | null;
   initialRecommenders?: RecommenderSummary[];
@@ -595,8 +599,11 @@ export function ApplicantApplicationForm({
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const isDocumentsStageInit = !stageCode || stageCode === "documents";
   const [activeSectionId, setActiveSectionId] = useState<WizardSectionId>(
-    existingApplication?.id ? "eligibility" : PREP_SECTION_ID,
+    isDocumentsStageInit
+      ? existingApplication?.id ? "eligibility" : PREP_SECTION_ID
+      : "review_submit",
   );
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
 
@@ -701,16 +708,20 @@ export function ApplicantApplicationForm({
       status: ProgressState;
     }> = [];
 
-    wizardSteps.push({
-      id: PREP_SECTION_ID,
-      title: staticSectionTitles.prep_intro,
-      description: copy(
-        "Checklist rápida de preparación para enviar sin fricción.",
-        "Quick checklist to prepare and submit smoothly.",
-      ),
-      formSection: null,
-      status: "complete",
-    });
+    const isDocumentsStage = !stageCode || stageCode === "documents";
+
+    if (isDocumentsStage) {
+      wizardSteps.push({
+        id: PREP_SECTION_ID,
+        title: staticSectionTitles.prep_intro,
+        description: copy(
+          "Checklist rápida de preparación para enviar sin fricción.",
+          "Quick checklist to prepare and submit smoothly.",
+        ),
+        formSection: null,
+        status: "complete",
+      });
+    }
 
     for (const section of groupedFormSections) {
       // "documents" and "recommenders" are rendered as special wizard steps below
@@ -751,19 +762,21 @@ export function ApplicantApplicationForm({
       });
     }
 
-    wizardSteps.push({
-      id: "recommenders_flow",
-      title: staticSectionTitles.recommenders_flow,
-      description: copy(
-        "Registra un mentor y un amigo (no familiar). Les enviaremos una invitación por correo.",
-        "Register a mentor and a friend (non-family). We will email them an invitation.",
-      ),
-      formSection:
-        groupedFormSections.find(
-          (section) => section.sectionKey === "recommenders",
-        ) ?? null,
-      status: "not_started",
-    });
+    if (isDocumentsStage) {
+      wizardSteps.push({
+        id: "recommenders_flow",
+        title: staticSectionTitles.recommenders_flow,
+        description: copy(
+          "Registra un mentor y un amigo (no familiar). Les enviaremos una invitación por correo.",
+          "Register a mentor and a friend (non-family). We will email them an invitation.",
+        ),
+        formSection:
+          groupedFormSections.find(
+            (section) => section.sectionKey === "recommenders",
+          ) ?? null,
+        status: "not_started",
+      });
+    }
 
     wizardSteps.push({
       id: "review_submit",
@@ -1979,7 +1992,7 @@ export function ApplicantApplicationForm({
       {/* Desktop Sidebar */}
       <ApplicantSidebar
         processLabel={cycleName ?? copy("Proceso 2026", "Process 2026")}
-        title={copy("Tu postulación", "Your application")}
+        title={stageLabel ?? copy("Tu postulación", "Your application")}
         deadline={
           stageCloseAt
             ? `${copy("Cierre", "Closes")}: ${new Date(stageCloseAt).toLocaleDateString(locale)}`

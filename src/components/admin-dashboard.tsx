@@ -10,6 +10,9 @@ import type {
   StageCode,
 } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
+import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
+import { AdminExportBuilder } from "@/components/admin-export-builder";
+import { MODEL_REGISTRY, DEFAULT_OCR_PROMPT } from "@/lib/server/ocr";
 
 interface ApiError {
   message: string;
@@ -53,7 +56,7 @@ export function AdminDashboard({
   initialApplications: Application[];
   cycleTemplates: CycleStageTemplate[];
   cycle: SelectionProcess;
-  initialWorkspaceSection?: "process_config" | "stages" | "communications";
+  initialWorkspaceSection?: "process_config" | "stages" | "communications" | "ocr_testbed" | "export";
 }) {
   const applications = initialApplications;
   const [templates, setTemplates] = useState(cycleTemplates);
@@ -83,19 +86,23 @@ export function AdminDashboard({
     "queued" | "failed" | null
   >(null);
   const [activeSection, setActiveSection] = useState<
-    "process_config" | "stages" | "communications"
+    "process_config" | "stages" | "communications" | "ocr_testbed" | "export"
   >(initialWorkspaceSection);
 
   const sections = [
     "process_config",
     "stages",
     "communications",
+    "ocr_testbed",
+    "export",
   ] as const;
 
   const SECTION_LABELS: Record<(typeof sections)[number], string> = {
     process_config: "Reglas generales",
     stages: "Etapas",
     communications: "Comunicaciones y Examen",
+    ocr_testbed: "Pruebas OCR",
+    export: "Exportar Datos",
   };
 
   const pageHeader = useMemo(() => {
@@ -112,6 +119,20 @@ export function AdminDashboard({
           title: "Comunicaciones y Examen",
           description:
             "Administra importación de resultados y el procesamiento de mensajes de esta convocatoria.",
+          subnote: null as string | null,
+        };
+      case "ocr_testbed":
+        return {
+          title: "Pruebas OCR",
+          description:
+            "Sube un documento de prueba, elige el modelo y el prompt, y verifica los resultados sin afectar datos reales.",
+          subnote: null as string | null,
+        };
+      case "export":
+        return {
+          title: "Exportar Datos",
+          description:
+            "Selecciona columnas y descarga las postulaciones en CSV o Excel.",
           subnote: null as string | null,
         };
       case "process_config":
@@ -395,8 +416,12 @@ export function AdminDashboard({
                 "stages" === a
                   ? `${templates.length}/6 plantillas configuradas`
                   : "communications" === a
-                      ? `${communicationSummary.total} registros`
-                      : "Reglas y configuración";
+                    ? `${communicationSummary.total} registros`
+                    : "ocr_testbed" === a
+                      ? "Prueba modelos de OCR"
+                      : "export" === a
+                        ? "Descarga CSV o Excel"
+                        : "Reglas y configuración";
             return (
               <button
                 key={a}
@@ -409,6 +434,8 @@ export function AdminDashboard({
                       process_config: "⚙",
                       stages: "📋",
                       communications: "✉",
+                      ocr_testbed: "🔬",
+                      export: "📥",
                     }[a]
                   }
                 </div>
@@ -830,6 +857,20 @@ export function AdminDashboard({
                 </div>
               </div>
             </>
+          ) : null}
+          {"ocr_testbed" === activeSection ? (
+            <AdminOcrTestbed
+              cycleId={cycle.id}
+              stageCode="documents"
+              modelOptions={Object.entries(MODEL_REGISTRY).map(([id, meta]) => ({
+                id,
+                name: meta.name,
+              }))}
+              defaultPrompt={DEFAULT_OCR_PROMPT}
+            />
+          ) : null}
+          {"export" === activeSection ? (
+            <AdminExportBuilder cycleId={cycle.id} />
           ) : null}
         </div>
       </main>

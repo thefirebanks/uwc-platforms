@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
 import type { Database } from "@/types/supabase";
+import { renderTemplate } from "@/lib/server/automation-service";
 
 type CommunicationRow = Database["public"]["Tables"]["communication_logs"]["Row"];
+type AutomationTemplateRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
 
 export const COMMUNICATION_STATUSES = ["queued", "processing", "sent", "failed"] as const;
 export type CommunicationStatus = (typeof COMMUNICATION_STATUSES)[number];
@@ -486,4 +488,125 @@ export async function processCommunicationQueue({
     skipped,
     targetStatus: input.targetStatus,
   };
+}
+
+export type PreviewEmailInput = {
+  automationTemplateId: string;
+  sampleValues?: Record<string, string>;
+};
+
+export type PreviewEmailResult = {
+  subject: string;
+  bodyText: string;
+  bodyHtml: string;
+};
+
+export async function previewEmail({
+  supabase,
+  input,
+}: {
+  supabase: SupabaseClient<Database>;
+  input: PreviewEmailInput;
+}): Promise<PreviewEmailResult> {
+  const { data: rawTemplate, error } = await supabase
+    .from("stage_automation_templates")
+    .select("*")
+    .eq("id", input.automationTemplateId)
+    .maybeSingle();
+
+  const template = rawTemplate as AutomationTemplateRow | null;
+
+  if (error || !template) {
+    throw new AppError({
+      message: "Automation template not found",
+      userMessage: "No se encontró la plantilla de automatización.",
+      status: 404,
+      details: error,
+    });
+  }
+
+  const defaultSample: Record<string, string> = {
+    full_name: "Juan Pérez (ejemplo)",
+    cycle_name: "Proceso UWC 2026 (ejemplo)",
+    application_id: "00000000-0000-0000-0000-000000000000",
+    application_status: "submitted",
+    stage_label: template.stage_code,
+  };
+
+  const context = { ...defaultSample, ...(input.sampleValues ?? {}) };
+  const subject = renderTemplate(template.template_subject, context);
+  const body = renderTemplate(template.template_body, context);
+  const bodyHtml = `<div style="font-family:Arial,sans-serif;line-height:1.5;">${escapeHtml(body).replaceAll("\n", "<br/>")}</div>`;
+
+  return {
+    subject,
+    bodyText: body,
+    bodyHtml,
+  };
+}
+
+export async function sendTestEmail({
+  recipientEmail,
+  subject,
+  bodyText,
+  bodyHtml,
+}: {
+  recipientEmail: string;
+  subject: string;
+  bodyText: string;
+  bodyHtml: string;
+}): Promise<EmailDeliveryResult> {
+  const config = getEmailConfig();
+  if (!config) {
+    throw new AppError({
+      message: "Missing RESEND_API_KEY or RESEND_FROM_EMAIL",
+      userMessage:
+        "Falta configurar el correo saliente del sistema. Define RESEND_API_KEY y RESEND_FROM_EMAIL.",
+      status: 400,
+    });
+  }
+
+  try {
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: config.fromHeader,
+        to: [recipientEmail],
+        subject: `[TEST] ${subject}`,
+        text: bodyText,
+        html: bodyHtml,
+      }),
+    });
+
+    if (!response.ok) {
+      return {
+        delivered: false,
+        errorMessage: getResendErrorMessage(await response.text()),
+      };
+    }
+
+    const payload = (await response.json()) as { id?: string };
+    const providerMessageId = payload.id;
+
+    if (!providerMessageId) {
+      return {
+        delivered: false,
+        errorMessage: "Proveedor de correo no devolvió identificador de mensaje.",
+      };
+    }
+
+    return {
+      delivered: true,
+      providerMessageId,
+    };
+  } catch {
+    return {
+      delivered: false,
+      errorMessage: "No se pudo conectar con el proveedor de correo.",
+    };
+  }
 }

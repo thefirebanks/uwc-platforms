@@ -9,7 +9,7 @@ import type { StageAutomationTrigger, StageCode } from "@/types/domain";
 type ApplicationRow = Database["public"]["Tables"]["applications"]["Row"];
 type StageAutomationRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
 
-function renderTemplate(template: string, values: Record<string, string>) {
+export function renderTemplate(template: string, values: Record<string, string>) {
   return template.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_match, token) => {
     return values[token] ?? "";
   });
@@ -196,6 +196,7 @@ async function queueAutomationCommunication({
     recipient_email: profile.email,
     status: "queued",
     sent_by: actorId,
+    is_applicant_visible: automation.trigger_event === "stage_result",
   });
 
   if (insertError) {
