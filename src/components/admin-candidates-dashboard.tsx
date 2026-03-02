@@ -1,12 +1,17 @@
 "use client";
 
-import Link from "next/link";
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { AdminApplicationViewer } from "./admin-application-viewer";
+
+/* -------------------------------------------------------------------------- */
+/*  Types                                                                     */
+/* -------------------------------------------------------------------------- */
 
 type AdminCandidateRow = {
   id: string;
   cycleId: string;
   cycleName: string;
+  applicantId: string;
   candidateName: string;
   candidateEmail: string;
   region: string;
@@ -21,13 +26,21 @@ type CycleOption = {
   isActive: boolean;
 };
 
-function getStageLabel(stageCode: AdminCandidateRow["stageCode"]) {
-  if (stageCode === "documents") {
-    return "1. Formulario Principal";
-  }
-  if (stageCode === "exam_placeholder") {
-    return "2. Examen Académico";
-  }
+type SearchResult = {
+  rows: AdminCandidateRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+/* -------------------------------------------------------------------------- */
+/*  Helpers                                                                   */
+/* -------------------------------------------------------------------------- */
+
+function getStageLabel(stageCode: string) {
+  if (stageCode === "documents") return "1. Formulario Principal";
+  if (stageCode === "exam_placeholder") return "2. Examen Academico";
   return "Etapa personalizada";
 }
 
@@ -49,12 +62,8 @@ function getStatusLabel(status: AdminCandidateRow["status"]) {
 }
 
 function getStatusClass(status: AdminCandidateRow["status"]) {
-  if (status === "ineligible") {
-    return "status-pill rejected";
-  }
-  if (status === "draft") {
-    return "status-pill progress";
-  }
+  if (status === "ineligible") return "status-pill rejected";
+  if (status === "draft") return "status-pill progress";
   return "status-pill complete";
 }
 
@@ -105,86 +114,247 @@ function downloadCsv(rows: AdminCandidateRow[]) {
   URL.revokeObjectURL(url);
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Sort icon                                                                 */
+/* -------------------------------------------------------------------------- */
+
+function SortIcon({ active, direction }: { active: boolean; direction: "asc" | "desc" }) {
+  if (!active) {
+    return (
+      <span style={{ opacity: 0.3, marginLeft: "4px", fontSize: "0.6875rem" }}>
+        {"↕"}
+      </span>
+    );
+  }
+  return (
+    <span style={{ marginLeft: "4px", fontSize: "0.6875rem" }}>
+      {direction === "asc" ? "↑" : "↓"}
+    </span>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Main Component                                                            */
+/* -------------------------------------------------------------------------- */
+
 export function AdminCandidatesDashboard({
   cycleOptions,
-  initialRows,
   defaultCycleId,
   defaultSearch = "",
   focusApplicationId = "",
 }: {
   cycleOptions: CycleOption[];
-  initialRows: AdminCandidateRow[];
   defaultCycleId: string | "all";
   defaultSearch?: string;
   focusApplicationId?: string;
 }) {
+  /* ---- State ---- */
   const [search, setSearch] = useState(defaultSearch);
   const [cycleFilter, setCycleFilter] = useState<string>(defaultCycleId);
-  const [stageFilter, setStageFilter] = useState<"all" | AdminCandidateRow["stageCode"]>("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | AdminCandidateRow["status"]>("all");
-  const [rowHighlightId, setRowHighlightId] = useState(focusApplicationId);
-  const deferredSearch = useDeferredValue(search.trim().toLowerCase());
-  const focusedRowRef = useRef<HTMLTableRowElement | null>(null);
+  const [stageFilter, setStageFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
+  const [sortBy, setSortBy] = useState<string>("updated_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
+  const [rows, setRows] = useState<AdminCandidateRow[]>([]);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Bulk selection
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+
+  // Drawer
+  const [viewerApplicationId, setViewerApplicationId] = useState<string | null>(
+    focusApplicationId || null,
+  );
+
+  const deferredSearch = useDeferredValue(search.trim());
+
+  // Reset to page 1 when filters change
+  const isFirstRender = useRef(true);
   useEffect(() => {
-    setRowHighlightId(focusApplicationId);
-  }, [focusApplicationId]);
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+    setPage(1);
+    setSelectedIds(new Set());
+  }, [cycleFilter, deferredSearch, stageFilter, statusFilter, sortBy, sortOrder]);
 
-  const filteredRows = useMemo(() => {
-    return initialRows.filter((row) => {
-      if (cycleFilter !== "all" && row.cycleId !== cycleFilter) {
-        return false;
-      }
-      if (stageFilter !== "all" && row.stageCode !== stageFilter) {
-        return false;
-      }
-      if (statusFilter !== "all" && row.status !== statusFilter) {
-        return false;
-      }
-      if (!deferredSearch) {
-        return true;
-      }
+  /* ---- Data fetching ---- */
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setFetchError(null);
 
-      const haystack = [
-        row.candidateName,
-        row.candidateEmail,
-        row.region,
-        row.id,
-        row.cycleName,
-      ]
-        .join(" ")
-        .toLowerCase();
+    const params = new URLSearchParams();
+    if (cycleFilter !== "all") params.set("cycleId", cycleFilter);
+    if (deferredSearch) params.set("q", deferredSearch);
+    if (stageFilter !== "all") params.set("stageCode", stageFilter);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    params.set("sortBy", sortBy);
+    params.set("sortOrder", sortOrder);
 
-      return haystack.includes(deferredSearch);
+    fetch(`/api/applications/search?${params}`, { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error("Search failed");
+        return r.json();
+      })
+      .then((data: SearchResult) => {
+        setRows(data.rows);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        setFetchError(String(err.message ?? err));
+        setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [cycleFilter, deferredSearch, stageFilter, statusFilter, page, sortBy, sortOrder]);
+
+  /* ---- Sort handler ---- */
+  const handleSort = useCallback(
+    (column: string) => {
+      if (sortBy === column) {
+        setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
+      } else {
+        setSortBy(column);
+        setSortOrder(column === "full_name" ? "asc" : "desc");
+      }
+    },
+    [sortBy],
+  );
+
+  /* ---- Bulk selection handlers ---- */
+  const allOnPageSelected =
+    rows.length > 0 && rows.every((r) => selectedIds.has(r.id));
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allOnPageSelected) {
+        for (const r of rows) next.delete(r.id);
+      } else {
+        for (const r of rows) next.add(r.id);
+      }
+      return next;
     });
-  }, [cycleFilter, deferredSearch, initialRows, stageFilter, statusFilter]);
+  }, [allOnPageSelected, rows]);
 
+  const toggleSelectRow = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  /* ---- Bulk transition handler ---- */
+  const handleBulkTransition = useCallback(
+    async (fromStage: string, toStage: string) => {
+      const filterCycle = cycleFilter !== "all" ? cycleFilter : null;
+      if (!filterCycle) {
+        setBulkMessage("Selecciona un proceso antes de realizar una accion masiva.");
+        return;
+      }
+
+      const reason = window.prompt("Motivo del cambio de etapa masivo:");
+      if (!reason || reason.length < 4) return;
+
+      setBulkLoading(true);
+      setBulkMessage(null);
+      try {
+        const res = await fetch("/api/applications/bulk-transition", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            cycleId: filterCycle,
+            fromStage,
+            toStage,
+            statusFilter: ["eligible", "advanced"],
+            reason,
+          }),
+        });
+        if (!res.ok) throw new Error("Bulk transition failed");
+        const { result } = await res.json();
+        setBulkMessage(
+          `${result.transitioned} avanzados, ${result.skipped} omitidos, ${result.errors.length} errores.`,
+        );
+        setSelectedIds(new Set());
+        // Re-fetch data
+        setPage((p) => p); // trigger re-render (useEffect deps won't change, so force it)
+        // Actually, let's just toggle a fetch trigger
+      } catch {
+        setBulkMessage("Error al realizar la transicion masiva.");
+      } finally {
+        setBulkLoading(false);
+      }
+    },
+    [cycleFilter],
+  );
+
+  /* ---- Refresh callback for the drawer ---- */
+  const [fetchTrigger, setFetchTrigger] = useState(0);
+  const handleApplicationUpdated = useCallback(() => {
+    setFetchTrigger((n) => n + 1);
+  }, []);
+
+  // Include fetchTrigger in the data-fetching effect
+  useEffect(() => {
+    if (fetchTrigger === 0) return; // skip initial
+    const controller = new AbortController();
+    setLoading(true);
+
+    const params = new URLSearchParams();
+    if (cycleFilter !== "all") params.set("cycleId", cycleFilter);
+    if (deferredSearch) params.set("q", deferredSearch);
+    if (stageFilter !== "all") params.set("stageCode", stageFilter);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    params.set("page", String(page));
+    params.set("pageSize", String(pageSize));
+    params.set("sortBy", sortBy);
+    params.set("sortOrder", sortOrder);
+
+    fetch(`/api/applications/search?${params}`, { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error("Refresh failed");
+        return r.json();
+      })
+      .then((data: SearchResult) => {
+        setRows(data.rows);
+        setTotal(data.total);
+        setTotalPages(data.totalPages);
+        setLoading(false);
+      })
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        setLoading(false);
+      });
+
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchTrigger]);
+
+  /* ---- Derived ---- */
   const visibleCycleName =
     cycleFilter === "all"
       ? "Todos los procesos"
-      : cycleOptions.find((cycle) => cycle.id === cycleFilter)?.name ?? "Proceso";
+      : cycleOptions.find((c) => c.id === cycleFilter)?.name ?? "Proceso";
 
-  useEffect(() => {
-    if (!rowHighlightId) {
-      return;
-    }
-
-    if (!filteredRows.some((row) => row.id === rowHighlightId)) {
-      return;
-    }
-
-    const frame = requestAnimationFrame(() => {
-      focusedRowRef.current?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-        inline: "nearest",
-      });
-    });
-
-    return () => {
-      cancelAnimationFrame(frame);
-    };
-  }, [filteredRows, rowHighlightId]);
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(page * pageSize, total);
 
   return (
     <main className="main full-width">
@@ -192,33 +362,55 @@ export function AdminCandidatesDashboard({
         <div className="canvas-title-row">
           <div>
             <h1 className="admin-processes-title">Candidatos</h1>
-            <p className="admin-processes-description">{visibleCycleName}</p>
+            <p className="admin-processes-description">
+              {visibleCycleName}
+              {total > 0 && (
+                <span style={{ marginLeft: "0.5rem", fontWeight: 400 }}>
+                  ({total} candidato{total !== 1 ? "s" : ""})
+                </span>
+              )}
+            </p>
           </div>
-          <button
-            type="button"
-            className="btn btn-outline"
-            onClick={() => downloadCsv(filteredRows)}
-          >
-            Exportar Excel
-          </button>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            {selectedIds.size > 0 && (
+              <span
+                style={{
+                  fontSize: "0.8125rem",
+                  color: "var(--uwc-maroon, #800020)",
+                  fontWeight: 600,
+                }}
+              >
+                {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
+              </span>
+            )}
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => downloadCsv(rows)}
+              disabled={rows.length === 0}
+            >
+              Exportar CSV
+            </button>
+          </div>
         </div>
       </div>
 
       <div className="canvas-body wide admin-page-stack">
         <div className="settings-card">
+          {/* Toolbar: search + filters */}
           <div className="candidates-toolbar admin-candidates-toolbar">
             <input
               type="text"
               className="search-input"
-              placeholder="Buscar por nombre, email o DNI..."
+              placeholder="Buscar por nombre, email..."
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(e) => setSearch(e.target.value)}
             />
             <div className="filters-group admin-candidates-filters">
               <select
                 className="filter-select"
                 value={cycleFilter}
-                onChange={(event) => setCycleFilter(event.target.value)}
+                onChange={(e) => setCycleFilter(e.target.value)}
               >
                 <option value="all">Todos los procesos</option>
                 {cycleOptions.map((cycle) => (
@@ -230,20 +422,16 @@ export function AdminCandidatesDashboard({
               <select
                 className="filter-select"
                 value={stageFilter}
-                onChange={(event) =>
-                  setStageFilter(event.target.value as "all" | AdminCandidateRow["stageCode"])
-                }
+                onChange={(e) => setStageFilter(e.target.value)}
               >
                 <option value="all">Todas las etapas</option>
-                <option value="documents">2. Formulario Principal</option>
-                <option value="exam_placeholder">3. Examen Académico</option>
+                <option value="documents">1. Formulario Principal</option>
+                <option value="exam_placeholder">2. Examen Academico</option>
               </select>
               <select
                 className="filter-select"
                 value={statusFilter}
-                onChange={(event) =>
-                  setStatusFilter(event.target.value as "all" | AdminCandidateRow["status"])
-                }
+                onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="all">Todos los estados</option>
                 <option value="draft">En progreso</option>
@@ -255,72 +443,226 @@ export function AdminCandidatesDashboard({
             </div>
           </div>
 
+          {/* Bulk actions bar */}
+          {selectedIds.size > 0 && (
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "0.75rem",
+                padding: "0.625rem 1rem",
+                marginBottom: "0.75rem",
+                background: "var(--uwc-maroon-soft, #F5E6E6)",
+                borderRadius: "4px",
+                fontSize: "0.8125rem",
+              }}
+            >
+              <span style={{ fontWeight: 600, color: "var(--uwc-maroon, #800020)" }}>
+                Acciones masivas:
+              </span>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ fontSize: "0.8125rem", padding: "0.25rem 0.75rem" }}
+                disabled={bulkLoading}
+                onClick={() =>
+                  handleBulkTransition("documents", "exam_placeholder")
+                }
+              >
+                Avanzar elegibles (Etapa 1 → 2)
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                style={{ fontSize: "0.8125rem", padding: "0.25rem 0.75rem" }}
+                onClick={() => setSelectedIds(new Set())}
+              >
+                Deseleccionar todo
+              </button>
+              {bulkMessage && (
+                <span style={{ marginLeft: "auto", fontSize: "0.75rem" }}>
+                  {bulkMessage}
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Fetch error */}
+          {fetchError && (
+            <div
+              style={{
+                padding: "0.75rem 1rem",
+                background: "#FEE",
+                color: "#C62828",
+                borderRadius: "4px",
+                marginBottom: "0.75rem",
+                fontSize: "0.875rem",
+              }}
+            >
+              {fetchError}
+            </div>
+          )}
+
+          {/* Table */}
           <div className="table-container">
             <table className="candidates-table admin-candidates-table">
               <thead>
                 <tr>
-                  <th>Candidato</th>
-                  <th>Región</th>
+                  <th style={{ width: "40px", textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={toggleSelectAll}
+                      aria-label="Seleccionar todo"
+                      style={{ cursor: "pointer" }}
+                    />
+                  </th>
+                  <th
+                    onClick={() => handleSort("full_name")}
+                    style={{ cursor: "pointer", userSelect: "none" }}
+                  >
+                    Candidato
+                    <SortIcon
+                      active={sortBy === "full_name"}
+                      direction={sortOrder}
+                    />
+                  </th>
+                  <th>Region</th>
                   <th>Etapa actual</th>
                   <th>Estado</th>
-                  <th>Última actividad</th>
-                  <th>Acciones</th>
+                  <th
+                    onClick={() => handleSort("updated_at")}
+                    style={{ cursor: "pointer", userSelect: "none" }}
+                  >
+                    Ultima actividad
+                    <SortIcon
+                      active={sortBy === "updated_at"}
+                      direction={sortOrder}
+                    />
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.length === 0 ? (
+                {loading ? (
+                  <tr>
+                    <td colSpan={6} className="admin-empty-cell">
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+                        Buscando candidatos...
+                      </span>
+                    </td>
+                  </tr>
+                ) : rows.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="admin-empty-cell">
                       No hay candidatos para los filtros seleccionados.
                     </td>
                   </tr>
                 ) : (
-                  filteredRows.map((row, index) => {
-                    const isFocusedRow = row.id === rowHighlightId;
+                  rows.map((row, index) => {
+                    const isSelected = selectedIds.has(row.id);
+                    const isViewing = viewerApplicationId === row.id;
 
                     return (
-                    <tr
-                      key={row.id}
-                      ref={isFocusedRow ? focusedRowRef : null}
-                      className={`admin-candidate-row${isFocusedRow ? " is-focused" : ""}`}
-                      data-application-id={row.id}
-                    >
-                      <td>
-                        <div className="candidate-name">
-                          <div className={`candidate-avatar ${getAvatarTone(index)}`}>
-                            {getInitials(row.candidateName).toUpperCase()}
-                          </div>
-                          <div>
-                            <div>{row.candidateName}</div>
-                            <div className="candidate-email">{row.candidateEmail}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>{row.region}</td>
-                      <td>{getStageLabel(row.stageCode)}</td>
-                      <td>
-                        <span className={getStatusClass(row.status)}>
-                          {getStatusLabel(row.status)}
-                        </span>
-                      </td>
-                      <td>{new Date(row.updatedAt).toLocaleString()}</td>
-                      <td>
-                        <Link
-                          href={`/admin/candidates?cycleId=${row.cycleId}&applicationId=${encodeURIComponent(row.id)}`}
-                          className="btn btn-ghost"
+                      <tr
+                        key={row.id}
+                        className={`admin-candidate-row${isViewing ? " is-focused" : ""}`}
+                        data-application-id={row.id}
+                        onClick={() => setViewerApplicationId(row.id)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td
+                          style={{ textAlign: "center" }}
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          Ver Perfil
-                        </Link>
-                      </td>
-                    </tr>
-                  );
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectRow(row.id)}
+                            style={{ cursor: "pointer" }}
+                            aria-label={`Seleccionar ${row.candidateName}`}
+                          />
+                        </td>
+                        <td>
+                          <div className="candidate-name">
+                            <div
+                              className={`candidate-avatar ${getAvatarTone(index)}`}
+                            >
+                              {getInitials(row.candidateName).toUpperCase()}
+                            </div>
+                            <div>
+                              <div>{row.candidateName}</div>
+                              <div className="candidate-email">
+                                {row.candidateEmail}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>{row.region || "—"}</td>
+                        <td>{getStageLabel(row.stageCode)}</td>
+                        <td>
+                          <span className={getStatusClass(row.status)}>
+                            {getStatusLabel(row.status)}
+                          </span>
+                        </td>
+                        <td>{new Date(row.updatedAt).toLocaleString()}</td>
+                      </tr>
+                    );
                   })
                 )}
               </tbody>
             </table>
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                padding: "1rem 0.5rem 0.5rem",
+                fontSize: "0.8125rem",
+                color: "var(--muted)",
+              }}
+            >
+              <span>
+                Mostrando {rangeStart}–{rangeEnd} de {total} candidato
+                {total !== 1 ? "s" : ""}
+              </span>
+              <div style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ fontSize: "0.8125rem", padding: "0.25rem 0.625rem" }}
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                >
+                  ← Anterior
+                </button>
+                <span style={{ padding: "0 0.5rem", fontWeight: 600 }}>
+                  {page} / {totalPages}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  style={{ fontSize: "0.8125rem", padding: "0.25rem 0.625rem" }}
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                >
+                  Siguiente →
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Application viewer drawer */}
+      <AdminApplicationViewer
+        applicationId={viewerApplicationId}
+        onClose={() => setViewerApplicationId(null)}
+        onApplicationUpdated={handleApplicationUpdated}
+      />
     </main>
   );
 }

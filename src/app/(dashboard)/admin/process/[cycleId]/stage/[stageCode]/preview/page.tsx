@@ -3,7 +3,8 @@ import { AdminStageFormPreview } from "@/components/admin-stage-form-preview";
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { CycleStageField, CycleStageTemplate, StageSection } from "@/types/domain";
-import { buildDefaultCycleStageFields } from "@/lib/stages/templates";
+import { findTemplateByIdOrCode } from "@/lib/stages/templates";
+import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 
 export default async function AdminStagePreviewPage({
   params,
@@ -32,10 +33,7 @@ export default async function AdminStagePreviewPage({
   }
 
   const templates = (templatesData as CycleStageTemplate[] | null) ?? [];
-  const selectedTemplate =
-    templates.find((template) => template.id === stageCode) ??
-    templates.find((template) => template.stage_code === stageCode) ??
-    null;
+  const selectedTemplate = findTemplateByIdOrCode(templates, stageCode);
 
   if (!selectedTemplate) {
     redirect(`/admin/process/${cycleId}`);
@@ -56,24 +54,10 @@ export default async function AdminStagePreviewPage({
       .order("sort_order", { ascending: true }),
   ]);
 
-  const fallbackFields =
+  const resolvedFields =
     selectedTemplate.stage_code === "documents"
-      ? buildDefaultCycleStageFields({ cycleId }).map((field, index) => ({
-          id: `fallback-field-${index + 1}`,
-          cycle_id: field.cycle_id,
-          stage_code: field.stage_code,
-          field_key: field.field_key,
-          field_label: field.field_label,
-          field_type: field.field_type,
-          is_required: field.is_required ?? false,
-          placeholder: field.placeholder ?? null,
-          help_text: field.help_text ?? null,
-          sort_order: field.sort_order ?? index + 1,
-          is_active: field.is_active ?? true,
-          section_id: null,
-          created_at: new Date().toISOString(),
-        }))
-      : [];
+      ? resolveDocumentStageFields({ cycleId, fields: (fieldsData as CycleStageField[] | null) ?? [] })
+      : (fieldsData as CycleStageField[] | null) ?? [];
 
   return (
     <AdminStageFormPreview
@@ -82,7 +66,7 @@ export default async function AdminStagePreviewPage({
       cycleName={(cycleData as { name: string }).name}
       stageCode={selectedTemplate.stage_code}
       stageLabel={selectedTemplate.stage_label}
-      fields={(fieldsData as CycleStageField[] | null) ?? fallbackFields}
+      fields={resolvedFields}
       sections={(sectionsData as StageSection[] | null) ?? []}
     />
   );

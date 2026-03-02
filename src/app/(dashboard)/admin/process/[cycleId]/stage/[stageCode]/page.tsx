@@ -9,9 +9,10 @@ import type {
   StageSection,
 } from "@/types/domain";
 import {
-  buildDefaultCycleStageFields,
   buildDefaultStageAutomationTemplates,
+  findTemplateByIdOrCode,
 } from "@/lib/stages/templates";
+import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 
 export default async function StageConfigPage({
   params,
@@ -52,10 +53,7 @@ export default async function StageConfigPage({
   }
 
   const templates = (templateRows as CycleStageTemplate[] | null) ?? [];
-  const selectedTemplate =
-    templates.find((template) => template.id === stageCode) ??
-    templates.find((template) => template.stage_code === stageCode) ??
-    null;
+  const selectedTemplate = findTemplateByIdOrCode(templates, stageCode);
 
   if (!selectedTemplate) {
     redirect(`/admin/process/${cycleId}`);
@@ -63,8 +61,7 @@ export default async function StageConfigPage({
 
   const resolvedStageCode = selectedTemplate.stage_code;
 
-  const [{ data: templateData }, { data: fieldsData }, { data: automationsData }, { data: sectionsData }] = await Promise.all([
-    Promise.resolve({ data: selectedTemplate }),
+  const [{ data: fieldsData }, { data: automationsData }, { data: sectionsData }] = await Promise.all([
     supabase
       .from("cycle_stage_fields")
       .select("*")
@@ -85,24 +82,10 @@ export default async function StageConfigPage({
       .order("sort_order", { ascending: true }),
   ]);
 
-  const fallbackFields =
+  const resolvedFields =
     resolvedStageCode === "documents"
-      ? buildDefaultCycleStageFields({ cycleId }).map((field, index) => ({
-          id: `fallback-field-${index + 1}`,
-          cycle_id: field.cycle_id,
-          stage_code: field.stage_code,
-          field_key: field.field_key,
-          field_label: field.field_label,
-          field_type: field.field_type,
-          is_required: field.is_required ?? false,
-          placeholder: field.placeholder ?? null,
-          help_text: field.help_text ?? null,
-          sort_order: field.sort_order ?? index + 1,
-          is_active: field.is_active ?? true,
-          section_id: null,
-          created_at: new Date().toISOString(),
-        }))
-      : [];
+      ? resolveDocumentStageFields({ cycleId, fields: (fieldsData as CycleStageField[] | null) ?? [] })
+      : (fieldsData as CycleStageField[] | null) ?? [];
 
   const fallbackAutomations =
     resolvedStageCode === "documents"
@@ -126,7 +109,7 @@ export default async function StageConfigPage({
       cycleName={cycle.name}
       stageId={selectedTemplate.id}
       stageCode={resolvedStageCode}
-      stageLabel={(templateData as CycleStageTemplate | null)?.stage_label ?? resolvedStageCode}
+      stageLabel={selectedTemplate.stage_label}
       stageOpenAt={
         resolvedStageCode === "documents"
           ? cycle.stage1_open_at
@@ -142,10 +125,10 @@ export default async function StageConfigPage({
             : null
       }
       stageTemplates={templates}
-      initialFields={(fieldsData as CycleStageField[] | null) ?? fallbackFields}
+      initialFields={resolvedFields}
       initialAutomations={(automationsData as StageAutomationTemplate[] | null) ?? fallbackAutomations}
-      initialOcrPromptTemplate={(templateData as CycleStageTemplate | null)?.ocr_prompt_template ?? null}
-      initialStageAdminConfig={(templateData as CycleStageTemplate | null)?.admin_config ?? null}
+      initialOcrPromptTemplate={selectedTemplate.ocr_prompt_template ?? null}
+      initialStageAdminConfig={selectedTemplate.admin_config ?? null}
       initialSections={(sectionsData as StageSection[] | null) ?? []}
     />
   );
