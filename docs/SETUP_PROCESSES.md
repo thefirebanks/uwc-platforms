@@ -24,6 +24,10 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260218008000_fix_current_user_role_security_definer.sql`
   - `supabase/migrations/20260218009000_harden_rbac_and_applicant_write_guards.sql`
   - `supabase/migrations/20260219001000_recommender_otp_and_ocr_prompt.sql`
+  - `supabase/migrations/20260225000100_allow_custom_cycle_stage_template_codes.sql`
+  - `supabase/migrations/20260226000200_add_admin_config_to_cycle_stage_templates.sql`
+  - `supabase/migrations/20260227000300_add_stage_sections_table.sql`
+  - `supabase/migrations/20260227000400_seed_default_sections_and_assign_fields.sql`
 ```bash
 sbu db push
 ```

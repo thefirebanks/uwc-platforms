@@ -395,6 +395,13 @@ export function StageConfigEditor({
   const parsedStageAdminConfigRef = useRef(parseStageAdminConfig(initialStageAdminConfig));
   const [sections, setSections] = useState<StageSection[]>(initialSections);
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<string[]>([]);
+  const [previewData, setPreviewData] = useState<{
+    subject: string;
+    bodyHtml: string;
+  } | null>(null);
+  const [previewLoading, setPreviewLoading] = useState<string | null>(null);
+  const [testSendLoading, setTestSendLoading] = useState<string | null>(null);
+  const [testSendResult, setTestSendResult] = useState<Record<string, "sent" | "error">>({});
   const initializedSectionCollapseRef = useRef(false);
 
   const savedFieldsSnapshotRef = useRef(
@@ -660,6 +667,48 @@ export function StageConfigEditor({
 
   function removeAutomation(localId: string) {
     setAutomations((current) => current.filter((automation) => automation.localId !== localId));
+  }
+
+  async function handlePreviewEmail(automationId: string) {
+    if (!automationId || previewLoading) return;
+    setPreviewLoading(automationId);
+    try {
+      const res = await fetch("/api/communications/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ automationTemplateId: automationId }),
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { subject: string; bodyHtml: string };
+      setPreviewData(data);
+    } finally {
+      setPreviewLoading(null);
+    }
+  }
+
+  async function handleTestSendEmail(automationId: string) {
+    if (!automationId || testSendLoading) return;
+    setTestSendLoading(automationId);
+    try {
+      const res = await fetch("/api/communications/test-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ automationTemplateId: automationId }),
+      });
+      setTestSendResult((prev) => ({
+        ...prev,
+        [automationId]: res.ok ? "sent" : "error",
+      }));
+      setTimeout(() => {
+        setTestSendResult((prev) => {
+          const next = { ...prev };
+          delete next[automationId];
+          return next;
+        });
+      }, 4000);
+    } finally {
+      setTestSendLoading(null);
+    }
   }
 
   async function saveStageConfig() {
@@ -1992,7 +2041,45 @@ export function StageConfigEditor({
                         />
                       </div>
                     </div>
-                    <div className="comm-actions" style={{ marginTop: "16px" }}>
+                    <div className="comm-actions" style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      {isUuid(automation.id) && (
+                        <>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{ fontSize: "13px", padding: "5px 12px" }}
+                            onClick={() => handlePreviewEmail(automation.id)}
+                            disabled={previewLoading === automation.id}
+                            title="Vista previa del correo"
+                          >
+                            {previewLoading === automation.id ? "Cargando…" : "Vista previa"}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            style={{
+                              fontSize: "13px",
+                              padding: "5px 12px",
+                              color: testSendResult[automation.id] === "sent"
+                                ? "var(--success)"
+                                : testSendResult[automation.id] === "error"
+                                ? "var(--danger)"
+                                : undefined,
+                            }}
+                            onClick={() => handleTestSendEmail(automation.id)}
+                            disabled={testSendLoading === automation.id}
+                            title="Enviar correo de prueba a tu email"
+                          >
+                            {testSendLoading === automation.id
+                              ? "Enviando…"
+                              : testSendResult[automation.id] === "sent"
+                              ? "✓ Enviado"
+                              : testSendResult[automation.id] === "error"
+                              ? "✗ Error"
+                              : "Enviar prueba"}
+                          </button>
+                        </>
+                      )}
                       <button
                         className="btn-icon danger"
                         onClick={() => removeAutomation(automation.localId)}
@@ -2102,6 +2189,80 @@ export function StageConfigEditor({
           )}
         </div>
       </main>
+
+      {/* Email preview modal */}
+      {previewData && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Vista previa del correo"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 2000,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(0,0,0,0.45)",
+          }}
+          onClick={() => setPreviewData(null)}
+        >
+          <div
+            style={{
+              background: "var(--surface)",
+              borderRadius: "var(--radius-lg)",
+              boxShadow: "var(--shadow-md)",
+              maxWidth: "620px",
+              width: "calc(100vw - 32px)",
+              maxHeight: "80vh",
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                padding: "16px 20px",
+                borderBottom: "1px solid var(--sand)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                background: "var(--cream)",
+                flexShrink: 0,
+              }}
+            >
+              <div>
+                <p style={{ fontWeight: 700, margin: 0, fontSize: "15px" }}>Vista previa del correo</p>
+                <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--muted)" }}>
+                  Asunto: {previewData.subject}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewData(null)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: "20px",
+                  color: "var(--ink-light)",
+                  lineHeight: 1,
+                  padding: "2px 6px",
+                }}
+                aria-label="Cerrar vista previa"
+              >
+                ×
+              </button>
+            </div>
+            <div
+              style={{ overflowY: "auto", flex: 1, padding: "20px" }}
+              // eslint-disable-next-line react/no-danger
+              dangerouslySetInnerHTML={{ __html: previewData.bodyHtml }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

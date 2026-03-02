@@ -28,17 +28,26 @@ async function navigateToStageEditor(page: Page, stageCode = "documents"): Promi
   });
 }
 
+/** Wait for the save button to be enabled (pending changes exist), then click it and confirm. */
+async function saveConfig(page: Page): Promise<void> {
+  const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
+  await expect(saveBtn).toBeEnabled({ timeout: 8_000 });
+  await saveBtn.click();
+  await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|Saved/i, {
+    timeout: 10_000,
+  });
+}
+
 /** Remove any leftover test section from a previous failed run. */
 async function cleanupTestSection(page: Page): Promise<void> {
   await loginAsAdmin(page);
   await navigateToStageEditor(page);
   const container = await findSectionContainerByTitle(page, TEST_SECTION_TITLE);
   if (container !== null) {
+    // Accept the confirmation dialog that fires when deleting a section
+    page.once("dialog", (dialog) => void dialog.accept());
     await container.getByRole("button", { name: "Eliminar sección" }).click();
-    await page.getByRole("button", { name: /Guardar configuración/i }).click();
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/Guardado|Saved/, {
-      timeout: 10_000,
-    });
+    await saveConfig(page);
   }
 }
 
@@ -71,10 +80,7 @@ test.describe("Admin section CRUD (reversible)", () => {
     await expect(newSectionTitleInput).toHaveValue(TEST_SECTION_TITLE);
 
     // 4. Save
-    await page.getByRole("button", { name: /Guardar configuración/i }).click();
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/Guardado|Saved/, {
-      timeout: 10_000,
-    });
+    await saveConfig(page);
 
     // 5. Reload — verify persistence
     await page.reload();
@@ -88,13 +94,12 @@ test.describe("Admin section CRUD (reversible)", () => {
     // 6. Find and delete the test section
     const container = await findSectionContainerByTitle(page, TEST_SECTION_TITLE);
     expect(container).not.toBeNull();
+    // Accept the confirmation dialog that fires when deleting a section
+    page.once("dialog", (dialog) => void dialog.accept());
     await container!.getByRole("button", { name: "Eliminar sección" }).click();
 
     // 7. Save deletion
-    await page.getByRole("button", { name: /Guardar configuración/i }).click();
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/Guardado|Saved/, {
-      timeout: 10_000,
-    });
+    await saveConfig(page);
 
     // 8. Reload — section is gone and count restored
     await page.reload();
@@ -131,32 +136,28 @@ test.describe("Admin section CRUD (reversible)", () => {
     const nowFirstContainer = page.locator(".admin-stage-section-placeholder").nth(0);
     await nowFirstContainer.getByRole("button", { name: "Bajar sección" }).click();
 
-    // Verify order restored
+    // Verify order restored — no save needed as state matches DB snapshot
     await expect(page.locator("input[id^='section-title-']").nth(0)).toHaveValue(firstTitle);
     await expect(page.locator("input[id^='section-title-']").nth(1)).toHaveValue(secondTitle);
-
-    // Save restored order
-    await page.getByRole("button", { name: /Guardar configuración/i }).click();
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/Guardado|Saved/, {
-      timeout: 10_000,
-    });
   });
 
   test("admin can collapse and expand a section", async ({ page }) => {
     await loginAsAdmin(page);
     await navigateToStageEditor(page);
 
-    const firstContainer = page.locator(".admin-stage-section-placeholder").first();
-    const collapseBtn = firstContainer.getByRole("button", {
-      name: /Colapsar sección|Expandir sección/i,
-    });
+    // Find the first section heading row that has a collapse button
+    // (only non-empty sections have canCollapse=true)
+    const collapseBtn = page
+      .locator(".admin-stage-section-heading-row")
+      .getByRole("button", { name: /Colapsar sección|Expandir sección/i })
+      .first();
     await expect(collapseBtn).toBeVisible({ timeout: 5_000 });
 
     // Toggle collapse
     await collapseBtn.click();
 
     // The section heading row should still be visible
-    await expect(firstContainer.locator(".admin-stage-section-heading-row")).toBeVisible();
+    await expect(page.locator(".admin-stage-section-heading-row").first()).toBeVisible();
 
     // Toggle expand
     await collapseBtn.click();

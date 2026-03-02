@@ -31,6 +31,8 @@ test.describe("Applicant application lifecycle (reversible)", () => {
   });
 
   test.afterEach(async ({ page }) => {
+    // Skip cleanup if bypass credentials are not available (tests were skipped)
+    if (!bypassReady) return;
     // Ensure the DB is clean after every test regardless of outcome
     await resetDemoApplicant(page);
   });
@@ -89,15 +91,14 @@ test.describe("Applicant application lifecycle (reversible)", () => {
   test("action bar shows correct navigation buttons per section", async ({ page }) => {
     await loginAndOpenForm(page);
 
-    // On the first section: Save Draft + Next visible, no Previous
+    // On the first numbered section: Save Draft + Next + Previous (back to intro) are all visible
     await expect(page.getByRole("button", { name: /Guardar borrador|Save draft/i })).toBeVisible({
       timeout: 10_000,
     });
-    await expect(page.getByRole("button", { name: /Siguiente|Next/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Anterior|Previous/i })).not.toBeVisible();
+    await expect(page.getByRole("button", { name: /Siguiente|Next/i }).first()).toBeVisible();
 
-    // After navigating forward, Previous appears
-    await page.getByRole("button", { name: /Siguiente|Next/i }).click();
+    // Navigate forward to section 2
+    await page.getByRole("button", { name: /Siguiente|Next/i }).first().click();
     await expect(page.getByRole("button", { name: /Anterior|Previous/i })).toBeVisible({
       timeout: 8_000,
     });

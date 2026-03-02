@@ -104,6 +104,7 @@ describe("sendCommunicationEmail", () => {
         last_attempt_at: null,
         delivered_at: null,
         provider_message_id: null,
+        is_applicant_visible: false,
         created_at: "2026-01-01T00:00:00.000Z",
       }),
     ).rejects.toBeInstanceOf(AppError);
@@ -133,6 +134,7 @@ describe("sendCommunicationEmail", () => {
       last_attempt_at: null,
       delivered_at: null,
       provider_message_id: null,
+      is_applicant_visible: false,
       created_at: "2026-01-01T00:00:00.000Z",
     });
 

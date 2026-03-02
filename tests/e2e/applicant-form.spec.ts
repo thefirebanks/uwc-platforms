@@ -68,17 +68,15 @@ test.describe("Applicant form – sidebar redesign", () => {
     // The action bar should have a Save Draft button
     await expect(page.getByRole("button", { name: /Guardar borrador|Save draft/i })).toBeVisible({ timeout: 10_000 });
 
-    // Should have a Next button (text includes "Siguiente" or "Next")
-    await expect(page.getByRole("button", { name: /Siguiente|Next/i })).toBeVisible();
-
-    // On the first section there should be no Previous button
-    await expect(page.getByRole("button", { name: /Anterior|Previous/i })).not.toBeVisible();
+    // Should have a Next button on section 1
+    await expect(page.getByRole("button", { name: /Siguiente|Next/i }).first()).toBeVisible();
 
     // Navigate to second section via sidebar
     await clickSidebarStepByLabel(page, /Datos personales|Personal info/i);
 
-    // After moving to section 2, Previous button should appear
+    // After moving to section 2, both Previous and Next buttons should be visible
     await expect(page.getByRole("button", { name: /Anterior|Previous/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: /Siguiente|Next/i }).first()).toBeVisible();
   });
 
   test("section eyebrow headers show step count", async ({ page }) => {
