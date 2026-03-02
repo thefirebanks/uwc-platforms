@@ -85,6 +85,18 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --name=uwc-platforms-pr-${{ github.event.pull_request.number }}
+          secrets: |
+            SUPABASE_SECRET_KEY
+            GEMINI_API_KEY
+            RESEND_API_KEY
+            RESEND_FROM_EMAIL
+            RESEND_FROM_NAME
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          RESEND_FROM_NAME: ${{ secrets.RESEND_FROM_NAME }}
 
       # Post or update a single comment on the PR with the preview URL
       - name: Comment preview URL on PR
@@ -140,3 +152,15 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --name=uwc-platforms
+          secrets: |
+            SUPABASE_SECRET_KEY
+            GEMINI_API_KEY
+            RESEND_API_KEY
+            RESEND_FROM_EMAIL
+            RESEND_FROM_NAME
+        env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
+          RESEND_FROM_NAME: ${{ secrets.RESEND_FROM_NAME }}

@@ -20,17 +20,28 @@ export default async function ApplicantPage() {
 
   const supabase = await getSupabaseServerClient();
 
-  const [
-    { data: cycles },
-    { data: applications },
-  ] = await Promise.all([
-    supabase.from("cycles").select("*").order("created_at", { ascending: false }),
-    supabase
-      .from("applications")
-      .select("id, cycle_id, status, stage_code, updated_at")
-      .eq("applicant_id", profile.id)
-      .order("updated_at", { ascending: false }),
-  ]);
+  // Fetch applications first so we can scope the cycles query
+  const { data: applications } = await supabase
+    .from("applications")
+    .select("id, cycle_id, status, stage_code, updated_at")
+    .eq("applicant_id", profile.id)
+    .order("updated_at", { ascending: false });
+
+  const appliedCycleIds = ((applications ?? []) as ApplicantApplicationSummary[]).map(
+    (a) => a.cycle_id,
+  );
+
+  // Only fetch cycles that are active OR that this applicant has applied to.
+  // This prevents orphan seed/test cycles from appearing in the dashboard.
+  const cyclesQuery = supabase
+    .from("cycles")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  const { data: cycles } =
+    appliedCycleIds.length > 0
+      ? await cyclesQuery.or(`is_active.eq.true,id.in.(${appliedCycleIds.join(",")})`)
+      : await cyclesQuery.eq("is_active", true);
 
   const applicationIds = ((applications ?? []) as ApplicantApplicationSummary[]).map((a) => a.id);
 

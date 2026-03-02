@@ -69,10 +69,9 @@ export default async function ApplicantProcessPage({
         .maybeSingle(),
     ]);
 
-  const adminSupabase = getSupabaseAdminClient();
   const { data: recommenderRows } =
     existingApplication?.id && currentStageCode === "documents"
-      ? await adminSupabase
+      ? await getSupabaseAdminClient()
           .from("recommendation_requests")
           .select("*")
           .eq("application_id", existingApplication.id)
