@@ -4,6 +4,7 @@ import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
+import { parseStageAdminConfig } from "@/lib/stages/stage-admin-config";
 import type {
   Application,
   CycleStageField,
@@ -63,7 +64,7 @@ export default async function ApplicantProcessPage({
         .order("sort_order", { ascending: true }),
       supabase
         .from("cycle_stage_templates")
-        .select("stage_label, due_at")
+        .select("stage_label, due_at, admin_config")
         .eq("cycle_id", cycleId)
         .eq("stage_code", currentStageCode)
         .maybeSingle(),
@@ -103,7 +104,8 @@ export default async function ApplicantProcessPage({
         })
       : (stageFields as CycleStageField[] | null) ?? [];
 
-  const template = stageTemplate as Pick<CycleStageTemplate, "stage_label" | "due_at"> | null;
+  const template = stageTemplate as Pick<CycleStageTemplate, "stage_label" | "due_at" | "admin_config"> | null;
+  const parsedAdminConfig = parseStageAdminConfig(template?.admin_config ?? null);
 
   return (
     <ApplicantApplicationForm
@@ -112,6 +114,7 @@ export default async function ApplicantProcessPage({
       cycleName={(cycle as SelectionProcess).name}
       stageCode={currentStageCode}
       stageLabel={template?.stage_label ?? undefined}
+      stageInstructions={parsedAdminConfig.description ?? undefined}
       stageFields={resolvedStageFields}
       stageCloseAt={template?.due_at ?? (cycle as SelectionProcess).stage1_close_at ?? null}
       initialRecommenders={initialRecommenders}

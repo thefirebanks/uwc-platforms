@@ -49,7 +49,7 @@ test.describe("Applicant application lifecycle (reversible)", () => {
 
     // Navigate to personal data section
     await clickSidebarStepByLabel(page, /Datos personales|Personal info/i);
-    await expect(page.getByText(/Paso 2 de \d+|Step 2 of \d+/i)).toBeVisible({ timeout: 8_000 });
+    await expect(page.getByText(/Paso [12] de \d+|Step [12] of \d+/i)).toBeVisible({ timeout: 8_000 });
 
     // Fill the first available text input
     const enabledInput = page.locator("input:not([disabled])").first();

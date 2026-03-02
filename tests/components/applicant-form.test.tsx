@@ -84,7 +84,7 @@ describe("ApplicantApplicationForm", () => {
   it("keeps submit disabled until a draft exists", async () => {
     render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-1" />);
 
-    expect(screen.getAllByText("Antes de empezar").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Instrucciones").length).toBeGreaterThanOrEqual(1);
 
     fireEvent.click(screen.getByRole("button", { name: /Revisión y envío/i }));
     // Both the inline submit button and the action bar show "Enviar postulación" on last step
@@ -244,6 +244,40 @@ describe("ApplicantApplicationForm", () => {
     expect(screen.getByText("Progreso por secciones")).toBeInTheDocument();
   });
 
+  it("skips instructions for existing drafts and opens first interactive section", () => {
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-resume"
+        sections={DEFAULT_SECTIONS}
+        stageFields={DEFAULT_STAGE_FIELDS}
+        existingApplication={DRAFT_APP}
+      />,
+    );
+
+    expect(screen.getAllByText(/Datos personales/i).length).toBeGreaterThan(0);
+    expect(screen.getByLabelText(/Nacionalidad/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Checklist rápida de preparación/i)).not.toBeInTheDocument();
+  });
+
+  it("does not mark documents/recommenders/review as in-progress for an untouched draft", () => {
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-review-status"
+        sections={DEFAULT_SECTIONS}
+        stageFields={DEFAULT_STAGE_FIELDS}
+        existingApplication={{
+          ...DRAFT_APP,
+          payload: {},
+          files: {},
+        }}
+        initialRecommenders={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Revisión y envío/i })[0]);
+    expect(screen.queryAllByText(/En progreso/i).length).toBe(0);
+  });
+
   it("autosaves partial draft after field edits", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -267,10 +301,10 @@ describe("ApplicantApplicationForm", () => {
     );
 
     render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-4" sections={DEFAULT_SECTIONS} stageFields={DEFAULT_STAGE_FIELDS} />);
-    fireEvent.click(screen.getByRole("button", { name: /Elegibilidad/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Datos personales/i }));
 
-    fireEvent.change(screen.getByLabelText(/Año de nacimiento/i), {
-      target: { value: "2009" },
+    fireEvent.change(screen.getByLabelText(/Nacionalidad/i), {
+      target: { value: "Peruana" },
     });
 
     // Both sidebar and mobile progress show the draft status label

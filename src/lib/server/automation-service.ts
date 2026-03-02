@@ -111,6 +111,52 @@ async function validateRecommendersBeforeSubmit({
   }
 }
 
+async function isRecommendersRequiredForStage({
+  supabase,
+  cycleId,
+  stageCode,
+  fields,
+}: {
+  supabase: SupabaseClient<Database>;
+  cycleId: string;
+  stageCode: StageCode;
+  fields: Database["public"]["Tables"]["cycle_stage_fields"]["Row"][];
+}) {
+  if (stageCode !== "documents") {
+    return false;
+  }
+
+  const { data, error } = await supabase
+    .from("stage_sections")
+    .select("id, section_key, is_visible")
+    .eq("cycle_id", cycleId)
+    .eq("stage_code", stageCode);
+
+  if (error) {
+    throw new AppError({
+      message: "Failed loading stage sections while validating submit",
+      userMessage: "No se pudo validar la configuración de secciones de esta etapa.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  const recommenderSectionIds = new Set(
+    ((data ?? []) as Array<{ id: string; section_key: string; is_visible: boolean }>)
+      .filter((section) => section.section_key === "recommenders" && section.is_visible)
+      .map((section) => section.id),
+  );
+
+  if (recommenderSectionIds.size === 0) {
+    return false;
+  }
+
+  return fields.some((field) => {
+    const sectionId = (field as Record<string, unknown>).section_id as string | null | undefined;
+    return field.is_required && Boolean(sectionId) && recommenderSectionIds.has(String(sectionId));
+  });
+}
+
 async function getEnabledAutomation({
   supabase,
   cycleId,
@@ -255,10 +301,19 @@ export async function validateApplicationBeforeSubmit({
     });
   }
 
-  await validateRecommendersBeforeSubmit({
+  const requiresRecommenders = await isRecommendersRequiredForStage({
     supabase,
-    applicationId: application.id,
+    cycleId: application.cycle_id,
+    stageCode: application.stage_code,
+    fields,
   });
+
+  if (requiresRecommenders) {
+    await validateRecommendersBeforeSubmit({
+      supabase,
+      applicationId: application.id,
+    });
+  }
 }
 
 export async function queueApplicationAutomationIfEnabled({

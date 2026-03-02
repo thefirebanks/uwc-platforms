@@ -36,8 +36,9 @@ test.describe("Applicant form – sidebar redesign", () => {
     // Click "Datos personales" / "Personal info" step (second section)
     await clickSidebarStepByLabel(page, /Datos personales|Personal info/i);
 
-    // Step 2 eyebrow should appear
-    await expect(page.getByText(/Paso 2 de|Step 2 of/i)).toBeVisible({ timeout: 10_000 });
+    // Eyebrow remains visible and section content updates
+    await expect(page.getByText(/Paso 1 de|Paso 2 de|Step 1 of|Step 2 of/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Datos personales|Personal info/i).first()).toBeVisible();
 
     // Click the review/submit step
     await clickSidebarStepByLabel(page, /Revisión|Review/i);
@@ -88,8 +89,8 @@ test.describe("Applicant form – sidebar redesign", () => {
     // Navigate to second section
     await clickSidebarStepByLabel(page, /Datos personales|Personal info/i);
 
-    // Second section shows "Paso 2 de N"
-    await expect(page.getByText(/Paso 2 de \d+|Step 2 of \d+/i)).toBeVisible({ timeout: 10_000 });
+    // After navigation the current step eyebrow is visible
+    await expect(page.getByText(/Paso [12] de \d+|Step [12] of \d+/i)).toBeVisible({ timeout: 10_000 });
   });
 
   test("filling a field shows pending changes status", async ({ page }) => {

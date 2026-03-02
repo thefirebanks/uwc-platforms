@@ -78,14 +78,14 @@ const PREP_SECTION_ID = "prep_intro" as const;
 const SIDEBAR_VISIBILITY_STORAGE_KEY = "uwc:applicant-sidebar-hidden";
 
 const SECTION_TITLES_ES: Record<StaticWizardSectionId, string> = {
-  prep_intro: "Antes de empezar",
+  prep_intro: "Instrucciones",
   documents_uploads: "Documentos",
   recommenders_flow: "Recomendadores",
   review_submit: "Revisión y envío",
 };
 
 const SECTION_TITLES_EN: Record<StaticWizardSectionId, string> = {
-  prep_intro: "Before you start",
+  prep_intro: "Instructions",
   documents_uploads: "Documents",
   recommenders_flow: "Recommenders",
   review_submit: "Review and submit",
@@ -552,6 +552,7 @@ export function ApplicantApplicationForm({
   cycleName,
   stageCode,
   stageLabel,
+  stageInstructions,
   stageFields,
   stageCloseAt,
   initialRecommenders = [],
@@ -562,6 +563,7 @@ export function ApplicantApplicationForm({
   cycleName?: string;
   stageCode?: string;
   stageLabel?: string;
+  stageInstructions?: string;
   stageFields?: CycleStageField[];
   stageCloseAt?: string | null;
   initialRecommenders?: RecommenderSummary[];
@@ -605,7 +607,7 @@ export function ApplicantApplicationForm({
   const isDocumentsStageInit = !stageCode || stageCode === "documents";
   const [activeSectionId, setActiveSectionId] = useState<WizardSectionId>(
     isDocumentsStageInit
-      ? existingApplication?.id ? "eligibility" : PREP_SECTION_ID
+      ? PREP_SECTION_ID
       : "review_submit",
   );
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
@@ -728,7 +730,12 @@ export function ApplicantApplicationForm({
 
     for (const section of groupedFormSections) {
       // "documents" and "recommenders" are rendered as special wizard steps below
-      if (section.sectionKey === "documents" || section.sectionKey === "recommenders") {
+      // The old "eligibility" block is hidden for the main documents stage.
+      if (
+        section.sectionKey === "documents" ||
+        section.sectionKey === "recommenders" ||
+        (isDocumentsStage && section.sectionKey === "eligibility")
+      ) {
         continue;
       }
 
@@ -793,7 +800,7 @@ export function ApplicantApplicationForm({
     });
 
     return wizardSteps;
-  }, [application?.payload, copy, documentFormSection, fileStageFields.length, groupedFormSections, isEnglish, staticSectionTitles]);
+  }, [application?.payload, copy, documentFormSection, fileStageFields.length, groupedFormSections, isEnglish, stageCode, staticSectionTitles]);
 
   const documentsStatus = useMemo(() => {
     const requiredFileFields = fileStageFields.filter((field) => field.is_required);
@@ -806,9 +813,9 @@ export function ApplicantApplicationForm({
 
     return getStepState({
       complete: requiredFileFields.length === 0 || completedCount === requiredFileFields.length,
-      inProgress: hasAnyFile || Boolean(application?.id),
+      inProgress: hasAnyFile,
     });
-  }, [application?.files, application?.id, fileStageFields]);
+  }, [application?.files, fileStageFields]);
 
   const activeRecommendersByRole = useMemo(() => {
     const map = new Map<RecommenderRole, RecommenderSummary>();
@@ -829,9 +836,9 @@ export function ApplicantApplicationForm({
         complete:
           activeRecommendersByRole.get("mentor")?.status === "submitted" &&
           activeRecommendersByRole.get("friend")?.status === "submitted",
-        inProgress: activeRecommendersByRole.size > 0 || Boolean(application?.id),
+        inProgress: activeRecommendersByRole.size > 0,
       }),
-    [activeRecommendersByRole, application?.id],
+    [activeRecommendersByRole],
   );
 
   const submissionStatus = useMemo(
@@ -841,7 +848,7 @@ export function ApplicantApplicationForm({
           application &&
             ["submitted", "eligible", "ineligible", "advanced"].includes(application.status),
         ),
-        inProgress: Boolean(application?.id),
+        inProgress: false,
       }),
     [application],
   );
@@ -972,6 +979,19 @@ export function ApplicantApplicationForm({
       setActiveSectionId(wizardSections[0].id);
     }
   }, [activeSectionId, wizardSections]);
+
+  useEffect(() => {
+    if (!existingApplication?.id || activeSectionId !== PREP_SECTION_ID) {
+      return;
+    }
+
+    const firstInteractiveSection = wizardSections.find(
+      (section) => section.id !== PREP_SECTION_ID,
+    );
+    if (firstInteractiveSection) {
+      setActiveSectionId(firstInteractiveSection.id);
+    }
+  }, [activeSectionId, existingApplication?.id, wizardSections]);
 
   useEffect(() => {
     const applicationId = application?.id ?? null;
@@ -1967,7 +1987,20 @@ export function ApplicantApplicationForm({
     }
   }
 
-  const sidebarSteps: SidebarStep[] = progressSteps;
+  const sidebarSteps: SidebarStep[] = useMemo(() => {
+    const progressByKey = new Map(progressSteps.map((step) => [step.key, step]));
+    return wizardSections.map((section) => {
+      const progressStep = progressByKey.get(section.id);
+      if (progressStep) {
+        return progressStep;
+      }
+      return {
+        key: section.id,
+        label: section.title,
+        status: "not_started" as const,
+      };
+    });
+  }, [progressSteps, wizardSections]);
   const sidebarDraftDot: "success" | "warning" | "error" | "info" =
     saveState === "error" ? "error" : saveState === "saving" ? "info" : saveState === "dirty" ? "warning" : "success";
   const sidebarProgressLabel = isEnglish
@@ -2169,10 +2202,12 @@ export function ApplicantApplicationForm({
               }}
             >
               <Typography color="text.secondary" sx={{ mb: 1.2, fontSize: "0.85rem" }}>
-                {copy(
-                  "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
-                  "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
-                )}
+                {stageInstructions?.trim().length
+                  ? stageInstructions
+                  : copy(
+                    "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
+                    "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
+                  )}
               </Typography>
               <Stack spacing={0.55}>
                 <Typography variant="body2">
