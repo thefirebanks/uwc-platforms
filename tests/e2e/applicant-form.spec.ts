@@ -24,6 +24,21 @@ test.describe("Applicant form – sidebar redesign", () => {
     expect(await buttons.count()).toBeGreaterThanOrEqual(3);
   });
 
+  test("opening a process starts on Instrucciones", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+    await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
+
+    const processLink = page
+      .getByRole("link")
+      .filter({ hasText: /Iniciar postulación|Continuar postulación|Abrir postulación|Open application|Start application/ })
+      .first();
+    await processLink.click();
+    await expect(page).toHaveURL(/\/applicant\/process\//, { timeout: 15_000 });
+
+    await expect(page.getByText(/Instrucciones|Instructions/i).first()).toBeVisible({ timeout: 10_000 });
+  });
+
   test("sidebar navigation switches form sections", async ({ page }) => {
     await loginAndOpenForm(page);
 

@@ -566,23 +566,28 @@ export async function getApplicationExportPackage({
         .limit(20),
     ]);
 
-  if (recommendationError) {
-    throw new AppError({
-      message: "Failed loading recommendations for export package",
-      userMessage: "No se pudo exportar la postulación seleccionada.",
-      status: 500,
-      details: recommendationError,
-    });
-  }
-
-  if (ocrError) {
-    throw new AppError({
-      message: "Failed loading OCR history for export package",
-      userMessage: "No se pudo exportar la postulación seleccionada.",
-      status: 500,
-      details: ocrError,
-    });
-  }
+  // Be resilient here: recommendation/OCR metadata should not block admin profile view.
+  // If these optional queries fail (RLS mismatch, missing table on preview, etc.),
+  // we still return the core application package.
+  const safeRecommendations = recommendationError
+    ? []
+    : ((recommendations ?? []) as Array<
+      Pick<
+        RecommendationRow,
+        | "id"
+        | "role"
+        | "recommender_email"
+        | "status"
+        | "invite_sent_at"
+        | "submitted_at"
+        | "last_reminder_at"
+        | "reminder_count"
+        | "created_at"
+      >
+    >);
+  const safeOcrChecks = ocrError
+    ? []
+    : (((ocrChecks ?? []) as Array<Pick<OcrRow, "id" | "file_key" | "summary" | "confidence" | "created_at">>) ?? []);
 
   return {
     exportedAt: new Date().toISOString(),
@@ -600,22 +605,8 @@ export async function getApplicationExportPackage({
     cycle,
     applicant,
     files: normalizeApplicationFiles(application.files),
-    recommendations: (recommendations ?? []) as Array<
-      Pick<
-        RecommendationRow,
-        | "id"
-        | "role"
-        | "recommender_email"
-        | "status"
-        | "invite_sent_at"
-        | "submitted_at"
-        | "last_reminder_at"
-        | "reminder_count"
-        | "created_at"
-      >
-    >,
-    ocrChecks:
-      ((ocrChecks ?? []) as Array<Pick<OcrRow, "id" | "file_key" | "summary" | "confidence" | "created_at">>) ?? [],
+    recommendations: safeRecommendations,
+    ocrChecks: safeOcrChecks,
   };
 }
 

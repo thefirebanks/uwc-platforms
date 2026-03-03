@@ -244,7 +244,7 @@ describe("ApplicantApplicationForm", () => {
     expect(screen.getByText("Progreso por secciones")).toBeInTheDocument();
   });
 
-  it("skips instructions for existing drafts and opens first interactive section", () => {
+  it("shows instructions first even when a draft already exists", () => {
     render(
       <ApplicantApplicationForm
         cycleId="cycle-resume"
@@ -254,9 +254,8 @@ describe("ApplicantApplicationForm", () => {
       />,
     );
 
-    expect(screen.getAllByText(/Datos personales/i).length).toBeGreaterThan(0);
-    expect(screen.getByLabelText(/Nacionalidad/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Checklist rápida de preparación/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Instrucciones/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Checklist rápida de preparación/i)).toBeInTheDocument();
   });
 
   it("does not mark documents/recommenders/review as in-progress for an untouched draft", () => {

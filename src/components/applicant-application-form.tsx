@@ -981,19 +981,6 @@ export function ApplicantApplicationForm({
   }, [activeSectionId, wizardSections]);
 
   useEffect(() => {
-    if (!existingApplication?.id || activeSectionId !== PREP_SECTION_ID) {
-      return;
-    }
-
-    const firstInteractiveSection = wizardSections.find(
-      (section) => section.id !== PREP_SECTION_ID,
-    );
-    if (firstInteractiveSection) {
-      setActiveSectionId(firstInteractiveSection.id);
-    }
-  }, [activeSectionId, existingApplication?.id, wizardSections]);
-
-  useEffect(() => {
     const applicationId = application?.id ?? null;
     const applicationChanged = previousHydratedApplicationIdRef.current !== applicationId;
     previousHydratedApplicationIdRef.current = applicationId;
