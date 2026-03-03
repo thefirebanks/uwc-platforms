@@ -281,10 +281,12 @@ export type Database = {
           attempt_count: number
           automation_template_id: string | null
           body: string | null
+          campaign_id: string | null
           created_at: string
           delivered_at: string | null
           error_message: string | null
           id: string
+          idempotency_key: string | null
           is_applicant_visible: boolean
           last_attempt_at: string | null
           provider_message_id: string | null
@@ -300,10 +302,12 @@ export type Database = {
           attempt_count?: number
           automation_template_id?: string | null
           body?: string | null
+          campaign_id?: string | null
           created_at?: string
           delivered_at?: string | null
           error_message?: string | null
           id?: string
+          idempotency_key?: string | null
           is_applicant_visible?: boolean
           last_attempt_at?: string | null
           provider_message_id?: string | null
@@ -319,10 +323,12 @@ export type Database = {
           attempt_count?: number
           automation_template_id?: string | null
           body?: string | null
+          campaign_id?: string | null
           created_at?: string
           delivered_at?: string | null
           error_message?: string | null
           id?: string
+          idempotency_key?: string | null
           is_applicant_visible?: boolean
           last_attempt_at?: string | null
           provider_message_id?: string | null
@@ -342,10 +348,74 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "communication_logs_campaign_id_fkey"
+            columns: ["campaign_id"]
+            isOneToOne: false
+            referencedRelation: "communication_campaigns"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "communication_logs_sent_by_fkey"
             columns: ["sent_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      communication_campaigns: {
+        Row: {
+          body_template: string
+          created_at: string
+          created_by: string
+          cycle_id: string
+          id: string
+          idempotency_key: string
+          name: string
+          recipient_filter: Json
+          sent_at: string | null
+          status: string
+          subject: string
+        }
+        Insert: {
+          body_template: string
+          created_at?: string
+          created_by: string
+          cycle_id: string
+          id?: string
+          idempotency_key: string
+          name: string
+          recipient_filter?: Json
+          sent_at?: string | null
+          status?: string
+          subject: string
+        }
+        Update: {
+          body_template?: string
+          created_at?: string
+          created_by?: string
+          cycle_id?: string
+          id?: string
+          idempotency_key?: string
+          name?: string
+          recipient_filter?: Json
+          sent_at?: string | null
+          status?: string
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "communication_campaigns_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "communication_campaigns_cycle_id_fkey"
+            columns: ["cycle_id"]
+            isOneToOne: false
+            referencedRelation: "cycles"
             referencedColumns: ["id"]
           },
         ]
@@ -453,6 +523,51 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "cycle_stage_templates_cycle_id_fkey"
+            columns: ["cycle_id"]
+            isOneToOne: false
+            referencedRelation: "cycles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      export_presets: {
+        Row: {
+          created_at: string
+          created_by: string
+          cycle_id: string
+          id: string
+          name: string
+          selected_fields: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          cycle_id: string
+          id?: string
+          name: string
+          selected_fields?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          cycle_id?: string
+          id?: string
+          name?: string
+          selected_fields?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "export_presets_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "export_presets_cycle_id_fkey"
             columns: ["cycle_id"]
             isOneToOne: false
             referencedRelation: "cycles"
@@ -571,6 +686,11 @@ export type Database = {
       recommendation_requests: {
         Row: {
           access_expires_at: string | null
+          admin_notes: string | null
+          admin_received_at: string | null
+          admin_received_by: string | null
+          admin_received_file: Json
+          admin_received_reason: string | null
           application_id: string
           created_at: string
           id: string
@@ -583,6 +703,7 @@ export type Database = {
           otp_code_hash: string | null
           otp_sent_at: string | null
           otp_verified_at: string | null
+          recommender_name: string | null
           recommender_email: string
           reminder_count: number
           requester_id: string
@@ -597,6 +718,11 @@ export type Database = {
         }
         Insert: {
           access_expires_at?: string | null
+          admin_notes?: string | null
+          admin_received_at?: string | null
+          admin_received_by?: string | null
+          admin_received_file?: Json
+          admin_received_reason?: string | null
           application_id: string
           created_at?: string
           id?: string
@@ -609,6 +735,7 @@ export type Database = {
           otp_code_hash?: string | null
           otp_sent_at?: string | null
           otp_verified_at?: string | null
+          recommender_name?: string | null
           recommender_email: string
           reminder_count?: number
           requester_id: string
@@ -623,6 +750,11 @@ export type Database = {
         }
         Update: {
           access_expires_at?: string | null
+          admin_notes?: string | null
+          admin_received_at?: string | null
+          admin_received_by?: string | null
+          admin_received_file?: Json
+          admin_received_reason?: string | null
           application_id?: string
           created_at?: string
           id?: string
@@ -635,6 +767,7 @@ export type Database = {
           otp_code_hash?: string | null
           otp_sent_at?: string | null
           otp_verified_at?: string | null
+          recommender_name?: string | null
           recommender_email?: string
           reminder_count?: number
           requester_id?: string
@@ -653,6 +786,13 @@ export type Database = {
             columns: ["application_id"]
             isOneToOne: false
             referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recommendation_requests_admin_received_by_fkey"
+            columns: ["admin_received_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {

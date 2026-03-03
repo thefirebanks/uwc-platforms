@@ -83,6 +83,9 @@ export interface ApplicationFileEntry {
   mime_type: string;
   size_bytes: number;
   uploaded_at: string;
+  category?: string | null;
+  notes?: string | null;
+  uploaded_by?: string | null;
 }
 
 export interface RecommendationRequest {
@@ -90,6 +93,7 @@ export interface RecommendationRequest {
   application_id: string;
   requester_id: string;
   role: RecommenderRole;
+  recommender_name: string | null;
   recommender_email: string;
   token: string;
   status: RecommendationStatus;
@@ -105,6 +109,11 @@ export interface RecommendationRequest {
   otp_verified_at: string | null;
   access_expires_at: string;
   responses: Record<string, unknown>;
+  admin_received_at: string | null;
+  admin_received_by: string | null;
+  admin_received_reason: string | null;
+  admin_received_file: Record<string, unknown>;
+  admin_notes: string | null;
   created_at: string;
 }
 
@@ -178,6 +187,7 @@ export interface StageAutomationTemplate {
 export interface CommunicationLog {
   id: string;
   application_id: string;
+  campaign_id: string | null;
   template_key: string;
   trigger_event: string | null;
   subject: string | null;
@@ -186,12 +196,27 @@ export interface CommunicationLog {
   recipient_email: string;
   status: CommunicationStatus;
   error_message: string | null;
+  idempotency_key: string | null;
   sent_by: string;
   attempt_count: number;
   last_attempt_at: string | null;
   delivered_at: string | null;
   provider_message_id: string | null;
   is_applicant_visible: boolean;
+  created_at: string;
+}
+
+export interface CommunicationCampaign {
+  id: string;
+  created_by: string;
+  cycle_id: string;
+  name: string;
+  subject: string;
+  body_template: string;
+  recipient_filter: Record<string, unknown>;
+  status: string;
+  idempotency_key: string;
+  sent_at: string | null;
   created_at: string;
 }
 

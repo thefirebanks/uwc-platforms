@@ -165,6 +165,7 @@ export interface Database {
           application_id: string;
           requester_id: string;
           role: RecommenderRole;
+          recommender_name: string | null;
           recommender_email: string;
           token: string;
           status: RecommendationStatus;
@@ -184,6 +185,11 @@ export interface Database {
           session_token_hash: string | null;
           session_expires_at: string | null;
           responses: Json;
+          admin_received_at: string | null;
+          admin_received_by: string | null;
+          admin_received_reason: string | null;
+          admin_received_file: Json;
+          admin_notes: string | null;
           created_at: string;
         },
         {
@@ -191,6 +197,7 @@ export interface Database {
           application_id: string;
           requester_id: string;
           role: RecommenderRole;
+          recommender_name?: string | null;
           recommender_email: string;
           token: string;
           status?: RecommendationStatus;
@@ -210,10 +217,16 @@ export interface Database {
           session_token_hash?: string | null;
           session_expires_at?: string | null;
           responses?: Json;
+          admin_received_at?: string | null;
+          admin_received_by?: string | null;
+          admin_received_reason?: string | null;
+          admin_received_file?: Json;
+          admin_notes?: string | null;
           created_at?: string;
         },
         {
           role?: RecommenderRole;
+          recommender_name?: string | null;
           status?: RecommendationStatus;
           invite_sent_at?: string | null;
           opened_at?: string | null;
@@ -231,6 +244,11 @@ export interface Database {
           session_token_hash?: string | null;
           session_expires_at?: string | null;
           responses?: Json;
+          admin_received_at?: string | null;
+          admin_received_by?: string | null;
+          admin_received_reason?: string | null;
+          admin_received_file?: Json;
+          admin_notes?: string | null;
         }
       >;
       stage_transitions: TableDef<
@@ -279,6 +297,7 @@ export interface Database {
         {
           id: string;
           application_id: string;
+          campaign_id: string | null;
           template_key: string;
           trigger_event: string | null;
           subject: string | null;
@@ -287,6 +306,7 @@ export interface Database {
           recipient_email: string;
           status: CommunicationStatus;
           error_message: string | null;
+          idempotency_key: string | null;
           sent_by: string;
           attempt_count: number;
           last_attempt_at: string | null;
@@ -298,6 +318,7 @@ export interface Database {
         {
           id?: string;
           application_id: string;
+          campaign_id?: string | null;
           template_key: string;
           trigger_event?: string | null;
           subject?: string | null;
@@ -306,6 +327,7 @@ export interface Database {
           recipient_email: string;
           status: CommunicationStatus;
           error_message?: string | null;
+          idempotency_key?: string | null;
           sent_by: string;
           attempt_count?: number;
           last_attempt_at?: string | null;
@@ -315,13 +337,76 @@ export interface Database {
           created_at?: string;
         },
         {
+          campaign_id?: string | null;
           status?: CommunicationStatus;
           error_message?: string | null;
+          idempotency_key?: string | null;
           attempt_count?: number;
           last_attempt_at?: string | null;
           delivered_at?: string | null;
           provider_message_id?: string | null;
           is_applicant_visible?: boolean;
+        }
+      >;
+      communication_campaigns: TableDef<
+        {
+          id: string;
+          created_by: string;
+          cycle_id: string;
+          name: string;
+          subject: string;
+          body_template: string;
+          recipient_filter: Json;
+          status: string;
+          idempotency_key: string;
+          sent_at: string | null;
+          created_at: string;
+        },
+        {
+          id?: string;
+          created_by: string;
+          cycle_id: string;
+          name: string;
+          subject: string;
+          body_template: string;
+          recipient_filter?: Json;
+          status?: string;
+          idempotency_key: string;
+          sent_at?: string | null;
+          created_at?: string;
+        },
+        {
+          name?: string;
+          subject?: string;
+          body_template?: string;
+          recipient_filter?: Json;
+          status?: string;
+          sent_at?: string | null;
+        }
+      >;
+      export_presets: TableDef<
+        {
+          id: string;
+          cycle_id: string;
+          created_by: string;
+          name: string;
+          selected_fields: Json;
+          created_at: string;
+          updated_at: string;
+        },
+        {
+          id?: string;
+          cycle_id: string;
+          created_by: string;
+          name: string;
+          selected_fields?: Json;
+          created_at?: string;
+          updated_at?: string;
+        },
+        {
+          name?: string;
+          selected_fields?: Json;
+          updated_at?: string;
         }
       >;
       cycle_stage_fields: TableDef<
@@ -335,6 +420,7 @@ export interface Database {
           is_required: boolean;
           placeholder: string | null;
           help_text: string | null;
+          section_id: string | null;
           sort_order: number;
           is_active: boolean;
           created_at: string;
@@ -349,6 +435,7 @@ export interface Database {
           is_required?: boolean;
           placeholder?: string | null;
           help_text?: string | null;
+          section_id?: string | null;
           sort_order?: number;
           is_active?: boolean;
           created_at?: string;
@@ -360,8 +447,40 @@ export interface Database {
           is_required?: boolean;
           placeholder?: string | null;
           help_text?: string | null;
+          section_id?: string | null;
           sort_order?: number;
           is_active?: boolean;
+        }
+      >;
+      stage_sections: TableDef<
+        {
+          id: string;
+          cycle_id: string;
+          stage_code: StageCode;
+          section_key: string;
+          title: string;
+          description: string;
+          sort_order: number;
+          is_visible: boolean;
+          created_at: string;
+        },
+        {
+          id?: string;
+          cycle_id: string;
+          stage_code: StageCode;
+          section_key: string;
+          title: string;
+          description?: string;
+          sort_order?: number;
+          is_visible?: boolean;
+          created_at?: string;
+        },
+        {
+          section_key?: string;
+          title?: string;
+          description?: string;
+          sort_order?: number;
+          is_visible?: boolean;
         }
       >;
       stage_automation_templates: TableDef<
