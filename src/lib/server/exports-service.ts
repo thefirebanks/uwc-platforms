@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import ExcelJS from "exceljs";
 import { AppError } from "@/lib/errors/app-error";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
@@ -455,6 +454,7 @@ export async function buildApplicationsXlsx(
   rows: ApplicationExportRow[],
   columnKeys?: Array<keyof ApplicationExportRow>,
 ): Promise<Buffer> {
+  const ExcelJS = (await import("exceljs")).default;
   const selectedKeys = columnKeys ?? EXPORTABLE_COLUMNS.map((c) => c.key);
   const keyToLabel = new Map(EXPORTABLE_COLUMNS.map((c) => [c.key, c.label]));
 
