@@ -758,6 +758,157 @@ input:checked + .slider:before { transform: translateX(18px); }
 .settings-card-header h3 { font-family: var(--font-display); font-size: 1.2rem; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
 .settings-card-header p { font-size: 0.8rem; color: var(--muted); }
 
+/* ─── Recommender Form ─── */
+.recommender-shell {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 40px 16px 72px;
+}
+
+.recommender-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.recommender-hero {
+  padding-bottom: 24px;
+}
+
+.recommender-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.recommender-expiry {
+  margin-top: 14px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.recommender-alert {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px;
+  border: 1px solid var(--sand);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+}
+
+.recommender-alert p {
+  margin: 0;
+  color: var(--ink-light);
+}
+
+.recommender-alert-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.recommender-alert-error {
+  border-color: color-mix(in srgb, var(--danger, #d64545) 24%, var(--sand));
+}
+
+.recommender-alert-error .recommender-alert-icon {
+  color: var(--danger, #d64545);
+  background: color-mix(in srgb, var(--danger, #d64545) 10%, white);
+}
+
+.recommender-alert-success {
+  border-color: color-mix(in srgb, var(--success, #2e8b57) 28%, var(--sand));
+}
+
+.recommender-alert-success .recommender-alert-icon {
+  color: var(--success, #2e8b57);
+  background: color-mix(in srgb, var(--success, #2e8b57) 12%, white);
+}
+
+.recommender-alert-info .recommender-alert-icon {
+  color: var(--blue);
+  background: color-mix(in srgb, var(--blue) 12%, white);
+}
+
+.recommender-state-card {
+  background: color-mix(in srgb, var(--maroon-soft) 36%, var(--surface));
+}
+
+.recommender-otp-row {
+  display: grid;
+  grid-template-columns: auto minmax(180px, 240px) auto;
+  gap: 16px;
+  align-items: end;
+}
+
+.recommender-otp-field {
+  min-width: 0;
+}
+
+.recommender-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 24px;
+}
+
+.recommender-form-full {
+  grid-column: 1 / -1;
+}
+
+.recommender-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--paper) 60%, var(--surface));
+  color: var(--ink);
+}
+
+.recommender-checkbox input {
+  margin-top: 3px;
+  accent-color: var(--maroon);
+}
+
+.recommender-checkbox span {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.recommender-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.recommender-loading {
+  min-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink-light);
+}
+
+.recommender-loading-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 3px solid color-mix(in srgb, var(--maroon) 20%, white);
+  border-top-color: var(--maroon);
+  animation: adminSpinPulse 0.8s linear infinite;
+}
+
 /* ─── Communications Cards ─── */
 .comm-card { background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 16px; display: flex; align-items: flex-start; gap: 20px; transition: border-color 0.2s; }
 .comm-card:hover { border-color: var(--maroon); }
@@ -838,6 +989,22 @@ input:checked + .slider:before { transform: translateX(18px); }
 }
 
 @media (max-width: 980px) {
+  .recommender-otp-row,
+  .recommender-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .recommender-shell {
+    padding-top: 28px;
+    padding-bottom: 48px;
+  }
+
+  .recommender-actions .btn,
+  .recommender-otp-row .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
   .admin-route-loading-header {
     padding: 20px;
     flex-direction: column;
