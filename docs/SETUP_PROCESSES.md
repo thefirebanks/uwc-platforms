@@ -73,10 +73,6 @@ bun run seed:fake-users
     - `GOOGLE_GMAIL_REFRESH_TOKEN`
     - `GOOGLE_GMAIL_SENDER_EMAIL`
     - `GOOGLE_GMAIL_REDIRECT_URI` (optional)
-  - Resend option:
-    - `RESEND_API_KEY`
-    - `RESEND_FROM_EMAIL`
-    - `RESEND_FROM_NAME`
   - Shared mail options:
     - `EMAIL_FROM_NAME` (optional)
     - `EMAIL_REPLY_TO` (optional)
@@ -103,9 +99,6 @@ bun run dev
   - `GET /api/applications/:id/ocr-check` (history view)
 
 ## 6) Outbound Email Provider
-- Choose one provider path:
-  - Gmail API for a real Workspace inbox like `informes@pe.uwc.org`
-  - Resend for a verified sender domain you control
 - Gmail API setup values:
   - `GOOGLE_GMAIL_CLIENT_ID`
   - `GOOGLE_GMAIL_CLIENT_SECRET`
@@ -117,10 +110,6 @@ bun run dev
     - open `GET /api/google-mail/connect`
     - finish Google consent
     - copy the refresh token shown by `/auth/google-mail/callback`
-- Resend setup values:
-  - `RESEND_API_KEY`
-  - `RESEND_FROM_EMAIL` (example: `noreply@tudominio.org`)
-  - `RESEND_FROM_NAME` (optional, example: `UWC Peru`)
 - Shared recommended values:
   - `EMAIL_FROM_NAME`
   - `EMAIL_REPLY_TO`
@@ -132,7 +121,7 @@ bun run dev
 - Preview / test-send endpoints:
   - `POST /api/communications/preview`
   - `POST /api/communications/test-send`
-- Recommender invite/reminder/OTP endpoints also depend on Resend:
+- Recommender invite/reminder/OTP endpoints also depend on Gmail API:
   - `PUT /api/recommendations`
   - `POST /api/recommendations/:id/remind`
   - `POST /api/recommendations/public/:token/otp`
@@ -141,7 +130,7 @@ bun run dev
 1. Send a communications test email to an admin inbox.
 2. Run one broadcast campaign against a narrow test filter.
 3. Verify recommendation invite -> OTP -> submission.
-4. Verify admin reminder resend and manual mark-received actions.
+4. Verify admin reminder re-send and manual mark-received actions.
 5. Confirm reply/bounce ownership for the configured sender inbox.
 
 ## 7) GitHub Repository + Secrets
@@ -151,9 +140,10 @@ bun run dev
   - `ADMIN_EMAIL_ALLOWLIST`
   - `LOG_LEVEL` (optional)
   - `GEMINI_API_KEY` (optional)
-  - `RESEND_API_KEY`
-  - `RESEND_FROM_EMAIL`
-  - `RESEND_FROM_NAME` (optional)
+  - `GOOGLE_GMAIL_CLIENT_ID`
+  - `GOOGLE_GMAIL_CLIENT_SECRET`
+  - `GOOGLE_GMAIL_REFRESH_TOKEN`
+  - `GOOGLE_GMAIL_SENDER_EMAIL`
   - `RECOMMENDER_TOKEN_SALT` (recommended)
 
 ## 8) Feature Branch + PR Process

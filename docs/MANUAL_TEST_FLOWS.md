@@ -232,7 +232,7 @@ Expected:
 - Process action shows processed/sent/failed totals.
 - `provider_message_id` is stored for delivered emails.
 - Failed rows can be retried without page errors.
-- If `RESEND_API_KEY`/`RESEND_FROM_EMAIL` are missing, UI shows a clear configuration error.
+- If Gmail sender vars are missing, UI shows a clear configuration error.
 
 ## Flow 20: OCR Validation and History
 1. Ensure applicant has at least one uploaded document.

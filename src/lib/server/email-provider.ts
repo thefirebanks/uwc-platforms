@@ -22,18 +22,10 @@ type GoogleMailConfig = {
   replyToEmail: string | null;
 };
 
-type ResendConfig = {
-  apiKey: string;
-  fromEmail: string;
-  fromName: string;
-  replyToEmail: string | null;
-};
-
 function getEmailFromName() {
   return (
     process.env.EMAIL_FROM_NAME?.trim() ||
     process.env.GOOGLE_GMAIL_FROM_NAME?.trim() ||
-    process.env.RESEND_FROM_NAME?.trim() ||
     "UWC Peru"
   );
 }
@@ -62,29 +54,9 @@ function getGoogleMailConfig(): GoogleMailConfig | null {
   };
 }
 
-function getResendConfig(): ResendConfig | null {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  const fromEmail = process.env.RESEND_FROM_EMAIL?.trim();
-
-  if (!apiKey || !fromEmail) {
-    return null;
-  }
-
-  return {
-    apiKey,
-    fromEmail,
-    fromName: getEmailFromName(),
-    replyToEmail: getReplyToEmail(),
-  };
-}
-
 export function getConfiguredEmailProvider() {
   if (getGoogleMailConfig()) {
     return "gmail" as const;
-  }
-
-  if (getResendConfig()) {
-    return "resend" as const;
   }
 
   return null;
@@ -98,7 +70,7 @@ export function assertEmailProviderConfigured() {
   throw new AppError({
     message: "Missing configured email provider",
     userMessage:
-      "Falta configurar el correo saliente del sistema. Define Gmail API o RESEND_API_KEY/RESEND_FROM_EMAIL.",
+      "Falta configurar el correo saliente del sistema. Define GOOGLE_GMAIL_CLIENT_ID, GOOGLE_GMAIL_CLIENT_SECRET, GOOGLE_GMAIL_REFRESH_TOKEN y GOOGLE_GMAIL_SENDER_EMAIL.",
     status: 400,
   });
 }
@@ -222,19 +194,6 @@ function escapeHtml(value: string) {
 
 export function buildDefaultEmailHtml(text: string) {
   return `<div style="font-family:Arial,sans-serif;line-height:1.5;">${escapeHtml(text).replaceAll("\n", "<br/>")}</div>`;
-}
-
-function getResendErrorMessage(raw: unknown) {
-  if (typeof raw !== "string") {
-    return "Proveedor de correo devolvió error desconocido.";
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as { message?: string; error?: string };
-    return parsed.message || parsed.error || raw;
-  } catch {
-    return raw;
-  }
 }
 
 function encodeMimeHeader(value: string) {
@@ -402,56 +361,6 @@ async function sendViaGmail({
   }
 }
 
-async function sendViaResend({
-  config,
-  to,
-  subject,
-  text,
-  html,
-}: {
-  config: ResendConfig;
-  to: string;
-  subject: string;
-  text: string;
-  html: string;
-}): Promise<EmailDeliveryResult> {
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: `${config.fromName} <${config.fromEmail}>`,
-      to: [to],
-      reply_to: config.replyToEmail || undefined,
-      subject,
-      text,
-      html,
-    }),
-  });
-
-  if (!response.ok) {
-    return {
-      delivered: false,
-      errorMessage: getResendErrorMessage(await response.text()),
-    };
-  }
-
-  const payload = (await response.json()) as { id?: string };
-  if (!payload.id) {
-    return {
-      delivered: false,
-      errorMessage: "Proveedor de correo no devolvió identificador de mensaje.",
-    };
-  }
-
-  return {
-    delivered: true,
-    providerMessageId: payload.id,
-  };
-}
-
 export async function sendEmail({
   to,
   subject,
@@ -475,21 +384,10 @@ export async function sendEmail({
     });
   }
 
-  const resendConfig = getResendConfig();
-  if (resendConfig) {
-    return sendViaResend({
-      config: resendConfig,
-      to,
-      subject,
-      text,
-      html: resolvedHtml,
-    });
-  }
-
   throw new AppError({
     message: "Missing configured email provider",
     userMessage:
-      "Falta configurar el correo saliente del sistema. Define Gmail API o RESEND_API_KEY/RESEND_FROM_EMAIL.",
+      "Falta configurar el correo saliente del sistema. Define GOOGLE_GMAIL_CLIENT_ID, GOOGLE_GMAIL_CLIENT_SECRET, GOOGLE_GMAIL_REFRESH_TOKEN y GOOGLE_GMAIL_SENDER_EMAIL.",
     status: 400,
   });
 }

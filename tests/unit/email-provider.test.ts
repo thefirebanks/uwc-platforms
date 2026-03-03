@@ -124,33 +124,6 @@ describe("sendEmail", () => {
     );
   });
 
-  it("falls back to Resend when Gmail is not configured", async () => {
-    vi.stubEnv("RESEND_API_KEY", "re_test_123");
-    vi.stubEnv("RESEND_FROM_EMAIL", "noreply@uwcperu.org");
-
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ id: "re_test_abc" }), { status: 200 }),
-    );
-
-    const result = await sendEmail({
-      to: "applicant@example.com",
-      subject: "Hola",
-      text: "Mensaje de prueba",
-    });
-
-    expect(result).toEqual({
-      delivered: true,
-      providerMessageId: "re_test_abc",
-    });
-    expect(fetchMock).toHaveBeenCalledOnce();
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.resend.com/emails",
-      expect.objectContaining({
-        method: "POST",
-      }),
-    );
-  });
-
   it("throws when no outbound mail provider is configured", async () => {
     await expect(
       sendEmail({

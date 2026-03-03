@@ -53,7 +53,7 @@ Platform for UWC Peru selection management with:
 - Payload-driven CSV/XLSX export builder with saved presets
 - Communication queue logging endpoint
 - Communication queue lifecycle (`queued/processing/sent/failed`) with admin processing/retry controls
-- Real email delivery via Resend from queued communications
+- Real email delivery via Gmail API from queued communications
 - Broadcast compose/send with campaign audit trail and idempotency protection
 - Prompt Studio for guarded OCR experiments + OCR history endpoint (Gemini API key required)
 - Clear user-facing error handling with `Error ID`
@@ -71,19 +71,13 @@ cp .env.example .env.local
 ```
 3. Fill env variables in `.env.local`.
    - Required for real email delivery:
-     - Gmail API path:
-       - `GOOGLE_GMAIL_CLIENT_ID`
-       - `GOOGLE_GMAIL_CLIENT_SECRET`
-       - `GOOGLE_GMAIL_REFRESH_TOKEN`
-       - `GOOGLE_GMAIL_SENDER_EMAIL`
-       - `GOOGLE_GMAIL_REDIRECT_URI` (optional, defaults to local callback)
-     - Or Resend path:
-       - `RESEND_API_KEY`
-       - `RESEND_FROM_EMAIL`
-       - `RESEND_FROM_NAME` (optional, defaults to `UWC Peru`)
-     - Shared optional values:
-       - `EMAIL_FROM_NAME`
-       - `EMAIL_REPLY_TO`
+     - `GOOGLE_GMAIL_CLIENT_ID`
+     - `GOOGLE_GMAIL_CLIENT_SECRET`
+     - `GOOGLE_GMAIL_REFRESH_TOKEN`
+     - `GOOGLE_GMAIL_SENDER_EMAIL`
+     - `GOOGLE_GMAIL_REDIRECT_URI` (optional, defaults to local callback)
+     - `EMAIL_FROM_NAME` (optional)
+     - `EMAIL_REPLY_TO` (optional)
      - `RECOMMENDER_TOKEN_SALT` (strongly recommended outside local dev)
 4. Link to the Supabase project:
 ```bash
@@ -160,8 +154,6 @@ Runtime secrets (set in Cloudflare Pages dashboard, not GitHub Actions):
 - `GOOGLE_GMAIL_CLIENT_SECRET`
 - `GOOGLE_GMAIL_REFRESH_TOKEN`
 - `GOOGLE_GMAIL_SENDER_EMAIL`
-- `RESEND_API_KEY`
-- `RESEND_FROM_EMAIL`
 - `GEMINI_API_KEY`
 
 ## Observability
@@ -174,17 +166,16 @@ Runtime secrets (set in Cloudflare Pages dashboard, not GitHub Actions):
 
 ## Provider Notes
 - OCR provider: Gemini `gemini-3-flash-preview`.
-- Email provider: Gmail API or Resend (real delivery when queue is processed).
+- Email provider: Gmail API (real delivery when queue is processed).
 
 ## Email / Recommendation Smoke Checklist
 - If using Gmail API, complete the one-time sender connect flow at `/api/google-mail/connect`, then store the returned refresh token in `GOOGLE_GMAIL_REFRESH_TOKEN`.
-- If using Resend, verify the sender domain is healthy (SPF/DKIM passing) before sending outside local development.
-- Confirm your chosen provider vars plus `RECOMMENDER_TOKEN_SALT` are configured in each environment.
+- Confirm your Gmail vars plus `RECOMMENDER_TOKEN_SALT` are configured in each environment.
 - Run these smoke tests after deploy:
   - admin `Enviar prueba` in Communications
   - admin broadcast `Send now` to a test segment
   - recommendation invite -> OTP/session -> submit
-  - admin reminder resend and manual mark-received flow
+  - admin reminder re-send and manual mark-received flow
 - Define who monitors replies/bounces on the configured sender inbox.
 
 ## Test Commands

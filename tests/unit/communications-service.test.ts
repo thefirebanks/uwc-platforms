@@ -334,8 +334,10 @@ describe("buildBroadcastIdempotencyKey", () => {
 
 describe("sendCommunicationEmail", () => {
   it("throws AppError when email provider env is missing", async () => {
-    vi.stubEnv("RESEND_API_KEY", "");
-    vi.stubEnv("RESEND_FROM_EMAIL", "");
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_ID", "");
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_SECRET", "");
+    vi.stubEnv("GOOGLE_GMAIL_REFRESH_TOKEN", "");
+    vi.stubEnv("GOOGLE_GMAIL_SENDER_EMAIL", "");
 
     await expect(
       sendCommunicationEmail({
@@ -362,13 +364,20 @@ describe("sendCommunicationEmail", () => {
     ).rejects.toBeInstanceOf(AppError);
   });
 
-  it("sends email via Resend and returns provider id", async () => {
-    vi.stubEnv("RESEND_API_KEY", "re_test_123");
-    vi.stubEnv("RESEND_FROM_EMAIL", "noreply@uwcperu.org");
+  it("sends email via Gmail API and returns provider id", async () => {
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_ID", "client-id");
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_SECRET", "client-secret");
+    vi.stubEnv("GOOGLE_GMAIL_REFRESH_TOKEN", "refresh-token");
+    vi.stubEnv("GOOGLE_GMAIL_SENDER_EMAIL", "informes@pe.uwc.org");
 
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ id: "re_123" }), { status: 200 }),
-    );
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "gmail_123" }), { status: 200 }),
+      );
 
     const result = await sendCommunicationEmail({
       id: "comm-1",
@@ -394,11 +403,17 @@ describe("sendCommunicationEmail", () => {
 
     expect(result).toEqual({
       delivered: true,
-      providerMessageId: "re_123",
+      providerMessageId: "gmail_123",
     });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.resend.com/emails",
-      expect.objectContaining({ method: "POST" }),
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer access-token",
+        }),
+      }),
     );
   });
 });

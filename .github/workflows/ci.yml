@@ -88,15 +88,17 @@ jobs:
           secrets: |
             SUPABASE_SECRET_KEY
             GEMINI_API_KEY
-            RESEND_API_KEY
-            RESEND_FROM_EMAIL
-            RESEND_FROM_NAME
+            GOOGLE_GMAIL_CLIENT_ID
+            GOOGLE_GMAIL_CLIENT_SECRET
+            GOOGLE_GMAIL_REFRESH_TOKEN
+            GOOGLE_GMAIL_SENDER_EMAIL
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
-          RESEND_FROM_NAME: ${{ secrets.RESEND_FROM_NAME }}
+          GOOGLE_GMAIL_CLIENT_ID: ${{ secrets.GOOGLE_GMAIL_CLIENT_ID }}
+          GOOGLE_GMAIL_CLIENT_SECRET: ${{ secrets.GOOGLE_GMAIL_CLIENT_SECRET }}
+          GOOGLE_GMAIL_REFRESH_TOKEN: ${{ secrets.GOOGLE_GMAIL_REFRESH_TOKEN }}
+          GOOGLE_GMAIL_SENDER_EMAIL: ${{ secrets.GOOGLE_GMAIL_SENDER_EMAIL }}
 
       # Post or update a single comment on the PR with the preview URL
       - name: Comment preview URL on PR
@@ -155,12 +157,14 @@ jobs:
           secrets: |
             SUPABASE_SECRET_KEY
             GEMINI_API_KEY
-            RESEND_API_KEY
-            RESEND_FROM_EMAIL
-            RESEND_FROM_NAME
+            GOOGLE_GMAIL_CLIENT_ID
+            GOOGLE_GMAIL_CLIENT_SECRET
+            GOOGLE_GMAIL_REFRESH_TOKEN
+            GOOGLE_GMAIL_SENDER_EMAIL
         env:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          RESEND_FROM_EMAIL: ${{ secrets.RESEND_FROM_EMAIL }}
-          RESEND_FROM_NAME: ${{ secrets.RESEND_FROM_NAME }}
+          GOOGLE_GMAIL_CLIENT_ID: ${{ secrets.GOOGLE_GMAIL_CLIENT_ID }}
+          GOOGLE_GMAIL_CLIENT_SECRET: ${{ secrets.GOOGLE_GMAIL_CLIENT_SECRET }}
+          GOOGLE_GMAIL_REFRESH_TOKEN: ${{ secrets.GOOGLE_GMAIL_REFRESH_TOKEN }}
+          GOOGLE_GMAIL_SENDER_EMAIL: ${{ secrets.GOOGLE_GMAIL_SENDER_EMAIL }}

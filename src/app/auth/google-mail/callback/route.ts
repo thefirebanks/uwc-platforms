@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
       "GOOGLE_GMAIL_CLIENT_SECRET=<paste-your-client-secret>",
       `GOOGLE_GMAIL_REFRESH_TOKEN=${exchanged.refreshToken}`,
       `GOOGLE_GMAIL_SENDER_EMAIL=${exchanged.senderEmail}`,
-      `EMAIL_FROM_NAME=${process.env.EMAIL_FROM_NAME ?? process.env.RESEND_FROM_NAME ?? "UWC Peru"}`,
+      `EMAIL_FROM_NAME=${process.env.EMAIL_FROM_NAME ?? "UWC Peru"}`,
     ].join("\n");
 
     return new NextResponse(
