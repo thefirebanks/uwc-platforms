@@ -201,6 +201,74 @@ describe("ApplicantApplicationForm", () => {
     expect(screen.getByDisplayValue("amigo@example.com")).toBeInTheDocument();
   });
 
+  it("reports registered recommenders accurately when invite emails fail", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            recommenders: [
+              {
+                id: "rec-mentor",
+                role: "mentor",
+                email: "mentor@example.com",
+                status: "invited",
+                submittedAt: null,
+                inviteSentAt: null,
+                openedAt: null,
+                startedAt: null,
+                reminderCount: 0,
+                lastReminderAt: null,
+                invalidatedAt: null,
+                createdAt: "2026-02-18T20:00:00.000Z",
+              },
+              {
+                id: "rec-friend",
+                role: "friend",
+                email: "friend@example.com",
+                status: "invited",
+                submittedAt: null,
+                inviteSentAt: null,
+                openedAt: null,
+                startedAt: null,
+                reminderCount: 0,
+                lastReminderAt: null,
+                invalidatedAt: null,
+                createdAt: "2026-02-18T20:00:00.000Z",
+              },
+            ],
+            createdCount: 2,
+            replacedCount: 0,
+            failedEmailCount: 2,
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-2"
+        sections={DEFAULT_SECTIONS}
+        stageFields={DEFAULT_STAGE_FIELDS}
+        existingApplication={DRAFT_APP}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Recomendadores/i })[0]);
+    fireEvent.change(screen.getByLabelText(/Correo \(Tutor\/Profesor\/Mentor\)/i), {
+      target: { value: "mentor@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/Correo \(Amigo \(no familiar\)\)/i), {
+      target: { value: "friend@example.com" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Guardar recomendadores/i }));
+
+    expect(await screen.findByText(/2 recomendador\(es\) registrado\(s\)\./i)).toBeInTheDocument();
+    expect(screen.getByText(/2 correo\(s\) no se enviaron/i)).toBeInTheDocument();
+    expect(screen.queryByText(/2 invitación\(es\) enviada\(s\)\./i)).not.toBeInTheDocument();
+  });
+
   it("shows progress summary based on submitted state", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ recommenders: [] }), { status: 200 }),
@@ -385,6 +453,15 @@ describe("ApplicantApplicationForm", () => {
     expect(prevButtons.length).toBeGreaterThanOrEqual(1);
   });
 
+  it("keeps a single submit control source on final review", () => {
+    render(<ApplicantApplicationForm existingApplication={null} cycleId="cycle-single-submit" />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Revisi\u00f3n y env\u00edo/i }));
+
+    expect(screen.getAllByRole("button", { name: /Enviar postulaci\u00f3n/i })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /Guardar borrador/i })).toHaveLength(1);
+  });
+
   it("sidebar shows percentage status badges for in-progress sections", () => {
     render(
       <ApplicantApplicationForm
@@ -435,6 +512,122 @@ describe("ApplicantApplicationForm", () => {
     // Should have hidden file inputs
     const fileInputs = document.querySelectorAll('input[type="file"]');
     expect(fileInputs.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("reports document replacement with precise success copy", async () => {
+    const updatedApplication = {
+      ...DRAFT_APP,
+      id: "app-files",
+      cycle_id: "cycle-files",
+      files: {
+        identificationDocument: {
+          path: "uploads/original-id.png",
+          title: "original-id.png",
+          original_name: "original-id.png",
+          mime_type: "image/png",
+          size_bytes: 1024,
+          uploaded_at: "2026-03-03T08:00:00.000Z",
+        },
+      },
+    };
+
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input instanceof Request ? input.url : String(input);
+
+      if (url === "/api/applications/app-files/upload-url") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              signedUrl: "https://uploads.example.com/replacement-id.png",
+              path: "uploads/replacement-id.png",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+
+      if (url === "https://uploads.example.com/replacement-id.png") {
+        expect(init?.method).toBe("PUT");
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }
+
+      if (url === "/api/applications/app-files/files") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              application: {
+                ...updatedApplication,
+                files: {
+                  identificationDocument: {
+                    path: "uploads/replacement-id.png",
+                    title: "replacement-id.png",
+                    original_name: "replacement-id.png",
+                    mime_type: "image/png",
+                    size_bytes: 2048,
+                    uploaded_at: "2026-03-03T08:05:00.000Z",
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+
+      if (url === "/api/applications?cycleId=cycle-files") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              application: {
+                ...updatedApplication,
+                files: {
+                  identificationDocument: {
+                    path: "uploads/replacement-id.png",
+                    title: "replacement-id.png",
+                    original_name: "replacement-id.png",
+                    mime_type: "image/png",
+                    size_bytes: 2048,
+                    uploaded_at: "2026-03-03T08:05:00.000Z",
+                  },
+                },
+              },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+
+      if (url === "/api/recommendations?applicationId=app-files") {
+        return Promise.resolve(new Response(JSON.stringify({ recommenders: [] }), { status: 200 }));
+      }
+
+      throw new Error(`Unexpected fetch call: ${url}`);
+    });
+
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-files"
+        sections={DEFAULT_SECTIONS}
+        stageFields={DEFAULT_STAGE_FIELDS}
+        existingApplication={updatedApplication}
+        initialRecommenders={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Documentos/i })[0]);
+
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement | null;
+    expect(fileInput).not.toBeNull();
+
+    fireEvent.change(fileInput as HTMLInputElement, {
+      target: {
+        files: [new File(["replacement"], "replacement-id.png", { type: "image/png" })],
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Documento actualizado correctamente.")).toBeInTheDocument();
+    });
   });
 
   it("recommenders section shows guardian-card pattern with numbered avatars", () => {

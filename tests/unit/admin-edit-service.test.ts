@@ -4,44 +4,6 @@ import {
   adminUploadFileForApplication,
   getAdminEditHistory,
 } from "@/lib/server/admin-edit-service";
-import { AppError } from "@/lib/errors/app-error";
-
-/* -------------------------------------------------------------------------- */
-/*  Supabase stub factory                                                     */
-/* -------------------------------------------------------------------------- */
-
-type MockChain = {
-  select: ReturnType<typeof vi.fn>;
-  eq: ReturnType<typeof vi.fn>;
-  single: ReturnType<typeof vi.fn>;
-  insert: ReturnType<typeof vi.fn>;
-  update: ReturnType<typeof vi.fn>;
-  order: ReturnType<typeof vi.fn>;
-  limit: ReturnType<typeof vi.fn>;
-};
-
-function buildMockChain(overrides: Partial<{
-  selectData: unknown;
-  selectError: unknown;
-  insertError: unknown;
-  updateData: unknown;
-  updateError: unknown;
-  orderData: unknown;
-  orderError: unknown;
-}> = {}): MockChain {
-  const single = vi.fn();
-  const eq = vi.fn().mockReturnValue({ single });
-  const limit = vi.fn().mockResolvedValue({
-    data: overrides.orderData ?? [],
-    error: overrides.orderError ?? null,
-  });
-  const order = vi.fn().mockReturnValue({ limit });
-  const select = vi.fn().mockReturnValue({ eq, order });
-  const insert = vi.fn().mockResolvedValue({ error: overrides.insertError ?? null });
-  const update = vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single }) }) });
-
-  return { select, eq, single, insert, update, order, limit };
-}
 
 const baseApplication = {
   id: "app-1",
@@ -233,6 +195,82 @@ describe("adminUploadFileForApplication", () => {
         edit_type: "files",
         field_key: "newDoc",
         old_value: null, // no previous file for this key
+      }),
+    );
+  });
+
+  it("preserves existing metadata when replacing an uploaded file", async () => {
+    const existingFiles = {
+      identificationDocument: {
+        path: "/old",
+        title: "Documento actualizado",
+        original_name: "old.pdf",
+        mime_type: "application/pdf",
+        size_bytes: 512,
+        category: "identidad-validada",
+        notes: "Nota editada por QA",
+      },
+    };
+    const appWithFiles = { ...baseApplication, files: existingFiles };
+    const updatedApp = {
+      ...appWithFiles,
+      files: {
+        identificationDocument: {
+          path: "/new",
+          title: "Documento actualizado",
+          original_name: "new.png",
+          mime_type: "image/png",
+          size_bytes: 2048,
+          category: "identidad-validada",
+          notes: "Nota editada por QA",
+        },
+      },
+    };
+
+    const loadSingle = vi.fn().mockResolvedValue({ data: appWithFiles, error: null });
+    const updateSingle = vi.fn().mockResolvedValue({ data: updatedApp, error: null });
+    const insertFn = vi.fn().mockResolvedValue({ error: null });
+
+    const from = vi.fn().mockImplementation((table: string) => {
+      if (table === "applications") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({ single: loadSingle }),
+          }),
+          update: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              select: vi.fn().mockReturnValue({ single: updateSingle }),
+            }),
+          }),
+        };
+      }
+      if (table === "admin_edit_log") {
+        return { insert: insertFn };
+      }
+      return {};
+    });
+
+    const supabase = { from } as unknown as import("@supabase/supabase-js").SupabaseClient<import("@/types/supabase").Database>;
+
+    await adminUploadFileForApplication({
+      supabase,
+      applicationId: "app-1",
+      fileKey: "identificationDocument",
+      filePath: "/new",
+      fileName: "new.png",
+      mimeType: "image/png",
+      sizeBytes: 2048,
+      reason: "Updated attachment",
+      actorId: "admin-1",
+    });
+
+    expect(insertFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        new_value: expect.objectContaining({
+          title: "Documento actualizado",
+          category: "identidad-validada",
+          notes: "Nota editada por QA",
+        }),
       }),
     );
   });

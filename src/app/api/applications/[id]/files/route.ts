@@ -4,9 +4,15 @@ import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { assertApplicantCanEditCycle } from "@/lib/server/application-service";
+import {
+  listApplicationFilesForAdmin,
+  updateApplicationFileMetadata,
+} from "@/lib/server/admin-edit-service";
+import { recordAuditEvent } from "@/lib/logging/audit";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/supabase";
 
-const schema = z.object({
+const applicantSchema = z.object({
   key: z.string().min(2),
   path: z.string().min(4),
   title: z.string().min(2).max(140).optional(),
@@ -16,6 +22,53 @@ const schema = z.object({
   uploadedAt: z.string().datetime().optional(),
 });
 
+const adminSchema = z.object({
+  fileKey: z.string().min(2),
+  title: z.string().min(2).max(140).optional(),
+  category: z.string().max(120).nullable().optional(),
+  notes: z.string().max(500).nullable().optional(),
+  reason: z.string().min(4).max(300),
+});
+
+async function buildSignedDownloadUrl(path: string) {
+  const adminSupabase = getSupabaseAdminClient();
+  const { data, error } = await adminSupabase.storage
+    .from("application-documents")
+    .createSignedUrl(path, 60 * 60);
+
+  if (error || !data?.signedUrl) {
+    return null;
+  }
+
+  return data.signedUrl;
+}
+
+export async function GET(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  return withErrorHandling(async () => {
+    const { supabase } = await requireAuth(["admin"]);
+    const { id } = await context.params;
+
+    const files = await listApplicationFilesForAdmin({
+      supabase,
+      applicationId: id,
+    });
+
+    const filesWithUrls = await Promise.all(
+      files.map(async (file) => ({
+        ...file,
+        downloadUrl: await buildSignedDownloadUrl(file.path),
+      })),
+    );
+
+    return NextResponse.json({
+      files: filesWithUrls,
+    });
+  }, { operation: "applications.files.list_admin" });
+}
+
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string }> },
@@ -24,7 +77,7 @@ export async function POST(
     const { profile, supabase } = await requireAuth(["applicant"]);
     const { id } = await context.params;
     const body = await request.json();
-    const parsed = schema.safeParse(body);
+    const parsed = applicantSchema.safeParse(body);
 
     if (!parsed.success) {
       throw new AppError({
@@ -91,4 +144,52 @@ export async function POST(
 
     return NextResponse.json({ application: data });
   }, { operation: "applications.files.save" });
+}
+
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  return withErrorHandling(async (requestId) => {
+    const { profile, supabase } = await requireAuth(["admin"]);
+    const { id } = await context.params;
+    const body = await request.json();
+    const parsed = adminSchema.safeParse(body);
+
+    if (!parsed.success) {
+      throw new AppError({
+        message: "Invalid admin file metadata payload",
+        userMessage: "No se pudo actualizar la metadata del archivo.",
+        status: 400,
+        details: parsed.error.flatten(),
+      });
+    }
+
+    const application = await updateApplicationFileMetadata({
+      supabase,
+      applicationId: id,
+      fileKey: parsed.data.fileKey,
+      updates: {
+        title: parsed.data.title,
+        category: parsed.data.category,
+        notes: parsed.data.notes,
+      },
+      reason: parsed.data.reason,
+      actorId: profile.id,
+    });
+
+    await recordAuditEvent({
+      supabase,
+      actorId: profile.id,
+      applicationId: id,
+      action: "application.file_metadata_updated",
+      metadata: {
+        fileKey: parsed.data.fileKey,
+        reason: parsed.data.reason,
+      },
+      requestId,
+    });
+
+    return NextResponse.json({ application });
+  }, { operation: "applications.files.update_admin" });
 }
