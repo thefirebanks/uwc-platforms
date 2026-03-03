@@ -13,17 +13,59 @@ interface AdminStageSidebarProps {
   stages: CycleStageTemplate[];
 }
 
+type StageLabelUpdateDetail = {
+  cycleId: string;
+  stageId?: string;
+  stageCode?: string;
+  stageLabel: string;
+};
+
 export function AdminStageSidebar({ cycleId, cycleName, stages }: AdminStageSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
   const [isCreatingStage, setIsCreatingStage] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [localStages, setLocalStages] = useState(stages);
 
   // Determine active stage from URL: /admin/process/[cycleId]/stage/[stageId]
   const activeStageId = pathname.split(`/stage/`)[1]?.split("/")[0];
 
-  const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order);
+  useEffect(() => {
+    setLocalStages(stages);
+  }, [stages]);
+
+  useEffect(() => {
+    function handleStageLabelUpdate(event: Event) {
+      const detail = (event as CustomEvent<StageLabelUpdateDetail>).detail;
+      if (!detail || detail.cycleId !== cycleId) {
+        return;
+      }
+
+      setLocalStages((current) =>
+        current.map((template) => {
+          const matches =
+            (detail.stageId && template.id === detail.stageId) ||
+            (detail.stageCode && template.stage_code === detail.stageCode);
+          if (!matches) {
+            return template;
+          }
+
+          return {
+            ...template,
+            stage_label: detail.stageLabel,
+          };
+        }),
+      );
+    }
+
+    window.addEventListener("uwc:stage-label-updated", handleStageLabelUpdate as EventListener);
+    return () => {
+      window.removeEventListener("uwc:stage-label-updated", handleStageLabelUpdate as EventListener);
+    };
+  }, [cycleId]);
+
+  const sortedStages = [...localStages].sort((a, b) => a.sort_order - b.sort_order);
 
   // Read collapsed state from localStorage on mount
   useEffect(() => {
@@ -165,12 +207,7 @@ export function AdminStageSidebar({ cycleId, cycleName, stages }: AdminStageSide
             Etapas del Proceso
           </div>
           {sortedStages.map((template, index) => {
-            const title =
-              template.stage_code === "documents"
-                ? "Formulario Principal"
-                : template.stage_code === "exam_placeholder"
-                  ? "Examen Académico"
-                  : template.stage_label;
+            const title = template.stage_label;
             const subtitle =
               template.stage_code === "documents"
                 ? "Formulario extenso"

@@ -54,6 +54,8 @@ export default async function AdminProcessPage({
       initialWorkspaceSection={
         requestedSection === "stages" ? "stages"
           : requestedSection === "communications" ? "communications"
+          : requestedSection === "ocr_testbed" ? "ocr_testbed"
+          : requestedSection === "export" ? "export"
           : "process_config"
       }
     />

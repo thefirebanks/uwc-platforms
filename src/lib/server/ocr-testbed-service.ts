@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { AppError } from "@/lib/errors/app-error";
-import { runOcrCheck, DEFAULT_MODEL_ID } from "@/lib/server/ocr";
+import { runOcrCheck, DEFAULT_MODEL_ID, DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
 import type { Database, Json } from "@/types/supabase";
 import type { OcrTestRun } from "@/types/domain";
 
@@ -20,6 +21,13 @@ export type RunOcrTestInput = {
   file: File;
   promptTemplate: string;
   modelId?: string | null;
+  systemPrompt?: string | null;
+  extractionInstructions?: string | null;
+  expectedSchemaTemplate?: string | null;
+  temperature?: number | null;
+  topP?: number | null;
+  maxTokens?: number | null;
+  strictSchema?: boolean;
 };
 
 /* -------------------------------------------------------------------------- */
@@ -33,7 +41,21 @@ export async function runOcrTest({
   supabase: SupabaseClient<Database>;
   input: RunOcrTestInput;
 }): Promise<OcrTestRun> {
-  const { cycleId, stageCode, actorId, file, promptTemplate, modelId } = input;
+  const {
+    cycleId,
+    stageCode,
+    actorId,
+    file,
+    promptTemplate,
+    modelId,
+    systemPrompt,
+    extractionInstructions,
+    expectedSchemaTemplate,
+    temperature,
+    topP,
+    maxTokens,
+    strictSchema,
+  } = input;
 
   /* Sanitise file name */
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "archivo";
@@ -77,6 +99,13 @@ export async function runOcrTest({
     fileUrl: signedData.signedUrl,
     promptTemplate,
     modelId,
+    systemPrompt,
+    extractionInstructions,
+    expectedSchemaTemplate,
+    temperature,
+    topP,
+    maxTokens,
+    strictSchema,
   });
   const durationMs = Date.now() - start;
 
@@ -89,17 +118,49 @@ export async function runOcrTest({
       actor_id: actorId,
       file_name: file.name,
       file_path: storagePath,
-      prompt_template: promptTemplate,
+      prompt_template: extractionInstructions?.trim() || promptTemplate,
       model_id: modelId ?? DEFAULT_MODEL_ID,
       summary: ocrResult.summary,
       confidence: ocrResult.confidence,
-      raw_response: ocrResult.rawResponse as unknown as Json,
+      raw_response: {
+        ...(ocrResult.rawResponse as Record<string, unknown>),
+        requestConfig: {
+          systemPrompt: systemPrompt?.trim() || null,
+          extractionInstructions: extractionInstructions?.trim() || promptTemplate,
+          expectedSchemaTemplate: expectedSchemaTemplate?.trim() || null,
+          temperature: typeof temperature === "number" ? temperature : 0.2,
+          topP: typeof topP === "number" ? topP : 0.9,
+          maxTokens: typeof maxTokens === "number" ? maxTokens : DEFAULT_OCR_MAX_TOKENS,
+          strictSchema: Boolean(strictSchema),
+        },
+      } as unknown as Json,
       duration_ms: durationMs,
     })
     .select("*")
     .single();
 
   if (insertError || !runRow) {
+    if ((insertError as { code?: string } | null)?.code === "PGRST205") {
+      return {
+        id: randomUUID(),
+        cycle_id: cycleId ?? null,
+        stage_code: stageCode,
+        actor_id: actorId,
+        file_name: file.name,
+        file_path: storagePath,
+        prompt_template: extractionInstructions?.trim() || promptTemplate,
+        model_id: modelId ?? DEFAULT_MODEL_ID,
+        summary: ocrResult.summary,
+        confidence: ocrResult.confidence,
+        raw_response: {
+          ...(ocrResult.rawResponse as Record<string, unknown>),
+          persistenceSkipped: true,
+        },
+        duration_ms: durationMs,
+        created_at: new Date().toISOString(),
+      } as OcrTestRun;
+    }
+
     throw new AppError({
       message: "Failed saving OCR test run",
       userMessage: "OCR completado pero no se pudo guardar el resultado.",
@@ -138,6 +199,10 @@ export async function listOcrTestRuns({
   const { data, error } = await query;
 
   if (error) {
+    if ((error as { code?: string }).code === "PGRST205") {
+      return [];
+    }
+
     throw new AppError({
       message: "Failed loading OCR test runs",
       userMessage: "No se pudo cargar el historial de pruebas OCR.",

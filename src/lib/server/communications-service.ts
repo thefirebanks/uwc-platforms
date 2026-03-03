@@ -1,10 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createHash } from "node:crypto";
 import { AppError } from "@/lib/errors/app-error";
 import type { Database } from "@/types/supabase";
 import { renderTemplate } from "@/lib/server/automation-service";
+import { renderSafeMarkdown } from "@/lib/markdown";
+import type { ApplicationStatus, StageCode } from "@/types/domain";
 
 type CommunicationRow = Database["public"]["Tables"]["communication_logs"]["Row"];
 type AutomationTemplateRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
+type CommunicationCampaignRow = Database["public"]["Tables"]["communication_campaigns"]["Row"];
+type ApplicationRow = Database["public"]["Tables"]["applications"]["Row"];
+type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 
 export const COMMUNICATION_STATUSES = ["queued", "processing", "sent", "failed"] as const;
 export type CommunicationStatus = (typeof COMMUNICATION_STATUSES)[number];
@@ -17,6 +23,7 @@ export type CommunicationListFilters = {
 
 export type CommunicationListResult = {
   logs: CommunicationRow[];
+  campaigns: CommunicationCampaignSummary[];
   summary: Record<CommunicationStatus, number> & { total: number };
 };
 
@@ -40,6 +47,46 @@ export type EmailDeliveryResult =
 
 type EmailDeliverer = (communication: CommunicationRow) => Promise<EmailDeliveryResult>;
 
+export type BroadcastRecipientFilter = {
+  cycleId: string;
+  stageCode?: StageCode;
+  status?: ApplicationStatus;
+  search?: string;
+};
+
+export type BroadcastSendInput = {
+  actorId: string;
+  name: string;
+  subject: string;
+  bodyTemplate: string;
+  recipientFilter: BroadcastRecipientFilter;
+  idempotencyKey?: string;
+  dryRun?: boolean;
+};
+
+export type BroadcastRecipient = {
+  applicationId: string;
+  applicantId: string;
+  email: string;
+  fullName: string;
+  applicationStatus: ApplicationStatus;
+  stageCode: StageCode;
+};
+
+export type CommunicationCampaignSummary = {
+  id: string;
+  name: string;
+  subject: string;
+  status: string;
+  createdAt: string;
+  sentAt: string | null;
+  recipientCount: number;
+  sentCount: number;
+  failedCount: number;
+};
+
+const BROADCAST_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
+
 function emptySummary() {
   return {
     queued: 0,
@@ -56,6 +103,58 @@ function normalizeLimit(limit?: number, fallback = 25, max = 100) {
   }
 
   return Math.min(Math.max(limit, 1), max);
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/\p{M}+/gu, "")
+    .toLowerCase()
+    .trim();
+}
+
+export function buildBroadcastIdempotencyKey({
+  actorId,
+  cycleId,
+  name,
+  subject,
+  bodyTemplate,
+  stageCode,
+  status,
+  search,
+  recipientApplicationIds,
+  referenceTime = new Date(),
+}: {
+  actorId: string;
+  cycleId: string;
+  name: string;
+  subject: string;
+  bodyTemplate: string;
+  stageCode?: StageCode;
+  status?: ApplicationStatus;
+  search?: string;
+  recipientApplicationIds?: string[];
+  referenceTime?: Date;
+}) {
+  const normalizedRecipientIds = [...(recipientApplicationIds ?? [])].sort();
+  const idempotencyBucket = Math.floor(referenceTime.getTime() / BROADCAST_IDEMPOTENCY_WINDOW_MS);
+
+  return createHash("sha256")
+    .update(
+      JSON.stringify({
+        actorId,
+        cycleId,
+        name: name.trim(),
+        subject: subject.trim(),
+        bodyTemplate: bodyTemplate.trim(),
+        stageCode: stageCode ?? null,
+        status: status ?? null,
+        search: search?.trim() ?? null,
+        recipientApplicationIds: normalizedRecipientIds,
+        idempotencyBucket,
+      }),
+    )
+    .digest("hex");
 }
 
 async function getCycleApplicationIds({
@@ -158,6 +257,102 @@ async function loadStatusSummary({
   return summary;
 }
 
+async function listCampaignSummaries({
+  supabase,
+  cycleId,
+  limit = 6,
+}: {
+  supabase: SupabaseClient<Database>;
+  cycleId?: string;
+  limit?: number;
+}) {
+  let query = supabase
+    .from("communication_campaigns")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(Math.min(Math.max(limit, 1), 20));
+
+  if (cycleId) {
+    query = query.eq("cycle_id", cycleId);
+  }
+
+  const { data: campaignRows, error: campaignError } = await query;
+  if (campaignError) {
+    throw new AppError({
+      message: "Failed loading communication campaigns",
+      userMessage: "No se pudo cargar el historial de campañas.",
+      status: 500,
+      details: campaignError,
+    });
+  }
+
+  const campaigns = (campaignRows as CommunicationCampaignRow[] | null) ?? [];
+  if (campaigns.length === 0) {
+    return [];
+  }
+
+  const campaignIds = campaigns.map((campaign) => campaign.id);
+  const { data: logRows, error: logError } = await supabase
+    .from("communication_logs")
+    .select("campaign_id, status")
+    .in("campaign_id", campaignIds);
+
+  if (logError) {
+    throw new AppError({
+      message: "Failed loading campaign communication logs",
+      userMessage: "No se pudo resumir el historial de campañas.",
+      status: 500,
+      details: logError,
+    });
+  }
+
+  const statsByCampaign = new Map<
+    string,
+    { recipientCount: number; sentCount: number; failedCount: number }
+  >();
+
+  for (const row of logRows ?? []) {
+    if (!row.campaign_id) {
+      continue;
+    }
+
+    const current = statsByCampaign.get(row.campaign_id) ?? {
+      recipientCount: 0,
+      sentCount: 0,
+      failedCount: 0,
+    };
+
+    current.recipientCount += 1;
+    if (row.status === "sent") {
+      current.sentCount += 1;
+    }
+    if (row.status === "failed") {
+      current.failedCount += 1;
+    }
+    statsByCampaign.set(row.campaign_id, current);
+  }
+
+  return campaigns.map((campaign) => {
+    const stats = statsByCampaign.get(campaign.id) ?? {
+      recipientCount: 0,
+      sentCount: 0,
+      failedCount: 0,
+    };
+
+    return {
+      id: campaign.id,
+      name: campaign.name,
+      subject: campaign.subject,
+      status: campaign.status,
+      createdAt: campaign.created_at,
+      sentAt: campaign.sent_at,
+      recipientCount: stats.recipientCount,
+      sentCount: stats.sentCount,
+      failedCount: stats.failedCount,
+    };
+  });
+}
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -172,7 +367,7 @@ function buildMessageBody(communication: CommunicationRow) {
   if (content) {
     return {
       text: content,
-      html: `<div style="font-family:Arial,sans-serif;line-height:1.5;">${escapeHtml(content).replaceAll("\n", "<br/>")}</div>`,
+      html: `<div style="font-family:Arial,sans-serif;line-height:1.6;">${renderSafeMarkdown(content)}</div>`,
     };
   }
 
@@ -222,6 +417,114 @@ function getResendErrorMessage(raw: unknown) {
   } catch {
     return raw;
   }
+}
+
+async function resolveBroadcastRecipients({
+  supabase,
+  filter,
+}: {
+  supabase: SupabaseClient<Database>;
+  filter: BroadcastRecipientFilter;
+}) {
+  let query = supabase
+    .from("applications")
+    .select("id, applicant_id, status, stage_code, cycle_id")
+    .eq("cycle_id", filter.cycleId);
+
+  if (filter.stageCode) {
+    query = query.eq("stage_code", filter.stageCode);
+  }
+
+  if (filter.status) {
+    query = query.eq("status", filter.status);
+  }
+
+  const { data: applicationRows, error: applicationError } = await query;
+  if (applicationError) {
+    throw new AppError({
+      message: "Failed loading broadcast recipient applications",
+      userMessage: "No se pudo calcular la audiencia del envio.",
+      status: 500,
+      details: applicationError,
+    });
+  }
+
+  const applications = (applicationRows as ApplicationRow[] | null) ?? [];
+  if (applications.length === 0) {
+    return [];
+  }
+
+  const applicantIds = [...new Set(applications.map((application) => application.applicant_id))];
+  const { data: profileRows, error: profileError } = await supabase
+    .from("profiles")
+    .select("id, email, full_name")
+    .in("id", applicantIds);
+
+  if (profileError) {
+    throw new AppError({
+      message: "Failed loading broadcast recipient profiles",
+      userMessage: "No se pudo cargar la audiencia del envio.",
+      status: 500,
+      details: profileError,
+    });
+  }
+
+  const profileMap = new Map<string, ProfileRow>();
+  for (const profile of (profileRows as ProfileRow[] | null) ?? []) {
+    profileMap.set(profile.id, profile);
+  }
+
+  const searchNeedle = filter.search ? normalizeSearchText(filter.search) : "";
+
+  return applications
+    .map((application) => {
+      const profile = profileMap.get(application.applicant_id);
+      if (!profile?.email) {
+        return null;
+      }
+
+      const recipient: BroadcastRecipient = {
+        applicationId: application.id,
+        applicantId: application.applicant_id,
+        email: profile.email,
+        fullName: profile.full_name ?? profile.email,
+        applicationStatus: application.status as ApplicationStatus,
+        stageCode: application.stage_code,
+      };
+
+      if (!searchNeedle) {
+        return recipient;
+      }
+
+      const haystack = normalizeSearchText(`${recipient.fullName} ${recipient.email}`);
+      return haystack.includes(searchNeedle) ? recipient : null;
+    })
+    .filter((recipient): recipient is BroadcastRecipient => Boolean(recipient));
+}
+
+async function loadCycleName({
+  supabase,
+  cycleId,
+}: {
+  supabase: SupabaseClient<Database>;
+  cycleId: string;
+}) {
+  const { data, error } = await supabase
+    .from("cycles")
+    .select("name")
+    .eq("id", cycleId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new AppError({
+      message: "Failed loading cycle for broadcast",
+      userMessage: "No se pudo cargar el proceso para este envio.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  return data.name;
 }
 
 export async function sendCommunicationEmail(
@@ -304,12 +607,13 @@ export async function listCommunicationLogs({
     if (applicationIds.length === 0) {
       return {
         logs: [],
+        campaigns: [],
         summary: emptySummary(),
       };
     }
   }
 
-  const [logs, summary] = await Promise.all([
+  const [logs, summary, campaigns] = await Promise.all([
     listByFilters({
       supabase,
       status: filters.status,
@@ -320,9 +624,13 @@ export async function listCommunicationLogs({
       supabase,
       applicationIds,
     }),
+    listCampaignSummaries({
+      supabase,
+      cycleId: filters.cycleId,
+    }),
   ]);
 
-  return { logs, summary };
+  return { logs, campaigns, summary };
 }
 
 async function lockCommunicationRow({
@@ -413,6 +721,7 @@ export async function processCommunicationQueue({
   let sent = 0;
   let failed = 0;
   let skipped = 0;
+  const touchedCampaignIds = new Set<string>();
 
   for (const communication of queue) {
     const locked = await lockCommunicationRow({
@@ -430,6 +739,9 @@ export async function processCommunicationQueue({
     const attemptedAt = new Date().toISOString();
     const attemptCount = communication.attempt_count + 1;
     const delivery = await deliverEmail(communication);
+    if (communication.campaign_id) {
+      touchedCampaignIds.add(communication.campaign_id);
+    }
 
     if (delivery.delivered) {
       const { error: updateError } = await supabase
@@ -481,6 +793,36 @@ export async function processCommunicationQueue({
     failed += 1;
   }
 
+  if (touchedCampaignIds.size > 0) {
+    await Promise.all(
+      Array.from(touchedCampaignIds).map(async (campaignId) => {
+        const { data: campaignLogs, error: campaignLogsError } = await supabase
+          .from("communication_logs")
+          .select("status")
+          .eq("campaign_id", campaignId);
+
+        if (campaignLogsError) {
+          return;
+        }
+
+        const statuses = (campaignLogs ?? []).map((row) => row.status);
+        const nextStatus = statuses.every((status) => status === "sent")
+          ? "sent"
+          : statuses.some((status) => status === "failed")
+            ? "partial_failure"
+            : "processing";
+
+        await supabase
+          .from("communication_campaigns")
+          .update({
+            status: nextStatus,
+            sent_at: nextStatus === "sent" ? new Date().toISOString() : null,
+          })
+          .eq("id", campaignId);
+      }),
+    );
+  }
+
   return {
     processed,
     sent,
@@ -490,8 +832,157 @@ export async function processCommunicationQueue({
   };
 }
 
+export async function queueBroadcastCampaign({
+  supabase,
+  input,
+}: {
+  supabase: SupabaseClient<Database>;
+  input: BroadcastSendInput;
+}) {
+  const recipients = await resolveBroadcastRecipients({
+    supabase,
+    filter: input.recipientFilter,
+  });
+
+  const resolvedIdempotencyKey =
+    input.idempotencyKey?.trim() ||
+    buildBroadcastIdempotencyKey({
+      actorId: input.actorId,
+      cycleId: input.recipientFilter.cycleId,
+      name: input.name,
+      subject: input.subject,
+      bodyTemplate: input.bodyTemplate,
+      stageCode: input.recipientFilter.stageCode,
+      status: input.recipientFilter.status,
+      search: input.recipientFilter.search,
+      recipientApplicationIds: recipients.map((recipient) => recipient.applicationId),
+    });
+
+  const existingCampaign = await supabase
+    .from("communication_campaigns")
+    .select("*")
+    .eq("idempotency_key", resolvedIdempotencyKey)
+    .maybeSingle();
+
+  if (existingCampaign.error) {
+    throw new AppError({
+      message: "Failed checking existing broadcast idempotency key",
+      userMessage: "No se pudo preparar el envio masivo.",
+      status: 500,
+      details: existingCampaign.error,
+    });
+  }
+
+  if (existingCampaign.data) {
+    const existingCampaignRow = existingCampaign.data as CommunicationCampaignRow;
+    return {
+      campaign: existingCampaignRow,
+      recipientCount: recipients.length,
+      recipients,
+      deduplicated: true,
+    };
+  }
+
+  if (input.dryRun) {
+    return {
+      campaign: null,
+      recipientCount: recipients.length,
+      recipients,
+      deduplicated: false,
+    };
+  }
+
+  if (recipients.length === 0) {
+    throw new AppError({
+      message: "Broadcast campaign has no matching recipients",
+      userMessage: "No hay destinatarios que coincidan con esos filtros.",
+      status: 422,
+    });
+  }
+
+  const cycleName = await loadCycleName({
+    supabase,
+    cycleId: input.recipientFilter.cycleId,
+  });
+
+  const { data: campaignData, error: campaignError } = await supabase
+    .from("communication_campaigns")
+    .insert({
+      created_by: input.actorId,
+      cycle_id: input.recipientFilter.cycleId,
+      name: input.name.trim(),
+      subject: input.subject.trim(),
+      body_template: input.bodyTemplate,
+      recipient_filter: input.recipientFilter,
+      status: "queued",
+      idempotency_key: resolvedIdempotencyKey,
+    })
+    .select("*")
+    .single();
+
+  if (campaignError || !campaignData) {
+    throw new AppError({
+      message: "Failed creating communication campaign",
+      userMessage: "No se pudo crear la campaña de envio.",
+      status: 500,
+      details: campaignError,
+    });
+  }
+
+  const createdCampaign = campaignData as CommunicationCampaignRow;
+
+  const logsToInsert = recipients.map((recipient) => {
+    const context = {
+      full_name: recipient.fullName,
+      applicant_email: recipient.email,
+      application_id: recipient.applicationId,
+      application_status: recipient.applicationStatus,
+      cycle_name: cycleName,
+      stage_label: recipient.stageCode,
+    };
+
+    return {
+      application_id: recipient.applicationId,
+      campaign_id: createdCampaign.id,
+      template_key: "broadcast_custom",
+      trigger_event: "broadcast",
+      subject: renderTemplate(input.subject, context),
+      body: renderTemplate(input.bodyTemplate, context),
+      automation_template_id: null,
+      recipient_email: recipient.email,
+      status: "queued" as const,
+      error_message: null,
+      idempotency_key: resolvedIdempotencyKey,
+      sent_by: input.actorId,
+      attempt_count: 0,
+      is_applicant_visible: true,
+    };
+  });
+
+  if (logsToInsert.length > 0) {
+    const { error: insertError } = await supabase.from("communication_logs").insert(logsToInsert);
+    if (insertError) {
+      throw new AppError({
+        message: "Failed queueing broadcast communication logs",
+        userMessage: "No se pudo encolar el envio masivo.",
+        status: 500,
+        details: insertError,
+      });
+    }
+  }
+
+  return {
+    campaign: createdCampaign,
+    recipientCount: recipients.length,
+    recipients,
+    deduplicated: false,
+  };
+}
+
 export type PreviewEmailInput = {
-  automationTemplateId: string;
+  automationTemplateId?: string;
+  subjectTemplate?: string;
+  bodyTemplate?: string;
   sampleValues?: Record<string, string>;
 };
 
@@ -508,20 +999,38 @@ export async function previewEmail({
   supabase: SupabaseClient<Database>;
   input: PreviewEmailInput;
 }): Promise<PreviewEmailResult> {
-  const { data: rawTemplate, error } = await supabase
-    .from("stage_automation_templates")
-    .select("*")
-    .eq("id", input.automationTemplateId)
-    .maybeSingle();
+  let subjectTemplate = input.subjectTemplate ?? "";
+  let bodyTemplate = input.bodyTemplate ?? "";
+  let stageLabel = "documents";
 
-  const template = rawTemplate as AutomationTemplateRow | null;
+  if (input.automationTemplateId) {
+    const { data: rawTemplate, error } = await supabase
+      .from("stage_automation_templates")
+      .select("*")
+      .eq("id", input.automationTemplateId)
+      .maybeSingle();
 
-  if (error || !template) {
+    const template = rawTemplate as AutomationTemplateRow | null;
+
+    if (error || !template) {
+      throw new AppError({
+        message: "Automation template not found",
+        userMessage: "No se encontró la plantilla de automatización.",
+        status: 404,
+        details: error,
+      });
+    }
+
+    subjectTemplate = template.template_subject;
+    bodyTemplate = template.template_body;
+    stageLabel = template.stage_code;
+  }
+
+  if (!subjectTemplate.trim() || !bodyTemplate.trim()) {
     throw new AppError({
-      message: "Automation template not found",
-      userMessage: "No se encontró la plantilla de automatización.",
-      status: 404,
-      details: error,
+      message: "Missing preview template content",
+      userMessage: "Debes indicar asunto y cuerpo para previsualizar el correo.",
+      status: 400,
     });
   }
 
@@ -530,13 +1039,13 @@ export async function previewEmail({
     cycle_name: "Proceso UWC 2026 (ejemplo)",
     application_id: "00000000-0000-0000-0000-000000000000",
     application_status: "submitted",
-    stage_label: template.stage_code,
+    stage_label: stageLabel,
   };
 
   const context = { ...defaultSample, ...(input.sampleValues ?? {}) };
-  const subject = renderTemplate(template.template_subject, context);
-  const body = renderTemplate(template.template_body, context);
-  const bodyHtml = `<div style="font-family:Arial,sans-serif;line-height:1.5;">${escapeHtml(body).replaceAll("\n", "<br/>")}</div>`;
+  const subject = renderTemplate(subjectTemplate, context);
+  const body = renderTemplate(bodyTemplate, context);
+  const bodyHtml = `<div style="font-family:Arial,sans-serif;line-height:1.6;">${renderSafeMarkdown(body)}</div>`;
 
   return {
     subject,

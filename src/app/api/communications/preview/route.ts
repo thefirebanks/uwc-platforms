@@ -6,9 +6,14 @@ import { requireAuth } from "@/lib/server/auth";
 import { previewEmail } from "@/lib/server/communications-service";
 
 const schema = z.object({
-  automationTemplateId: z.string().uuid(),
+  automationTemplateId: z.string().uuid().optional(),
+  subjectTemplate: z.string().min(3).optional(),
+  bodyTemplate: z.string().min(10).optional(),
   sampleValues: z.record(z.string(), z.string()).optional(),
-});
+}).refine(
+  (value) => Boolean(value.automationTemplateId || (value.subjectTemplate && value.bodyTemplate)),
+  "Debe enviar una plantilla existente o asunto/cuerpo personalizados.",
+);
 
 export async function POST(request: NextRequest) {
   return withErrorHandling(

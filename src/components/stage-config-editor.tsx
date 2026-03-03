@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import {
   startTransition,
+  useEffect,
   useLayoutEffect,
   useDeferredValue,
   useMemo,
@@ -868,6 +869,23 @@ export function StageConfigEditor({
   const [blockIfPreviousNotMet, setBlockIfPreviousNotMet] = useState(
     parsedStageAdminConfig.blockIfPreviousNotMet ?? documentsRouteRepresentsMainForm,
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("uwc:stage-label-updated", {
+        detail: {
+          cycleId,
+          stageId,
+          stageCode,
+          stageLabel: settingsStageName.trim() || displayStageLabel,
+        },
+      }),
+    );
+  }, [cycleId, displayStageLabel, settingsStageName, stageCode, stageId]);
   const settingsDraftSnapshot = useMemo(
     () =>
       serializeSettingsDraft({
@@ -1381,7 +1399,7 @@ export function StageConfigEditor({
           <div className="canvas-title-row">
             <div>
               <h1>{settingsStageName.trim() || displayStageLabel}</h1>
-              <p>Configura la captura de datos de esta etapa, reglas de acceso y notificaciones.</p>
+              <p>Configura la captura de datos, reglas de acceso y notificaciones para {cycleName}.</p>
             </div>
             <div className="admin-stage-header-actions">
               <button
@@ -1896,13 +1914,14 @@ export function StageConfigEditor({
                     />
                   </div>
                   <div className="form-field full">
-                    <label htmlFor={`stage-description-${stageCode}`}>Descripción corta</label>
+                    <label htmlFor={`stage-description-${stageCode}`}>Instrucciones de la etapa (Markdown)</label>
                     <textarea
                       id={`stage-description-${stageCode}`}
-                      rows={2}
+                      rows={5}
                       value={settingsDescription}
                       onChange={(event) => setSettingsDescription(event.target.value)}
                     />
+                    <div className="form-hint">Se muestra primero en el paso inicial del postulante. Soporta encabezados, listas, enfasis y enlaces seguros.</div>
                   </div>
                   <div className="form-field">
                     <label htmlFor={`stage-open-date-${stageCode}`}>Fecha de apertura</label>
@@ -2283,7 +2302,6 @@ export function StageConfigEditor({
             </div>
             <div
               style={{ overflowY: "auto", flex: 1, padding: "20px" }}
-              // eslint-disable-next-line react/no-danger
               dangerouslySetInnerHTML={{ __html: previewData.bodyHtml }}
             />
           </div>
