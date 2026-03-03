@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
 import { assertApplicantCanEditCycle } from "@/lib/server/application-service";
+import { sendEmail } from "@/lib/server/email-provider";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/supabase";
 import type { RecommenderRole, RecommendationStatus } from "@/types/domain";
@@ -78,39 +79,6 @@ function roleLabel(role: RecommenderRole) {
   return role === "mentor" ? "Tutor/Profesor/Mentor" : "Amigo";
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function toHtmlBody(text: string) {
-  return `<div style="font-family:Arial,sans-serif;line-height:1.5;">${escapeHtml(text).replaceAll("\n", "<br/>")}</div>`;
-}
-
-function getEmailConfig() {
-  const apiKey = process.env.RESEND_API_KEY;
-  const fromEmail = process.env.RESEND_FROM_EMAIL;
-  const fromName = process.env.RESEND_FROM_NAME?.trim() || "UWC Peru";
-
-  if (!apiKey || !fromEmail) {
-    throw new AppError({
-      message: "Missing RESEND_API_KEY or RESEND_FROM_EMAIL",
-      userMessage:
-        "Falta configurar el correo saliente del sistema. Define RESEND_API_KEY y RESEND_FROM_EMAIL.",
-      status: 400,
-    });
-  }
-
-  return {
-    apiKey,
-    fromHeader: `${fromName} <${fromEmail}>`,
-  };
-}
-
 async function sendRawEmail({
   to,
   subject,
@@ -120,28 +88,18 @@ async function sendRawEmail({
   subject: string;
   text: string;
 }) {
-  const config = getEmailConfig();
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: config.fromHeader,
-      to: [to],
-      subject,
-      text,
-      html: toHtmlBody(text),
-    }),
+  const result = await sendEmail({
+    to,
+    subject,
+    text,
   });
 
-  if (!response.ok) {
+  if (!result.delivered) {
     throw new AppError({
-      message: "Resend recommendation email failed",
+      message: "Recommendation email failed",
       userMessage: "No se pudo enviar el correo de recomendación.",
       status: 502,
-      details: await response.text(),
+      details: result.errorMessage,
     });
   }
 }

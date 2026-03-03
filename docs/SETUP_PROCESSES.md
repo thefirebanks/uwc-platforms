@@ -67,9 +67,19 @@ bun run seed:fake-users
   - `ADMIN_EMAIL_ALLOWLIST`
   - `LOG_LEVEL` (optional, default `info`)
   - `GEMINI_API_KEY` (optional)
-  - `RESEND_API_KEY` (required for real email delivery)
-  - `RESEND_FROM_EMAIL` (required for real email delivery)
-  - `RESEND_FROM_NAME` (optional)
+  - Gmail API option:
+    - `GOOGLE_GMAIL_CLIENT_ID`
+    - `GOOGLE_GMAIL_CLIENT_SECRET`
+    - `GOOGLE_GMAIL_REFRESH_TOKEN`
+    - `GOOGLE_GMAIL_SENDER_EMAIL`
+    - `GOOGLE_GMAIL_REDIRECT_URI` (optional)
+  - Resend option:
+    - `RESEND_API_KEY`
+    - `RESEND_FROM_EMAIL`
+    - `RESEND_FROM_NAME`
+  - Shared mail options:
+    - `EMAIL_FROM_NAME` (optional)
+    - `EMAIL_REPLY_TO` (optional)
   - `RECOMMENDER_TOKEN_SALT` (recommended; extra hardening for OTP/session token hashing)
 
 ## 4) Cloudflare Observability (Recommended)
@@ -92,13 +102,29 @@ bun run dev
   - `POST /api/applications/:id/ocr-check`
   - `GET /api/applications/:id/ocr-check` (history view)
 
-## 6) Resend (Required for Real Email Sending)
-- Create a Resend account and API key.
-- Verify a sending domain in Resend (production), then define:
+## 6) Outbound Email Provider
+- Choose one provider path:
+  - Gmail API for a real Workspace inbox like `informes@pe.uwc.org`
+  - Resend for a verified sender domain you control
+- Gmail API setup values:
+  - `GOOGLE_GMAIL_CLIENT_ID`
+  - `GOOGLE_GMAIL_CLIENT_SECRET`
+  - `GOOGLE_GMAIL_REFRESH_TOKEN`
+  - `GOOGLE_GMAIL_SENDER_EMAIL`
+  - Optional: `GOOGLE_GMAIL_REDIRECT_URI`
+  - One-time connect flow:
+    - sign in as an admin in the app
+    - open `GET /api/google-mail/connect`
+    - finish Google consent
+    - copy the refresh token shown by `/auth/google-mail/callback`
+- Resend setup values:
   - `RESEND_API_KEY`
   - `RESEND_FROM_EMAIL` (example: `noreply@tudominio.org`)
   - `RESEND_FROM_NAME` (optional, example: `UWC Peru`)
-  - `RECOMMENDER_TOKEN_SALT` (recommended for production recommendation links/sessions)
+- Shared recommended values:
+  - `EMAIL_FROM_NAME`
+  - `EMAIL_REPLY_TO`
+  - `RECOMMENDER_TOKEN_SALT`
 - Communication queue processing endpoint that sends real emails:
   - `POST /api/communications/process`
 - Broadcast campaign compose/send uses:

@@ -4,6 +4,11 @@ import { AppError } from "@/lib/errors/app-error";
 import type { Database } from "@/types/supabase";
 import { renderTemplate } from "@/lib/server/automation-service";
 import { renderSafeMarkdown } from "@/lib/markdown";
+import {
+  assertEmailProviderConfigured,
+  sendEmail,
+  type EmailDeliveryResult,
+} from "@/lib/server/email-provider";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
 
 type CommunicationRow = Database["public"]["Tables"]["communication_logs"]["Row"];
@@ -40,10 +45,6 @@ export type QueueProcessingResult = {
   skipped: number;
   targetStatus: "queued" | "failed";
 };
-
-export type EmailDeliveryResult =
-  | { delivered: true; providerMessageId: string }
-  | { delivered: false; errorMessage: string };
 
 type EmailDeliverer = (communication: CommunicationRow) => Promise<EmailDeliveryResult>;
 
@@ -378,47 +379,6 @@ function buildMessageBody(communication: CommunicationRow) {
   };
 }
 
-function getEmailConfig() {
-  const apiKey = process.env.RESEND_API_KEY;
-  const fromEmail = process.env.RESEND_FROM_EMAIL;
-  const fromName = process.env.RESEND_FROM_NAME?.trim() || "UWC Peru";
-
-  if (!apiKey || !fromEmail) {
-    return null;
-  }
-
-  return {
-    apiKey,
-    fromHeader: `${fromName} <${fromEmail}>`,
-  };
-}
-
-function assertEmailProviderConfigured() {
-  if (getEmailConfig()) {
-    return;
-  }
-
-  throw new AppError({
-    message: "Missing RESEND_API_KEY or RESEND_FROM_EMAIL",
-    userMessage:
-      "Falta configurar el correo saliente del sistema. Define RESEND_API_KEY y RESEND_FROM_EMAIL.",
-    status: 400,
-  });
-}
-
-function getResendErrorMessage(raw: unknown) {
-  if (typeof raw !== "string") {
-    return "Proveedor de correo devolvió error desconocido.";
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as { message?: string; error?: string };
-    return parsed.message || parsed.error || raw;
-  } catch {
-    return raw;
-  }
-}
-
 async function resolveBroadcastRecipients({
   supabase,
   filter,
@@ -530,57 +490,21 @@ async function loadCycleName({
 export async function sendCommunicationEmail(
   communication: CommunicationRow,
 ): Promise<EmailDeliveryResult> {
-  const config = getEmailConfig();
-  if (!config) {
-    throw new AppError({
-      message: "Missing RESEND_API_KEY or RESEND_FROM_EMAIL",
-      userMessage:
-        "Falta configurar el correo saliente del sistema. Define RESEND_API_KEY y RESEND_FROM_EMAIL.",
-      status: 400,
-    });
-  }
-
   const subject = communication.subject?.trim() || "Actualización de postulación UWC Perú";
   const messageBody = buildMessageBody(communication);
 
   try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: config.fromHeader,
-        to: [communication.recipient_email],
-        subject,
-        text: messageBody.text,
-        html: messageBody.html,
-      }),
+    return await sendEmail({
+      to: communication.recipient_email,
+      subject,
+      text: messageBody.text,
+      html: messageBody.html,
     });
-
-    if (!response.ok) {
-      return {
-        delivered: false,
-        errorMessage: getResendErrorMessage(await response.text()),
-      };
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
     }
 
-    const payload = (await response.json()) as { id?: string };
-    const providerMessageId = payload.id;
-
-    if (!providerMessageId) {
-      return {
-        delivered: false,
-        errorMessage: "Proveedor de correo no devolvió identificador de mensaje.",
-      };
-    }
-
-    return {
-      delivered: true,
-      providerMessageId,
-    };
-  } catch {
     return {
       delivered: false,
       errorMessage: "No se pudo conectar con el proveedor de correo.",
@@ -1065,54 +989,18 @@ export async function sendTestEmail({
   bodyText: string;
   bodyHtml: string;
 }): Promise<EmailDeliveryResult> {
-  const config = getEmailConfig();
-  if (!config) {
-    throw new AppError({
-      message: "Missing RESEND_API_KEY or RESEND_FROM_EMAIL",
-      userMessage:
-        "Falta configurar el correo saliente del sistema. Define RESEND_API_KEY y RESEND_FROM_EMAIL.",
-      status: 400,
-    });
-  }
-
   try {
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        from: config.fromHeader,
-        to: [recipientEmail],
-        subject: `[TEST] ${subject}`,
-        text: bodyText,
-        html: bodyHtml,
-      }),
+    return await sendEmail({
+      to: recipientEmail,
+      subject: `[TEST] ${subject}`,
+      text: bodyText,
+      html: bodyHtml,
     });
-
-    if (!response.ok) {
-      return {
-        delivered: false,
-        errorMessage: getResendErrorMessage(await response.text()),
-      };
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
     }
 
-    const payload = (await response.json()) as { id?: string };
-    const providerMessageId = payload.id;
-
-    if (!providerMessageId) {
-      return {
-        delivered: false,
-        errorMessage: "Proveedor de correo no devolvió identificador de mensaje.",
-      };
-    }
-
-    return {
-      delivered: true,
-      providerMessageId,
-    };
-  } catch {
     return {
       delivered: false,
       errorMessage: "No se pudo conectar con el proveedor de correo.",

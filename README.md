@@ -71,9 +71,19 @@ cp .env.example .env.local
 ```
 3. Fill env variables in `.env.local`.
    - Required for real email delivery:
-     - `RESEND_API_KEY`
-     - `RESEND_FROM_EMAIL`
-     - `RESEND_FROM_NAME` (optional, defaults to `UWC Peru`)
+     - Gmail API path:
+       - `GOOGLE_GMAIL_CLIENT_ID`
+       - `GOOGLE_GMAIL_CLIENT_SECRET`
+       - `GOOGLE_GMAIL_REFRESH_TOKEN`
+       - `GOOGLE_GMAIL_SENDER_EMAIL`
+       - `GOOGLE_GMAIL_REDIRECT_URI` (optional, defaults to local callback)
+     - Or Resend path:
+       - `RESEND_API_KEY`
+       - `RESEND_FROM_EMAIL`
+       - `RESEND_FROM_NAME` (optional, defaults to `UWC Peru`)
+     - Shared optional values:
+       - `EMAIL_FROM_NAME`
+       - `EMAIL_REPLY_TO`
      - `RECOMMENDER_TOKEN_SALT` (strongly recommended outside local dev)
 4. Link to the Supabase project:
 ```bash
@@ -146,6 +156,10 @@ This app deploys to Cloudflare Pages via GitHub Actions. On every push to `main`
 
 Runtime secrets (set in Cloudflare Pages dashboard, not GitHub Actions):
 - `SUPABASE_SECRET_KEY`
+- `GOOGLE_GMAIL_CLIENT_ID`
+- `GOOGLE_GMAIL_CLIENT_SECRET`
+- `GOOGLE_GMAIL_REFRESH_TOKEN`
+- `GOOGLE_GMAIL_SENDER_EMAIL`
 - `RESEND_API_KEY`
 - `RESEND_FROM_EMAIL`
 - `GEMINI_API_KEY`
@@ -160,11 +174,12 @@ Runtime secrets (set in Cloudflare Pages dashboard, not GitHub Actions):
 
 ## Provider Notes
 - OCR provider: Gemini `gemini-3-flash-preview`.
-- Email provider: Resend API (real delivery when queue is processed).
+- Email provider: Gmail API or Resend (real delivery when queue is processed).
 
 ## Email / Recommendation Smoke Checklist
-- Verify the Resend sender domain is healthy (SPF/DKIM passing) before sending outside local development.
-- Confirm `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME`, and `RECOMMENDER_TOKEN_SALT` are configured in each environment.
+- If using Gmail API, complete the one-time sender connect flow at `/api/google-mail/connect`, then store the returned refresh token in `GOOGLE_GMAIL_REFRESH_TOKEN`.
+- If using Resend, verify the sender domain is healthy (SPF/DKIM passing) before sending outside local development.
+- Confirm your chosen provider vars plus `RECOMMENDER_TOKEN_SALT` are configured in each environment.
 - Run these smoke tests after deploy:
   - admin `Enviar prueba` in Communications
   - admin broadcast `Send now` to a test segment
