@@ -871,10 +871,7 @@ export function ApplicantApplicationForm({
         // Compute status
         let status: ProgressState;
         if (section.id === "documents_uploads") {
-          status = getStepState({
-            complete: section.status === "complete" && documentsStatus === "complete",
-            inProgress: section.status !== "not_started" || documentsStatus !== "not_started",
-          });
+          status = documentsStatus;
         } else if (section.id === "recommenders_flow") {
           status = recommenderStatus;
         } else if (section.id === "review_submit") {

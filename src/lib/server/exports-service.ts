@@ -515,22 +515,33 @@ export async function getApplicationExportPackage({
     });
   }
 
-  const privilegedSupabase = (() => {
-    try {
-      return getSupabaseAdminClient();
-    } catch {
-      // Fallback for environments/tests without admin credentials.
-      return supabase;
-    }
-  })();
+  let privilegedSupabase: SupabaseClient<Database> | null = null;
+  try {
+    privilegedSupabase = getSupabaseAdminClient();
+  } catch {
+    privilegedSupabase = null;
+  }
 
-  const { data: application, error: applicationError } = await privilegedSupabase
-    .from("applications")
-    .select(
-      "id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, created_at, updated_at",
-    )
-    .eq("id", parsedApplicationId)
-    .maybeSingle();
+  const loadApplication = async (client: SupabaseClient<Database>) =>
+    client
+      .from("applications")
+      .select(
+        "id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, created_at, updated_at",
+      )
+      .eq("id", parsedApplicationId)
+      .maybeSingle();
+
+  let dataClient: SupabaseClient<Database> = supabase;
+  let { data: application, error: applicationError } = await loadApplication(supabase);
+
+  if ((applicationError || !application) && privilegedSupabase) {
+    const retry = await loadApplication(privilegedSupabase);
+    if (!retry.error && retry.data) {
+      application = retry.data;
+      applicationError = null;
+      dataClient = privilegedSupabase;
+    }
+  }
 
   if (applicationError) {
     throw new AppError({
@@ -551,24 +562,24 @@ export async function getApplicationExportPackage({
 
   const [{ data: applicant }, { data: cycle }, { data: recommendations, error: recommendationError }, { data: ocrChecks, error: ocrError }] =
     await Promise.all([
-      privilegedSupabase
+      dataClient
         .from("profiles")
         .select("id, email, full_name")
         .eq("id", application.applicant_id)
         .maybeSingle(),
-      privilegedSupabase
+      dataClient
         .from("cycles")
         .select("id, name, stage1_open_at, stage1_close_at, stage2_open_at, stage2_close_at")
         .eq("id", application.cycle_id)
         .maybeSingle(),
-      privilegedSupabase
+      dataClient
         .from("recommendation_requests")
         .select(
           "id, role, recommender_email, status, invite_sent_at, submitted_at, last_reminder_at, reminder_count, created_at",
         )
         .eq("application_id", application.id)
         .order("created_at", { ascending: true }),
-      privilegedSupabase
+      dataClient
         .from("application_ocr_checks")
         .select("id, file_key, summary, confidence, created_at")
         .eq("application_id", application.id)
