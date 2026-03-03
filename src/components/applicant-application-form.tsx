@@ -876,9 +876,7 @@ export function ApplicantApplicationForm({
   const recommenderStatus = useMemo(
     () =>
       getStepState({
-        complete:
-          activeRecommendersByRole.get("mentor")?.status === "submitted" &&
-          activeRecommendersByRole.get("friend")?.status === "submitted",
+        complete: activeRecommendersByRole.size === 2,
         inProgress: activeRecommendersByRole.size > 0,
       }),
     [activeRecommendersByRole],
@@ -922,11 +920,9 @@ export function ApplicantApplicationForm({
           // No label for complete — the check icon is sufficient
           statusLabel = undefined;
         } else if (section.id === "recommenders_flow") {
-          const submittedCount =
-            (activeRecommendersByRole.get("mentor")?.status === "submitted" ? 1 : 0) +
-            (activeRecommendersByRole.get("friend")?.status === "submitted" ? 1 : 0);
-          if (submittedCount > 0 || activeRecommendersByRole.size > 0) {
-            statusLabel = `${submittedCount}/2`;
+          const registeredCount = activeRecommendersByRole.size;
+          if (registeredCount > 0) {
+            statusLabel = `${registeredCount}/2`;
           }
         } else if (section.id === "documents_uploads") {
           const requiredFileFields = fileStageFields.filter((f) => f.is_required);

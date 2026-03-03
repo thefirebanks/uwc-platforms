@@ -657,7 +657,7 @@ describe("ApplicantApplicationForm", () => {
     expect(screen.getByRole("button", { name: /Guardar recomendadores/i })).toBeInTheDocument();
   });
 
-  it("sidebar progress label shows fraction format for recommenders", async () => {
+  it("marks the recommender step complete once both recommenders are registered", async () => {
     render(
       <ApplicantApplicationForm
         cycleId="cycle-rec-fraction"
@@ -697,9 +697,12 @@ describe("ApplicantApplicationForm", () => {
       />,
     );
 
-    // 1 of 2 submitted -> sidebar should show "1/2"
-    // Use within to scope to sidebar since "1/2" may appear in content too
     const sidebar = screen.getByTestId("applicant-sidebar");
-    expect(within(sidebar).getByText("1/2")).toBeInTheDocument();
+    expect(within(sidebar).queryByText("0/2")).not.toBeInTheDocument();
+    expect(
+      within(sidebar)
+        .getByTestId("sidebar-nav-recommenders_flow")
+        .querySelector('[data-testid="CheckIcon"]'),
+    ).not.toBeNull();
   });
 });
