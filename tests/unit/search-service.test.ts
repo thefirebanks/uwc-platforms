@@ -15,6 +15,8 @@ vi.mock("@/lib/logging/logger", () => ({
 
 type StubConfig = {
   profiles?: Array<{ id: string; email: string; full_name: string }>;
+  profileFallbackData?: Array<{ id: string; email: string; full_name: string }>;
+  profileFallbackError?: unknown;
   profileSearchError?: unknown;
   applications?: Array<{
     id: string;
@@ -36,20 +38,27 @@ type StubConfig = {
 function buildSearchSupabaseStub(config: StubConfig = {}) {
   const from = vi.fn().mockImplementation((table: string) => {
     if (table === "profiles") {
-      // Two usage patterns: textSearch (for search) and batch select (for profile data)
       const inFn = vi.fn().mockResolvedValue({
         data: config.profileBatchData ?? config.profiles ?? [],
         error: config.profileBatchError ?? null,
       });
+      const selectResult = {
+        textSearch: vi.fn().mockResolvedValue({
+          data: config.profiles ?? [],
+          error: config.profileSearchError ?? null,
+        }),
+        in: inFn,
+        then: (resolve: (value: unknown) => unknown) =>
+          Promise.resolve(
+            resolve({
+              data: config.profileFallbackData ?? config.profiles ?? [],
+              error: config.profileFallbackError ?? null,
+            }),
+          ),
+      };
 
       return {
-        select: vi.fn().mockReturnValue({
-          textSearch: vi.fn().mockResolvedValue({
-            data: config.profiles ?? [],
-            error: config.profileSearchError ?? null,
-          }),
-          in: inFn,
-        }),
+        select: vi.fn().mockReturnValue(selectResult),
       };
     }
 
@@ -251,25 +260,42 @@ describe("searchApplications", () => {
     expect(result.page).toBe(1);
   });
 
-  it("throws when profile search fails", async () => {
+  it("falls back to normalized profile matching when FTS search fails", async () => {
     const supabase = buildSearchSupabaseStub({
       profileSearchError: { message: "DB error" },
+      profileFallbackData: [
+        { id: "user-1", email: "juan@example.com", full_name: "Juan Pérez" },
+      ],
+      applications: [
+        {
+          id: "app-1",
+          applicant_id: "user-1",
+          cycle_id: "cycle-1",
+          stage_code: "documents",
+          status: "submitted",
+          payload: { firstName: "Juan" },
+          updated_at: "2026-01-15T00:00:00Z",
+        },
+      ],
+      profileBatchData: [
+        { id: "user-1", email: "juan@example.com", full_name: "Juan Pérez" },
+      ],
+      cycles: [{ id: "cycle-1", name: "UWC 2026" }],
     });
 
-    await expect(
-      searchApplications({
-        supabase,
-        input: {
-          query: "Juan",
-          page: 1,
-          pageSize: 50,
-          sortBy: "updated_at",
-          sortOrder: "desc",
-        },
-      }),
-    ).rejects.toMatchObject({
-      status: 500,
+    const result = await searchApplications({
+      supabase,
+      input: {
+        query: "juan perez",
+        page: 1,
+        pageSize: 50,
+        sortBy: "updated_at",
+        sortOrder: "desc",
+      },
     });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]?.candidateName).toContain("Juan");
   });
 
   it("throws when applications query fails", async () => {

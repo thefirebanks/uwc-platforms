@@ -34,6 +34,32 @@ type SearchResult = {
   totalPages: number;
 };
 
+type Stage1Blocker = {
+  code: string;
+  label: string;
+  detail: string;
+  count: number;
+};
+
+type Stage1FunnelApplication = {
+  applicationId: string;
+  status: AdminCandidateRow["status"];
+  blockers: Stage1Blocker[];
+  blockerCodes: string[];
+  isReadyForReview: boolean;
+};
+
+type Stage1FunnelSummary = {
+  totalApplications: number;
+  readyForReview: number;
+  blocked: number;
+  notSubmitted: number;
+  missingRequiredFields: number;
+  missingRequiredFiles: number;
+  recommendationsNotRequested: number;
+  recommendationsPending: number;
+};
+
 /* -------------------------------------------------------------------------- */
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -163,6 +189,10 @@ export function AdminCandidatesDashboard({
   const [totalPages, setTotalPages] = useState(0);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [stage1Summary, setStage1Summary] = useState<Stage1FunnelSummary | null>(null);
+  const [stage1ByApplication, setStage1ByApplication] = useState<Record<string, Stage1FunnelApplication>>({});
+  const [stage1Loading, setStage1Loading] = useState(false);
+  const [fetchTrigger, setFetchTrigger] = useState(0);
 
   // Bulk selection
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -236,7 +266,43 @@ export function AdminCandidatesDashboard({
     })();
 
     return () => controller.abort();
-  }, [cycleFilter, deferredSearch, stageFilter, statusFilter, page, sortBy, sortOrder]);
+  }, [cycleFilter, deferredSearch, stageFilter, statusFilter, page, sortBy, sortOrder, fetchTrigger]);
+
+  useEffect(() => {
+    if (cycleFilter === "all") {
+      setStage1Summary(null);
+      setStage1ByApplication({});
+      return;
+    }
+
+    const controller = new AbortController();
+    setStage1Loading(true);
+
+    fetch(`/api/applications/stage1-funnel?cycleId=${cycleFilter}`, {
+      signal: controller.signal,
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Stage 1 funnel failed");
+        }
+        return response.json();
+      })
+      .then((body: { summary: Stage1FunnelSummary; applications: Stage1FunnelApplication[] }) => {
+        setStage1Summary(body.summary);
+        setStage1ByApplication(
+          Object.fromEntries(body.applications.map((entry) => [entry.applicationId, entry])),
+        );
+        setStage1Loading(false);
+      })
+      .catch((error) => {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+        setStage1Loading(false);
+      });
+
+    return () => controller.abort();
+  }, [cycleFilter, fetchTrigger]);
 
   /* ---- Sort handler ---- */
   const handleSort = useCallback(
@@ -308,9 +374,7 @@ export function AdminCandidatesDashboard({
           `${result.transitioned} avanzados, ${result.skipped} omitidos, ${result.errors.length} errores.`,
         );
         setSelectedIds(new Set());
-        // Re-fetch data
-        setPage((p) => p); // trigger re-render (useEffect deps won't change, so force it)
-        // Actually, let's just toggle a fetch trigger
+        setFetchTrigger((current) => current + 1);
       } catch {
         setBulkMessage("Error al realizar la transicion masiva.");
       } finally {
@@ -321,46 +385,9 @@ export function AdminCandidatesDashboard({
   );
 
   /* ---- Refresh callback for the drawer ---- */
-  const [fetchTrigger, setFetchTrigger] = useState(0);
   const handleApplicationUpdated = useCallback(() => {
     setFetchTrigger((n) => n + 1);
   }, []);
-
-  // Include fetchTrigger in the data-fetching effect
-  useEffect(() => {
-    if (fetchTrigger === 0) return; // skip initial
-    const controller = new AbortController();
-    setLoading(true);
-
-    const params = new URLSearchParams();
-    if (cycleFilter !== "all") params.set("cycleId", cycleFilter);
-    if (deferredSearch) params.set("q", deferredSearch);
-    if (stageFilter !== "all") params.set("stageCode", stageFilter);
-    if (statusFilter !== "all") params.set("status", statusFilter);
-    params.set("page", String(page));
-    params.set("pageSize", String(pageSize));
-    params.set("sortBy", sortBy);
-    params.set("sortOrder", sortOrder);
-
-    fetch(`/api/applications/search?${params}`, { signal: controller.signal })
-      .then((r) => {
-        if (!r.ok) throw new Error("Refresh failed");
-        return r.json();
-      })
-      .then((data: SearchResult) => {
-        setRows(data.rows);
-        setTotal(data.total);
-        setTotalPages(data.totalPages);
-        setLoading(false);
-      })
-      .catch((err) => {
-        if (err.name === "AbortError") return;
-        setLoading(false);
-      });
-
-    return () => controller.abort();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchTrigger]);
 
   /* ---- Derived ---- */
   const visibleCycleName =
@@ -411,7 +438,50 @@ export function AdminCandidatesDashboard({
       </div>
 
       <div className="canvas-body wide admin-page-stack">
+        {cycleFilter !== "all" && stage1Summary ? (
+          <div className="dashboard-grid">
+            <div className="stat-card">
+              <div className="stat-title">{"Stage 1 total"}</div>
+              <div className="stat-value">{stage1Summary.totalApplications}</div>
+              <div className="stat-trend neutral">{"Formulario Principal"}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">{"Listas para revisión"}</div>
+              <div className="stat-value">{stage1Summary.readyForReview}</div>
+              <div className="stat-trend">{"Sin bloqueos activos"}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">{"Campos / archivos faltantes"}</div>
+              <div className="stat-value">
+                {stage1Summary.missingRequiredFields}
+                {" / "}
+                {stage1Summary.missingRequiredFiles}
+              </div>
+              <div className="stat-trend neutral">{"Campos y documentos obligatorios"}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-title">{"Recomendaciones bloqueadas"}</div>
+              <div className="stat-value">
+                {stage1Summary.recommendationsNotRequested + stage1Summary.recommendationsPending}
+              </div>
+              <div className="stat-trend neutral">{"Pendientes de solicitar o recibir"}</div>
+            </div>
+          </div>
+        ) : null}
         <div className="settings-card">
+          {cycleFilter !== "all" ? (
+            <div className="admin-chip-row" style={{ marginBottom: "16px" }}>
+              <span className="status-pill admin-chip-neutral">
+                {stage1Loading ? "Actualizando funnel..." : `${stage1Summary?.notSubmitted ?? 0} en borrador`}
+              </span>
+              <span className="status-pill admin-chip-neutral">
+                {`${stage1Summary?.missingRequiredFields ?? 0} con campos faltantes`}
+              </span>
+              <span className="status-pill admin-chip-neutral">
+                {`${stage1Summary?.missingRequiredFiles ?? 0} con archivos faltantes`}
+              </span>
+            </div>
+          ) : null}
           {/* Toolbar: search + filters */}
           <div className="candidates-toolbar admin-candidates-toolbar">
             <input
@@ -544,6 +614,7 @@ export function AdminCandidatesDashboard({
                   </th>
                   <th>Region</th>
                   <th>Etapa actual</th>
+                  <th>Blockers</th>
                   <th>Estado</th>
                   <th
                     onClick={() => handleSort("updated_at")}
@@ -560,7 +631,7 @@ export function AdminCandidatesDashboard({
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="admin-empty-cell">
+                    <td colSpan={7} className="admin-empty-cell">
                       <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                         Buscando candidatos...
                       </span>
@@ -568,7 +639,7 @@ export function AdminCandidatesDashboard({
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="admin-empty-cell">
+                    <td colSpan={7} className="admin-empty-cell">
                       No hay candidatos para los filtros seleccionados.
                     </td>
                   </tr>
@@ -576,6 +647,7 @@ export function AdminCandidatesDashboard({
                   rows.map((row, index) => {
                     const isSelected = selectedIds.has(row.id);
                     const isViewing = viewerApplicationId === row.id;
+                    const funnelEntry = stage1ByApplication[row.id];
 
                     return (
                       <tr
@@ -614,6 +686,17 @@ export function AdminCandidatesDashboard({
                         </td>
                         <td>{row.region || "—"}</td>
                         <td>{getStageLabel(row.stageCode)}</td>
+                        <td>
+                          {funnelEntry?.blockers.length ? (
+                            <span className="status-pill rejected">
+                              {funnelEntry.blockers.length} bloqueo(s)
+                            </span>
+                          ) : row.stageCode === "documents" ? (
+                            <span className="status-pill complete">Lista</span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td>
                           <span className={getStatusClass(row.status)}>
                             {getStatusLabel(row.status)}
@@ -675,6 +758,7 @@ export function AdminCandidatesDashboard({
       {/* Application viewer drawer */}
       <AdminApplicationViewer
         applicationId={viewerApplicationId}
+        stage1Blockers={viewerApplicationId ? stage1ByApplication[viewerApplicationId]?.blockers ?? [] : []}
         onClose={() => setViewerApplicationId(null)}
         onApplicationUpdated={handleApplicationUpdated}
       />

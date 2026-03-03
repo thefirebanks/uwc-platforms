@@ -3,7 +3,10 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
-import { adminUpdateApplicationPayload } from "@/lib/server/admin-edit-service";
+import {
+  adminUpdateApplicationPayload,
+  getAdminEditHistory,
+} from "@/lib/server/admin-edit-service";
 import { recordAuditEvent } from "@/lib/logging/audit";
 
 const schema = z.object({
@@ -17,6 +20,25 @@ const schema = z.object({
     .string()
     .min(4, "El motivo debe tener al menos 4 caracteres."),
 });
+
+export async function GET(
+  _request: NextRequest,
+  context: { params: Promise<{ id: string }> },
+) {
+  return withErrorHandling(
+    async () => {
+      const { supabase } = await requireAuth(["admin"]);
+      const { id } = await context.params;
+      const history = await getAdminEditHistory({
+        supabase,
+        applicationId: id,
+      });
+
+      return NextResponse.json({ history });
+    },
+    { operation: "applications.admin-edit.list" },
+  );
+}
 
 export async function PATCH(
   request: NextRequest,

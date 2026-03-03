@@ -5,6 +5,15 @@ import { requireAuth } from "@/lib/server/auth";
 import { listOcrTestRuns, runOcrTest } from "@/lib/server/ocr-testbed-service";
 import { DEFAULT_MODEL_ID, MODEL_REGISTRY } from "@/lib/server/ocr";
 
+function parseOptionalNumber(raw: FormDataEntryValue | null) {
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
 export async function GET(request: NextRequest) {
   return withErrorHandling(
     async () => {
@@ -32,6 +41,16 @@ export async function POST(request: NextRequest) {
       const cycleId = formData.get("cycleId")?.toString() ?? null;
       const modelId = formData.get("modelId")?.toString() ?? DEFAULT_MODEL_ID;
       const promptTemplate = formData.get("promptTemplate")?.toString();
+      const systemPrompt = formData.get("systemPrompt")?.toString() ?? null;
+      const extractionInstructions =
+        formData.get("extractionInstructions")?.toString() ??
+        promptTemplate ??
+        null;
+      const expectedSchemaTemplate = formData.get("expectedSchemaTemplate")?.toString() ?? null;
+      const temperature = parseOptionalNumber(formData.get("temperature"));
+      const topP = parseOptionalNumber(formData.get("topP"));
+      const maxTokens = parseOptionalNumber(formData.get("maxTokens"));
+      const strictSchema = formData.get("strictSchema")?.toString() === "true";
 
       if (!(file instanceof File)) {
         throw new AppError({
@@ -52,7 +71,7 @@ export async function POST(request: NextRequest) {
       if (!promptTemplate) {
         throw new AppError({
           message: "Missing promptTemplate in OCR test request",
-          userMessage: "Debes proporcionar un prompt para la prueba.",
+          userMessage: "Debes proporcionar instrucciones base para la prueba.",
           status: 400,
         });
       }
@@ -61,6 +80,21 @@ export async function POST(request: NextRequest) {
         throw new AppError({
           message: `Unknown modelId: ${modelId}`,
           userMessage: "El modelo seleccionado no es válido.",
+          status: 400,
+        });
+      }
+
+      if (
+        Number.isNaN(temperature) ||
+        Number.isNaN(topP) ||
+        Number.isNaN(maxTokens) ||
+        (temperature !== null && (temperature < 0 || temperature > 2)) ||
+        (topP !== null && (topP <= 0 || topP > 1)) ||
+        (maxTokens !== null && (maxTokens < 100 || maxTokens > 4096))
+      ) {
+        throw new AppError({
+          message: "Invalid OCR model controls",
+          userMessage: "Los parámetros avanzados del modelo no son válidos.",
           status: 400,
         });
       }
@@ -74,6 +108,13 @@ export async function POST(request: NextRequest) {
           file,
           promptTemplate,
           modelId,
+          systemPrompt,
+          extractionInstructions,
+          expectedSchemaTemplate,
+          temperature,
+          topP,
+          maxTokens,
+          strictSchema,
         },
       });
 

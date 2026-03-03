@@ -32,14 +32,6 @@ export function groupFieldsBySections(
   // Find the "other" section (fallback for unassigned fields + hidden section fields)
   const otherSection = sortedSections.find((s) => s.section_key === "other");
 
-  // Build section ID → section lookup
-  const sectionById = new Map(sortedSections.map((s) => [s.id, s]));
-
-  // Determine which section IDs are hidden
-  const hiddenSectionIds = new Set(
-    sortedSections.filter((s) => !s.is_visible).map((s) => s.id),
-  );
-
   // Initialize buckets for each visible section
   const buckets = new Map<string, CycleStageField[]>();
   for (const section of sortedSections) {

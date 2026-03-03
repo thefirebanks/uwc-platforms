@@ -51,16 +51,64 @@ function pickString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-/**
- * Build a websearch-compatible query string from user input.
- * Supabase .textSearch() with type: 'websearch' handles most cases,
- * but we strip characters that break tsquery parsing.
- */
+function normalizeSearchInput(raw: string): string {
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+function stripDiacritics(value: string) {
+  return value.normalize("NFD").replace(/\p{M}+/gu, "");
+}
+
 function sanitizeSearchQuery(raw: string): string {
   return raw
     .replace(/[<>:;!@#$%^&*()[\]{}|\\]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+async function searchProfilesByFallback({
+  supabase,
+  rawQuery,
+}: {
+  supabase: SupabaseClient<Database>;
+  rawQuery: string;
+}) {
+  const normalized = normalizeSearchInput(rawQuery);
+  if (!normalized) {
+    return [];
+  }
+
+  const queryVariants = Array.from(
+    new Set([
+      normalized,
+      stripDiacritics(normalized),
+      normalized.toLowerCase(),
+      stripDiacritics(normalized.toLowerCase()),
+    ]),
+  ).filter(Boolean);
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, full_name");
+
+  if (error) {
+    throw new AppError({
+      message: "Profile fallback search failed",
+      userMessage: "Error al buscar candidatos.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  const matched = (data ?? []).filter((profile) => {
+    const haystack = `${profile.full_name ?? ""} ${profile.email ?? ""}`;
+    const normalizedHaystack = stripDiacritics(haystack.toLowerCase());
+    return queryVariants.some((variant) =>
+      normalizedHaystack.includes(stripDiacritics(variant.toLowerCase())),
+    );
+  });
+
+  return matched.map((profile) => profile.id);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -82,7 +130,8 @@ export async function searchApplications({
   let matchingProfileIds: string[] | null = null;
 
   if (input.query) {
-    const sanitized = sanitizeSearchQuery(input.query);
+    const rawQuery = normalizeSearchInput(input.query);
+    const sanitized = sanitizeSearchQuery(rawQuery);
     if (sanitized.length === 0) {
       return { rows: [], total: 0, page, pageSize, totalPages: 0 };
     }
@@ -96,15 +145,19 @@ export async function searchApplications({
       });
 
     if (searchError) {
-      throw new AppError({
-        message: "Profile search failed",
-        userMessage: "Error al buscar candidatos.",
-        status: 500,
-        details: searchError,
+      matchingProfileIds = await searchProfilesByFallback({
+        supabase,
+        rawQuery,
       });
+    } else {
+      matchingProfileIds = (profiles ?? []).map((p) => p.id);
+      if (matchingProfileIds.length === 0) {
+        matchingProfileIds = await searchProfilesByFallback({
+          supabase,
+          rawQuery,
+        });
+      }
     }
-
-    matchingProfileIds = (profiles ?? []).map((p) => p.id);
 
     // No matching profiles → empty result
     if (matchingProfileIds.length === 0) {

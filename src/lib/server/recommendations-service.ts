@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
 import { assertApplicantCanEditCycle } from "@/lib/server/application-service";
+import { sendEmail } from "@/lib/server/email-provider";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/supabase";
 import type { RecommenderRole, RecommendationStatus } from "@/types/domain";
@@ -16,6 +17,7 @@ const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 export type RecommendationSummary = {
   id: string;
   role: RecommenderRole;
+  name: string | null;
   email: string;
   status: RecommendationStatus;
   submittedAt: string | null;
@@ -25,6 +27,11 @@ export type RecommendationSummary = {
   reminderCount: number;
   lastReminderAt: string | null;
   invalidatedAt: string | null;
+  adminReceivedAt: string | null;
+  adminReceivedBy: string | null;
+  adminReceivedReason: string | null;
+  adminReceivedFile: Record<string, unknown> | null;
+  adminNotes: string | null;
   createdAt: string;
 };
 
@@ -72,39 +79,6 @@ function roleLabel(role: RecommenderRole) {
   return role === "mentor" ? "Tutor/Profesor/Mentor" : "Amigo";
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function toHtmlBody(text: string) {
-  return `<div style="font-family:Arial,sans-serif;line-height:1.5;">${escapeHtml(text).replaceAll("\n", "<br/>")}</div>`;
-}
-
-function getEmailConfig() {
-  const apiKey = process.env.RESEND_API_KEY;
-  const fromEmail = process.env.RESEND_FROM_EMAIL;
-  const fromName = process.env.RESEND_FROM_NAME?.trim() || "UWC Peru";
-
-  if (!apiKey || !fromEmail) {
-    throw new AppError({
-      message: "Missing RESEND_API_KEY or RESEND_FROM_EMAIL",
-      userMessage:
-        "Falta configurar el correo saliente del sistema. Define RESEND_API_KEY y RESEND_FROM_EMAIL.",
-      status: 400,
-    });
-  }
-
-  return {
-    apiKey,
-    fromHeader: `${fromName} <${fromEmail}>`,
-  };
-}
-
 async function sendRawEmail({
   to,
   subject,
@@ -114,28 +88,18 @@ async function sendRawEmail({
   subject: string;
   text: string;
 }) {
-  const config = getEmailConfig();
-  const response = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from: config.fromHeader,
-      to: [to],
-      subject,
-      text,
-      html: toHtmlBody(text),
-    }),
+  const result = await sendEmail({
+    to,
+    subject,
+    text,
   });
 
-  if (!response.ok) {
+  if (!result.delivered) {
     throw new AppError({
-      message: "Resend recommendation email failed",
+      message: "Recommendation email failed",
       userMessage: "No se pudo enviar el correo de recomendación.",
       status: 502,
-      details: await response.text(),
+      details: result.errorMessage,
     });
   }
 }
@@ -144,6 +108,7 @@ function asSummary(row: RecommendationRow): RecommendationSummary {
   return {
     id: row.id,
     role: row.role,
+    name: row.recommender_name,
     email: row.recommender_email,
     status: row.status,
     submittedAt: row.submitted_at,
@@ -153,6 +118,16 @@ function asSummary(row: RecommendationRow): RecommendationSummary {
     reminderCount: row.reminder_count,
     lastReminderAt: row.last_reminder_at,
     invalidatedAt: row.invalidated_at,
+    adminReceivedAt: row.admin_received_at,
+    adminReceivedBy: row.admin_received_by,
+    adminReceivedReason: row.admin_received_reason,
+    adminReceivedFile:
+      row.admin_received_file &&
+      typeof row.admin_received_file === "object" &&
+      !Array.isArray(row.admin_received_file)
+        ? (row.admin_received_file as Record<string, unknown>)
+        : null,
+    adminNotes: row.admin_notes,
     createdAt: row.created_at,
   };
 }
@@ -657,6 +632,200 @@ export async function sendRecommendationReminder({
     throw new AppError({
       message: "Failed updating reminder metadata",
       userMessage: "Se envió el recordatorio, pero no se pudo actualizar su estado.",
+      status: 500,
+      details: updateError,
+    });
+  }
+
+  return asSummary(updatedData as RecommendationRow);
+}
+
+export async function listAdminRecommendations({
+  applicationId,
+}: {
+  applicationId: string;
+}) {
+  const adminSupabase = getSupabaseAdminClient();
+  const { data, error } = await adminSupabase
+    .from("recommendation_requests")
+    .select("*")
+    .eq("application_id", applicationId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new AppError({
+      message: "Failed loading admin recommendation list",
+      userMessage: "No se pudieron cargar las recomendaciones.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  return ((data as RecommendationRow[] | null) ?? []).map(asSummary);
+}
+
+export async function updateRecommendationByAdmin({
+  recommendationId,
+  actorId,
+  updates,
+}: {
+  recommendationId: string;
+  actorId: string;
+  updates: {
+    recommenderName?: string | null;
+    recommenderEmail?: string;
+    adminNotes?: string | null;
+  };
+}) {
+  const adminSupabase = getSupabaseAdminClient();
+  const { data: row, error } = await adminSupabase
+    .from("recommendation_requests")
+    .select("*")
+    .eq("id", recommendationId)
+    .maybeSingle();
+
+  if (error || !row) {
+    throw new AppError({
+      message: "Recommendation not found for admin update",
+      userMessage: "No se encontró la recomendación.",
+      status: 404,
+      details: error,
+    });
+  }
+
+  const recommendation = row as RecommendationRow;
+
+  const nextEmail = updates.recommenderEmail
+    ? normalizeEmail(updates.recommenderEmail)
+    : recommendation.recommender_email;
+  const nextName =
+    typeof updates.recommenderName === "string"
+      ? updates.recommenderName.trim() || null
+      : recommendation.recommender_name;
+  const nextAdminNotes =
+    typeof updates.adminNotes === "string"
+      ? updates.adminNotes.trim() || null
+      : recommendation.admin_notes;
+
+  const { data: updatedData, error: updateError } = await adminSupabase
+    .from("recommendation_requests")
+    .update({
+      recommender_name: nextName,
+      recommender_email: nextEmail,
+      admin_notes: nextAdminNotes,
+    })
+    .eq("id", recommendationId)
+    .select("*")
+    .single();
+
+  if (updateError || !updatedData) {
+    throw new AppError({
+      message: "Failed updating recommendation by admin",
+      userMessage: "No se pudo actualizar la recomendación.",
+      status: 500,
+      details: updateError,
+    });
+  }
+
+  return {
+    recommendation: asSummary(updatedData as RecommendationRow),
+    previous: {
+      recommenderName: recommendation.recommender_name,
+      recommenderEmail: recommendation.recommender_email,
+      adminNotes: recommendation.admin_notes,
+    },
+    actorId,
+  };
+}
+
+export async function markRecommendationReceivedByAdmin({
+  recommendationId,
+  actorId,
+  reason,
+  recommenderName,
+  file,
+}: {
+  recommendationId: string;
+  actorId: string;
+  reason: string;
+  recommenderName?: string | null;
+  file?: {
+    path: string;
+    originalName: string;
+    mimeType: string;
+    sizeBytes: number;
+  } | null;
+}) {
+  const adminSupabase = getSupabaseAdminClient();
+  const { data: row, error } = await adminSupabase
+    .from("recommendation_requests")
+    .select("*")
+    .eq("id", recommendationId)
+    .maybeSingle();
+
+  if (error || !row) {
+    throw new AppError({
+      message: "Recommendation not found for manual receipt",
+      userMessage: "No se encontró la recomendación.",
+      status: 404,
+      details: error,
+    });
+  }
+
+  const recommendation = row as RecommendationRow;
+
+  if (recommendation.invalidated_at || recommendation.status === "invalidated") {
+    throw new AppError({
+      message: "Invalidated recommendation cannot be manually received",
+      userMessage: "No puedes registrar manualmente una recomendación invalidada.",
+      status: 422,
+    });
+  }
+
+  const nowIso = new Date().toISOString();
+  const nextFile =
+    file
+      ? ({
+          path: file.path,
+          original_name: file.originalName,
+          mime_type: file.mimeType,
+          size_bytes: file.sizeBytes,
+          uploaded_at: nowIso,
+        } satisfies Record<string, unknown>)
+      : recommendation.admin_received_file;
+
+  const mergedResponses =
+    recommendation.responses &&
+    typeof recommendation.responses === "object" &&
+    !Array.isArray(recommendation.responses)
+      ? { ...(recommendation.responses as Record<string, unknown>), manual_received: true }
+      : { manual_received: true };
+
+  const { data: updatedData, error: updateError } = await adminSupabase
+    .from("recommendation_requests")
+    .update({
+      recommender_name:
+        typeof recommenderName === "string"
+          ? recommenderName.trim() || recommendation.recommender_name
+          : recommendation.recommender_name,
+      status: "submitted",
+      submitted_at: recommendation.submitted_at ?? nowIso,
+      admin_received_at: nowIso,
+      admin_received_by: actorId,
+      admin_received_reason: reason.trim(),
+      admin_received_file: nextFile ?? {},
+      responses: mergedResponses,
+      session_token_hash: null,
+      session_expires_at: null,
+    })
+    .eq("id", recommendationId)
+    .select("*")
+    .single();
+
+  if (updateError || !updatedData) {
+    throw new AppError({
+      message: "Failed marking recommendation as manually received",
+      userMessage: "No se pudo registrar la recomendación recibida.",
       status: 500,
       details: updateError,
     });

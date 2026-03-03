@@ -5,7 +5,7 @@
 - UI: Material UI + custom theme layer
 - Auth/DB/Storage: Supabase
 - OCR provider: Google Gemini (`gemini-3-flash-preview`)
-- Email delivery provider: Resend
+- Email delivery provider: Gmail API
 - Runtime logging: structured server logs to stdout (local terminal + Cloudflare Logs)
 - Audit logging: `audit_events` table for business-critical actions
 - Runtime/package manager: Bun

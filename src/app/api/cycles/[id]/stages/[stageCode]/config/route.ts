@@ -408,7 +408,6 @@ export async function PATCH(
       .eq("stage_code", stageCode);
 
     const existingSections = (existingSectionsData ?? []) as Array<{ id: string; section_key: string }>;
-    const existingSectionByKey = new Map(existingSections.map((s) => [s.section_key, s.id]));
 
     if (parsed.data.sections) {
       const incomingSectionKeys = new Set(parsed.data.sections.map((s) => s.sectionKey.trim()));

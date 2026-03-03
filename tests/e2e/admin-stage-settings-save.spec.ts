@@ -15,7 +15,7 @@ test.describe("Admin stage settings save status", () => {
     const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
     await expect(saveBtn).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole("button", { name: /Ajustes y Reglas/i }).click();
+    await page.getByRole("button", { name: /^Ajustes y Reglas$/i }).click();
 
     const closeDateInput = page.locator("input[id^='stage-close-date-']").first();
     const originalCloseDate = await closeDateInput.inputValue();

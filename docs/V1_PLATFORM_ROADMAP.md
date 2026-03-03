@@ -7,7 +7,7 @@
 
 ## Where We Are
 
-The form builder foundation is solid: DB-driven sections/fields, admin CRUD with drag-and-drop, a polished applicant wizard with auto-save, a full recommendation flow (OTP + session + Resend), email queue with automation triggers, basic stage transitions, CSV/JSON/Excel exports, and an OCR testbed. 38 test files with 206 tests.
+The form builder foundation is solid: DB-driven sections/fields, admin CRUD with drag-and-drop, a polished applicant wizard with auto-save, a full recommendation flow (OTP + session + Gmail API), email queue with automation triggers, basic stage transitions, CSV/JSON/Excel exports, and an OCR testbed. 38 test files with 206 tests.
 
 **Phases complete: 1 ✅ 2 ✅ 3 ✅ 4 ✅ | All V1 phases complete.**
 
@@ -87,7 +87,7 @@ The form builder foundation is solid: DB-driven sections/fields, admin CRUD with
 
 ### What We're Building
 
-1. **Support tickets** — applicant submits a question from within the app → ticket created → email notification to admin via Resend with full applicant context → admin replies → applicant sees reply in-app + gets email.
+1. **Support tickets** — applicant submits a question from within the app → ticket created → email notification to admin with full applicant context → admin replies → applicant sees reply in-app + gets email.
 
 2. **Email preview & test-send** — admins preview rendered emails with sample data before sending. "Send test to myself" button.
 

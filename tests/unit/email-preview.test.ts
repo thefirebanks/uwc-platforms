@@ -1,6 +1,9 @@
+import { Buffer } from "node:buffer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors/app-error";
 import { previewEmail, sendTestEmail } from "@/lib/server/communications-service";
+
+type PreviewSupabase = Parameters<typeof previewEmail>[0]["supabase"];
 
 /* ------------------------------------------------------------------ */
 /*  Mock factory helpers                                                */
@@ -11,9 +14,8 @@ import { previewEmail, sendTestEmail } from "@/lib/server/communications-service
  * resolves to the provided templateRow (or null to simulate not-found).
  */
 function createPreviewSupabaseMock(templateRow: Record<string, unknown> | null) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return {
-    from(_table: string) {
+    from() {
       const builder = {
         select() {
           return builder;
@@ -55,8 +57,7 @@ afterEach(() => {
 /* ================================================================== */
 describe("previewEmail", () => {
   it("renders subject and body with default sample values", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createPreviewSupabaseMock(TEMPLATE_ROW) as any;
+    const supabase = createPreviewSupabaseMock(TEMPLATE_ROW) as unknown as PreviewSupabase;
 
     const result = await previewEmail({
       supabase,
@@ -74,8 +75,7 @@ describe("previewEmail", () => {
   });
 
   it("merges custom sampleValues over the default sample context", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createPreviewSupabaseMock(TEMPLATE_ROW) as any;
+    const supabase = createPreviewSupabaseMock(TEMPLATE_ROW) as unknown as PreviewSupabase;
 
     const result = await previewEmail({
       supabase,
@@ -98,8 +98,7 @@ describe("previewEmail", () => {
       ...TEMPLATE_ROW,
       template_body: "Hola <{{full_name}}> & bienvenido",
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createPreviewSupabaseMock(templateWithHtml) as any;
+    const supabase = createPreviewSupabaseMock(templateWithHtml) as unknown as PreviewSupabase;
 
     const result = await previewEmail({
       supabase,
@@ -114,8 +113,7 @@ describe("previewEmail", () => {
   });
 
   it("throws AppError(404) when the automation template is not found", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createPreviewSupabaseMock(null) as any;
+    const supabase = createPreviewSupabaseMock(null) as unknown as PreviewSupabase;
 
     await expect(
       previewEmail({ supabase, input: { automationTemplateId: "missing-id" } }),
@@ -127,13 +125,20 @@ describe("previewEmail", () => {
 
 /* ================================================================== */
 describe("sendTestEmail", () => {
-  it("calls Resend API and returns providerMessageId on success", async () => {
-    vi.stubEnv("RESEND_API_KEY", "re_test_123");
-    vi.stubEnv("RESEND_FROM_EMAIL", "noreply@uwcperu.org");
+  it("calls Gmail API and returns providerMessageId on success", async () => {
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_ID", "client-id");
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_SECRET", "client-secret");
+    vi.stubEnv("GOOGLE_GMAIL_REFRESH_TOKEN", "refresh-token");
+    vi.stubEnv("GOOGLE_GMAIL_SENDER_EMAIL", "informes@pe.uwc.org");
 
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ id: "re_test_abc" }), { status: 200 }),
-    );
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "gmail-message-id" }), { status: 200 }),
+      );
 
     const result = await sendTestEmail({
       recipientEmail: "admin@uwcperu.org",
@@ -144,28 +149,26 @@ describe("sendTestEmail", () => {
 
     expect(result.delivered).toBe(true);
     if (!result.delivered) throw new Error("Expected delivery to succeed");
-    expect(result.providerMessageId).toBe("re_test_abc");
+    expect(result.providerMessageId).toBe("gmail-message-id");
 
-    // Verify the Resend API was called correctly
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [url, opts] = fetchMock.mock.calls[0]!;
-    expect(url).toBe("https://api.resend.com/emails");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [url, opts] = fetchMock.mock.calls[1]!;
+    expect(url).toBe("https://gmail.googleapis.com/gmail/v1/users/me/messages/send");
 
-    const body = JSON.parse((opts as RequestInit).body as string) as {
-      subject: string;
-      to: string[];
-      from: string;
-    };
-    // Subject must have [TEST] prefix
-    expect(body.subject).toMatch(/^\[TEST\]/);
-    expect(body.subject).toContain("Resultado de evaluación");
-    expect(body.to).toContain("admin@uwcperu.org");
-    expect(body.from).toContain("noreply@uwcperu.org");
+    const body = JSON.parse((opts as RequestInit).body as string) as { raw: string };
+    expect(body.raw).toBeTruthy();
+    const decoded = Buffer.from(
+      body.raw.replaceAll("-", "+").replaceAll("_", "/"),
+      "base64",
+    ).toString("utf8");
+    expect(decoded).toContain("Subject: =?UTF-8?B?W1RFU1RdIFJlc3VsdGFkbyBkZS");
   });
 
-  it("throws AppError when RESEND_API_KEY or RESEND_FROM_EMAIL are missing", async () => {
-    vi.stubEnv("RESEND_API_KEY", "");
-    vi.stubEnv("RESEND_FROM_EMAIL", "");
+  it("throws AppError when Gmail env vars are missing", async () => {
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_ID", "");
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_SECRET", "");
+    vi.stubEnv("GOOGLE_GMAIL_REFRESH_TOKEN", "");
+    vi.stubEnv("GOOGLE_GMAIL_SENDER_EMAIL", "");
 
     await expect(
       sendTestEmail({
@@ -177,13 +180,20 @@ describe("sendTestEmail", () => {
     ).rejects.toBeInstanceOf(AppError);
   });
 
-  it("returns delivered=false on non-OK HTTP response", async () => {
-    vi.stubEnv("RESEND_API_KEY", "re_test_123");
-    vi.stubEnv("RESEND_FROM_EMAIL", "noreply@uwcperu.org");
+  it("returns delivered=false on Gmail API send failure", async () => {
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_ID", "client-id");
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_SECRET", "client-secret");
+    vi.stubEnv("GOOGLE_GMAIL_REFRESH_TOKEN", "refresh-token");
+    vi.stubEnv("GOOGLE_GMAIL_SENDER_EMAIL", "informes@pe.uwc.org");
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(JSON.stringify({ name: "rate_limit_exceeded" }), { status: 429 }),
-    );
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "quota exceeded" } }), { status: 429 }),
+      );
 
     const result = await sendTestEmail({
       recipientEmail: "admin@uwcperu.org",
@@ -194,17 +204,23 @@ describe("sendTestEmail", () => {
 
     expect(result.delivered).toBe(false);
     if (result.delivered) throw new Error("Expected delivery to fail");
-    expect(result.errorMessage).toBeDefined();
+    expect(result.errorMessage).toContain("quota exceeded");
   });
 
-  it("returns delivered=false when Resend returns no message id", async () => {
-    vi.stubEnv("RESEND_API_KEY", "re_test_123");
-    vi.stubEnv("RESEND_FROM_EMAIL", "noreply@uwcperu.org");
+  it("returns delivered=false when Gmail returns no message id", async () => {
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_ID", "client-id");
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_SECRET", "client-secret");
+    vi.stubEnv("GOOGLE_GMAIL_REFRESH_TOKEN", "refresh-token");
+    vi.stubEnv("GOOGLE_GMAIL_SENDER_EMAIL", "informes@pe.uwc.org");
 
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      // 200 but no `id` field in payload
-      new Response(JSON.stringify({}), { status: 200 }),
-    );
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({}), { status: 200 }),
+      );
 
     const result = await sendTestEmail({
       recipientEmail: "admin@uwcperu.org",

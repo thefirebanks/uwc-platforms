@@ -12,6 +12,51 @@ const supabase = createClient(supabaseUrl, supabaseSecretKey, {
 });
 
 const DEFAULT_PASSWORD = "ChangeMe123!";
+const DEV_HOST_PATTERN = /(localhost|127\.0\.0\.1)/i;
+
+const DEMO_APPLICANTS = [
+  {
+    email: "applicant.demo@uwcperu.org",
+    fullName: "Applicant Demo",
+    payload: {
+      fullName: "Applicant Demo",
+      dateOfBirth: "2009-03-14",
+      nationality: "Peruana",
+      schoolName: "Colegio Demo",
+      gradeAverage: 16.2,
+      essay: "Este texto demo existe para facilitar pruebas de la etapa inicial del MVP.",
+    },
+  },
+  {
+    email: "applicant.demo2@uwcperu.org",
+    fullName: "Applicant Demo Dos",
+    payload: {
+      fullName: "Applicant Demo Dos",
+      dateOfBirth: "2008-11-02",
+      nationality: "Peruana",
+      schoolName: "Colegio Demo Sur",
+      gradeAverage: 17.1,
+      essay: "Segundo perfil demo para probar búsquedas, exportes y operaciones admin en desarrollo.",
+    },
+  },
+] as const;
+
+function assertDemoSeedingAllowed() {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL?.trim() ?? "";
+  const nodeEnv = process.env.NODE_ENV?.trim() ?? "";
+  const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
+  const explicitOverride = process.env.ALLOW_DEMO_SEEDING === "true";
+  const runningInTest = process.env.NODE_ENV === "test";
+  const safeLocalContext = nodeEnv !== "production" && (appUrl.length === 0 || DEV_HOST_PATTERN.test(appUrl));
+
+  if (explicitOverride || runningInTest || devBypassEnabled || safeLocalContext) {
+    return;
+  }
+
+  throw new Error(
+    "Demo seeding is blocked outside dev/test contexts. Set ALLOW_DEMO_SEEDING=true only if you intentionally need it.",
+  );
+}
 
 async function getExistingUserByEmail(email: string) {
   let page = 1;
@@ -119,7 +164,11 @@ async function ensureActiveCycle() {
   return data.id;
 }
 
-async function ensureApplicantSeedApplication(applicantId: string, cycleId: string) {
+async function ensureApplicantSeedApplication(
+  applicantId: string,
+  cycleId: string,
+  payload: Record<string, string | number>,
+) {
   const { data: existing } = await supabase
     .from("applications")
     .select("id")
@@ -137,14 +186,7 @@ async function ensureApplicantSeedApplication(applicantId: string, cycleId: stri
       cycle_id: cycleId,
       status: "draft",
       stage_code: "documents",
-      payload: {
-        fullName: "Applicant Demo",
-        dateOfBirth: "2009-03-14",
-        nationality: "Peruana",
-        schoolName: "Colegio Demo",
-        gradeAverage: 16.2,
-        essay: "Este texto demo existe para facilitar pruebas de la etapa inicial del MVP.",
-      },
+      payload,
     })
     .select("id")
     .single();
@@ -157,6 +199,7 @@ async function ensureApplicantSeedApplication(applicantId: string, cycleId: stri
 }
 
 async function main() {
+  assertDemoSeedingAllowed();
   const cycleId = await ensureActiveCycle();
 
   const adminUser = await createOrLoadUser({
@@ -165,20 +208,37 @@ async function main() {
     role: "admin",
   });
 
-  const applicantUser = await createOrLoadUser({
-    email: "applicant.demo@uwcperu.org",
-    fullName: "Applicant Demo",
-    role: "applicant",
-  });
+  const applicantResults = await Promise.all(
+    DEMO_APPLICANTS.map(async (applicant) => {
+      const applicantUser = await createOrLoadUser({
+        email: applicant.email,
+        fullName: applicant.fullName,
+        role: "applicant",
+      });
 
-  const applicationId = await ensureApplicantSeedApplication(applicantUser.id, cycleId);
+      const applicationId = await ensureApplicantSeedApplication(
+        applicantUser.id,
+        cycleId,
+        applicant.payload,
+      );
+
+      return {
+        user: applicantUser,
+        applicationId,
+        email: applicant.email,
+      };
+    }),
+  );
 
   console.log("Fake users ready:");
   console.log(`ADMIN_EMAIL=admin.demo@uwcperu.org ADMIN_PASSWORD=${DEFAULT_PASSWORD}`);
-  console.log(`APPLICANT_EMAIL=applicant.demo@uwcperu.org APPLICANT_PASSWORD=${DEFAULT_PASSWORD}`);
-  console.log(`SEEDED_APPLICATION_ID=${applicationId}`);
   console.log(`ADMIN_USER_ID=${adminUser.id}`);
-  console.log(`APPLICANT_USER_ID=${applicantUser.id}`);
+  for (const [index, applicant] of applicantResults.entries()) {
+    const suffix = index + 1;
+    console.log(`APPLICANT_${suffix}_EMAIL=${applicant.email} APPLICANT_${suffix}_PASSWORD=${DEFAULT_PASSWORD}`);
+    console.log(`SEEDED_APPLICATION_${suffix}_ID=${applicant.applicationId}`);
+    console.log(`APPLICANT_${suffix}_USER_ID=${applicant.user.id}`);
+  }
 }
 
 main().catch((error) => {

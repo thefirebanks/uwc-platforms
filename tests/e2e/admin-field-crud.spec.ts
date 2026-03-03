@@ -138,10 +138,10 @@ test.describe("Admin field CRUD (reversible)", () => {
     });
 
     // All four tabs should be visible
-    await expect(page.getByText(/Editor de Formulario/i)).toBeVisible();
-    await expect(page.getByText(/Ajustes y Reglas/i)).toBeVisible();
-    await expect(page.getByText(/Comunicaciones/i)).toBeVisible();
-    await expect(page.getByText(/Estadísticas/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Editor de Formulario$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Ajustes y Reglas$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Comunicaciones$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Estadísticas$/i })).toBeVisible();
 
     // Preview button should be accessible
     await expect(page.locator(".admin-stage-preview-btn")).toBeVisible();

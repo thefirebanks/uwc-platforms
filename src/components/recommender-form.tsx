@@ -1,19 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Alert,
-  Box,
-  Button,
-  Card,
-  CardContent,
-  Checkbox,
-  CircularProgress,
-  FormControlLabel,
-  Stack,
-  TextField,
-  Typography,
-} from "@mui/material";
 import type { RecommendationStatus, RecommenderRole } from "@/types/domain";
 
 type PublicRecommendation = {
@@ -82,6 +69,23 @@ function fromResponses(value: Record<string, unknown> | null | undefined): FormS
     endorsement: String(raw.endorsement ?? ""),
     confirmsNoFamily: Boolean(raw.confirmsNoFamily),
   };
+}
+
+function AlertBanner({
+  tone,
+  message,
+}: {
+  tone: "error" | "success" | "info";
+  message: string;
+}) {
+  return (
+    <div className={`recommender-alert recommender-alert-${tone}`} role="status">
+      <span className="recommender-alert-icon" aria-hidden="true">
+        {tone === "error" ? "!" : tone === "success" ? "✓" : "i"}
+      </span>
+      <p>{message}</p>
+    </div>
+  );
 }
 
 export function RecommenderForm({ token }: { token: string }) {
@@ -162,6 +166,7 @@ export function RecommenderForm({ token }: { token: string }) {
   }, [token]);
 
   const isSessionReady = Boolean(sessionToken && sessionInfo);
+  const canRequestOtp = Boolean(publicInfo) && !isSessionReady && !isSubmitted;
 
   const expiresLabel = useMemo(() => {
     if (!publicInfo?.accessExpiresAt) {
@@ -283,154 +288,202 @@ export function RecommenderForm({ token }: { token: string }) {
 
   if (loading) {
     return (
-      <Stack spacing={2} alignItems="center" sx={{ py: 10 }}>
-        <CircularProgress />
-        <Typography>Cargando recomendación...</Typography>
-      </Stack>
+      <section className="recommender-shell">
+        <div className="recommender-loading" role="status" aria-live="polite">
+          <div className="recommender-loading-spinner" aria-hidden="true" />
+          <p>Cargando recomendación...</p>
+        </div>
+      </section>
     );
   }
 
   return (
-    <Box sx={{ maxWidth: 840, mx: "auto", py: 5, px: 2 }}>
-      <Stack spacing={2.5}>
-        <Card>
-          <CardContent>
-            <Stack spacing={1}>
-              <Typography variant="h4">Formulario de recomendación</Typography>
-              <Typography color="text.secondary">
-                Rol: {roleLabel(role)} · Estado: {getStatusLabel(sessionInfo?.status ?? publicInfo?.status ?? "invited")}
-              </Typography>
-              {publicInfo?.maskedEmail ? (
-                <Typography color="text.secondary">Correo verificado: {publicInfo.maskedEmail}</Typography>
-              ) : null}
-              {expiresLabel ? (
-                <Typography color="text.secondary">Vence: {expiresLabel}</Typography>
-              ) : null}
-            </Stack>
-          </CardContent>
-        </Card>
+    <section className="recommender-shell">
+      <div className="recommender-stack">
+        <article className="settings-card recommender-hero">
+          <header className="settings-card-header">
+            <h3>Formulario de recomendación</h3>
+            <p>Comparte una referencia honesta y concreta sobre el postulante.</p>
+          </header>
+          <div className="recommender-meta" data-testid="recommender-meta">
+            <span className="status-pill">{roleLabel(role)}</span>
+            <span className="status-pill">{getStatusLabel(sessionInfo?.status ?? publicInfo?.status ?? "invited")}</span>
+            {publicInfo?.maskedEmail ? <span className="status-pill">{publicInfo.maskedEmail}</span> : null}
+          </div>
+          {expiresLabel ? <p className="recommender-expiry">Vence: {expiresLabel}</p> : null}
+        </article>
 
-        {error ? <Alert severity="error">{error}</Alert> : null}
-        {success ? <Alert severity="success">{success}</Alert> : null}
+        {error ? <AlertBanner tone="error" message={error} /> : null}
+        {success ? <AlertBanner tone="success" message={success} /> : null}
 
-        {!isSessionReady && !isSubmitted ? (
-          <Card>
-            <CardContent>
-              <Stack spacing={1.5}>
-                <Typography variant="h6">Verificación OTP</Typography>
-                <Typography color="text.secondary">
-                  Por seguridad, valida tu acceso con un código enviado a tu correo.
-                </Typography>
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1}>
-                  <Button variant="outlined" onClick={requestOtp} disabled={requestingOtp}>
-                    {requestingOtp ? "Enviando..." : "Enviar OTP"}
-                  </Button>
-                  <TextField
-                    label="Código OTP"
-                    value={otpCode}
-                    onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
-                    placeholder="123456"
-                  />
-                  <Button variant="contained" onClick={verifyOtp} disabled={verifyingOtp || otpCode.length !== 6}>
-                    {verifyingOtp ? "Validando..." : "Validar OTP"}
-                  </Button>
-                </Stack>
-              </Stack>
-            </CardContent>
-          </Card>
+        {isSubmitted ? (
+          <article className="settings-card recommender-state-card">
+            <header className="settings-card-header">
+              <h3>Recomendación enviada</h3>
+              <p>Este formulario ya quedó registrado y no necesita más acciones.</p>
+            </header>
+          </article>
+        ) : null}
+
+        {canRequestOtp ? (
+          <article className="settings-card">
+            <header className="settings-card-header">
+              <h3>Verificación OTP</h3>
+              <p>Por seguridad, valida tu acceso con un código enviado a tu correo.</p>
+            </header>
+            <div className="recommender-otp-row">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={requestOtp}
+                disabled={requestingOtp}
+              >
+                {requestingOtp ? "Enviando..." : "Enviar OTP"}
+              </button>
+
+              <div className="form-field recommender-otp-field">
+                <label htmlFor="recommender-otp">Código OTP</label>
+                <input
+                  id="recommender-otp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={otpCode}
+                  onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="123456"
+                />
+              </div>
+
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={verifyOtp}
+                disabled={verifyingOtp || otpCode.length !== 6}
+              >
+                {verifyingOtp ? "Validando..." : "Validar OTP"}
+              </button>
+            </div>
+          </article>
         ) : null}
 
         {isSessionReady ? (
-          <Card>
-            <CardContent>
-              <Stack spacing={2}>
-                <Typography variant="h6">Completa la recomendación</Typography>
-                <TextField
-                  label="Nombre completo"
+          <article className="settings-card">
+            <header className="settings-card-header">
+              <h3>Completa la recomendación</h3>
+              <p>Responde con ejemplos concretos. Puedes guardar borrador antes de enviar.</p>
+            </header>
+
+            <div className="recommender-form-grid">
+              <div className="form-field">
+                <label htmlFor="recommender-name">Nombre completo</label>
+                <input
+                  id="recommender-name"
+                  type="text"
                   value={formState.recommenderName}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, recommenderName: event.target.value }))
                   }
-                  fullWidth
                 />
-                <TextField
-                  label="Rol o vínculo con el postulante"
+              </div>
+
+              <div className="form-field">
+                <label htmlFor="relationship-title">Rol o vínculo con el postulante</label>
+                <input
+                  id="relationship-title"
+                  type="text"
                   value={formState.relationshipTitle}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, relationshipTitle: event.target.value }))
                   }
-                  fullWidth
                 />
-                <TextField
-                  label="¿Hace cuánto lo/la conoces?"
+              </div>
+
+              <div className="form-field recommender-form-full">
+                <label htmlFor="known-duration">¿Hace cuánto lo/la conoces?</label>
+                <input
+                  id="known-duration"
+                  type="text"
                   value={formState.knownDuration}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, knownDuration: event.target.value }))
                   }
-                  fullWidth
                 />
-                <TextField
-                  label="Fortalezas principales"
+              </div>
+
+              <div className="form-field recommender-form-full">
+                <label htmlFor="strengths">Fortalezas principales</label>
+                <textarea
+                  id="strengths"
+                  rows={5}
                   value={formState.strengths}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, strengths: event.target.value }))
                   }
-                  multiline
-                  minRows={4}
-                  fullWidth
                 />
-                <TextField
-                  label="Áreas de mejora"
+              </div>
+
+              <div className="form-field recommender-form-full">
+                <label htmlFor="growth-areas">Áreas de mejora</label>
+                <textarea
+                  id="growth-areas"
+                  rows={5}
                   value={formState.growthAreas}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, growthAreas: event.target.value }))
                   }
-                  multiline
-                  minRows={4}
-                  fullWidth
                 />
-                <TextField
-                  label="Recomendación final"
+              </div>
+
+              <div className="form-field recommender-form-full">
+                <label htmlFor="endorsement">Recomendación final</label>
+                <textarea
+                  id="endorsement"
+                  rows={5}
                   value={formState.endorsement}
                   onChange={(event) =>
                     setFormState((current) => ({ ...current, endorsement: event.target.value }))
                   }
-                  multiline
-                  minRows={4}
-                  fullWidth
                 />
+              </div>
 
-                {role === "friend" ? (
-                  <FormControlLabel
-                    control={
-                      <Checkbox
-                        checked={formState.confirmsNoFamily}
-                        onChange={(event) =>
-                          setFormState((current) => ({
-                            ...current,
-                            confirmsNoFamily: event.target.checked,
-                          }))
-                        }
-                      />
+              {role === "friend" ? (
+                <label className="recommender-checkbox recommender-form-full">
+                  <input
+                    type="checkbox"
+                    checked={formState.confirmsNoFamily}
+                    onChange={(event) =>
+                      setFormState((current) => ({
+                        ...current,
+                        confirmsNoFamily: event.target.checked,
+                      }))
                     }
-                    label="Confirmo que no tengo vínculo familiar con el postulante."
                   />
-                ) : null}
+                  <span>Confirmo que no tengo vínculo familiar con el postulante.</span>
+                </label>
+              ) : null}
+            </div>
 
-                <Stack direction={{ xs: "column", sm: "row" }} spacing={1.5}>
-                  <Button variant="outlined" onClick={saveDraft} disabled={savingDraft}>
-                    {savingDraft ? "Guardando..." : "Guardar borrador"}
-                  </Button>
-                  <Button variant="contained" onClick={submitForm} disabled={submitting}>
-                    {submitting ? "Enviando..." : "Enviar recomendación"}
-                  </Button>
-                </Stack>
-              </Stack>
-            </CardContent>
-          </Card>
+            <div className="recommender-actions">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={saveDraft}
+                disabled={savingDraft}
+              >
+                {savingDraft ? "Guardando..." : "Guardar borrador"}
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={submitForm}
+                disabled={submitting}
+              >
+                {submitting ? "Enviando..." : "Enviar recomendación"}
+              </button>
+            </div>
+          </article>
         ) : null}
-      </Stack>
-    </Box>
+      </div>
+    </section>
   );
 }
-

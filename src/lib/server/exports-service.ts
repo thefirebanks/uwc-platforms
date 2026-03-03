@@ -10,6 +10,7 @@ type ProfileRow = Database["public"]["Tables"]["profiles"]["Row"];
 type CycleRow = Database["public"]["Tables"]["cycles"]["Row"];
 type RecommendationRow = Database["public"]["Tables"]["recommendation_requests"]["Row"];
 type OcrRow = Database["public"]["Tables"]["application_ocr_checks"]["Row"];
+type ExportPresetRow = Database["public"]["Tables"]["export_presets"]["Row"];
 type RecommendationLite = Pick<RecommendationRow, "application_id" | "role" | "status">;
 
 const STAGE_SCHEMA = z.enum(["documents", "exam_placeholder"]);
@@ -51,6 +52,8 @@ export type ApplicationFileExportEntry = {
   mimeType: string;
   sizeBytes: number | null;
   uploadedAt: string | null;
+  category: string | null;
+  notes: string | null;
 };
 
 export type ApplicationExportPackage = {
@@ -75,12 +78,18 @@ export type ApplicationExportPackage = {
       RecommendationRow,
       | "id"
       | "role"
+      | "recommender_name"
       | "recommender_email"
       | "status"
       | "invite_sent_at"
       | "submitted_at"
       | "last_reminder_at"
       | "reminder_count"
+      | "admin_received_at"
+      | "admin_received_by"
+      | "admin_received_reason"
+      | "admin_received_file"
+      | "admin_notes"
       | "created_at"
     >
   >;
@@ -94,6 +103,47 @@ export type ApplicationExportPackage = {
 export type ExportableColumn = {
   key: keyof ApplicationExportRow;
   label: string;
+};
+
+export type ExportCatalogField = {
+  key: string;
+  label: string;
+  helperText: string | null;
+  kind: "core" | "payload";
+  groupKey: string;
+  groupLabel: string;
+  defaultSelected: boolean;
+};
+
+export type ExportPresetSummary = {
+  id: string;
+  name: string;
+  selectedFields: string[];
+  updatedAt: string;
+};
+
+export type ExportCatalog = {
+  fields: ExportCatalogField[];
+  presets: ExportPresetSummary[];
+};
+
+export type ApplicationExportContext = {
+  application: Pick<
+    ApplicationRow,
+    | "id"
+    | "applicant_id"
+    | "cycle_id"
+    | "stage_code"
+    | "status"
+    | "payload"
+    | "files"
+    | "validation_notes"
+    | "created_at"
+    | "updated_at"
+  >;
+  applicant: Pick<ProfileRow, "email" | "full_name"> | null;
+  cycle: Pick<CycleRow, "name"> | null;
+  recommendations: RecommendationLite[];
 };
 
 export const EXPORTABLE_COLUMNS: ExportableColumn[] = [
@@ -113,6 +163,70 @@ export const EXPORTABLE_COLUMNS: ExportableColumn[] = [
   { key: "createdAt", label: "Fecha Creación" },
   { key: "updatedAt", label: "Última Actualización" },
 ];
+
+function parseSelectedFields(raw: Json): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+
+  return raw.filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+}
+
+function stringifyExportValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "";
+  }
+
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => stringifyExportValue(item)).filter(Boolean).join(" | ");
+  }
+
+  if (typeof value === "object") {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+export function resolveNestedExportValue(
+  source: Record<string, unknown>,
+  path: string,
+): string {
+  const segments = path.split(".").filter(Boolean);
+  let current: unknown = source;
+
+  for (const segment of segments) {
+    if (!current || typeof current !== "object" || Array.isArray(current)) {
+      return "";
+    }
+
+    current = (current as Record<string, unknown>)[segment];
+  }
+
+  return stringifyExportValue(current);
+}
+
+const CORE_EXPORT_FIELD_DEFINITIONS: ExportCatalogField[] = EXPORTABLE_COLUMNS.map((column) => ({
+  key: column.key,
+  label: column.label,
+  helperText: null,
+  kind: "core" as const,
+  groupKey: "core",
+  groupLabel: "Información base",
+  defaultSelected: ["applicationId", "applicantName", "applicantEmail", "status", "stageCode"].includes(column.key),
+}));
+
+function getCoreExportValue(row: ApplicationExportRow, key: keyof ApplicationExportRow) {
+  return stringifyExportValue(row[key]);
+}
 
 function clean(value: string | null) {
   const trimmed = value?.trim();
@@ -274,6 +388,171 @@ export function parseApplicationExportFilters(
   };
 }
 
+export async function buildExportCatalog({
+  supabase,
+  cycleId,
+}: {
+  supabase: SupabaseClient<Database>;
+  cycleId: string;
+}): Promise<ExportCatalog> {
+  const [
+    { data: fieldsData, error: fieldsError },
+    { data: sectionsData, error: sectionsError },
+    { data: templatesData, error: templatesError },
+    { data: presetsData, error: presetsError },
+  ] = await Promise.all([
+    supabase
+      .from("cycle_stage_fields")
+      .select("id, stage_code, field_key, field_label, section_id, sort_order, is_active")
+      .eq("cycle_id", cycleId)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("stage_sections")
+      .select("id, stage_code, title, sort_order")
+      .eq("cycle_id", cycleId)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("cycle_stage_templates")
+      .select("id, stage_code, stage_label, sort_order")
+      .eq("cycle_id", cycleId)
+      .order("sort_order", { ascending: true }),
+    supabase
+      .from("export_presets")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .order("updated_at", { ascending: false }),
+  ]);
+
+  if (fieldsError || sectionsError || templatesError || presetsError) {
+    throw new AppError({
+      message: "Failed building export catalog",
+      userMessage: "No se pudo cargar el catalogo de exportacion.",
+      status: 500,
+      details: {
+        fieldsError,
+        sectionsError,
+        templatesError,
+        presetsError,
+      },
+    });
+  }
+
+  const templateLabelByStage = new Map<string, string>();
+  for (const template of templatesData ?? []) {
+    templateLabelByStage.set(template.stage_code, template.stage_label);
+  }
+
+  const sectionTitleById = new Map<string, string>();
+  for (const section of ((sectionsData as Array<{ id: string; title: string }> | null) ?? [])) {
+    sectionTitleById.set(section.id, section.title);
+  }
+
+  const payloadFields: ExportCatalogField[] = (((fieldsData as unknown) as Array<{
+    stage_code: string;
+    field_key: string;
+    field_label: string;
+    section_id: string | null;
+  }> | null) ?? []).map((field) => {
+      const stageLabel = templateLabelByStage.get(field.stage_code) ?? field.stage_code;
+      const sectionTitle = field.section_id ? sectionTitleById.get(field.section_id) : null;
+      return {
+        key: `payload.${field.field_key}`,
+        label: field.field_label,
+        helperText: field.field_key,
+        kind: "payload" as const,
+        groupKey: `${field.stage_code}:${sectionTitle ?? "general"}`,
+        groupLabel: sectionTitle ? `${stageLabel} · ${sectionTitle}` : stageLabel,
+        defaultSelected: false,
+      };
+    });
+
+  const presetSummaries = ((presetsData as ExportPresetRow[] | null) ?? []).map((preset) => ({
+    id: preset.id,
+    name: preset.name,
+    selectedFields: parseSelectedFields(preset.selected_fields),
+    updatedAt: preset.updated_at,
+  }));
+
+  return {
+    fields: [...CORE_EXPORT_FIELD_DEFINITIONS, ...payloadFields],
+    presets: presetSummaries,
+  };
+}
+
+export function validateSelectedExportFields({
+  selectedFields,
+  catalog,
+}: {
+  selectedFields: string[];
+  catalog: ExportCatalog;
+}) {
+  const allowed = new Set(catalog.fields.map((field) => field.key));
+  const normalized = Array.from(new Set(selectedFields.map((field) => field.trim()).filter(Boolean)));
+  const invalid = normalized.filter((field) => !allowed.has(field));
+
+  if (invalid.length > 0) {
+    throw new AppError({
+      message: "Invalid export fields selected",
+      userMessage: `Los siguientes campos no son validos para este proceso: ${invalid.join(", ")}.`,
+      status: 400,
+      details: { invalid },
+    });
+  }
+
+  return normalized;
+}
+
+export async function saveExportPreset({
+  supabase,
+  cycleId,
+  presetId,
+  createdBy,
+  name,
+  selectedFields,
+}: {
+  supabase: SupabaseClient<Database>;
+  cycleId: string;
+  presetId?: string | null;
+  createdBy: string;
+  name: string;
+  selectedFields: string[];
+}) {
+  const payload = {
+    cycle_id: cycleId,
+    created_by: createdBy,
+    name: name.trim(),
+    selected_fields: selectedFields,
+    updated_at: new Date().toISOString(),
+  };
+
+  const query = presetId
+    ? supabase
+        .from("export_presets")
+        .update(payload)
+        .eq("id", presetId)
+        .select("*")
+        .single()
+    : supabase
+        .from("export_presets")
+        .insert(payload)
+        .select("*")
+        .single();
+
+  const { data, error } = await query;
+
+  if (error || !data) {
+    throw new AppError({
+      message: "Failed saving export preset",
+      userMessage: "No se pudo guardar el preset de exportacion.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  return data as ExportPresetRow;
+}
+
 export async function getApplicationsForExport({
   supabase,
   filters,
@@ -284,7 +563,7 @@ export async function getApplicationsForExport({
   maxRows?: number;
 }) {
   let query = supabase.from("applications").select(
-    "id, applicant_id, cycle_id, stage_code, status, files, validation_notes, created_at, updated_at",
+    "id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, created_at, updated_at",
     { count: "exact" },
   );
 
@@ -411,8 +690,31 @@ export async function getApplicationsForExport({
     };
   });
 
+  const records: ApplicationExportContext[] = applications.map((application) => ({
+    application: {
+      id: application.id,
+      applicant_id: application.applicant_id,
+      cycle_id: application.cycle_id,
+      stage_code: application.stage_code,
+      status: application.status,
+      payload: application.payload ?? {},
+      files: application.files,
+      validation_notes: application.validation_notes,
+      created_at: application.created_at,
+      updated_at: application.updated_at,
+    },
+    applicant: applicantIds.length > 0
+      ? profileMap.get(application.applicant_id) ?? null
+      : null,
+    cycle: cycleIds.length > 0
+      ? cycleMap.get(application.cycle_id) ?? null
+      : null,
+    recommendations: recommendationMap.get(application.id) ?? [],
+  }));
+
   return {
     rows,
+    records,
     total: count ?? rows.length,
     truncated: (count ?? rows.length) > rows.length,
   };
@@ -438,6 +740,77 @@ export function buildApplicationsCsv(
       .join(","),
   );
 
+  return [header, ...lines].join("\n");
+}
+
+export function buildDynamicExportTable({
+  records,
+  selectedFields,
+  catalog,
+}: {
+  records: ApplicationExportContext[];
+  selectedFields: string[];
+  catalog: ExportCatalog;
+}) {
+  const selected = validateSelectedExportFields({
+    selectedFields,
+    catalog,
+  });
+
+  const coreLabelMap = new Map(CORE_EXPORT_FIELD_DEFINITIONS.map((field) => [field.key, field.label]));
+  const catalogLabelMap = new Map(catalog.fields.map((field) => [field.key, field.label]));
+
+  const rows = records.map((record) => {
+    const coreRow: ApplicationExportRow = {
+      applicationId: record.application.id,
+      cycleId: record.application.cycle_id,
+      cycleName: record.cycle?.name ?? "(sin nombre)",
+      applicantId: record.application.applicant_id,
+      applicantEmail: record.applicant?.email ?? "(sin email)",
+      applicantName: record.applicant?.full_name ?? "(sin nombre)",
+      stageCode: record.application.stage_code,
+      status: record.application.status,
+      validationNotes: record.application.validation_notes ?? "",
+      mentorRecommendationSubmitted: record.recommendations.some(
+        (item) => item.role === "mentor" && item.status === "submitted",
+      ),
+      friendRecommendationSubmitted: record.recommendations.some(
+        (item) => item.role === "friend" && item.status === "submitted",
+      ),
+      recommendationCompletion:
+        record.recommendations.some((item) => item.role === "mentor" && item.status === "submitted") &&
+        record.recommendations.some((item) => item.role === "friend" && item.status === "submitted")
+          ? "complete"
+          : "incomplete",
+      fileCount: countFiles(record.application.files),
+      createdAt: record.application.created_at,
+      updatedAt: record.application.updated_at,
+    };
+
+    return selected.map((fieldKey) => {
+      if (fieldKey.startsWith("payload.")) {
+        return resolveNestedExportValue(
+          (record.application.payload ?? {}) as Record<string, unknown>,
+          fieldKey.replace(/^payload\./, ""),
+        );
+      }
+
+      return getCoreExportValue(coreRow, fieldKey as keyof ApplicationExportRow);
+    });
+  });
+
+  const headers = selected.map((fieldKey) => catalogLabelMap.get(fieldKey) ?? coreLabelMap.get(fieldKey) ?? fieldKey);
+
+  return {
+    selected,
+    headers,
+    rows,
+  };
+}
+
+export function buildDynamicCsvExport(table: { headers: string[]; rows: string[][] }) {
+  const header = table.headers.map((column) => csvCell(column)).join(",");
+  const lines = table.rows.map((row) => row.map((value) => csvCell(value)).join(","));
   return [header, ...lines].join("\n");
 }
 
@@ -493,6 +866,46 @@ export async function buildApplicationsXlsx(
   sheet.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: 1, column: selectedKeys.length },
+  };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+export async function buildDynamicExportXlsx(table: {
+  headers: string[];
+  rows: string[][];
+}): Promise<Buffer> {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "UWC Peru Platform";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("Postulaciones");
+  sheet.columns = table.headers.map((header) => ({
+    header,
+    key: header,
+    width: 24,
+  }));
+
+  sheet.getRow(1).font = { bold: true };
+  sheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFF0E7D8" },
+  };
+
+  for (const row of table.rows) {
+    const record: Record<string, string> = {};
+    table.headers.forEach((header, index) => {
+      record[header] = row[index] ?? "";
+    });
+    sheet.addRow(record);
+  }
+
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: table.headers.length },
   };
 
   const buffer = await workbook.xlsx.writeBuffer();
@@ -575,7 +988,7 @@ export async function getApplicationExportPackage({
       dataClient
         .from("recommendation_requests")
         .select(
-          "id, role, recommender_email, status, invite_sent_at, submitted_at, last_reminder_at, reminder_count, created_at",
+          "id, role, recommender_name, recommender_email, status, invite_sent_at, submitted_at, last_reminder_at, reminder_count, admin_received_at, admin_received_by, admin_received_reason, admin_received_file, admin_notes, created_at",
         )
         .eq("application_id", application.id)
         .order("created_at", { ascending: true }),
@@ -597,12 +1010,18 @@ export async function getApplicationExportPackage({
         RecommendationRow,
         | "id"
         | "role"
+        | "recommender_name"
         | "recommender_email"
         | "status"
         | "invite_sent_at"
         | "submitted_at"
         | "last_reminder_at"
         | "reminder_count"
+        | "admin_received_at"
+        | "admin_received_by"
+        | "admin_received_reason"
+        | "admin_received_file"
+        | "admin_notes"
         | "created_at"
       >
     >);
@@ -648,6 +1067,8 @@ export function normalizeApplicationFiles(files: Json): ApplicationFileExportEnt
         mimeType: "",
         sizeBytes: null,
         uploadedAt: null,
+        category: null,
+        notes: null,
       });
       continue;
     }
@@ -669,10 +1090,14 @@ export function normalizeApplicationFiles(files: Json): ApplicationFileExportEnt
       originalName:
         typeof record.original_name === "string"
           ? record.original_name
+          : typeof record.name === "string"
+            ? record.name
           : (path.split("/").pop() ?? path),
       mimeType: typeof record.mime_type === "string" ? record.mime_type : "",
       sizeBytes: typeof record.size_bytes === "number" ? record.size_bytes : null,
       uploadedAt: typeof record.uploaded_at === "string" ? record.uploaded_at : null,
+      category: typeof record.category === "string" ? record.category : null,
+      notes: typeof record.notes === "string" ? record.notes : null,
     });
   }
 

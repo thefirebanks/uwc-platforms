@@ -28,6 +28,9 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260226000200_add_admin_config_to_cycle_stage_templates.sql`
   - `supabase/migrations/20260227000300_add_stage_sections_table.sql`
   - `supabase/migrations/20260227000400_seed_default_sections_and_assign_fields.sql`
+  - `supabase/migrations/202603040002_admin_candidate_ops_reliability.sql`
+  - `supabase/migrations/202603040003_export_presets.sql`
+  - `supabase/migrations/202603040004_broadcast_communications.sql`
 ```bash
 sbu db push
 ```
@@ -47,6 +50,7 @@ sbu db push
 ```bash
 bun run seed:fake-users
 ```
+- This script now seeds two applicant demos and blocks non-dev environments unless `ALLOW_DEMO_SEEDING=true`.
 
 ## 2.1) Supabase Profile Shortcuts
 - `sbu` (UWC): `supabase --profile uwc` (profile config at `~/.config/supabase/uwc.toml`)
@@ -63,9 +67,15 @@ bun run seed:fake-users
   - `ADMIN_EMAIL_ALLOWLIST`
   - `LOG_LEVEL` (optional, default `info`)
   - `GEMINI_API_KEY` (optional)
-  - `RESEND_API_KEY` (required for real email delivery)
-  - `RESEND_FROM_EMAIL` (required for real email delivery)
-  - `RESEND_FROM_NAME` (optional)
+  - Gmail API option:
+    - `GOOGLE_GMAIL_CLIENT_ID`
+    - `GOOGLE_GMAIL_CLIENT_SECRET`
+    - `GOOGLE_GMAIL_REFRESH_TOKEN`
+    - `GOOGLE_GMAIL_SENDER_EMAIL`
+    - `GOOGLE_GMAIL_REDIRECT_URI` (optional)
+  - Shared mail options:
+    - `EMAIL_FROM_NAME` (optional)
+    - `EMAIL_REPLY_TO` (optional)
   - `RECOMMENDER_TOKEN_SALT` (recommended; extra hardening for OTP/session token hashing)
 
 ## 4) Cloudflare Observability (Recommended)
@@ -88,18 +98,40 @@ bun run dev
   - `POST /api/applications/:id/ocr-check`
   - `GET /api/applications/:id/ocr-check` (history view)
 
-## 6) Resend (Required for Real Email Sending)
-- Create a Resend account and API key.
-- Verify a sending domain in Resend (production), then define:
-  - `RESEND_API_KEY`
-  - `RESEND_FROM_EMAIL` (example: `noreply@tudominio.org`)
-  - `RESEND_FROM_NAME` (optional, example: `UWC Peru`)
+## 6) Outbound Email Provider
+- Gmail API setup values:
+  - `GOOGLE_GMAIL_CLIENT_ID`
+  - `GOOGLE_GMAIL_CLIENT_SECRET`
+  - `GOOGLE_GMAIL_REFRESH_TOKEN`
+  - `GOOGLE_GMAIL_SENDER_EMAIL`
+  - Optional: `GOOGLE_GMAIL_REDIRECT_URI`
+  - One-time connect flow:
+    - sign in as an admin in the app
+    - open `GET /api/google-mail/connect`
+    - finish Google consent
+    - copy the refresh token shown by `/auth/google-mail/callback`
+- Shared recommended values:
+  - `EMAIL_FROM_NAME`
+  - `EMAIL_REPLY_TO`
+  - `RECOMMENDER_TOKEN_SALT`
 - Communication queue processing endpoint that sends real emails:
   - `POST /api/communications/process`
-- Recommender invite/reminder/OTP endpoints also depend on Resend:
+- Broadcast campaign compose/send uses:
+  - `POST /api/communications/send`
+- Preview / test-send endpoints:
+  - `POST /api/communications/preview`
+  - `POST /api/communications/test-send`
+- Recommender invite/reminder/OTP endpoints also depend on Gmail API:
   - `PUT /api/recommendations`
   - `POST /api/recommendations/:id/remind`
   - `POST /api/recommendations/public/:token/otp`
+
+### Recommended smoke test after deploy
+1. Send a communications test email to an admin inbox.
+2. Run one broadcast campaign against a narrow test filter.
+3. Verify recommendation invite -> OTP -> submission.
+4. Verify admin reminder re-send and manual mark-received actions.
+5. Confirm reply/bounce ownership for the configured sender inbox.
 
 ## 7) GitHub Repository + Secrets
 - Recommended repo secrets:
@@ -108,9 +140,10 @@ bun run dev
   - `ADMIN_EMAIL_ALLOWLIST`
   - `LOG_LEVEL` (optional)
   - `GEMINI_API_KEY` (optional)
-  - `RESEND_API_KEY`
-  - `RESEND_FROM_EMAIL`
-  - `RESEND_FROM_NAME` (optional)
+  - `GOOGLE_GMAIL_CLIENT_ID`
+  - `GOOGLE_GMAIL_CLIENT_SECRET`
+  - `GOOGLE_GMAIL_REFRESH_TOKEN`
+  - `GOOGLE_GMAIL_SENDER_EMAIL`
   - `RECOMMENDER_TOKEN_SALT` (recommended)
 
 ## 8) Feature Branch + PR Process
