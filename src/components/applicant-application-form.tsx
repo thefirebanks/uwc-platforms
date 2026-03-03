@@ -811,11 +811,15 @@ export function ApplicantApplicationForm({
     }).length;
     const hasAnyFile = fileStageFields.some((field) => isMeaningfulValue(parseFileEntry(files[field.field_key])?.path));
 
+    if (requiredFileFields.length === 0) {
+      return getStepState({
+        complete: false,
+        inProgress: false,
+      });
+    }
+
     return getStepState({
-      complete:
-        requiredFileFields.length > 0
-          ? completedCount === requiredFileFields.length
-          : hasAnyFile,
+      complete: completedCount === requiredFileFields.length,
       inProgress: hasAnyFile,
     });
   }, [application?.files, fileStageFields]);

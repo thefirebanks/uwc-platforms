@@ -1455,6 +1455,32 @@ export function StageConfigEditor({
         <div className="canvas-body">
           {activeTab === "editor" && (
             <div id="tab-editor" className="tab-content active">
+              {documentsRouteRepresentsMainForm ? (
+                <div className="settings-card" style={{ marginBottom: "1rem" }}>
+                  <div className="settings-card-header">
+                    <h3>Paso inicial: Instrucciones</h3>
+                    <p>
+                      Este paso aparece antes de las secciones del formulario en la vista del
+                      postulante.
+                    </p>
+                  </div>
+                  <div className="editor-grid">
+                    <div className="form-field full">
+                      <label>Texto actual de instrucciones</label>
+                      <textarea value={settingsDescription} rows={3} readOnly />
+                    </div>
+                    <div className="form-field full">
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => switchToTab("settings")}
+                      >
+                        Editar instrucciones en Ajustes y Reglas
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <div className="field-list">
                 {displayedEditorFields.length === 0 ? (
                   <>

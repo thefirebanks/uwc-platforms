@@ -394,7 +394,7 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Ajustes y Reglas/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
     fireEvent.change(screen.getByLabelText("Nombre de la etapa"), {
       target: { value: "Formulario Principal (editado)" },
     });
@@ -437,6 +437,28 @@ describe("StageConfigEditor", () => {
       previousStageRequirement: "none",
       blockIfPreviousNotMet: true,
     });
+  });
+
+  it("shows applicant instructions block in editor for documents stage", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    expect(screen.getByText(/Paso inicial: Instrucciones/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Editar instrucciones en Ajustes y Reglas/i })).toBeInTheDocument();
   });
 
   it("persists custom sections and field-section assignments in the global save payload", async () => {
