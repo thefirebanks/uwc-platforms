@@ -17,6 +17,16 @@ const DEMO_CYCLE_ID = "98b2f8e4-7266-44b0-acb2-566e2fb2d50e";
 const TEST_FIELD_LABEL = "Campo E2E Test – borrar";
 const TEST_FIELD_KEY = "e2eTestFieldDelete";
 
+/** Wait for the save button to be enabled (pending changes exist), then click it and confirm. */
+async function saveConfig(page: Page): Promise<void> {
+  const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
+  await expect(saveBtn).toBeEnabled({ timeout: 8_000 });
+  await saveBtn.click();
+  await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|Saved/i, {
+    timeout: 10_000,
+  });
+}
+
 async function cleanupTestField(page: Page): Promise<void> {
   await loginAsAdmin(page);
   await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents`);
@@ -28,11 +38,10 @@ async function cleanupTestField(page: Page): Promise<void> {
     const fieldCard = fieldLabel.locator(
       "xpath=ancestor::div[contains(@class,'field-card')]",
     );
+    // Accept the confirmation dialog that fires when deleting a field
+    page.once("dialog", (dialog) => void dialog.accept());
     await fieldCard.locator("button.btn-icon.danger").click();
-    await page.getByRole("button", { name: /Guardar configuración/i }).click();
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/Guardado|Saved/, {
-      timeout: 10_000,
-    });
+    await saveConfig(page);
   }
 }
 
@@ -89,10 +98,7 @@ test.describe("Admin field CRUD (reversible)", () => {
     await keyInput.fill(TEST_FIELD_KEY);
 
     // 5. Save
-    await page.getByRole("button", { name: /Guardar configuración/i }).click();
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/Guardado|Saved/, {
-      timeout: 10_000,
-    });
+    await saveConfig(page);
 
     // 6. Reload and verify the field appears with correct label and key
     await page.reload();
@@ -108,13 +114,12 @@ test.describe("Admin field CRUD (reversible)", () => {
     const fieldCard = savedFieldLabel.locator(
       "xpath=ancestor::div[contains(@class,'field-card')]",
     );
+    // Accept the confirmation dialog that fires when deleting a field
+    page.once("dialog", (dialog) => void dialog.accept());
     await fieldCard.locator("button.btn-icon.danger").click();
 
     // 8. Save deletion
-    await page.getByRole("button", { name: /Guardar configuración/i }).click();
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/Guardado|Saved/, {
-      timeout: 10_000,
-    });
+    await saveConfig(page);
 
     // 9. Reload — field is gone and count restored
     await page.reload();
@@ -135,7 +140,7 @@ test.describe("Admin field CRUD (reversible)", () => {
     // All four tabs should be visible
     await expect(page.getByText(/Editor de Formulario/i)).toBeVisible();
     await expect(page.getByText(/Ajustes y Reglas/i)).toBeVisible();
-    await expect(page.getByText(/Automatizaciones de correo/i)).toBeVisible();
+    await expect(page.getByText(/Comunicaciones/i)).toBeVisible();
     await expect(page.getByText(/Estadísticas/i)).toBeVisible();
 
     // Preview button should be accessible

@@ -16,6 +16,10 @@ export const bypassReady =
  * Log in as the demo admin via the dev bypass button and wait for /admin redirect.
  */
 export async function loginAsAdmin(page: Page): Promise<void> {
+  // Wait for any in-flight navigation to settle before navigating to /login.
+  // Without this, afterEach cleanup can hit ERR_ABORTED if the previous test
+  // navigated somewhere that triggers a server-side redirect.
+  await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => undefined);
   await page.goto("/login");
   await page.getByRole("button", { name: "Entrar como admin demo" }).click();
   await expect(page).toHaveURL(/\/admin/, { timeout: 15_000 });
@@ -32,11 +36,24 @@ export async function loginAndOpenForm(page: Page): Promise<void> {
 
   const processLink = page
     .getByRole("link")
-    .filter({ hasText: /Abrir postulación|Iniciar postulación|Open application|Start application/ })
+    .filter({ hasText: /Abrir postulación|Iniciar postulación|Open application|Start application|Ver postulación/ })
     .first();
   await expect(processLink).toBeVisible({ timeout: 15_000 });
   await processLink.click();
   await expect(page).toHaveURL(/\/applicant\/process\//);
+
+  // If the form opens on the "Antes de empezar" / "Before you start" prep screen
+  // (i.e. the applicant has no existing application), advance to the first real section
+  // so that tests can find the numbered step header ("Paso 1 de N").
+  const nextBtn = page.getByRole("button", { name: /Siguiente|Next/i }).first();
+  const onPrepScreen = await nextBtn.isVisible({ timeout: 5_000 }).catch(() => false);
+  if (onPrepScreen) {
+    // The first click on "Siguiente" from prep_intro creates the application draft
+    // and moves to the first real section (e.g. eligibility).
+    await nextBtn.click();
+    // Wait for the step header to appear, confirming we left prep_intro
+    await expect(page.getByText(/Paso 1 de \d+|Step 1 of \d+/i)).toBeVisible({ timeout: 15_000 });
+  }
 }
 
 /**
@@ -98,6 +115,15 @@ export async function resetDemoApplicant(page: Page): Promise<void> {
   });
   if (status !== 200) {
     throw new Error(`reset-demo-applicant returned HTTP ${status}`);
+  }
+  // The admin logout button is inside a Popover — open the settings menu first.
+  // For non-admin (applicant) the button is directly visible.
+  const settingsTrigger = page.locator("button.admin-topbar-settings-trigger").first();
+  const isAdminNav = await settingsTrigger.isVisible({ timeout: 3_000 }).catch(() => false);
+  if (isAdminNav) {
+    await settingsTrigger.click();
+    // Wait for the popover to open, then click the logout button inside it
+    await expect(page.locator(".admin-topbar-settings-panel")).toBeVisible({ timeout: 5_000 });
   }
   await page.getByRole("button", { name: /Cerrar sesión|Sign out/i }).click();
   await expect(page).toHaveURL(/\/login/, { timeout: 10_000 });

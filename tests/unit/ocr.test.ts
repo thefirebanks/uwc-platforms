@@ -54,7 +54,7 @@ describe("runOcrCheck", () => {
 
     expect(result.summary).toBe("DNI válido");
     expect(result.confidence).toBe(0.91);
-    expect(result.rawResponse.provider).toBe("gemini-3-flash-preview");
+    expect(result.rawResponse.provider).toBe("gemini-flash");
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("gemini-3-flash-preview:generateContent"),
       expect.objectContaining({

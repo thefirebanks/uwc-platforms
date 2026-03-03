@@ -52,13 +52,9 @@ export default async function AdminProcessPage({
       cycleTemplates={(templates as CycleStageTemplate[] | null) ?? []}
       cycle={cycle as SelectionProcess}
       initialWorkspaceSection={
-        Array.isArray(resolvedSearchParams.section)
-          ? "process_config"
-          : resolvedSearchParams.section === "stages"
-            ? "stages"
-            : resolvedSearchParams.section === "communications"
-                ? "communications"
-                : "process_config"
+        requestedSection === "stages" ? "stages"
+          : requestedSection === "communications" ? "communications"
+          : "process_config"
       }
     />
   );

@@ -112,7 +112,7 @@ export function ApplicantSidebar({
         </Typography>
         <Typography
           sx={{
-            fontFamily: "var(--font-newsreader), 'Newsreader', Georgia, serif",
+            fontFamily: "var(--font-display), var(--font-body), system-ui, sans-serif",
             fontSize: "1.25rem",
             fontWeight: 500,
             color: "var(--ink)",

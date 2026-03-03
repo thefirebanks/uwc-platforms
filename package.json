@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "seed:fake-users": "bun --env-file=.env.local scripts/create-fake-users.ts",
-    "build:cf": "bunx @cloudflare/next-on-pages"
+    "build:cf": "bunx opennextjs-cloudflare build"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
@@ -23,6 +23,7 @@
     "@mui/material-nextjs": "^7.3.8",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.95.3",
+    "exceljs": "^4.4.0",
     "next": "16.1.6",
     "papaparse": "^5.5.3",
     "pino": "^10.3.1",
@@ -31,9 +32,10 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@cloudflare/next-on-pages": "^1.13.16",
+    "@opennextjs/cloudflare": "^1.17.1",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",

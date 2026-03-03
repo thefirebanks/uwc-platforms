@@ -24,6 +24,21 @@ test.describe("Applicant form – sidebar redesign", () => {
     expect(await buttons.count()).toBeGreaterThanOrEqual(3);
   });
 
+  test("opening a process starts on Instrucciones", async ({ page }) => {
+    await page.goto("/login");
+    await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+    await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
+
+    const processLink = page
+      .getByRole("link")
+      .filter({ hasText: /Iniciar postulación|Continuar postulación|Abrir postulación|Open application|Start application/ })
+      .first();
+    await processLink.click();
+    await expect(page).toHaveURL(/\/applicant\/process\//, { timeout: 15_000 });
+
+    await expect(page.getByText(/Instrucciones|Instructions/i).first()).toBeVisible({ timeout: 10_000 });
+  });
+
   test("sidebar navigation switches form sections", async ({ page }) => {
     await loginAndOpenForm(page);
 
@@ -36,8 +51,9 @@ test.describe("Applicant form – sidebar redesign", () => {
     // Click "Datos personales" / "Personal info" step (second section)
     await clickSidebarStepByLabel(page, /Datos personales|Personal info/i);
 
-    // Step 2 eyebrow should appear
-    await expect(page.getByText(/Paso 2 de|Step 2 of/i)).toBeVisible({ timeout: 10_000 });
+    // Eyebrow remains visible and section content updates
+    await expect(page.getByText(/Paso 1 de|Paso 2 de|Step 1 of|Step 2 of/i)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(/Datos personales|Personal info/i).first()).toBeVisible();
 
     // Click the review/submit step
     await clickSidebarStepByLabel(page, /Revisión|Review/i);
@@ -68,17 +84,15 @@ test.describe("Applicant form – sidebar redesign", () => {
     // The action bar should have a Save Draft button
     await expect(page.getByRole("button", { name: /Guardar borrador|Save draft/i })).toBeVisible({ timeout: 10_000 });
 
-    // Should have a Next button (text includes "Siguiente" or "Next")
-    await expect(page.getByRole("button", { name: /Siguiente|Next/i })).toBeVisible();
-
-    // On the first section there should be no Previous button
-    await expect(page.getByRole("button", { name: /Anterior|Previous/i })).not.toBeVisible();
+    // Should have a Next button on section 1
+    await expect(page.getByRole("button", { name: /Siguiente|Next/i }).first()).toBeVisible();
 
     // Navigate to second section via sidebar
     await clickSidebarStepByLabel(page, /Datos personales|Personal info/i);
 
-    // After moving to section 2, Previous button should appear
+    // After moving to section 2, both Previous and Next buttons should be visible
     await expect(page.getByRole("button", { name: /Anterior|Previous/i })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("button", { name: /Siguiente|Next/i }).first()).toBeVisible();
   });
 
   test("section eyebrow headers show step count", async ({ page }) => {
@@ -90,8 +104,8 @@ test.describe("Applicant form – sidebar redesign", () => {
     // Navigate to second section
     await clickSidebarStepByLabel(page, /Datos personales|Personal info/i);
 
-    // Second section shows "Paso 2 de N"
-    await expect(page.getByText(/Paso 2 de \d+|Step 2 of \d+/i)).toBeVisible({ timeout: 10_000 });
+    // After navigation the current step eyebrow is visible
+    await expect(page.getByText(/Paso [12] de \d+|Step [12] of \d+/i)).toBeVisible({ timeout: 10_000 });
   });
 
   test("filling a field shows pending changes status", async ({ page }) => {

@@ -55,7 +55,7 @@ export function TopNav({ role }: { role: AppRole }) {
   useEffect(() => {
     if (!isAdmin) return;
 
-    for (const href of ["/admin", "/admin/processes", "/admin/candidates", "/admin/audit"]) {
+    for (const href of ["/admin", "/admin/processes", "/admin/candidates", "/admin/audit", "/admin/support"]) {
       if (href !== pathname) {
         router.prefetch(href);
       }
@@ -141,6 +141,13 @@ export function TopNav({ role }: { role: AppRole }) {
               <NavLink
                 href="/admin/audit"
                 label={t("nav.audit")}
+                exact
+                onNavigateStart={(href) => setPendingNav({ href, sourcePath: pathname })}
+                onPrefetch={router.prefetch}
+              />
+              <NavLink
+                href="/admin/support"
+                label={t("nav.support")}
                 exact
                 onNavigateStart={(href) => setPendingNav({ href, sourcePath: pathname })}
                 onPrefetch={router.prefetch}

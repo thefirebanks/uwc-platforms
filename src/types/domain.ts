@@ -1,4 +1,34 @@
-export type AppRole = "admin" | "applicant";
+export type AppRole = "admin" | "applicant" | "reviewer";
+
+export type ReviewerPermission =
+  | "applications:read"
+  | "applications:write"
+  | "applications:export"
+  | "applications:transition"
+  | "applications:validate"
+  | "reviewers:manage"
+  | "comms:send"
+  | "config:write";
+
+export type PermissionScope = "global" | "assigned";
+
+export interface RolePermission {
+  role: AppRole;
+  permission: ReviewerPermission;
+  scope: PermissionScope;
+}
+
+export interface ReviewerAssignment {
+  id: string;
+  reviewer_id: string;
+  application_id: string;
+  cycle_id: string;
+  stage_code: string;
+  assigned_by: string;
+  assigned_at: string;
+}
+
+export type OcrModelId = string; // Registry-defined; known values: "gemini-flash" | "gemini-pro-vision"
 
 export type BuiltinStageCode = "documents" | "exam_placeholder";
 export type StageCode = BuiltinStageCode | (string & {});
@@ -21,6 +51,8 @@ export type ApplicationStatus =
   | "eligible"
   | "ineligible"
   | "advanced";
+
+export type SupportTicketStatus = "open" | "replied" | "closed";
 
 export interface Profile {
   id: string;
@@ -97,6 +129,7 @@ export interface CycleStageTemplate {
   due_at: string | null;
   ocr_prompt_template?: string | null;
   admin_config?: Record<string, unknown> | null;
+  model_id?: string | null;
   sort_order: number;
   created_at: string;
 }
@@ -158,6 +191,20 @@ export interface CommunicationLog {
   last_attempt_at: string | null;
   delivered_at: string | null;
   provider_message_id: string | null;
+  is_applicant_visible: boolean;
+  created_at: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  application_id: string;
+  applicant_id: string;
+  subject: string;
+  body: string;
+  status: SupportTicketStatus;
+  admin_reply: string | null;
+  replied_by: string | null;
+  replied_at: string | null;
   created_at: string;
 }
 
@@ -169,6 +216,22 @@ export interface ApplicationOcrCheck {
   summary: string;
   confidence: number;
   raw_response: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface OcrTestRun {
+  id: string;
+  cycle_id: string | null;
+  stage_code: string;
+  actor_id: string;
+  file_name: string;
+  file_path: string;
+  prompt_template: string;
+  model_id: string;
+  summary: string | null;
+  confidence: number | null;
+  raw_response: Record<string, unknown>;
+  duration_ms: number | null;
   created_at: string;
 }
 

@@ -19,6 +19,16 @@ export default async function DashboardLayout({ children }: { children: React.Re
     );
   }
 
+  // Reviewers: render reviewer shell (each page guards its own role)
+  if (profile.role === "reviewer") {
+    return (
+      <LanguageProvider canUseEnglish={canUseEnglish}>
+        <TopNav role={profile.role} />
+        {children}
+      </LanguageProvider>
+    );
+  }
+
   // For admin, use the standard TopNav and container layout
   return (
     <LanguageProvider canUseEnglish={canUseEnglish}>

@@ -78,14 +78,14 @@ const PREP_SECTION_ID = "prep_intro" as const;
 const SIDEBAR_VISIBILITY_STORAGE_KEY = "uwc:applicant-sidebar-hidden";
 
 const SECTION_TITLES_ES: Record<StaticWizardSectionId, string> = {
-  prep_intro: "Antes de empezar",
+  prep_intro: "Instrucciones",
   documents_uploads: "Documentos",
   recommenders_flow: "Recomendadores",
   review_submit: "Revisión y envío",
 };
 
 const SECTION_TITLES_EN: Record<StaticWizardSectionId, string> = {
-  prep_intro: "Before you start",
+  prep_intro: "Instructions",
   documents_uploads: "Documents",
   recommenders_flow: "Recommenders",
   review_submit: "Review and submit",
@@ -538,7 +538,10 @@ function getSectionFieldStatus({
   const hasAnyValue = fields.some((field) => isMeaningfulValue((payload as Record<string, unknown>)[field.field_key]));
 
   return getStepState({
-    complete: requiredFields.length === 0 || completedRequired === requiredFields.length,
+    complete:
+      requiredFields.length > 0
+        ? completedRequired === requiredFields.length
+        : hasAnyValue,
     inProgress: hasAnyValue,
   });
 }
@@ -547,6 +550,9 @@ export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
   cycleName,
+  stageCode,
+  stageLabel,
+  stageInstructions,
   stageFields,
   stageCloseAt,
   initialRecommenders = [],
@@ -555,6 +561,9 @@ export function ApplicantApplicationForm({
   existingApplication: Application | null;
   cycleId: string;
   cycleName?: string;
+  stageCode?: string;
+  stageLabel?: string;
+  stageInstructions?: string;
   stageFields?: CycleStageField[];
   stageCloseAt?: string | null;
   initialRecommenders?: RecommenderSummary[];
@@ -595,8 +604,11 @@ export function ApplicantApplicationForm({
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const isDocumentsStageInit = !stageCode || stageCode === "documents";
   const [activeSectionId, setActiveSectionId] = useState<WizardSectionId>(
-    existingApplication?.id ? "eligibility" : PREP_SECTION_ID,
+    isDocumentsStageInit
+      ? PREP_SECTION_ID
+      : "review_submit",
   );
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
 
@@ -701,20 +713,29 @@ export function ApplicantApplicationForm({
       status: ProgressState;
     }> = [];
 
-    wizardSteps.push({
-      id: PREP_SECTION_ID,
-      title: staticSectionTitles.prep_intro,
-      description: copy(
-        "Checklist rápida de preparación para enviar sin fricción.",
-        "Quick checklist to prepare and submit smoothly.",
-      ),
-      formSection: null,
-      status: "complete",
-    });
+    const isDocumentsStage = !stageCode || stageCode === "documents";
+
+    if (isDocumentsStage) {
+      wizardSteps.push({
+        id: PREP_SECTION_ID,
+        title: staticSectionTitles.prep_intro,
+        description: copy(
+          "Checklist rápida de preparación para enviar sin fricción.",
+          "Quick checklist to prepare and submit smoothly.",
+        ),
+        formSection: null,
+        status: "complete",
+      });
+    }
 
     for (const section of groupedFormSections) {
       // "documents" and "recommenders" are rendered as special wizard steps below
-      if (section.sectionKey === "documents" || section.sectionKey === "recommenders") {
+      // The old "eligibility" block is hidden for the main documents stage.
+      if (
+        section.sectionKey === "documents" ||
+        section.sectionKey === "recommenders" ||
+        (isDocumentsStage && section.sectionKey === "eligibility")
+      ) {
         continue;
       }
 
@@ -751,19 +772,21 @@ export function ApplicantApplicationForm({
       });
     }
 
-    wizardSteps.push({
-      id: "recommenders_flow",
-      title: staticSectionTitles.recommenders_flow,
-      description: copy(
-        "Registra un mentor y un amigo (no familiar). Les enviaremos una invitación por correo.",
-        "Register a mentor and a friend (non-family). We will email them an invitation.",
-      ),
-      formSection:
-        groupedFormSections.find(
-          (section) => section.sectionKey === "recommenders",
-        ) ?? null,
-      status: "not_started",
-    });
+    if (isDocumentsStage) {
+      wizardSteps.push({
+        id: "recommenders_flow",
+        title: staticSectionTitles.recommenders_flow,
+        description: copy(
+          "Registra un mentor y un amigo (no familiar). Les enviaremos una invitación por correo.",
+          "Register a mentor and a friend (non-family). We will email them an invitation.",
+        ),
+        formSection:
+          groupedFormSections.find(
+            (section) => section.sectionKey === "recommenders",
+          ) ?? null,
+        status: "not_started",
+      });
+    }
 
     wizardSteps.push({
       id: "review_submit",
@@ -777,7 +800,7 @@ export function ApplicantApplicationForm({
     });
 
     return wizardSteps;
-  }, [application?.payload, copy, documentFormSection, fileStageFields.length, groupedFormSections, isEnglish, staticSectionTitles]);
+  }, [application?.payload, copy, documentFormSection, fileStageFields.length, groupedFormSections, isEnglish, stageCode, staticSectionTitles]);
 
   const documentsStatus = useMemo(() => {
     const requiredFileFields = fileStageFields.filter((field) => field.is_required);
@@ -788,11 +811,18 @@ export function ApplicantApplicationForm({
     }).length;
     const hasAnyFile = fileStageFields.some((field) => isMeaningfulValue(parseFileEntry(files[field.field_key])?.path));
 
+    if (requiredFileFields.length === 0) {
+      return getStepState({
+        complete: false,
+        inProgress: false,
+      });
+    }
+
     return getStepState({
-      complete: requiredFileFields.length === 0 || completedCount === requiredFileFields.length,
-      inProgress: hasAnyFile || Boolean(application?.id),
+      complete: completedCount === requiredFileFields.length,
+      inProgress: hasAnyFile,
     });
-  }, [application?.files, application?.id, fileStageFields]);
+  }, [application?.files, fileStageFields]);
 
   const activeRecommendersByRole = useMemo(() => {
     const map = new Map<RecommenderRole, RecommenderSummary>();
@@ -813,9 +843,9 @@ export function ApplicantApplicationForm({
         complete:
           activeRecommendersByRole.get("mentor")?.status === "submitted" &&
           activeRecommendersByRole.get("friend")?.status === "submitted",
-        inProgress: activeRecommendersByRole.size > 0 || Boolean(application?.id),
+        inProgress: activeRecommendersByRole.size > 0,
       }),
-    [activeRecommendersByRole, application?.id],
+    [activeRecommendersByRole],
   );
 
   const submissionStatus = useMemo(
@@ -825,7 +855,7 @@ export function ApplicantApplicationForm({
           application &&
             ["submitted", "eligible", "ineligible", "advanced"].includes(application.status),
         ),
-        inProgress: Boolean(application?.id),
+        inProgress: false,
       }),
     [application],
   );
@@ -841,10 +871,7 @@ export function ApplicantApplicationForm({
         // Compute status
         let status: ProgressState;
         if (section.id === "documents_uploads") {
-          status = getStepState({
-            complete: section.status === "complete" && documentsStatus === "complete",
-            inProgress: section.status !== "not_started" || documentsStatus !== "not_started",
-          });
+          status = documentsStatus;
         } else if (section.id === "recommenders_flow") {
           status = recommenderStatus;
         } else if (section.id === "review_submit") {
@@ -1951,7 +1978,20 @@ export function ApplicantApplicationForm({
     }
   }
 
-  const sidebarSteps: SidebarStep[] = progressSteps;
+  const sidebarSteps: SidebarStep[] = useMemo(() => {
+    const progressByKey = new Map(progressSteps.map((step) => [step.key, step]));
+    return wizardSections.map((section) => {
+      const progressStep = progressByKey.get(section.id);
+      if (progressStep) {
+        return progressStep;
+      }
+      return {
+        key: section.id,
+        label: section.title,
+        status: "not_started" as const,
+      };
+    });
+  }, [progressSteps, wizardSections]);
   const sidebarDraftDot: "success" | "warning" | "error" | "info" =
     saveState === "error" ? "error" : saveState === "saving" ? "info" : saveState === "dirty" ? "warning" : "success";
   const sidebarProgressLabel = isEnglish
@@ -1979,7 +2019,7 @@ export function ApplicantApplicationForm({
       {/* Desktop Sidebar */}
       <ApplicantSidebar
         processLabel={cycleName ?? copy("Proceso 2026", "Process 2026")}
-        title={copy("Tu postulación", "Your application")}
+        title={stageLabel ?? copy("Tu postulación", "Your application")}
         deadline={
           stageCloseAt
             ? `${copy("Cierre", "Closes")}: ${new Date(stageCloseAt).toLocaleDateString(locale)}`
@@ -2153,10 +2193,12 @@ export function ApplicantApplicationForm({
               }}
             >
               <Typography color="text.secondary" sx={{ mb: 1.2, fontSize: "0.85rem" }}>
-                {copy(
-                  "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
-                  "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
-                )}
+                {stageInstructions?.trim().length
+                  ? stageInstructions
+                  : copy(
+                    "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
+                    "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
+                  )}
               </Typography>
               <Stack spacing={0.55}>
                 <Typography variant="body2">

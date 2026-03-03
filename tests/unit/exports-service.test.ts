@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { AppError } from "@/lib/errors/app-error";
 import {
   buildApplicationsCsv,
+  getApplicationExportPackage,
   normalizeApplicationFiles,
   parseApplicationExportFilters,
 } from "@/lib/server/exports-service";
@@ -93,6 +94,117 @@ describe("normalizeApplicationFiles", () => {
       title: "Notas 2025",
       mimeType: "application/pdf",
       sizeBytes: 1234,
+    });
+  });
+});
+
+describe("getApplicationExportPackage", () => {
+  it("returns core package even when recommendations/ocr queries fail", async () => {
+    const supabase = {
+      from(table: string) {
+        if (table === "applications") {
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            maybeSingle: async () => ({
+              data: {
+                id: "11111111-1111-4111-8111-111111111111",
+                applicant_id: "applicant-1",
+                cycle_id: "cycle-1",
+                stage_code: "documents",
+                status: "submitted",
+                payload: {},
+                files: {},
+                validation_notes: null,
+                created_at: "2026-01-01T00:00:00.000Z",
+                updated_at: "2026-01-01T00:00:00.000Z",
+              },
+              error: null,
+            }),
+          };
+        }
+
+        if (table === "profiles") {
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            maybeSingle: async () => ({
+              data: { id: "applicant-1", email: "applicant@demo.com", full_name: "Demo Applicant" },
+              error: null,
+            }),
+          };
+        }
+
+        if (table === "cycles") {
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            maybeSingle: async () => ({
+              data: { id: "cycle-1", name: "Proceso 2026" },
+              error: null,
+            }),
+          };
+        }
+
+        if (table === "recommendation_requests") {
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            order: async () => ({
+              data: null,
+              error: { message: "permission denied" },
+            }),
+          };
+        }
+
+        if (table === "application_ocr_checks") {
+          return {
+            select() {
+              return this;
+            },
+            eq() {
+              return this;
+            },
+            order() {
+              return this;
+            },
+            limit: async () => ({
+              data: null,
+              error: { message: "relation does not exist" },
+            }),
+          };
+        }
+
+        throw new Error(`Unexpected table ${table}`);
+      },
+    };
+
+    await expect(
+      getApplicationExportPackage({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: supabase as any,
+        applicationId: "11111111-1111-4111-8111-111111111111",
+      }),
+    ).resolves.toMatchObject({
+      application: { id: "11111111-1111-4111-8111-111111111111" },
+      recommendations: [],
+      ocrChecks: [],
     });
   });
 });

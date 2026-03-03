@@ -1,7 +1,7 @@
 # Potential Refactoring Opportunities
 
 > Deep code review of the UWC Peru Selection Platform.
-> Generated: 2026-02-26
+> Generated: 2026-02-26 | Updated: 2026-03-01
 
 ---
 
@@ -9,215 +9,200 @@
 
 | Priority | Count | Description |
 |----------|-------|-------------|
-| **P0** | 4 | Critical — address before next feature cycle |
-| **P1** | 7 | High — schedule within 2 weeks |
-| **P2** | 9 | Medium — next sprint |
+| **P0** | 2 | Critical — address before next feature cycle |
+| **P1** | 5 | High — schedule within 2 weeks |
+| **P2** | 7 | Medium — next sprint |
 | **P3** | 3 | Low — nice to have |
+| **Done** | 4 | Completed since original review |
 
 ---
 
 ## P0 — Critical
 
-### 1. Monolithic Components
+### 1. Monolithic Components *(partially addressed)*
 
-Two components exceed 2,500 lines and mix multiple unrelated concerns:
+Two components still exceed 2,000 lines:
 
-**`stage-config-editor.tsx` (2,726 lines)**
-- Handles: field editor, drag-and-drop, automation templates, custom sections, stage settings, OCR prompt editing
-- Split into: `<StageFieldEditor>`, `<StageAutomationManager>`, `<CustomSectionManager>`, `<StageSettings>`, `<OCRPromptEditor>`
+**`stage-config-editor.tsx` (2,107 lines)** *(down from 2,726)*
+- ~620 lines removed via DB-driven section migration
+- Still handles: field editor, drag-and-drop, automation templates, stage settings, OCR prompt editing
+- Split into: `<StageFieldEditor>`, `<StageAutomationManager>`, `<StageSettings>`, `<OCRPromptEditor>`
 
-**`applicant-application-form.tsx` (2,560 lines)**
-- Handles: multi-step wizard, form rendering, validation, document uploads, recommender flows, auto-save
-- 25+ useState hooks in a single component
-- Split into: `<ApplicationFormWizard>`, `<FormStep>`, `<DocumentUploadSection>`, `<RecommenderSection>`, `<FormProgress>`
+**`applicant-application-form.tsx` (2,516 lines)** *(down from 2,560)*
+- Sub-components extracted: `ApplicantSidebar`, `ApplicantActionBar`, `ApplicantMobileProgress`, `ApplicantTopNav`, `TogglePill`, `GradesTable`, `UploadZone`
+- useState reduced from 25+ → 6 in the main component body
+- Still needs split into: `<ApplicationFormWizard>`, `<FormStep>`, `<DocumentUploadSection>`, `<RecommenderSection>`
 
-**Impact**: Impossible to test in isolation, performance issues from unnecessary re-renders, any change risks unrelated regressions.
+**Impact**: Large files remain hard to test in isolation and risk unrelated regressions.
 
 ### 2. Type Safety — Unsafe `as` Casts
 
-20+ instances of `as` type assertions with no runtime validation:
-- `(cyclesData as CycleRow[] | null)` in API routes
-- `(record.fieldSectionAssignments as Record<string, Json>)` in config parsing
-- `(templateData as Pick<StageTemplateRow, "admin_config">)`
+**89 instances** of `as` type assertions across 20 files with no runtime validation.
+
+Top offenders:
+- `cycles/[id]/stages/[stageCode]/config/route.ts`: 15 instances
+- `recommendations-service.ts`: 12 instances
+- `application-service.ts`: 8 instances
+- `automation-service.ts`: 8 instances
+- `exports-service.ts`: 7 instances
 
 **Fix**: Introduce Zod schemas for all DB query results and API payloads.
-
-### 3. Zero Test Coverage
-
-Vitest is configured in `package.json` but no test files exist. Critical untested paths:
-- `validateStagePayload()` — form validation
-- `application-service.ts` — all functions
-- `groupApplicantFormFieldsWithCustomSections()` — section grouping
-- API route error handling
-- `deriveEditorSections()` — field bucketing logic
-
-### 4. Inconsistent API Error Handling
-
-Each component reimplements error handling independently:
-```
-const [error, setError] = useState(null);
-const response = await fetch(url);
-const body = await response.json();
-if (!response.ok) { setError(body); return; }  // No type safety
-```
-
-**Fix**: Create a shared `fetchApi<T>()` wrapper in `/src/lib/client/api-client.ts` that handles errors consistently, with typed error responses.
 
 ---
 
 ## P1 — High
 
-### 5. Reusable Hooks Missing
+### 3. Client-Side API Error Handling
+
+Server-side error handling is now consistent via `withErrorHandling()` + `AppError` (see Completed section). However, **client-side** components still independently implement `fetch()` + `response.ok` checks + `useState` error patterns.
+
+**Fix**: Create a shared `fetchApi<T>()` wrapper in `/src/lib/client/api-client.ts`.
+
+### 4. Reusable Hooks Missing
 
 Repeated patterns across components that should be custom hooks:
 - **`useApiState<T>()`** — loading/error/data state management (repeated in 5+ components)
 - **`usePersistentState<T>(key, default)`** — localStorage + React state sync (repeated in sidebar, recommender form)
 
-### 6. State Management in Large Components
-
-`applicant-application-form.tsx` uses 25+ individual `useState` hooks. Related states drift out of sync.
-- **Fix**: Consolidate with `useReducer` for form state, save state, and navigation state.
-
-### 7. Missing Error Boundary
+### 5. Missing Error Boundary
 
 No `<ErrorBoundary>` component at root layout. Any unhandled throw crashes the entire app.
 
-### 8. Service Layer Gaps
+### 6. Service Layer Gaps *(partially addressed)*
 
-Several API routes contain inline Supabase queries instead of using the service layer:
-- `/api/cycles/route.ts`
-- `/api/applications/[id]/validate/route.ts`
+`/api/applications/[id]/validate/route.ts` now delegates to the service layer (fixed).
 
-**Fix**: Move all DB access to `/src/lib/server/*-service.ts` files. API routes should only handle HTTP concerns.
+Still outstanding: `/api/cycles/route.ts` contains **inline Supabase queries** in both GET (lines 37-95) and POST (lines 120-191) handlers. No `cycles-service.ts` exists.
 
-### 9. API Route Type Contracts
+**Fix**: Create `/src/lib/server/cycles-service.ts` and move all DB access there.
 
-Routes don't declare input/output types:
-```ts
-export async function GET(request: NextRequest) { ... }  // What does this return?
-```
+### 7. CSS Architecture
 
-**Fix**: Define typed request/response shapes per route.
+`globals.css` is **1,930 lines** mixing variables, resets, layout, and component-specific styles.
 
-### 10. CSS Architecture
-
-`globals.css` is 1,900+ lines mixing variables, resets, layout, and component-specific styles.
-
-**Fix**: Split into modular structure:
-```
-/src/styles/
-  globals.css       (imports only)
-  theme.css         (CSS variables)
-  layout.css        (topbar, sidebar, shell)
-  utilities.css     (eyebrow, page-header)
-  components/       (forms.css, buttons.css, cards.css)
-```
-
-### 11. Accessibility Gaps
-
-- Some buttons missing `aria-label` (collapse toggles, icon buttons)
-- No focus trapping in mobile drawer / modal dialogs
-- Color contrast for `--muted: #9A9590` may not meet WCAG AA on light backgrounds
+**Fix**: Split into modular structure under `/src/styles/`.
 
 ---
 
 ## P2 — Medium
 
-### 12. Duplicated Date Formatting
+### 8. Duplicated Date Formatting
 
-`toDateInputValue()` and `toIsoDate()` reimplemented in 3+ files.
-- **Fix**: Centralize in `/src/lib/utils/date-formatters.ts`
+`toDateInputValue()` defined independently in:
+1. `admin-dashboard.tsx` (line 27)
+2. `stage-config-editor.tsx` (line 202)
 
-### 13. Duplicated Label Mappings
+`toIsoDate()` in `admin-dashboard.tsx` + variant `toIsoDateBoundary()` in config route.
 
-`getStageLabel()`, `getStatusLabel()`, `roleLabel()` scattered across components.
-- **Fix**: Single source in `/src/lib/utils/domain-labels.ts`
+**Fix**: Centralize in `/src/lib/utils/date-formatters.ts`
 
-### 14. Hardcoded Section IDs Across 4 Files
+### 9. Duplicated Label Mappings
 
-The 8 builtin section IDs (`eligibility`, `identity`, `family`, `school`, `motivation`, `recommenders`, `documents`, `other`) are independently declared in:
-1. `applicant-sections.ts` — `SECTION_ORDER`
-2. `stage-admin-config.ts` — `BUILTIN_SECTION_IDS`
-3. `stage-config-editor.tsx` — `BUILTIN_SECTION_ORDER_DEFAULT`
-4. `route.ts` (config API) — `BUILTIN_SECTION_IDS`
+- `roleLabel()` defined independently in 3 files: `recommendations-service.ts`, `applicant-application-form.tsx`, `recommender-form.tsx`
+- `getStatusLabel()` in 2 files: `admin-candidates-dashboard.tsx`, `recommender-form.tsx`
+- `getStageLabel()` in `admin-candidates-dashboard.tsx`
 
-**Fix**: Export from one canonical location and import everywhere.
+**Fix**: Single source in `/src/lib/utils/domain-labels.ts`
 
-### 15. Section Display Names Hardcoded in 3 Places
+### 10. Section Display Names *(partially addressed)*
 
-Spanish titles like "Datos Personales", "Elegibilidad" defined independently in:
-1. `applicant-sections.ts` — `SECTION_META`
-2. `stage-config-editor.tsx` — `getBuiltinSectionTitle()`
-3. `applicant-application-form.tsx` — `SECTION_TITLES_ES` / `SECTION_TITLES_EN`
+Form content section titles (`eligibility`, `identity`, `family`, etc.) are now DB-driven via `stage_sections` table. `SECTION_META` and `getBuiltinSectionTitle()` have been removed.
 
-**Fix**: Single `SECTION_DISPLAY_NAMES` constant or move to DB/i18n.
+Still hardcoded: wizard-level static section titles (`SECTION_TITLES_ES` / `SECTION_TITLES_EN` in `applicant-application-form.tsx` lines 80-92) for `prep_intro`, `documents_uploads`, `recommenders_flow`, `review_submit`. Also a stale hardcoded string "Sección 1: Datos Personales" in `stage-config-editor.tsx` line 1412.
 
-### 16. Field Classification is Hardcoded
+### 11. Accessibility *(partially addressed)*
 
-`classifyApplicantFieldKey()` in `applicant-sections.ts` uses hardcoded prefix patterns + hardcoded field key sets to auto-classify fields into sections. This means adding new field types requires code changes.
+21 `aria-label` attributes now exist across 10 component files.
 
-**Fix**: Migrate to DB-driven field→section assignments via `admin_config.fieldSectionAssignments`. See Architecture Analysis section below.
+Still outstanding:
+- No focus trapping in mobile drawer / modal dialogs
+- Color contrast for `--muted: #9A9590` may not meet WCAG AA on light backgrounds
 
-### 17. CSS Modules for Components
+### 12. CSS Modules for Components
 
-Non-MUI components use global CSS classes (`.sidebar`, `.stage-item`) risking naming collisions.
-- **Fix**: Adopt CSS Modules per component.
+Zero `.module.css` files exist. All component styling uses global CSS classes risking naming collisions.
 
-### 18. Hardcoded Spanish/English Strings
+### 13. Hardcoded Spanish/English Strings
 
-Multiple components have hardcoded UI text instead of using the i18n system:
-```ts
-return "1. Formulario Principal";  // Hardcoded in getStageLabel()
-```
+Still prevalent in admin components:
+- `admin-candidates-dashboard.tsx`: `"1. Formulario Principal"`, `"En progreso"`, `"Completado"`
+- `stage-config-editor.tsx`: `"Formulario Principal"`, `"Sección 1: Datos Personales"`
+- `admin-stage-sidebar.tsx`, `admin-stage-form-preview.tsx`: `"Formulario Principal"`
 
-### 19. Environment-Specific Configuration
+### 14. Environment-Specific Configuration
 
-Values like `SESSION_TTL_MS = 8 * 60 * 60 * 1000` are hardcoded. Should be configurable per environment.
+`SESSION_TTL_MS = 8 * 60 * 60 * 1000` hardcoded in `recommendations-service.ts`. No build-time env validation.
 
-### 20. Inconsistent Supabase Query Error Handling
+### 15. API Route Type Contracts
 
-Different error handling patterns between service files (`throw new AppError(...)`) and component-level fetch (`setError(body)`).
-- **Fix**: Standard `supabaseQuery<T>()` wrapper.
+Routes don't declare typed request/response shapes. Zod used for input validation but no shared response types.
 
 ---
 
 ## P3 — Low
 
-### 21. Build-Time Environment Validation
+### 16. Build-Time Environment Validation
 
-Environment checks happen at runtime with `throw`. Could fail earlier at build time.
+Environment checks happen at runtime with `throw`. Could fail earlier at build time with `t3-env` or `envalid`.
 
-### 22. Vague Error Context Types
+### 17. Vague Error Context Types
 
 `error-callout.tsx` accepts `context: string` — should be a union type for clarity.
 
-### 23. CSS File Size Impact
+### 18. CSS File Size Impact
 
-1,900+ line CSS file parsed on every page load. Splitting into modules would allow tree-shaking.
+1,930-line CSS file parsed on every page load. Splitting into modules would allow tree-shaking.
+
+---
+
+## Completed
+
+### ~~3. Zero Test Coverage~~ (was P0)
+**Resolved 2026-02-28.** 38 test files across 5 categories:
+- `tests/unit/` — 17 files (applicant-sections, application-validation, automation-service, etc.)
+- `tests/components/` — 12 files (applicant-form, stage-config-editor, admin-dashboard, etc.)
+- `tests/e2e/` — 7 Playwright specs (access-control, admin-field-crud, applicant lifecycle, etc.)
+- `tests/integration/` — 2 files
+- `tests/security/` — 1 file
+
+151+ tests passing. Previously untested paths like `validateStagePayload()`, `applicant-sections`, and `stage-form-schema` are now covered.
+
+### ~~4. Server-Side API Error Handling~~ (was P0)
+**Resolved 2026-02-28.** All 29 API route files use `withErrorHandling()` from `/src/lib/errors/with-error-handling.ts`, providing consistent `AppError`-based responses with `requestId`, structured logging, and typed user messages. Client-side `fetchApi<T>()` wrapper remains outstanding (see item 3 above).
+
+### ~~14. Hardcoded Section IDs Across 4 Files~~ (was P2)
+**Resolved 2026-02-27.** All 4 copies removed:
+- `SECTION_ORDER` in `applicant-sections.ts` — gone
+- `BUILTIN_SECTION_IDS` in `stage-admin-config.ts` — gone (file stripped to 37 lines with redirect comment)
+- `BUILTIN_SECTION_ORDER_DEFAULT` in `stage-config-editor.tsx` — gone
+- `BUILTIN_SECTION_IDS` in config route — gone
+
+`stage_sections` DB table (migrations `20260227000300` + `20260227000400`) is now the single source of truth.
+
+### ~~16. Field Classification is Hardcoded~~ (was P2)
+**Resolved 2026-02-27.** `classifyApplicantFieldKey()` completely removed from the codebase. Fields are now assigned to sections via `section_id` FK on `cycle_stage_fields`, pointing to the `stage_sections` table. Comment in `applicant-sections.ts`: "No more hardcoded prefix matching."
 
 ---
 
 ## Architecture Analysis: Single Source of Truth
 
-### Current State
+### Current State (as of 2026-03-01)
 
 | What | Source | DB-Driven? |
 |------|--------|------------|
 | Field definitions | `cycle_stage_fields` table | Yes |
-| Field→section assignments | `admin_config.fieldSectionAssignments` | Yes (override) |
-| Default field classification | `classifyApplicantFieldKey()` | **No** — hardcoded |
-| Builtin section IDs | TypeScript constants (4 files) | **No** — hardcoded |
-| Section display names | TypeScript constants (3 files) | **No** — hardcoded |
-| Section order | `admin_config.builtinSectionOrder` | Yes (override) |
-| Custom sections | `admin_config.customSections` | Yes |
+| Field→section assignments | `cycle_stage_fields.section_id` FK → `stage_sections` | Yes |
+| Section IDs | `stage_sections` table | Yes |
+| Section display names (form) | `stage_sections.title` | Yes |
+| Section display names (wizard) | `SECTION_TITLES_ES/EN` in `applicant-application-form.tsx` | **No** — hardcoded |
+| Section order | `stage_sections.sort_order` | Yes |
+| Section visibility | `stage_sections.is_visible` | Yes |
 | Sub-groups within sections | `field-sub-groups.ts` | **No** — hardcoded |
 
-### Recommendation
+### Remaining Work
 
-The app currently uses a **hybrid approach**: the DB stores field definitions and admin overrides, but the default section structure is hardcoded. This is discussed in more detail in the architecture answer below.
+The architecture is now **predominantly DB-driven**. The short-term and long-term goals from the original review have been completed (deduplicate section IDs → done; create `stage_sections` table → done).
 
-**Short-term** (P2): Deduplicate the 4 copies of section IDs into one canonical file.
-
-**Medium-term** (P1): Move section display names to the i18n system or a DB-driven config table.
-
-**Long-term** (P0 if new sections needed): Create a `stage_sections` DB table to make the section structure fully dynamic, eliminating the hardcoded `classifyApplicantFieldKey()` logic entirely.
+Two items remain hardcoded:
+1. **Wizard section titles** — Move to i18n system or make configurable per cycle.
+2. **Sub-groups** — Consider making configurable if admin needs to reorder fields within sections.

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
 import type { Database, Json } from "@/types/supabase";
 
@@ -85,6 +86,33 @@ export type ApplicationExportPackage = {
   >;
   ocrChecks: Array<Pick<OcrRow, "id" | "file_key" | "summary" | "confidence" | "created_at">>;
 };
+
+/* -------------------------------------------------------------------------- */
+/*  Exportable column registry (drives column picker UI + xlsx builder)       */
+/* -------------------------------------------------------------------------- */
+
+export type ExportableColumn = {
+  key: keyof ApplicationExportRow;
+  label: string;
+};
+
+export const EXPORTABLE_COLUMNS: ExportableColumn[] = [
+  { key: "applicationId", label: "ID Postulación" },
+  { key: "cycleId", label: "ID Ciclo" },
+  { key: "cycleName", label: "Nombre del Ciclo" },
+  { key: "applicantId", label: "ID Postulante" },
+  { key: "applicantEmail", label: "Email Postulante" },
+  { key: "applicantName", label: "Nombre Postulante" },
+  { key: "stageCode", label: "Etapa" },
+  { key: "status", label: "Estado" },
+  { key: "validationNotes", label: "Notas de Validación" },
+  { key: "mentorRecommendationSubmitted", label: "Rec. Mentor Enviada" },
+  { key: "friendRecommendationSubmitted", label: "Rec. Amigo Enviada" },
+  { key: "recommendationCompletion", label: "Recomendaciones" },
+  { key: "fileCount", label: "Archivos Subidos" },
+  { key: "createdAt", label: "Fecha Creación" },
+  { key: "updatedAt", label: "Última Actualización" },
+];
 
 function clean(value: string | null) {
   const trimmed = value?.trim();
@@ -390,50 +418,85 @@ export async function getApplicationsForExport({
   };
 }
 
-export function buildApplicationsCsv(rows: ApplicationExportRow[]) {
-  const header = [
-    "application_id",
-    "cycle_id",
-    "cycle_name",
-    "applicant_id",
-    "applicant_email",
-    "applicant_name",
-    "stage_code",
-    "status",
-    "validation_notes",
-    "mentor_recommendation_submitted",
-    "friend_recommendation_submitted",
-    "recommendation_completion",
-    "file_count",
-    "created_at",
-    "updated_at",
-  ]
-    .map(csvCell)
+export function buildApplicationsCsv(
+  rows: ApplicationExportRow[],
+  columnKeys?: Array<keyof ApplicationExportRow>,
+) {
+  const selectedKeys = columnKeys ?? EXPORTABLE_COLUMNS.map((c) => c.key);
+  const keyToLabel = new Map(EXPORTABLE_COLUMNS.map((c) => [c.key, c.label]));
+
+  const header = selectedKeys
+    .map((k) => csvCell(keyToLabel.get(k) ?? String(k)))
     .join(",");
 
   const lines = rows.map((row) =>
-    [
-      row.applicationId,
-      row.cycleId,
-      row.cycleName,
-      row.applicantId,
-      row.applicantEmail,
-      row.applicantName,
-      row.stageCode,
-      row.status,
-      row.validationNotes,
-      String(row.mentorRecommendationSubmitted),
-      String(row.friendRecommendationSubmitted),
-      row.recommendationCompletion,
-      String(row.fileCount),
-      row.createdAt,
-      row.updatedAt,
-    ]
-      .map(csvCell)
+    selectedKeys
+      .map((key) => {
+        const val = row[key];
+        return csvCell(typeof val === "boolean" ? String(val) : String(val ?? ""));
+      })
       .join(","),
   );
 
   return [header, ...lines].join("\n");
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Excel export                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Build an .xlsx workbook for the given rows.
+ * `columnKeys` controls which columns appear and in what order.
+ * Defaults to all EXPORTABLE_COLUMNS when omitted.
+ */
+export async function buildApplicationsXlsx(
+  rows: ApplicationExportRow[],
+  columnKeys?: Array<keyof ApplicationExportRow>,
+): Promise<Buffer> {
+  const ExcelJS = (await import("exceljs")).default;
+  const selectedKeys = columnKeys ?? EXPORTABLE_COLUMNS.map((c) => c.key);
+  const keyToLabel = new Map(EXPORTABLE_COLUMNS.map((c) => [c.key, c.label]));
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "UWC Peru Platform";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("Postulaciones");
+
+  /* Header row */
+  sheet.columns = selectedKeys.map((key) => ({
+    header: keyToLabel.get(key) ?? String(key),
+    key: String(key),
+    width: 22,
+  }));
+
+  /* Style header row */
+  sheet.getRow(1).font = { bold: true };
+  sheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFD6E4F7" },
+  };
+
+  /* Data rows */
+  for (const row of rows) {
+    const record: Record<string, string | number | boolean> = {};
+    for (const key of selectedKeys) {
+      const raw = row[key];
+      record[String(key)] = typeof raw === "boolean" ? String(raw) : (raw as string | number);
+    }
+    sheet.addRow(record);
+  }
+
+  /* Auto-filter on header */
+  sheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: 1, column: selectedKeys.length },
+  };
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
 }
 
 export async function getApplicationExportPackage({
@@ -452,13 +515,33 @@ export async function getApplicationExportPackage({
     });
   }
 
-  const { data: application, error: applicationError } = await supabase
-    .from("applications")
-    .select(
-      "id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, created_at, updated_at",
-    )
-    .eq("id", parsedApplicationId)
-    .maybeSingle();
+  let privilegedSupabase: SupabaseClient<Database> | null = null;
+  try {
+    privilegedSupabase = getSupabaseAdminClient();
+  } catch {
+    privilegedSupabase = null;
+  }
+
+  const loadApplication = async (client: SupabaseClient<Database>) =>
+    client
+      .from("applications")
+      .select(
+        "id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, created_at, updated_at",
+      )
+      .eq("id", parsedApplicationId)
+      .maybeSingle();
+
+  let dataClient: SupabaseClient<Database> = supabase;
+  let { data: application, error: applicationError } = await loadApplication(supabase);
+
+  if ((applicationError || !application) && privilegedSupabase) {
+    const retry = await loadApplication(privilegedSupabase);
+    if (!retry.error && retry.data) {
+      application = retry.data;
+      applicationError = null;
+      dataClient = privilegedSupabase;
+    }
+  }
 
   if (applicationError) {
     throw new AppError({
@@ -479,24 +562,24 @@ export async function getApplicationExportPackage({
 
   const [{ data: applicant }, { data: cycle }, { data: recommendations, error: recommendationError }, { data: ocrChecks, error: ocrError }] =
     await Promise.all([
-      supabase
+      dataClient
         .from("profiles")
         .select("id, email, full_name")
         .eq("id", application.applicant_id)
         .maybeSingle(),
-      supabase
+      dataClient
         .from("cycles")
         .select("id, name, stage1_open_at, stage1_close_at, stage2_open_at, stage2_close_at")
         .eq("id", application.cycle_id)
         .maybeSingle(),
-      supabase
+      dataClient
         .from("recommendation_requests")
         .select(
           "id, role, recommender_email, status, invite_sent_at, submitted_at, last_reminder_at, reminder_count, created_at",
         )
         .eq("application_id", application.id)
         .order("created_at", { ascending: true }),
-      supabase
+      dataClient
         .from("application_ocr_checks")
         .select("id, file_key, summary, confidence, created_at")
         .eq("application_id", application.id)
@@ -504,23 +587,28 @@ export async function getApplicationExportPackage({
         .limit(20),
     ]);
 
-  if (recommendationError) {
-    throw new AppError({
-      message: "Failed loading recommendations for export package",
-      userMessage: "No se pudo exportar la postulación seleccionada.",
-      status: 500,
-      details: recommendationError,
-    });
-  }
-
-  if (ocrError) {
-    throw new AppError({
-      message: "Failed loading OCR history for export package",
-      userMessage: "No se pudo exportar la postulación seleccionada.",
-      status: 500,
-      details: ocrError,
-    });
-  }
+  // Be resilient here: recommendation/OCR metadata should not block admin profile view.
+  // If these optional queries fail (RLS mismatch, missing table on preview, etc.),
+  // we still return the core application package.
+  const safeRecommendations = recommendationError
+    ? []
+    : ((recommendations ?? []) as Array<
+      Pick<
+        RecommendationRow,
+        | "id"
+        | "role"
+        | "recommender_email"
+        | "status"
+        | "invite_sent_at"
+        | "submitted_at"
+        | "last_reminder_at"
+        | "reminder_count"
+        | "created_at"
+      >
+    >);
+  const safeOcrChecks = ocrError
+    ? []
+    : (((ocrChecks ?? []) as Array<Pick<OcrRow, "id" | "file_key" | "summary" | "confidence" | "created_at">>) ?? []);
 
   return {
     exportedAt: new Date().toISOString(),
@@ -538,22 +626,8 @@ export async function getApplicationExportPackage({
     cycle,
     applicant,
     files: normalizeApplicationFiles(application.files),
-    recommendations: (recommendations ?? []) as Array<
-      Pick<
-        RecommendationRow,
-        | "id"
-        | "role"
-        | "recommender_email"
-        | "status"
-        | "invite_sent_at"
-        | "submitted_at"
-        | "last_reminder_at"
-        | "reminder_count"
-        | "created_at"
-      >
-    >,
-    ocrChecks:
-      ((ocrChecks ?? []) as Array<Pick<OcrRow, "id" | "file_key" | "summary" | "confidence" | "created_at">>) ?? [],
+    recommendations: safeRecommendations,
+    ocrChecks: safeOcrChecks,
   };
 }
 

@@ -16,7 +16,7 @@ export async function POST(
       supabase,
       recommendationId: id,
       actorId: profile.id,
-      actorRole: profile.role,
+      actorRole: profile.role as "admin" | "applicant",
       origin: request.nextUrl.origin,
     });
 

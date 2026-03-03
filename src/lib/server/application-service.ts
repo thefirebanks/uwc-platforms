@@ -1,12 +1,32 @@
 import Papa from "papaparse";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canTransition } from "@/lib/stages/transition";
+import { canTransition, canTransitionWithRules, deriveTransitionRules } from "@/lib/stages/transition";
 import { AppError } from "@/lib/errors/app-error";
 import type { Database } from "@/types/supabase";
-import type { ApplicationStatus, StageCode } from "@/types/domain";
+import type { Application, ApplicationStatus, StageCode } from "@/types/domain";
 import type { StagePayload } from "@/lib/stages/form-schema";
 
 type ApplicationRow = Database["public"]["Tables"]["applications"]["Row"];
+
+function pickString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+export function getApplicationName(application: Application, fallback = "Postulante"): string {
+  const payload = application.payload as Record<string, unknown>;
+  const explicit = pickString(payload.fullName);
+  if (explicit) return explicit;
+
+  const combined = [
+    pickString(payload.firstName),
+    pickString(payload.paternalLastName),
+    pickString(payload.maternalLastName),
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return combined || fallback;
+}
 
 function isPast(dateLike: string | null | undefined) {
   if (!dateLike) {
@@ -367,6 +387,156 @@ export async function transitionApplication({
   }
 
   return updated as ApplicationRow;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Bulk stage transitions                                                    */
+/* -------------------------------------------------------------------------- */
+
+export type BulkTransitionInput = {
+  cycleId: string;
+  fromStage: StageCode;
+  toStage: StageCode;
+  statusFilter: ApplicationStatus[];
+  reason: string;
+};
+
+export type BulkTransitionResult = {
+  transitioned: number;
+  skipped: number;
+  errors: Array<{ applicationId: string; error: string }>;
+};
+
+/**
+ * Move all applications matching the filter from one stage to another.
+ * Each application is validated individually against DB-driven transition rules.
+ * Uses Promise.allSettled so one failure doesn't block the rest.
+ */
+export async function bulkTransitionApplications({
+  supabase,
+  input,
+  actorId,
+}: {
+  supabase: SupabaseClient<Database>;
+  input: BulkTransitionInput;
+  actorId: string;
+}): Promise<BulkTransitionResult> {
+  /* ---- Load transition rules from cycle stage templates ---- */
+  const { data: templates, error: templateError } = await supabase
+    .from("cycle_stage_templates")
+    .select("stage_code, sort_order")
+    .eq("cycle_id", input.cycleId)
+    .order("sort_order", { ascending: true });
+
+  if (templateError) {
+    throw new AppError({
+      message: "Failed to load stage templates for bulk transition",
+      userMessage: "No se pudieron cargar las etapas del proceso.",
+      status: 500,
+      details: templateError,
+    });
+  }
+
+  const rules = deriveTransitionRules(templates ?? []);
+
+  /* ---- Fetch matching applications ---- */
+  const { data: applications, error: fetchError } = await supabase
+    .from("applications")
+    .select("id, stage_code, status")
+    .eq("cycle_id", input.cycleId)
+    .eq("stage_code", input.fromStage)
+    .in("status", input.statusFilter);
+
+  if (fetchError) {
+    throw new AppError({
+      message: "Failed to fetch applications for bulk transition",
+      userMessage: "No se pudieron cargar las postulaciones.",
+      status: 500,
+      details: fetchError,
+    });
+  }
+
+  if (!applications || applications.length === 0) {
+    return { transitioned: 0, skipped: 0, errors: [] };
+  }
+
+  /* ---- Transition each application individually ---- */
+  const now = new Date().toISOString();
+  const result: BulkTransitionResult = { transitioned: 0, skipped: 0, errors: [] };
+
+  const outcomes = await Promise.allSettled(
+    applications.map(async (app) => {
+      const canMove = canTransitionWithRules({
+        fromStage: app.stage_code,
+        toStage: input.toStage,
+        status: app.status as ApplicationStatus,
+        rules,
+      });
+
+      if (!canMove) {
+        return { type: "skipped" as const, applicationId: app.id };
+      }
+
+      // Update stage
+      const { error: updateError } = await supabase
+        .from("applications")
+        .update({ stage_code: input.toStage, updated_at: now })
+        .eq("id", app.id);
+
+      if (updateError) {
+        return {
+          type: "error" as const,
+          applicationId: app.id,
+          error: updateError.message,
+        };
+      }
+
+      // Record transition
+      const { error: transitionError } = await supabase
+        .from("stage_transitions")
+        .insert({
+          application_id: app.id,
+          from_stage: app.stage_code,
+          to_stage: input.toStage,
+          reason: input.reason,
+          actor_id: actorId,
+        });
+
+      if (transitionError) {
+        return {
+          type: "error" as const,
+          applicationId: app.id,
+          error: `Stage updated but transition record failed: ${transitionError.message}`,
+        };
+      }
+
+      return { type: "transitioned" as const, applicationId: app.id };
+    }),
+  );
+
+  for (const outcome of outcomes) {
+    if (outcome.status === "rejected") {
+      result.errors.push({
+        applicationId: "unknown",
+        error: String(outcome.reason),
+      });
+      continue;
+    }
+
+    const value = outcome.value;
+    if (value.type === "transitioned") {
+      result.transitioned += 1;
+    } else if (value.type === "skipped") {
+      result.skipped += 1;
+    } else {
+      result.errors.push({
+        applicationId: value.applicationId,
+        error: value.error,
+      });
+    }
+  }
+
+  return result;
 }
 
 export async function importExamCsv({

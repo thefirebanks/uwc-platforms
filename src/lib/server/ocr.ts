@@ -1,32 +1,52 @@
 import { AppError } from "@/lib/errors/app-error";
 
-const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent";
+/* -------------------------------------------------------------------------- */
+/*  Model registry                                                             */
+/* -------------------------------------------------------------------------- */
 
-const DEFAULT_OCR_PROMPT =
+export const MODEL_REGISTRY: Record<string, { name: string; url: string }> = {
+  "gemini-flash": {
+    name: "Gemini Flash 3 Preview (Gratuito)",
+    url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent",
+  },
+  "gemini-pro-vision": {
+    name: "Gemini 1.5 Pro Vision (Premium)",
+    url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent",
+  },
+};
+
+export const DEFAULT_MODEL_ID = "gemini-flash";
+
+export function getModelUrl(modelId?: string | null): string {
+  return (
+    MODEL_REGISTRY[modelId ?? DEFAULT_MODEL_ID]?.url ??
+    MODEL_REGISTRY[DEFAULT_MODEL_ID]!.url
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Default prompt                                                             */
+/* -------------------------------------------------------------------------- */
+
+export const DEFAULT_OCR_PROMPT =
   "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.";
+
+/* -------------------------------------------------------------------------- */
+/*  Internal helpers                                                           */
+/* -------------------------------------------------------------------------- */
 
 function clampConfidence(value: unknown) {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
-
-  if (value < 0) {
-    return 0;
-  }
-
-  if (value > 1) {
-    return 1;
-  }
-
+  if (value < 0) return 0;
+  if (value > 1) return 1;
   return value;
 }
 
 function extractJsonCandidate(text: string) {
   const trimmed = text.trim();
-  if (!trimmed) {
-    return null;
-  }
+  if (!trimmed) return null;
 
   try {
     return JSON.parse(trimmed) as Record<string, unknown>;
@@ -56,6 +76,10 @@ function extractJsonCandidate(text: string) {
   return null;
 }
 
+/* -------------------------------------------------------------------------- */
+/*  Public API                                                                 */
+/* -------------------------------------------------------------------------- */
+
 export function parseOcrModelOutput(outputText: string) {
   const parsed = extractJsonCandidate(outputText);
   const parsedSummary = typeof parsed?.summary === "string" ? parsed.summary.trim() : "";
@@ -78,9 +102,11 @@ export function parseOcrModelOutput(outputText: string) {
 export async function runOcrCheck({
   fileUrl,
   promptTemplate,
+  modelId,
 }: {
   fileUrl: string;
   promptTemplate?: string | null;
+  modelId?: string | null;
 }): Promise<{ summary: string; confidence: number; rawResponse: Record<string, unknown> }> {
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -93,8 +119,10 @@ export async function runOcrCheck({
   }
 
   const prompt = (promptTemplate?.trim() || DEFAULT_OCR_PROMPT).trim();
+  const modelUrl = getModelUrl(modelId);
+  const resolvedModelId = modelId ?? DEFAULT_MODEL_ID;
 
-  const response = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+  const response = await fetch(`${modelUrl}?key=${apiKey}`, {
     method: "POST",
     headers: {
       "x-goog-api-key": apiKey,
@@ -135,7 +163,11 @@ export async function runOcrCheck({
 
   const modelResponse = (await response.json()) as Record<string, unknown>;
   const outputText =
-    (modelResponse?.candidates as Array<{ content?: { parts?: Array<{ text?: string }> } }> | undefined)?.[0]
+    (
+      modelResponse?.candidates as
+        | Array<{ content?: { parts?: Array<{ text?: string }> } }>
+        | undefined
+    )?.[0]
       ?.content?.parts?.map((part) => part.text ?? "")
       .join("\n")
       .trim() ?? "";
@@ -148,7 +180,7 @@ export async function runOcrCheck({
     rawResponse: {
       outputText,
       parsed: parsed.parsedJson,
-      provider: "gemini-3-flash-preview",
+      provider: resolvedModelId,
       source: modelResponse,
     },
   };

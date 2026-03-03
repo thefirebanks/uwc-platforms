@@ -6,6 +6,7 @@ import {
 } from "@/components/admin-home-dashboard";
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { getApplicationName } from "@/lib/server/application-service";
 import type { Application, CycleStageTemplate, SelectionProcess } from "@/types/domain";
 
 function formatRelativeTime(dateIso: string) {
@@ -23,26 +24,6 @@ function formatRelativeTime(dateIso: string) {
 
   const deltaDays = Math.floor(deltaHours / 24);
   return `Hace ${deltaDays} día${deltaDays === 1 ? "" : "s"}`;
-}
-
-function getApplicantName(application: Application) {
-  const payload = application.payload as Record<string, unknown>;
-  const explicit = typeof payload.fullName === "string" ? payload.fullName.trim() : "";
-  if (explicit.length > 0) {
-    return explicit;
-  }
-
-  const firstName = typeof payload.firstName === "string" ? payload.firstName.trim() : "";
-  const paternalLastName =
-    typeof payload.paternalLastName === "string" ? payload.paternalLastName.trim() : "";
-  const maternalLastName =
-    typeof payload.maternalLastName === "string" ? payload.maternalLastName.trim() : "";
-
-  const combined = [firstName, paternalLastName, maternalLastName]
-    .filter((part) => part.length > 0)
-    .join(" ");
-
-  return combined.length > 0 ? combined : "Postulante";
 }
 
 export default async function AdminPage() {
@@ -135,7 +116,7 @@ export default async function AdminPage() {
 
     return {
       id: application.id,
-      text: `${getApplicantName(application)} ${statusText}.`,
+      text: `${getApplicationName(application)} ${statusText}.`,
       timeLabel: formatRelativeTime(application.updated_at),
       icon: isSubmittedLike ? "✓" : "📝",
       iconTone: isSubmittedLike ? "green" : "blue",

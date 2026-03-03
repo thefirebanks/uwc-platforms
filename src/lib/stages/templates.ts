@@ -1,5 +1,5 @@
 import type { Database } from "@/types/supabase";
-import type { StageFieldType } from "@/types/domain";
+import type { CycleStageTemplate, StageFieldType } from "@/types/domain";
 
 type CycleRow = Database["public"]["Tables"]["cycles"]["Row"];
 type CycleTemplateInsert = Database["public"]["Tables"]["cycle_stage_templates"]["Insert"];
@@ -735,6 +735,17 @@ function buildDocumentStagePresetInputs(): StageFieldPresetInput[] {
 export const DEFAULT_DOCUMENT_STAGE_FIELD_PRESETS: StageFieldPreset[] = withSortOrder(
   buildDocumentStagePresetInputs(),
 );
+
+export function findTemplateByIdOrCode(
+  templates: CycleStageTemplate[],
+  identifier: string,
+): CycleStageTemplate | null {
+  return (
+    templates.find((t) => t.id === identifier) ??
+    templates.find((t) => t.stage_code === identifier) ??
+    null
+  );
+}
 
 export function buildDefaultCycleStageTemplates({
   cycleId,
