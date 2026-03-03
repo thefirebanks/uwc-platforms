@@ -5,6 +5,8 @@ import {
   getApplicationExportPackage,
   normalizeApplicationFiles,
   parseApplicationExportFilters,
+  resolveNestedExportValue,
+  validateSelectedExportFields,
 } from "@/lib/server/exports-service";
 
 describe("parseApplicationExportFilters", () => {
@@ -95,6 +97,46 @@ describe("normalizeApplicationFiles", () => {
       mimeType: "application/pdf",
       sizeBytes: 1234,
     });
+  });
+});
+
+describe("resolveNestedExportValue", () => {
+  it("reads nested payload paths and stringifies arrays", () => {
+    expect(
+      resolveNestedExportValue(
+        {
+          academics: {
+            classRank: 3,
+            interests: ["math", "music"],
+          },
+        },
+        "academics.interests",
+      ),
+    ).toBe("math | music");
+  });
+});
+
+describe("validateSelectedExportFields", () => {
+  it("rejects fields outside the provided catalog", () => {
+    expect(() =>
+      validateSelectedExportFields({
+        selectedFields: ["payload.secretField"],
+        catalog: {
+          fields: [
+            {
+              key: "applicationId",
+              label: "ID",
+              helperText: null,
+              kind: "core",
+              groupKey: "core",
+              groupLabel: "Información base",
+              defaultSelected: true,
+            },
+          ],
+          presets: [],
+        },
+      }),
+    ).toThrowError(AppError);
   });
 });
 
