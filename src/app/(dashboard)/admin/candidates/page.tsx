@@ -49,6 +49,22 @@ export default async function AdminCandidatesPage({
     ? resolvedSearchParams.applicationId[0]
     : resolvedSearchParams.applicationId;
 
+  let resolvedFocusApplicationId = "";
+  let focusApplicationCycleId: string | null = null;
+
+  if (typeof requestedApplicationId === "string" && requestedApplicationId.length > 0) {
+    const { data: focusApplicationData } = await supabase
+      .from("applications")
+      .select("id, cycle_id")
+      .eq("id", requestedApplicationId)
+      .maybeSingle();
+
+    if (focusApplicationData) {
+      resolvedFocusApplicationId = focusApplicationData.id;
+      focusApplicationCycleId = focusApplicationData.cycle_id;
+    }
+  }
+
   const normalizedSearch =
     typeof requestedSearch === "string" &&
     requestedSearch.length > 0 &&
@@ -56,17 +72,19 @@ export default async function AdminCandidatesPage({
       ? requestedSearch
       : "";
 
-  const initialCycleId =
+  const normalizedInitialCycleId =
     requestedCycleId && cycleOptions.some((c) => c.id === requestedCycleId)
       ? requestedCycleId
-      : (activeCycle?.id ?? "all");
+      : focusApplicationCycleId && cycleOptions.some((c) => c.id === focusApplicationCycleId)
+        ? focusApplicationCycleId
+        : (activeCycle?.id ?? "all");
 
   return (
     <AdminCandidatesDashboard
       cycleOptions={cycleOptions}
-      defaultCycleId={initialCycleId}
+      defaultCycleId={normalizedInitialCycleId}
       defaultSearch={normalizedSearch}
-      focusApplicationId={typeof requestedApplicationId === "string" ? requestedApplicationId : ""}
+      focusApplicationId={resolvedFocusApplicationId}
     />
   );
 }

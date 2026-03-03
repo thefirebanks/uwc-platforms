@@ -104,9 +104,21 @@ export function AdminApplicationViewer({
     setEditChanges({});
 
     Promise.all([
-      fetch(`/api/exports?applicationId=${applicationId}`).then((r) =>
-        r.ok ? r.json() : Promise.reject(new Error("Failed to load application")),
-      ),
+      fetch(`/api/exports?applicationId=${applicationId}`).then(async (r) => {
+        const body = (await r.json().catch(() => null)) as
+          | { message?: string; userMessage?: string }
+          | null;
+        if (!r.ok) {
+          const message =
+            typeof body?.message === "string"
+              ? body.message
+              : typeof body?.userMessage === "string"
+                ? body.userMessage
+                : "Failed to load application";
+          throw new Error(message);
+        }
+        return body;
+      }),
       fetch(`/api/applications/${applicationId}/admin-edit`).catch(
         () => null,
       ),

@@ -174,6 +174,17 @@ export function AdminCandidatesDashboard({
     focusApplicationId || null,
   );
 
+  useEffect(() => {
+    if (loading || !viewerApplicationId) {
+      return;
+    }
+
+    const existsInCurrentRows = rows.some((row) => row.id === viewerApplicationId);
+    if (!existsInCurrentRows) {
+      setViewerApplicationId(null);
+    }
+  }, [loading, rows, viewerApplicationId]);
+
   const deferredSearch = useDeferredValue(search.trim());
 
   // Reset to page 1 when filters change
