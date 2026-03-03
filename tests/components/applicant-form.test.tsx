@@ -277,6 +277,31 @@ describe("ApplicantApplicationForm", () => {
     expect(screen.queryAllByText(/En progreso/i).length).toBe(0);
   });
 
+  it("does not mark documents in progress when file uploads are all optional and empty", () => {
+    const optionalDocumentsFields = DEFAULT_STAGE_FIELDS.map((field) =>
+      field.field_key === "identificationDocument"
+        ? { ...field, is_required: false }
+        : field,
+    );
+
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-optional-docs"
+        sections={DEFAULT_SECTIONS}
+        stageFields={optionalDocumentsFields}
+        existingApplication={{
+          ...DRAFT_APP,
+          payload: {},
+          files: {},
+        }}
+        initialRecommenders={[]}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Revisión y envío/i })[0]);
+    expect(screen.queryAllByText(/En progreso/i).length).toBe(0);
+  });
+
   it("autosaves partial draft after field edits", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
