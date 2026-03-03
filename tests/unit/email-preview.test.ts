@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AppError } from "@/lib/errors/app-error";
 import { previewEmail, sendTestEmail } from "@/lib/server/communications-service";
 
+type PreviewSupabase = Parameters<typeof previewEmail>[0]["supabase"];
+
 /* ------------------------------------------------------------------ */
 /*  Mock factory helpers                                                */
 /* ------------------------------------------------------------------ */
@@ -11,9 +13,8 @@ import { previewEmail, sendTestEmail } from "@/lib/server/communications-service
  * resolves to the provided templateRow (or null to simulate not-found).
  */
 function createPreviewSupabaseMock(templateRow: Record<string, unknown> | null) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return {
-    from(_table: string) {
+    from() {
       const builder = {
         select() {
           return builder;
@@ -55,8 +56,7 @@ afterEach(() => {
 /* ================================================================== */
 describe("previewEmail", () => {
   it("renders subject and body with default sample values", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createPreviewSupabaseMock(TEMPLATE_ROW) as any;
+    const supabase = createPreviewSupabaseMock(TEMPLATE_ROW) as unknown as PreviewSupabase;
 
     const result = await previewEmail({
       supabase,
@@ -74,8 +74,7 @@ describe("previewEmail", () => {
   });
 
   it("merges custom sampleValues over the default sample context", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createPreviewSupabaseMock(TEMPLATE_ROW) as any;
+    const supabase = createPreviewSupabaseMock(TEMPLATE_ROW) as unknown as PreviewSupabase;
 
     const result = await previewEmail({
       supabase,
@@ -98,8 +97,7 @@ describe("previewEmail", () => {
       ...TEMPLATE_ROW,
       template_body: "Hola <{{full_name}}> & bienvenido",
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createPreviewSupabaseMock(templateWithHtml) as any;
+    const supabase = createPreviewSupabaseMock(templateWithHtml) as unknown as PreviewSupabase;
 
     const result = await previewEmail({
       supabase,
@@ -114,8 +112,7 @@ describe("previewEmail", () => {
   });
 
   it("throws AppError(404) when the automation template is not found", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createPreviewSupabaseMock(null) as any;
+    const supabase = createPreviewSupabaseMock(null) as unknown as PreviewSupabase;
 
     await expect(
       previewEmail({ supabase, input: { automationTemplateId: "missing-id" } }),

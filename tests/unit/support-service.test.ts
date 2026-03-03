@@ -13,6 +13,10 @@ vi.mock("@/lib/supabase/admin", () => ({
 
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
+type ReplyTicketSupabase = Parameters<typeof replySupportTicket>[0]["supabase"];
+type CloseTicketSupabase = Parameters<typeof closeSupportTicket>[0]["supabase"];
+type AdminSupabase = ReturnType<typeof getSupabaseAdminClient>;
+
 /* ------------------------------------------------------------------ */
 /*  Mock factory helpers                                                */
 /* ------------------------------------------------------------------ */
@@ -34,7 +38,6 @@ function createTicketMock({
   insertedTicket: Record<string, unknown> | null;
   insertError?: boolean;
 }) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return {
     from(table: string) {
       const ctx = {
@@ -102,9 +105,8 @@ function createTicketMock({
  * The ticket row returned from update().single() has the update payload merged in.
  */
 function createUpdateTicketMock(baseTicket: Record<string, unknown>) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return {
-    from(_table: string) {
+    from() {
       const ctx = {
         payload: {} as Record<string, unknown>,
       };
@@ -228,8 +230,7 @@ describe("createSupportTicket", () => {
 /* ================================================================== */
 describe("replySupportTicket", () => {
   it("updates ticket to replied status and queues applicant-visible notification", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createUpdateTicketMock(BASE_TICKET) as any;
+    const supabase = createUpdateTicketMock(BASE_TICKET) as unknown as ReplyTicketSupabase;
 
     // Spy on the admin client insert
     const adminInsertMock = vi.fn().mockReturnValue({
@@ -242,8 +243,7 @@ describe("replySupportTicket", () => {
       from() {
         return { insert: adminInsertMock };
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    } as unknown as AdminSupabase);
 
     const result = await replySupportTicket({
       supabase,
@@ -273,8 +273,7 @@ describe("replySupportTicket", () => {
 /* ================================================================== */
 describe("closeSupportTicket", () => {
   it("sets ticket status to closed", async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const supabase = createUpdateTicketMock(BASE_TICKET) as any;
+    const supabase = createUpdateTicketMock(BASE_TICKET) as unknown as CloseTicketSupabase;
 
     const result = await closeSupportTicket({
       supabase,

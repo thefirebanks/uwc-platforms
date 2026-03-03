@@ -28,6 +28,9 @@ sbu link --project-ref lnuugnvwjyndvxhzbuib
   - `supabase/migrations/20260226000200_add_admin_config_to_cycle_stage_templates.sql`
   - `supabase/migrations/20260227000300_add_stage_sections_table.sql`
   - `supabase/migrations/20260227000400_seed_default_sections_and_assign_fields.sql`
+  - `supabase/migrations/202603040002_admin_candidate_ops_reliability.sql`
+  - `supabase/migrations/202603040003_export_presets.sql`
+  - `supabase/migrations/202603040004_broadcast_communications.sql`
 ```bash
 sbu db push
 ```
@@ -47,6 +50,7 @@ sbu db push
 ```bash
 bun run seed:fake-users
 ```
+- This script now seeds two applicant demos and blocks non-dev environments unless `ALLOW_DEMO_SEEDING=true`.
 
 ## 2.1) Supabase Profile Shortcuts
 - `sbu` (UWC): `supabase --profile uwc` (profile config at `~/.config/supabase/uwc.toml`)
@@ -94,12 +98,25 @@ bun run dev
   - `RESEND_API_KEY`
   - `RESEND_FROM_EMAIL` (example: `noreply@tudominio.org`)
   - `RESEND_FROM_NAME` (optional, example: `UWC Peru`)
+  - `RECOMMENDER_TOKEN_SALT` (recommended for production recommendation links/sessions)
 - Communication queue processing endpoint that sends real emails:
   - `POST /api/communications/process`
+- Broadcast campaign compose/send uses:
+  - `POST /api/communications/send`
+- Preview / test-send endpoints:
+  - `POST /api/communications/preview`
+  - `POST /api/communications/test-send`
 - Recommender invite/reminder/OTP endpoints also depend on Resend:
   - `PUT /api/recommendations`
   - `POST /api/recommendations/:id/remind`
   - `POST /api/recommendations/public/:token/otp`
+
+### Recommended smoke test after deploy
+1. Send a communications test email to an admin inbox.
+2. Run one broadcast campaign against a narrow test filter.
+3. Verify recommendation invite -> OTP -> submission.
+4. Verify admin reminder resend and manual mark-received actions.
+5. Confirm reply/bounce ownership for the configured sender inbox.
 
 ## 7) GitHub Repository + Secrets
 - Recommended repo secrets:

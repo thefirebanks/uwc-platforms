@@ -44,15 +44,18 @@ Platform for UWC Peru selection management with:
 - Applicant document upload (signed upload URL)
 - Recommendation request registration + persisted recommender list display
 - Admin queue for applications
+- Admin candidate search fallback + Stage 1 funnel visibility
 - Admin validation (`eligible` / `ineligible`)
 - Multi-stage management
+- Admin file metadata editing + recommendation operational controls
 - Admin audit viewer with filters + CSV export (`/admin/audit`)
 - External exam CSV import (modo simulación)
-- CSV export endpoint
+- Payload-driven CSV/XLSX export builder with saved presets
 - Communication queue logging endpoint
 - Communication queue lifecycle (`queued/processing/sent/failed`) with admin processing/retry controls
 - Real email delivery via Resend from queued communications
-- OCR check + OCR history endpoint (Gemini API key required)
+- Broadcast compose/send with campaign audit trail and idempotency protection
+- Prompt Studio for guarded OCR experiments + OCR history endpoint (Gemini API key required)
 - Clear user-facing error handling with `Error ID`
 - Bug report endpoint for non-technical users
 - Audit logging for key actions
@@ -71,6 +74,7 @@ cp .env.example .env.local
      - `RESEND_API_KEY`
      - `RESEND_FROM_EMAIL`
      - `RESEND_FROM_NAME` (optional, defaults to `UWC Peru`)
+     - `RECOMMENDER_TOKEN_SALT` (strongly recommended outside local dev)
 4. Link to the Supabase project:
 ```bash
 supabase link --project-ref <your-project-ref>
@@ -83,7 +87,7 @@ supabase db push
 ```bash
 bun run seed:fake-users
 ```
-If seeding fails, verify `SUPABASE_SECRET_KEY` is set in `.env.local`.
+If seeding fails, verify `SUPABASE_SECRET_KEY` is set in `.env.local`. The script now seeds two applicant demos and refuses to run outside dev/test unless `ALLOW_DEMO_SEEDING=true`.
 7. Start app:
 ```bash
 bun run dev
@@ -157,6 +161,16 @@ Runtime secrets (set in Cloudflare Pages dashboard, not GitHub Actions):
 ## Provider Notes
 - OCR provider: Gemini `gemini-3-flash-preview`.
 - Email provider: Resend API (real delivery when queue is processed).
+
+## Email / Recommendation Smoke Checklist
+- Verify the Resend sender domain is healthy (SPF/DKIM passing) before sending outside local development.
+- Confirm `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, `RESEND_FROM_NAME`, and `RECOMMENDER_TOKEN_SALT` are configured in each environment.
+- Run these smoke tests after deploy:
+  - admin `Enviar prueba` in Communications
+  - admin broadcast `Send now` to a test segment
+  - recommendation invite -> OTP/session -> submit
+  - admin reminder resend and manual mark-received flow
+- Define who monitors replies/bounces on the configured sender inbox.
 
 ## Test Commands
 ```bash

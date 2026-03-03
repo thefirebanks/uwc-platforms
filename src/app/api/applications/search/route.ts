@@ -22,7 +22,7 @@ const searchParamsSchema = z.object({
 
 export async function GET(request: NextRequest) {
   return withErrorHandling(
-    async (_requestId) => {
+    async () => {
       const { supabase } = await requireAuth(["admin"]);
 
       const params = Object.fromEntries(request.nextUrl.searchParams);
