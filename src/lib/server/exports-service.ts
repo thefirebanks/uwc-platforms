@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import ExcelJS from "exceljs";
 import { AppError } from "@/lib/errors/app-error";
+import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
 import type { Database, Json } from "@/types/supabase";
 
@@ -514,7 +515,16 @@ export async function getApplicationExportPackage({
     });
   }
 
-  const { data: application, error: applicationError } = await supabase
+  const privilegedSupabase = (() => {
+    try {
+      return getSupabaseAdminClient();
+    } catch {
+      // Fallback for environments/tests without admin credentials.
+      return supabase;
+    }
+  })();
+
+  const { data: application, error: applicationError } = await privilegedSupabase
     .from("applications")
     .select(
       "id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, created_at, updated_at",
@@ -541,24 +551,24 @@ export async function getApplicationExportPackage({
 
   const [{ data: applicant }, { data: cycle }, { data: recommendations, error: recommendationError }, { data: ocrChecks, error: ocrError }] =
     await Promise.all([
-      supabase
+      privilegedSupabase
         .from("profiles")
         .select("id, email, full_name")
         .eq("id", application.applicant_id)
         .maybeSingle(),
-      supabase
+      privilegedSupabase
         .from("cycles")
         .select("id, name, stage1_open_at, stage1_close_at, stage2_open_at, stage2_close_at")
         .eq("id", application.cycle_id)
         .maybeSingle(),
-      supabase
+      privilegedSupabase
         .from("recommendation_requests")
         .select(
           "id, role, recommender_email, status, invite_sent_at, submitted_at, last_reminder_at, reminder_count, created_at",
         )
         .eq("application_id", application.id)
         .order("created_at", { ascending: true }),
-      supabase
+      privilegedSupabase
         .from("application_ocr_checks")
         .select("id, file_key, summary, confidence, created_at")
         .eq("application_id", application.id)
