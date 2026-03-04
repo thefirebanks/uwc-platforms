@@ -421,6 +421,59 @@ describe("sendCommunicationEmail", () => {
 });
 
 describe("queueBroadcastCampaign", () => {
+  it("filters recipients by search using accent-insensitive matching", async () => {
+    const supabase = createBroadcastSupabaseMock({
+      applications: [
+        {
+          id: "app-1",
+          applicant_id: "profile-1",
+          status: "submitted",
+          stage_code: "documents",
+          cycle_id: "cycle-1",
+        },
+        {
+          id: "app-2",
+          applicant_id: "profile-2",
+          status: "submitted",
+          stage_code: "documents",
+          cycle_id: "cycle-1",
+        },
+      ],
+      profiles: [
+        {
+          id: "profile-1",
+          email: "maria@example.com",
+          full_name: "María Pérez",
+        },
+        {
+          id: "profile-2",
+          email: "jordan@example.com",
+          full_name: "Jordan Smith",
+        },
+      ],
+    });
+
+    const result = await queueBroadcastCampaign({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: supabase as any,
+      input: {
+        actorId: "admin-1",
+        name: "Campaña filtrada",
+        subject: "Asunto",
+        bodyTemplate: "Hola {{full_name}}",
+        recipientFilter: {
+          cycleId: "cycle-1",
+          stageCode: "documents",
+          search: "maria",
+        },
+        dryRun: true,
+      },
+    });
+
+    expect(result.recipientCount).toBe(1);
+    expect(result.recipients.map((recipient) => recipient.email)).toEqual(["maria@example.com"]);
+  });
+
   it("supports dry-run counts for a single direct recipient", async () => {
     const supabase = createBroadcastSupabaseMock({
       applications: [],
@@ -559,6 +612,36 @@ describe("queueBroadcastCampaign", () => {
         },
       }),
     ).rejects.toBeInstanceOf(AppError);
+  });
+
+  it("rejects invalid direct recipient emails in broadcast payloads", async () => {
+    const supabase = createBroadcastSupabaseMock({
+      applications: [],
+      profiles: [],
+    });
+
+    await expect(
+      queueBroadcastCampaign({
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        supabase: supabase as any,
+        input: {
+          actorId: "admin-1",
+          name: "Correo puntual inválido",
+          subject: "Asunto",
+          bodyTemplate: "Hola {{full_name}}",
+          recipientFilter: {
+            cycleId: "cycle-1",
+            directRecipientEmail: "correo-invalido",
+          },
+          dryRun: true,
+        },
+      }),
+    ).rejects.toSatisfy(
+      (error: unknown) =>
+        error instanceof AppError &&
+        error.status === 400 &&
+        error.userMessage === "Debes indicar un correo válido para el envío puntual.",
+    );
   });
 });
 

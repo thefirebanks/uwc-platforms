@@ -241,4 +241,58 @@ describe("AdminOcrTestbed", () => {
     expect(await screen.findByText("No se pudo cargar historial.")).toBeInTheDocument();
     expect(screen.getByText("Error ID: err-ocr-history")).toBeInTheDocument();
   });
+
+  it("submits strictSchema=false when strict mode checkbox is disabled", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ run: latestRun }), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ runs: [latestRun, historyRun] }), { status: 200 }),
+      );
+
+    const { container } = render(
+      <AdminOcrTestbed
+        cycleId="cycle-1"
+        stageCode="documents"
+        modelOptions={modelOptions}
+        defaultPrompt="Prompt base"
+        defaultSystemPrompt="System prompt"
+        defaultExtractionInstructions="Extraer hallazgos"
+        defaultSchemaTemplate='{"summary":"string"}'
+      />,
+    );
+
+    await screen.findByText("history.pdf");
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["fake pdf"], "resume.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Esquema y parámetros" }));
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Fallar si la respuesta no cumple exactamente el esquema",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Ejecutar prueba" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/ocr-testbed",
+        expect.objectContaining({ method: "POST" }),
+      );
+    });
+
+    const postCall = fetchMock.mock.calls.find(([url]) => url === "/api/ocr-testbed");
+    const body = postCall?.[1] && (postCall[1] as RequestInit).body;
+    expect(body).toBeInstanceOf(FormData);
+    const formData = body as FormData;
+    expect(formData.get("strictSchema")).toBe("false");
+  });
 });
