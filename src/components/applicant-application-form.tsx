@@ -549,6 +549,8 @@ function getSectionFieldStatus({
 export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
+  accountDisplayName,
+  accountEmail,
   cycleName,
   stageCode,
   stageLabel,
@@ -560,6 +562,8 @@ export function ApplicantApplicationForm({
 }: {
   existingApplication: Application | null;
   cycleId: string;
+  accountDisplayName?: string | null;
+  accountEmail?: string | null;
   cycleName?: string;
   stageCode?: string;
   stageLabel?: string;
@@ -2094,6 +2098,8 @@ export function ApplicantApplicationForm({
     <Box>
       {/* Fixed top navigation */}
       <ApplicantTopNav
+        accountDisplayName={accountDisplayName}
+        accountEmail={accountEmail}
         draftStatusLabel={draftStatusLabel}
         draftStatusDot={sidebarDraftDot}
         modeStatusLabel={modeStatusLabel}

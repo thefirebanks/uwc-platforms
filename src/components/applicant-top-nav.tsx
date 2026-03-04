@@ -28,11 +28,15 @@ import {
 } from "@/lib/supabase/browser";
 
 export function ApplicantTopNav({
+  accountDisplayName,
+  accountEmail,
   draftStatusLabel,
   draftStatusDot,
   modeStatusLabel,
   modeStatusDot,
 }: {
+  accountDisplayName?: string | null;
+  accountEmail?: string | null;
   draftStatusLabel?: string;
   draftStatusDot?: "success" | "warning" | "error" | "info";
   modeStatusLabel?: string;
@@ -56,6 +60,33 @@ export function ApplicantTopNav({
 
   const draftDotColor = getDotColor(draftStatusDot);
   const modeDotColor = getDotColor(modeStatusDot);
+  const fallbackEmail = accountEmail?.trim() || null;
+  const primaryAccountLabel = accountDisplayName?.trim() || fallbackEmail || null;
+  const showSecondaryEmail =
+    fallbackEmail && primaryAccountLabel && primaryAccountLabel.toLowerCase() !== fallbackEmail.toLowerCase()
+      ? fallbackEmail
+      : null;
+  const signedInLabel = language === "es" ? "Sesión actual" : "Signed in";
+  const accountMenuHeader = primaryAccountLabel
+    ? [
+        (
+          <Box key="account-header" sx={{ px: 2, pt: 1.5, pb: 1 }}>
+            <Typography sx={{ fontSize: "0.72rem", color: "var(--muted)", mb: 0.3 }}>
+              {signedInLabel}
+            </Typography>
+            <Typography sx={{ fontSize: "0.88rem", color: "var(--ink)", fontWeight: 600 }}>
+              {primaryAccountLabel}
+            </Typography>
+            {showSecondaryEmail ? (
+              <Typography sx={{ fontSize: "0.76rem", color: "var(--muted)", mt: 0.2 }}>
+                {showSecondaryEmail}
+              </Typography>
+            ) : null}
+          </Box>
+        ),
+        <Divider key="account-divider" sx={{ my: 0.5 }} />,
+      ]
+    : null;
 
   async function logout() {
     const supabase = getSupabaseBrowserClient();
@@ -194,6 +225,43 @@ export function ApplicantTopNav({
           {t("nav.roleApplicant")}
         </Typography>
 
+        {primaryAccountLabel ? (
+          <Stack
+            spacing={0.1}
+            sx={{
+              mr: 1.5,
+              maxWidth: 260,
+              display: { xs: "none", md: "flex" },
+            }}
+            title={showSecondaryEmail ?? primaryAccountLabel}
+          >
+            <Typography
+              sx={{
+                fontSize: "0.7rem",
+                color: "var(--muted)",
+                lineHeight: 1.2,
+                textAlign: "right",
+              }}
+            >
+              {signedInLabel}
+            </Typography>
+            <Typography
+              sx={{
+                fontSize: "0.82rem",
+                color: "var(--ink)",
+                fontWeight: 500,
+                lineHeight: 1.25,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                textAlign: "right",
+              }}
+            >
+              {primaryAccountLabel}
+            </Typography>
+          </Stack>
+        ) : null}
+
         {/* Hamburger menu button */}
         <IconButton
           onClick={handleMenuOpen}
@@ -240,6 +308,8 @@ export function ApplicantTopNav({
             },
           }}
         >
+          {accountMenuHeader}
+
           {/* Language toggle */}
           {canUseEnglish ? (
             <MenuItem onClick={handleLanguageToggle}>
