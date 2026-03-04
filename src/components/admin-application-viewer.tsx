@@ -50,6 +50,18 @@ type AdminFileEntry = {
   category: string | null;
   notes: string | null;
   downloadUrl: string | null;
+  aiParserEnabled?: boolean;
+};
+
+type ApiError = {
+  message: string;
+  errorId?: string;
+};
+
+type OcrRunResult = {
+  summary: string;
+  confidence: number;
+  createdAt: string;
 };
 
 type EditLogEntry = {
@@ -110,6 +122,31 @@ const PANEL_SUCCESS_BUTTON_STYLE: CSSProperties = {
   cursor: "pointer",
 };
 
+function normalizeApiError(value: unknown, fallbackMessage: string): ApiError {
+  if (value && typeof value === "object") {
+    return {
+      message:
+        typeof (value as { message?: unknown }).message === "string"
+          ? (value as { message: string }).message
+          : fallbackMessage,
+      errorId:
+        typeof (value as { errorId?: unknown }).errorId === "string"
+          ? (value as { errorId: string }).errorId
+          : undefined,
+    };
+  }
+
+  return { message: fallbackMessage };
+}
+
+async function readJsonSafely(response: Response) {
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    return null;
+  }
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Props                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -149,6 +186,8 @@ export function AdminApplicationViewer({
   const [transitioning, setTransitioning] = useState(false);
   const [busyFileKey, setBusyFileKey] = useState<string | null>(null);
   const [busyRecommendationId, setBusyRecommendationId] = useState<string | null>(null);
+  const [ocrResultByFileKey, setOcrResultByFileKey] = useState<Record<string, OcrRunResult>>({});
+  const [ocrErrorByFileKey, setOcrErrorByFileKey] = useState<Record<string, ApiError | null>>({});
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -197,6 +236,8 @@ export function AdminApplicationViewer({
       setFiles([]);
       setEditLog([]);
       setEditing(false);
+      setOcrResultByFileKey({});
+      setOcrErrorByFileKey({});
       return;
     }
 
@@ -205,6 +246,8 @@ export function AdminApplicationViewer({
     setError(null);
     setEditing(false);
     setEditChanges({});
+    setOcrResultByFileKey({});
+    setOcrErrorByFileKey({});
 
     loadViewerData()
       .then(() => {
@@ -441,6 +484,55 @@ export function AdminApplicationViewer({
       }
     },
     [applicationId, loadViewerData, onApplicationUpdated],
+  );
+
+  const handleRunFileOcr = useCallback(
+    async (fileKey: string) => {
+      if (!applicationId) {
+        return;
+      }
+
+      setBusyFileKey(fileKey);
+      setOcrErrorByFileKey((current) => ({ ...current, [fileKey]: null }));
+      try {
+        const response = await fetch(`/api/applications/${applicationId}/ocr-check`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileKey }),
+        });
+        const body = await readJsonSafely(response);
+
+        if (!response.ok) {
+          throw normalizeApiError(body, "No se pudo ejecutar el parsing IA.");
+        }
+
+        const parsedBody = body as { summary?: string; confidence?: number; createdAt?: string } | null;
+        setOcrResultByFileKey((current) => ({
+          ...current,
+          [fileKey]: {
+            summary:
+              typeof parsedBody?.summary === "string"
+                ? parsedBody.summary
+                : "Parsing completado.",
+            confidence:
+              typeof parsedBody?.confidence === "number" ? parsedBody.confidence : 0,
+            createdAt:
+              typeof parsedBody?.createdAt === "string"
+                ? parsedBody.createdAt
+                : new Date().toISOString(),
+          },
+        }));
+      } catch (error) {
+        const apiError =
+          error && typeof error === "object" && "message" in error
+            ? (error as ApiError)
+            : { message: "No se pudo ejecutar el parsing IA." };
+        setOcrErrorByFileKey((current) => ({ ...current, [fileKey]: apiError }));
+      } finally {
+        setBusyFileKey(null);
+      }
+    },
+    [applicationId],
   );
 
   const handleRecommendationEdit = useCallback(
@@ -1168,6 +1260,15 @@ export function AdminApplicationViewer({
                             Descargar
                           </a>
                         ) : null}
+                        {f.aiParserEnabled ? (
+                          <button
+                            onClick={() => void handleRunFileOcr(f.key)}
+                            disabled={busyFileKey === f.key}
+                            style={PANEL_SUCCESS_BUTTON_STYLE}
+                          >
+                            {busyFileKey === f.key ? "Analizando..." : "Analizar con IA"}
+                          </button>
+                        ) : null}
                         <label
                           style={{
                             display: "inline-flex",
@@ -1189,6 +1290,48 @@ export function AdminApplicationViewer({
                           />
                         </label>
                       </div>
+                      {ocrResultByFileKey[f.key] ? (
+                        <div
+                          style={{
+                            marginTop: "0.75rem",
+                            padding: "0.625rem 0.75rem",
+                            borderRadius: "8px",
+                            background: "var(--paper)",
+                            border: "1px solid var(--border, var(--sand))",
+                          }}
+                        >
+                          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)" }}>
+                            Parsing IA
+                          </div>
+                          <div style={{ marginTop: "0.25rem", fontSize: "0.8125rem" }}>
+                            {ocrResultByFileKey[f.key]?.summary}
+                          </div>
+                          <div style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "var(--muted)" }}>
+                            Confianza: {Math.round((ocrResultByFileKey[f.key]?.confidence ?? 0) * 100)}% ·{" "}
+                            {new Date(ocrResultByFileKey[f.key]!.createdAt).toLocaleString("es-PE")}
+                          </div>
+                        </div>
+                      ) : null}
+                      {ocrErrorByFileKey[f.key] ? (
+                        <div
+                          style={{
+                            marginTop: "0.75rem",
+                            padding: "0.625rem 0.75rem",
+                            borderRadius: "8px",
+                            background: "var(--error-soft, #fdecec)",
+                            border: "1px solid var(--error, #c62828)",
+                            color: "var(--error, #c62828)",
+                            fontSize: "0.8125rem",
+                          }}
+                        >
+                          <div>{ocrErrorByFileKey[f.key]?.message}</div>
+                          {ocrErrorByFileKey[f.key]?.errorId ? (
+                            <div style={{ marginTop: "0.25rem", fontSize: "0.75rem" }}>
+                              Error ID: {ocrErrorByFileKey[f.key]?.errorId}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
