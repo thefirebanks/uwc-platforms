@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ErrorCallout } from "@/components/error-callout";
 import { FieldHint } from "@/components/field-hint";
 import { DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
@@ -280,12 +280,12 @@ export function AdminOcrTestbed({
           <h4>{title}</h4>
           <div className="ocr-testbed__meta">
             <span
-              className="badge"
-              style={{
-                background: "var(--sand-light)",
-                color: confidenceColor(run.confidence),
-                border: `1px solid ${confidenceColor(run.confidence)}`,
-              }}
+              className="badge ocr-testbed__confidence-badge"
+              style={
+                {
+                  "--confidence-color": confidenceColor(run.confidence),
+                } as CSSProperties
+              }
             >
               Confianza: {run.confidence !== null ? `${(run.confidence * 100).toFixed(0)}%` : "N/A"}
             </span>
@@ -298,7 +298,7 @@ export function AdminOcrTestbed({
 
         <p className="ocr-testbed__summary">{run.summary}</p>
 
-        <div className="admin-chip-row" style={{ marginBottom: "12px" }}>
+        <div className="admin-chip-row ocr-testbed__chip-row">
           <span className={`status-pill ${schemaValidation?.valid ? "complete" : "rejected"}`}>
             {schemaValidation?.valid ? "Schema OK" : "Schema inválido"}
           </span>
@@ -311,19 +311,27 @@ export function AdminOcrTestbed({
         </div>
 
         {schemaValidation?.errors && schemaValidation.errors.length > 0 ? (
-          <div className="form-hint" style={{ marginBottom: "12px" }}>
-            {schemaValidation.errors.join(" | ")}
+          <div className="ocr-testbed__notes">
+            {schemaValidation.errors.map((errorText, index) => (
+              <div key={`${run.id}-schema-${index}`} className="form-hint ocr-testbed__note">
+                {errorText}
+              </div>
+            ))}
           </div>
         ) : null}
 
         {injectionSignals.length > 0 ? (
-          <div className="form-hint" style={{ marginBottom: "12px" }}>
-            {injectionSignals.join(" | ")}
+          <div className="ocr-testbed__notes">
+            {injectionSignals.map((signal, index) => (
+              <div key={`${run.id}-signal-${index}`} className="form-hint ocr-testbed__note">
+                {signal}
+              </div>
+            ))}
           </div>
         ) : null}
 
         {requestConfig ? (
-          <div className="form-hint" style={{ marginBottom: "12px" }}>
+          <div className="form-hint ocr-testbed__request-meta">
             Temp {requestConfig.temperature ?? "—"} | Top-P {requestConfig.topP ?? "—"} | Max
             tokens {requestConfig.maxTokens ?? "—"}
           </div>
@@ -609,11 +617,9 @@ export function AdminOcrTestbed({
 
       {result ? (
         <div
-          style={{
-            display: "grid",
-            gap: "16px",
-            gridTemplateColumns: comparisonRun ? "repeat(2, minmax(0, 1fr))" : "minmax(0, 1fr)",
-          }}
+          className={`ocr-testbed__result-grid${
+            comparisonRun ? " ocr-testbed__result-grid--comparison" : ""
+          }`}
         >
           {renderRunPanel(result, "Resultado actual")}
           {comparisonRun ? renderRunPanel(comparisonRun, "Comparación") : null}
@@ -621,7 +627,7 @@ export function AdminOcrTestbed({
       ) : null}
 
       {result && comparisonRun ? (
-        <div className="settings-card">
+        <div className="settings-card ocr-testbed__comparison-card">
           <h4 style={{ marginBottom: "12px" }}>Comparativa rápida</h4>
           <div className="admin-chip-row">
             <span className="status-pill admin-chip-neutral">

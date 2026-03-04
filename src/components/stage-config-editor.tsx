@@ -14,6 +14,7 @@ import {
 import type {
   CycleStageField,
   CycleStageTemplate,
+  StageFieldAiParserConfig,
   StageAutomationTemplate,
   StageCode,
   StageSection,
@@ -70,6 +71,12 @@ type StageAdminConfigPayload = {
   blockIfPreviousNotMet?: boolean;
 };
 
+type FieldAiParserDraft = StageFieldAiParserConfig & {
+  modelId: string | null;
+  promptTemplate: string | null;
+  systemPrompt: string | null;
+};
+
 type EditorSection = {
   id: string;
   sectionKey: string;
@@ -81,12 +88,54 @@ type EditorSection = {
 const DEFAULT_OCR_PROMPT_TEMPLATE =
   "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.";
 
+function createDefaultFieldAiParserConfig(): FieldAiParserDraft {
+  return {
+    enabled: true,
+    modelId: null,
+    promptTemplate: null,
+    systemPrompt: null,
+    extractionInstructions: DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
+    expectedSchemaTemplate: DEFAULT_OCR_SCHEMA_TEMPLATE,
+    strictSchema: true,
+  };
+}
+
+function normalizeFieldAiParserConfig(value: unknown): FieldAiParserDraft | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (value.enabled !== true) {
+    return null;
+  }
+
+  const extractionInstructions =
+    typeof value.extractionInstructions === "string" && value.extractionInstructions.trim().length > 0
+      ? value.extractionInstructions
+      : DEFAULT_OCR_EXTRACTION_INSTRUCTIONS;
+  const expectedSchemaTemplate =
+    typeof value.expectedSchemaTemplate === "string" && value.expectedSchemaTemplate.trim().length > 0
+      ? value.expectedSchemaTemplate
+      : DEFAULT_OCR_SCHEMA_TEMPLATE;
+
+  return {
+    enabled: true,
+    modelId: typeof value.modelId === "string" ? value.modelId : null,
+    promptTemplate: typeof value.promptTemplate === "string" ? value.promptTemplate : null,
+    systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : null,
+    extractionInstructions,
+    expectedSchemaTemplate,
+    strictSchema: typeof value.strictSchema === "boolean" ? value.strictSchema : true,
+  };
+}
+
 
 function mapFieldsWithLocalId(fields: CycleStageField[]) {
   return [...fields]
     .sort((a, b) => a.sort_order - b.sort_order)
     .map((field) => ({
       ...field,
+      ai_parser_config: normalizeFieldAiParserConfig(field.ai_parser_config),
       localId: field.id,
     }));
 }
@@ -292,6 +341,7 @@ function serializePersistedFields(fields: EditableField[]) {
       help_text: field.help_text ?? "",
       sort_order: field.sort_order,
       is_active: field.is_active,
+      ai_parser_config: normalizeFieldAiParserConfig(field.ai_parser_config),
     })),
   );
 }
@@ -469,12 +519,37 @@ export function StageConfigEditor({
       sort_order: nextIndex,
       is_active: true,
       section_id: null,
+      ai_parser_config: null,
       created_at: new Date().toISOString(),
     };
   }
 
   function applyOrderedFields(nextFields: EditableField[]) {
     setFields(nextFields.map((field, index) => ({ ...field, sort_order: index + 1 })));
+  }
+
+  function updateFieldByLocalId(
+    localId: string,
+    updater: (field: EditableField) => EditableField,
+  ) {
+    setFields((current) =>
+      current.map((item) => (item.localId === localId ? updater(item) : item)),
+    );
+  }
+
+  function updateFieldAiParserConfig(
+    localId: string,
+    updater: (current: FieldAiParserDraft) => FieldAiParserDraft | null,
+  ) {
+    updateFieldByLocalId(localId, (field) => {
+      const baseConfig =
+        normalizeFieldAiParserConfig(field.ai_parser_config) ??
+        createDefaultFieldAiParserConfig();
+      return {
+        ...field,
+        ai_parser_config: updater(baseConfig),
+      };
+    });
   }
 
   function insertFieldAt(
@@ -776,6 +851,7 @@ export function StageConfigEditor({
             sortOrder: index + 1,
             isActive: field.is_active,
             sectionKey: sections.find((s) => s.id === field.section_id)?.section_key ?? null,
+            aiParser: normalizeFieldAiParserConfig(field.ai_parser_config),
           })),
           sections: sections.map((s, index) => ({
             sectionKey: s.section_key,
@@ -1511,7 +1587,15 @@ export function StageConfigEditor({
           </div>
         </div>
 
-        <div className="canvas-body">
+        <div
+          className={`canvas-body${
+            activeTab === "communications" ||
+            activeTab === "prompt_studio" ||
+            activeTab === "automations"
+              ? " wide"
+              : ""
+          }`}
+        >
           {activeTab === "editor" && (
             <div id="tab-editor" className="tab-content active">
               <div className="field-list">
@@ -1550,6 +1634,7 @@ export function StageConfigEditor({
                     ? editorSections.find((s) => s.id === sectionId)
                     : null;
                   const isSectionCollapsed = sectionId ? collapsedSectionIdSet.has(sectionId) : false;
+                  const aiParserConfig = normalizeFieldAiParserConfig(field.ai_parser_config);
 
                   if (isSectionCollapsed && !isSectionStart) {
                     return null;
@@ -1692,18 +1777,23 @@ export function StageConfigEditor({
                                 <select
                                   id={`type-${field.localId}`}
                                   value={field.field_type}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    const nextType = event.target.value as CycleStageField["field_type"];
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId
                                           ? {
                                               ...item,
-                                              field_type: event.target.value as CycleStageField["field_type"],
+                                              field_type: nextType,
+                                              ai_parser_config:
+                                                nextType === "file"
+                                                  ? normalizeFieldAiParserConfig(item.ai_parser_config)
+                                                  : null,
                                             }
                                           : item,
                                       ),
-                                    )
-                                  }
+                                    );
+                                  }}
                                 >
                                   <option value="short_text">Texto corto</option>
                                   <option value="long_text">Texto largo</option>
@@ -1789,6 +1879,142 @@ export function StageConfigEditor({
                                     <span className="slider"></span>
                                   </label>
                                 </div>
+                                {field.field_type === "file" ? (
+                                  <div className="admin-ai-parser-panel">
+                                    <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)" }}>
+                                      <div>
+                                        <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>
+                                          Parsing con IA{" "}
+                                          <FieldHint label="Qué hace parsing con IA">
+                                            Habilita el análisis OCR con esquema JSON para este archivo desde la vista de administración.
+                                          </FieldHint>
+                                        </div>
+                                        <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                                          Actívalo solo para archivos que quieras procesar automáticamente.
+                                        </div>
+                                      </div>
+                                      <label className="switch">
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`Habilitar parsing IA para ${field.field_label}`}
+                                          checked={Boolean(aiParserConfig?.enabled)}
+                                          onChange={(event) => {
+                                            if (event.target.checked) {
+                                              updateFieldByLocalId(field.localId, (item) => ({
+                                                ...item,
+                                                ai_parser_config: createDefaultFieldAiParserConfig(),
+                                              }));
+                                              return;
+                                            }
+                                            updateFieldByLocalId(field.localId, (item) => ({
+                                              ...item,
+                                              ai_parser_config: null,
+                                            }));
+                                          }}
+                                        />
+                                        <span className="slider"></span>
+                                      </label>
+                                    </div>
+                                    {aiParserConfig?.enabled ? (
+                                      <div className="admin-ai-parser-editor">
+                                        <div className="form-field full">
+                                          <label htmlFor={`ai-parser-extraction-${field.localId}`}>
+                                            Instrucciones de extracción{" "}
+                                            <FieldHint label="Cómo redactar la extracción">
+                                              Especifica exactamente qué datos extraer y cómo validarlos. Evita instrucciones ambiguas.
+                                            </FieldHint>
+                                          </label>
+                                          <textarea
+                                            id={`ai-parser-extraction-${field.localId}`}
+                                            rows={4}
+                                            value={aiParserConfig.extractionInstructions}
+                                            onChange={(event) =>
+                                              updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                ...currentConfig,
+                                                extractionInstructions: event.target.value,
+                                              }))
+                                            }
+                                          />
+                                        </div>
+                                        <div className="form-field full">
+                                          <label htmlFor={`ai-parser-schema-${field.localId}`}>
+                                            Esquema JSON esperado{" "}
+                                            <FieldHint label="Formato del esquema">
+                                              Debe ser JSON válido y reflejar la estructura exacta esperada en la respuesta.
+                                            </FieldHint>
+                                          </label>
+                                          <textarea
+                                            id={`ai-parser-schema-${field.localId}`}
+                                            rows={6}
+                                            value={aiParserConfig.expectedSchemaTemplate}
+                                            onChange={(event) =>
+                                              updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                ...currentConfig,
+                                                expectedSchemaTemplate: event.target.value,
+                                              }))
+                                            }
+                                            style={{ fontFamily: "monospace" }}
+                                          />
+                                        </div>
+                                        <details className="admin-ai-parser-advanced">
+                                          <summary>Opciones avanzadas</summary>
+                                          <div className="form-field full">
+                                            <label htmlFor={`ai-parser-system-${field.localId}`}>
+                                              System prompt adicional
+                                            </label>
+                                            <textarea
+                                              id={`ai-parser-system-${field.localId}`}
+                                              rows={3}
+                                              value={aiParserConfig.systemPrompt ?? ""}
+                                              onChange={(event) =>
+                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                  ...currentConfig,
+                                                  systemPrompt: event.target.value || null,
+                                                }))
+                                              }
+                                            />
+                                          </div>
+                                          <div className="form-field full">
+                                            <label htmlFor={`ai-parser-prompt-${field.localId}`}>
+                                              Prompt base opcional
+                                            </label>
+                                            <textarea
+                                              id={`ai-parser-prompt-${field.localId}`}
+                                              rows={3}
+                                              value={aiParserConfig.promptTemplate ?? ""}
+                                              onChange={(event) =>
+                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                  ...currentConfig,
+                                                  promptTemplate: event.target.value || null,
+                                                }))
+                                              }
+                                            />
+                                          </div>
+                                        </details>
+                                        <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)" }}>
+                                          <div>
+                                            <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>Validación estricta de esquema</div>
+                                            <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Falla la corrida si el JSON no coincide exactamente con el esquema.</div>
+                                          </div>
+                                          <label className="switch">
+                                            <input
+                                              type="checkbox"
+                                              aria-label={`Validación estricta para ${field.field_label}`}
+                                              checked={aiParserConfig.strictSchema}
+                                              onChange={(event) =>
+                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                  ...currentConfig,
+                                                  strictSchema: event.target.checked,
+                                                }))
+                                              }
+                                            />
+                                            <span className="slider"></span>
+                                          </label>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                             <div className="admin-field-editor-footer">
@@ -2055,7 +2281,7 @@ export function StageConfigEditor({
                   Estas plantillas se disparan automáticamente por evento. Para envíos manuales o
                   broadcasts, usa el centro de comunicaciones del proceso.
                 </p>
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <div className="admin-stage-comms-toolbar-actions">
                   <button
                     type="button"
                     className="btn btn-ghost"
@@ -2074,7 +2300,7 @@ export function StageConfigEditor({
                   </div>
                   <div className="comm-content">
                     <div className="editor-grid">
-                      <div className="form-field">
+                      <div className="form-field automation-event-field">
                         <label htmlFor={`event-${automation.localId}`}>Evento</label>
                         <select
                           id={`event-${automation.localId}`}
@@ -2155,7 +2381,7 @@ export function StageConfigEditor({
                         />
                       </div>
                     </div>
-                    <div className="comm-actions" style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <div className="comm-actions comm-actions--row">
                       {isUuid(automation.id) && (
                         <>
                           <button
