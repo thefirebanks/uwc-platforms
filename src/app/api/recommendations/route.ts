@@ -126,6 +126,7 @@ export async function PUT(request: NextRequest) {
         createdCount: result.createdCount,
         replacedCount: result.replacedCount,
         failedEmailCount: result.failedEmailCount,
+        deliveryResults: result.deliveryResults,
       },
       requestId,
     });
