@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Buffer } from "node:buffer";
 import { AppError } from "@/lib/errors/app-error";
 import {
   buildBroadcastIdempotencyKey,
   processCommunicationQueue,
   queueBroadcastCampaign,
+  sendDirectCommunication,
   sendCommunicationEmail,
 } from "@/lib/server/communications-service";
 
@@ -419,6 +421,32 @@ describe("sendCommunicationEmail", () => {
 });
 
 describe("queueBroadcastCampaign", () => {
+  it("supports dry-run counts for a single direct recipient", async () => {
+    const supabase = createBroadcastSupabaseMock({
+      applications: [],
+      profiles: [],
+    });
+
+    const result = await queueBroadcastCampaign({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: supabase as any,
+      input: {
+        actorId: "admin-1",
+        name: "Correo puntual",
+        subject: "Asunto directo",
+        bodyTemplate: "Hola {{full_name}}",
+        recipientFilter: {
+          cycleId: "cycle-1",
+          directRecipientEmail: "dafirebanks@gmail.com",
+        },
+        dryRun: true,
+      },
+    });
+
+    expect(result.recipientCount).toBe(1);
+    expect(result.campaign).toBeNull();
+  });
+
   it("returns an existing campaign when the idempotency key already exists", async () => {
     const supabase = createBroadcastSupabaseMock({
       applications: [
@@ -531,6 +559,104 @@ describe("queueBroadcastCampaign", () => {
         },
       }),
     ).rejects.toBeInstanceOf(AppError);
+  });
+});
+
+describe("sendDirectCommunication", () => {
+  it("renders and sends an immediate email to an explicit recipient", async () => {
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_ID", "client-id");
+    vi.stubEnv("GOOGLE_GMAIL_CLIENT_SECRET", "client-secret");
+    vi.stubEnv("GOOGLE_GMAIL_REFRESH_TOKEN", "refresh-token");
+    vi.stubEnv("GOOGLE_GMAIL_SENDER_EMAIL", "informes@pe.uwc.org");
+
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "access-token" }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "gmail_456" }), { status: 200 }),
+      );
+
+    const supabase = {
+      from(table: string) {
+        if (table === "cycles") {
+          return {
+            select() {
+              return {
+                eq() {
+                  return {
+                    maybeSingle() {
+                      return Promise.resolve({ data: { name: "Proceso UWC 2026" }, error: null });
+                    },
+                  };
+                },
+              };
+            },
+          };
+        }
+
+        if (table === "cycle_stage_templates") {
+          return {
+            select() {
+              return {
+                eq() {
+                  return {
+                    eq() {
+                      return {
+                        maybeSingle() {
+                          return Promise.resolve({
+                            data: { stage_label: "Formulario Principal" },
+                            error: null,
+                          });
+                        },
+                      };
+                    },
+                  };
+                },
+              };
+            },
+          };
+        }
+
+        throw new Error(`Unexpected table: ${table}`);
+      },
+    };
+
+    const result = await sendDirectCommunication({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: supabase as any,
+      input: {
+        actorId: "admin-1",
+        name: "Correo puntual",
+        subject: "Hola {{full_name}}",
+        bodyTemplate: "Proceso: {{cycle_name}} · Etapa: {{stage_label}}",
+        recipientFilter: {
+          cycleId: "cycle-1",
+          stageCode: "documents",
+          directRecipientEmail: "dafirebanks@gmail.com",
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      recipientCount: 1,
+      recipientEmail: "dafirebanks@gmail.com",
+      providerMessageId: "gmail_456",
+    });
+
+    const [, requestInit] = fetchMock.mock.calls[1]!;
+    const raw = JSON.parse(String((requestInit as RequestInit).body)) as { raw: string };
+    const decoded = Buffer.from(
+      raw.raw.replaceAll("-", "+").replaceAll("_", "/"),
+      "base64",
+    ).toString("utf8");
+    expect(decoded).toContain("To: dafirebanks@gmail.com");
+    const encodedTextPart = decoded.split("\r\n").find((line) => line.startsWith("UHJvY2Vzbzog"));
+    expect(encodedTextPart).toBeTruthy();
+    expect(Buffer.from(String(encodedTextPart), "base64").toString("utf8")).toContain(
+      "Proceso UWC 2026",
+    );
   });
 });
 

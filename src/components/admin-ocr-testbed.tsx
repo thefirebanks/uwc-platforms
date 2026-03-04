@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ErrorCallout } from "@/components/error-callout";
+import { FieldHint } from "@/components/field-hint";
 import { DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
 import type { OcrTestRun } from "@/types/domain";
 
@@ -193,6 +194,24 @@ export function AdminOcrTestbed({
     return history.find((run) => run.id === comparisonRunId) ?? null;
   }, [comparisonRunId, history]);
 
+  const modelNameById = useMemo(
+    () => new Map(modelOptions.map((model) => [model.id, model.name])),
+    [modelOptions],
+  );
+
+  const schemaTemplateError = useMemo(() => {
+    if (!expectedSchemaTemplate.trim()) {
+      return "Debes definir un esquema JSON para ejecutar la prueba.";
+    }
+
+    try {
+      JSON.parse(expectedSchemaTemplate);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : "El esquema JSON no es válido.";
+    }
+  }, [expectedSchemaTemplate]);
+
   async function handleRun() {
     if (!file) return;
     setIsRunning(true);
@@ -271,7 +290,9 @@ export function AdminOcrTestbed({
               Confianza: {run.confidence !== null ? `${(run.confidence * 100).toFixed(0)}%` : "N/A"}
             </span>
             <span className="ocr-testbed__duration">⏱ {formatDuration(run.duration_ms)}</span>
-            <span className="ocr-testbed__model-badge">{run.model_id}</span>
+            <span className="ocr-testbed__model-badge">
+              {modelNameById.get(run.model_id) ?? run.model_id}
+            </span>
           </div>
         </div>
 
@@ -328,25 +349,6 @@ export function AdminOcrTestbed({
     <div className="ocr-testbed">
       <div className="ocr-testbed__form card">
         <h3 className="ocr-testbed__title">Prompt Studio</h3>
-        <p className="form-hint" style={{ marginBottom: "16px" }}>
-          El preámbulo de seguridad es fijo. Usa esta vista para probar sin tocar la extracción productiva.
-        </p>
-        <div className="ocr-testbed__intro-card">
-          <div>
-            <strong>Qué procesa hoy</strong>
-            <p className="form-hint">
-              Prompt Studio solo envía el archivo que subes arriba. No toma todavía documentos ni
-              campos del formulario del postulante automáticamente.
-            </p>
-          </div>
-          <div>
-            <strong>Qué significa “Etapa” aquí</strong>
-            <p className="form-hint">
-              Es una etiqueta de contexto para esta corrida. Sirve para guardar historial y para
-              comparar escenarios, no para seleccionar archivos del proceso.
-            </p>
-          </div>
-        </div>
 
         <div
           className={`ocr-testbed__dropzone${file ? " ocr-testbed__dropzone--filled" : ""}`}
@@ -409,7 +411,11 @@ export function AdminOcrTestbed({
             <div className="ocr-testbed__row">
               <div className="ocr-testbed__field">
                 <label className="field-label" htmlFor="ocr-model">
-                  Modelo
+                  Modelo{" "}
+                  <FieldHint label="Ayuda sobre el modelo">
+                    El modelo indicado aquí es el que procesa el archivo que subes en esta prueba.
+                    Hoy la opción por defecto usa Gemini 3 Flash Preview.
+                  </FieldHint>
                 </label>
                 <select
                   id="ocr-model"
@@ -423,12 +429,15 @@ export function AdminOcrTestbed({
                     </option>
                   ))}
                 </select>
-                <div className="form-hint">Elige el modelo con el que quieres probar esta corrida.</div>
               </div>
 
               <div className="ocr-testbed__field">
                 <label className="field-label" htmlFor="ocr-stage">
-                  Contexto / etapa
+                  Contexto / etapa{" "}
+                  <FieldHint label="Ayuda sobre el contexto">
+                    Es solo una etiqueta para guardar historial y comparar corridas. No selecciona
+                    archivos del proceso automáticamente.
+                  </FieldHint>
                 </label>
                 <input
                   id="ocr-stage"
@@ -437,9 +446,6 @@ export function AdminOcrTestbed({
                   onChange={(event) => setStageName(event.target.value)}
                   placeholder="documents"
                 />
-                <div className="form-hint">
-                  Esta etiqueta queda guardada en el historial para diferenciar escenarios.
-                </div>
               </div>
             </div>
           </div>
@@ -447,31 +453,13 @@ export function AdminOcrTestbed({
 
         {editorSection === "prompts" ? (
           <div className="ocr-testbed__panel">
-            <div className="ocr-testbed__prompt-guide">
-              <div className="ocr-testbed__prompt-guide-card">
-                <strong>System prompt adicional</strong>
-                <p className="form-hint">
-                  Ajusta el comportamiento del modelo. Úsalo para priorizar cómo debe razonar, no
-                  para describir el documento.
-                </p>
-              </div>
-              <div className="ocr-testbed__prompt-guide-card">
-                <strong>Instrucciones base</strong>
-                <p className="form-hint">
-                  Define el objetivo general de la corrida. Es el contrato principal de la prueba.
-                </p>
-              </div>
-              <div className="ocr-testbed__prompt-guide-card">
-                <strong>Instrucciones de extracción</strong>
-                <p className="form-hint">
-                  Especifica exactamente qué campos, señales o validaciones debe devolver el modelo.
-                </p>
-              </div>
-            </div>
-
             <div className="ocr-testbed__field">
               <label className="field-label" htmlFor="ocr-system-prompt">
-                System prompt adicional
+                System prompt adicional{" "}
+                <FieldHint label="Ayuda sobre system prompt">
+                  Define cómo debe comportarse el modelo al razonar. No describe el documento ni
+                  reemplaza el esquema.
+                </FieldHint>
               </label>
               <textarea
                 id="ocr-system-prompt"
@@ -485,7 +473,11 @@ export function AdminOcrTestbed({
 
             <div className="ocr-testbed__field">
               <label className="field-label" htmlFor="ocr-prompt">
-                Instrucciones base
+                Instrucciones base{" "}
+                <FieldHint label="Ayuda sobre instrucciones base">
+                  Describe la tarea general que debe resolver esta corrida sobre el archivo
+                  adjunto.
+                </FieldHint>
               </label>
               <textarea
                 id="ocr-prompt"
@@ -499,7 +491,10 @@ export function AdminOcrTestbed({
 
             <div className="ocr-testbed__field">
               <label className="field-label" htmlFor="ocr-extraction">
-                Instrucciones de extracción
+                Instrucciones de extracción{" "}
+                <FieldHint label="Ayuda sobre instrucciones de extracción">
+                  Especifica los campos o señales exactas que quieres devolver dentro del JSON.
+                </FieldHint>
               </label>
               <textarea
                 id="ocr-extraction"
@@ -517,7 +512,11 @@ export function AdminOcrTestbed({
           <div className="ocr-testbed__panel">
             <div className="ocr-testbed__field">
               <label className="field-label" htmlFor="ocr-schema">
-                Esquema JSON esperado
+                Esquema JSON esperado{" "}
+                <FieldHint label="Ayuda sobre el esquema JSON">
+                  Usa JSON válido. Puedes definir tipos con ejemplos o atajos como
+                  {' "string", "int", "number" y "boolean".'}
+                </FieldHint>
               </label>
               <textarea
                 id="ocr-schema"
@@ -527,10 +526,9 @@ export function AdminOcrTestbed({
                 onChange={(event) => setExpectedSchemaTemplate(event.target.value)}
                 placeholder='{"summary":"string","confidence":0,"findings":["string"]}'
               />
-              <div className="form-hint">
-                Usa este editor para definir la forma exacta del JSON esperado. Si activas schema
-                estricto, cualquier desvío fallará con error.
-              </div>
+              {schemaTemplateError ? (
+                <div className="ocr-testbed__inline-error">{schemaTemplateError}</div>
+              ) : null}
             </div>
 
             <div className="ocr-testbed__row">
@@ -600,7 +598,8 @@ export function AdminOcrTestbed({
               !file ||
               !prompt.trim() ||
               !extractionInstructions.trim() ||
-              !expectedSchemaTemplate.trim()
+              !expectedSchemaTemplate.trim() ||
+              Boolean(schemaTemplateError)
             }
           >
             {isRunning ? "Ejecutando…" : "Ejecutar prueba"}
@@ -658,6 +657,7 @@ export function AdminOcrTestbed({
             {history.map((run) => {
               const schemaValidation = getSchemaValidation(run);
               const injectionSignals = getInjectionSignals(run);
+              const requestConfig = getRequestConfig(run);
 
               return (
                 <article key={run.id} className="ocr-testbed__history-item">
@@ -675,7 +675,9 @@ export function AdminOcrTestbed({
                     </button>
                   </div>
                   <div className="ocr-testbed__history-meta">
-                    <span className="status-pill admin-chip-neutral">{run.model_id}</span>
+                    <span className="status-pill admin-chip-neutral">
+                      {modelNameById.get(run.model_id) ?? run.model_id}
+                    </span>
                     <span className="status-pill admin-chip-neutral">{run.stage_code}</span>
                     <span className={`status-pill ${schemaValidation?.valid ? "complete" : "rejected"}`}>
                       {schemaValidation?.valid ? "Schema OK" : "Schema inválido"}
@@ -687,6 +689,12 @@ export function AdminOcrTestbed({
                       {formatDuration(run.duration_ms)}
                     </span>
                   </div>
+                  {requestConfig ? (
+                    <div className="ocr-testbed__history-secondary">
+                      Temp {requestConfig.temperature ?? "—"} | Top-P {requestConfig.topP ?? "—"} |
+                      Max tokens {requestConfig.maxTokens ?? "—"}
+                    </div>
+                  ) : null}
                 </article>
               );
             })}

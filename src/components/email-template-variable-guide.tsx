@@ -1,31 +1,17 @@
-"use client";
-
 import { EMAIL_TEMPLATE_VARIABLES } from "@/lib/email-template-variables";
 
-export function EmailTemplateVariableGuide({
-  title = "Variables disponibles",
-  compact = false,
-}: {
-  title?: string;
-  compact?: boolean;
-}) {
+export function EmailTemplateVariableHintContent() {
   return (
-    <div className={`template-variable-guide${compact ? " template-variable-guide--compact" : ""}`}>
-      <div className="template-variable-guide__header">
-        <strong>{title}</strong>
-        <span className="form-hint">Escribe las variables tal cual entre llaves dobles.</span>
-      </div>
-      <div className="template-variable-guide__list">
+    <div className="hint-rich-content">
+      <div className="hint-rich-content__eyebrow">Variables disponibles</div>
+      <ul className="hint-rich-content__list">
         {EMAIL_TEMPLATE_VARIABLES.map((variable) => (
-          <div key={variable.token} className="template-variable-guide__item">
+          <li key={variable.token}>
             <code>{`{{${variable.token}}}`}</code>
-            <div>
-              <div className="template-variable-guide__label">{variable.label}</div>
-              <div className="form-hint">{variable.description}</div>
-            </div>
-          </div>
+            <span>{variable.label}</span>
+          </li>
         ))}
-      </div>
+      </ul>
     </div>
   );
 }

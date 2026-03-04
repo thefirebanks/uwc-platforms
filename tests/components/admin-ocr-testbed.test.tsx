@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 describe("AdminOcrTestbed", () => {
-  it("loads history and renders concise Prompt Studio copy", async () => {
+  it("loads history without rendering bulky instruction cards", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),
     );
@@ -73,16 +73,9 @@ describe("AdminOcrTestbed", () => {
     );
 
     expect(await screen.findByText("Prompt Studio")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "El preámbulo de seguridad es fijo. Usa esta vista para probar sin tocar la extracción productiva.",
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Prompt Studio solo envía el archivo que subes arriba. No toma todavía documentos ni campos del formulario del postulante automáticamente.",
-      ),
-    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Contexto" }));
+    expect(screen.getByRole("button", { name: "Ayuda sobre el modelo" })).toBeInTheDocument();
+    expect(screen.queryByText("Qué procesa hoy")).not.toBeInTheDocument();
     expect(await screen.findByText("history.pdf")).toBeInTheDocument();
   });
 
@@ -117,17 +110,17 @@ describe("AdminOcrTestbed", () => {
     const file = new File(["fake pdf"], "current.pdf", { type: "application/pdf" });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    fireEvent.change(screen.getByLabelText("System prompt adicional"), {
+    fireEvent.change(screen.getByLabelText("System prompt adicional", { selector: "textarea" }), {
       target: { value: "Nuevo system prompt" },
     });
-    fireEvent.change(screen.getByLabelText("Instrucciones base"), {
+    fireEvent.change(screen.getByLabelText("Instrucciones base", { selector: "textarea" }), {
       target: { value: "Nuevo prompt base" },
     });
-    fireEvent.change(screen.getByLabelText("Instrucciones de extracción"), {
+    fireEvent.change(screen.getByLabelText("Instrucciones de extracción", { selector: "textarea" }), {
       target: { value: "Extrae solo señales de riesgo" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Esquema y parámetros" }));
-    fireEvent.change(screen.getByLabelText("Esquema JSON esperado"), {
+    fireEvent.change(screen.getByLabelText("Esquema JSON esperado", { selector: "textarea" }), {
       target: { value: '{"summary":"string","findings":["string"]}' },
     });
     fireEvent.change(screen.getByLabelText("Temperature"), {
@@ -191,6 +184,39 @@ describe("AdminOcrTestbed", () => {
 
     expect(await screen.findByText("No se pudo ejecutar OCR.")).toBeInTheDocument();
     expect(screen.getByText("Error ID: err-ocr-run")).toBeInTheDocument();
+  });
+
+  it("blocks execution locally when the schema JSON is malformed", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),
+    );
+
+    const { container } = render(
+      <AdminOcrTestbed
+        cycleId="cycle-1"
+        stageCode="documents"
+        modelOptions={modelOptions}
+        defaultPrompt="Prompt base"
+        defaultSystemPrompt="System prompt"
+        defaultExtractionInstructions="Extraer hallazgos"
+        defaultSchemaTemplate='{"summary":"string"}'
+      />,
+    );
+
+    await screen.findByText("history.pdf");
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["fake pdf"], "resume.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Esquema y parámetros" }));
+    fireEvent.change(screen.getByLabelText("Esquema JSON esperado", { selector: "textarea" }), {
+      target: { value: '{"summary":"string"' },
+    });
+
+    expect(await screen.findByText(/after property value in JSON/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ejecutar prueba" })).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("shows standard error details when history loading fails", async () => {

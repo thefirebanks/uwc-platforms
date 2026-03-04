@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Application, CommunicationLog, StageCode } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
-import { EmailTemplateVariableGuide } from "@/components/email-template-variable-guide";
+import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
+import { FieldHint } from "@/components/field-hint";
 
 interface ApiError {
   message: string;
@@ -63,6 +64,7 @@ export function AdminCommunicationsCenter({
     "all" | Application["status"]
   >("all");
   const [broadcastSearch, setBroadcastSearch] = useState("");
+  const [directRecipientEmail, setDirectRecipientEmail] = useState("");
   const [broadcastRecipientCount, setBroadcastRecipientCount] = useState<number | null>(null);
   const [broadcastPreviewHtml, setBroadcastPreviewHtml] = useState<string | null>(null);
   const [broadcastPreviewSubject, setBroadcastPreviewSubject] = useState<string | null>(null);
@@ -109,8 +111,11 @@ export function AdminCommunicationsCenter({
       stageCode: broadcastStageFilter === "all" ? undefined : broadcastStageFilter,
       status: broadcastStatusFilter === "all" ? undefined : broadcastStatusFilter,
       search: broadcastSearch.trim() || undefined,
+      directRecipientEmail: directRecipientEmail.trim() || undefined,
     };
   }
+
+  const isDirectRecipientMode = directRecipientEmail.trim().length > 0;
 
   const broadcastCanRun =
     broadcastName.trim().length >= 3 &&
@@ -130,6 +135,7 @@ export function AdminCommunicationsCenter({
     broadcastStageFilter,
     broadcastStatusFilter,
     broadcastSearch,
+    directRecipientEmail,
   ]);
 
   async function sendStatusEmails() {
@@ -205,6 +211,12 @@ export function AdminCommunicationsCenter({
           body: JSON.stringify({
             subjectTemplate: broadcastSubject,
             bodyTemplate: broadcastBody,
+            sampleValues: isDirectRecipientMode
+              ? {
+                  full_name: directRecipientEmail.trim(),
+                  applicant_email: directRecipientEmail.trim(),
+                }
+              : undefined,
           }),
         }),
         fetch("/api/communications/send", {
@@ -303,7 +315,9 @@ export function AdminCommunicationsCenter({
       setStatusMessage(
         dryRunBody.deduplicated
           ? "Se detectó una campaña idéntica ya registrada. Puedes revisar su estado antes de reenviar."
-          : `Confirmar envío inmediato a ${recipientCount} destinatario(s).`,
+          : isDirectRecipientMode
+            ? `Confirmar envío inmediato a ${directRecipientEmail.trim()}.`
+            : `Confirmar envío inmediato a ${recipientCount} destinatario(s).`,
       );
     } finally {
       setIsBroadcastSending(false);
@@ -334,13 +348,17 @@ export function AdminCommunicationsCenter({
         return;
       }
 
-      await processCommunications("queued");
       setBroadcastReadyCount(null);
       setBroadcastReadyDeduplicated(false);
-      setStatusMessage(
-        `Campaña encolada para ${body.recipientCount ?? broadcastReadyCount} destinatario(s).`,
-      );
-      await refreshCommunications();
+      if (body.deliveryMode === "direct") {
+        setStatusMessage(`Correo enviado a ${directRecipientEmail.trim()}.`);
+      } else {
+        await processCommunications("queued");
+        setStatusMessage(
+          `Campaña encolada para ${body.recipientCount ?? broadcastReadyCount} destinatario(s).`,
+        );
+        await refreshCommunications();
+      }
     } finally {
       setIsBroadcastSending(false);
     }
@@ -500,17 +518,36 @@ export function AdminCommunicationsCenter({
             </select>
           </div>
           <div className="form-field">
-            <label htmlFor={`${campaignFieldIdPrefix}-search`}>Buscar por nombre o correo</label>
+            <label htmlFor={`${campaignFieldIdPrefix}-search`}>
+              Filtrar postulantes por nombre o correo{" "}
+              <FieldHint label="Ayuda para filtro de postulantes">
+                Úsalo para reducir la audiencia solo entre postulantes del proceso que coincidan
+                parcialmente por nombre o correo.
+              </FieldHint>
+            </label>
             <input
               id={`${campaignFieldIdPrefix}-search`}
               type="text"
               value={broadcastSearch}
               onChange={(event) => setBroadcastSearch(event.target.value)}
-              placeholder="Sirve para una sola persona o un grupo pequeño"
+              placeholder="Ej: María Pérez o maria@example.com"
             />
-            <div className="form-hint">
-              Úsalo para acotar la audiencia a un destinatario puntual o a coincidencias parciales.
-            </div>
+          </div>
+          <div className="form-field">
+            <label htmlFor={`${campaignFieldIdPrefix}-direct-recipient`}>
+              Correo puntual (opcional){" "}
+              <FieldHint label="Ayuda para envío puntual">
+                Si completas este campo, el envío irá solo a ese correo y no dependerá de la
+                audiencia de postulantes.
+              </FieldHint>
+            </label>
+            <input
+              id={`${campaignFieldIdPrefix}-direct-recipient`}
+              type="email"
+              value={directRecipientEmail}
+              onChange={(event) => setDirectRecipientEmail(event.target.value)}
+              placeholder="persona@correo.com"
+            />
           </div>
           <div className="form-field full">
             <label htmlFor={`${campaignFieldIdPrefix}-subject`}>Asunto</label>
@@ -523,7 +560,12 @@ export function AdminCommunicationsCenter({
             />
           </div>
           <div className="form-field full">
-            <label htmlFor={`${campaignFieldIdPrefix}-body`}>Cuerpo (Markdown + variables)</label>
+            <label htmlFor={`${campaignFieldIdPrefix}-body`}>
+              Cuerpo (Markdown + variables){" "}
+              <FieldHint label="Variables disponibles para correos">
+                <EmailTemplateVariableHintContent />
+              </FieldHint>
+            </label>
             <textarea
               id={`${campaignFieldIdPrefix}-body`}
               rows={8}
@@ -531,7 +573,6 @@ export function AdminCommunicationsCenter({
               onChange={(event) => setBroadcastBody(event.target.value)}
               placeholder="Escribe el mensaje en Markdown."
             />
-            <EmailTemplateVariableGuide compact />
           </div>
         </div>
         <div className="communications-action-row">
@@ -573,7 +614,9 @@ export function AdminCommunicationsCenter({
             <p style={{ margin: 0, color: "var(--muted)" }}>
               {broadcastReadyDeduplicated
                 ? "Ya existe una campaña idéntica. Revisa el historial antes de reenviar."
-                : `Esta campaña enviará ${broadcastReadyCount} correo(s) ahora mismo.`}
+                : isDirectRecipientMode
+                  ? `Este envío mandará 1 correo ahora mismo a ${directRecipientEmail.trim()}.`
+                  : `Esta campaña enviará ${broadcastReadyCount} correo(s) ahora mismo.`}
             </p>
             <div
               style={{
@@ -613,12 +656,12 @@ export function AdminCommunicationsCenter({
                 <div className="communications-preview-card__eyebrow">Vista previa</div>
                 <div className="communications-preview-card__title">Audiencia y contenido</div>
               </div>
-              {broadcastRecipientCount !== null ? (
-                <span className="status-pill admin-chip-neutral">
-                  Audiencia estimada: {broadcastRecipientCount} destinatario(s)
-                </span>
-              ) : null}
             </div>
+            {broadcastRecipientCount !== null ? (
+              <div className="communications-preview-card__audience">
+                Audiencia estimada: {broadcastRecipientCount} destinatario(s)
+              </div>
+            ) : null}
             {broadcastPreviewHtml ? (
               <>
                 <div style={{ fontWeight: 700, marginBottom: "10px" }}>

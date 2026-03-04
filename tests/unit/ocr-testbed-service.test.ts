@@ -127,5 +127,13 @@ describe("runOcrTest", () => {
       }),
     );
     expect(result.file_name).toBe("test.pdf");
+    expect(runOcrCheckMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        document: expect.objectContaining({
+          fileName: "test.pdf",
+          mimeType: "application/pdf",
+        }),
+      }),
+    );
   });
 });

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Buffer } from "node:buffer";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
@@ -29,6 +30,15 @@ function resolveFilePath(value: unknown) {
   }
 
   return null;
+}
+
+function inferMimeTypeFromPath(path: string) {
+  const normalized = path.toLowerCase();
+  if (normalized.endsWith(".pdf")) return "application/pdf";
+  if (normalized.endsWith(".png")) return "image/png";
+  if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) return "image/jpeg";
+  if (normalized.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
 }
 
 export async function GET(
@@ -131,17 +141,20 @@ export async function POST(
       });
     }
 
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    const { data: fileBlob, error: downloadError } = await supabase.storage
       .from("application-documents")
-      .createSignedUrl(filePath, 60);
+      .download(filePath);
 
-    if (signedUrlError || !signedUrlData?.signedUrl) {
+    if (downloadError || !fileBlob) {
       throw new AppError({
-        message: "Could not create signed URL for OCR",
+        message: "Could not download file for OCR",
         userMessage: "No se pudo preparar el archivo para OCR.",
         status: 500,
+        details: downloadError,
       });
     }
+
+    const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
 
     const { data: templateData } = await supabase
       .from("cycle_stage_templates")
@@ -151,7 +164,11 @@ export async function POST(
       .maybeSingle();
 
     const result = await runOcrCheck({
-      fileUrl: signedUrlData.signedUrl,
+      document: {
+        fileName: parsed.data.fileKey,
+        mimeType: fileBlob.type || inferMimeTypeFromPath(filePath),
+        dataBase64: fileBuffer.toString("base64"),
+      },
       promptTemplate:
         (templateData as { ocr_prompt_template: string | null } | null)?.ocr_prompt_template ?? null,
       strictSchema: true,

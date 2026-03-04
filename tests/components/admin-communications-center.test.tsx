@@ -11,7 +11,7 @@ afterEach(() => {
 });
 
 describe("AdminCommunicationsCenter", () => {
-  it("shows clearer recipient filters, template variables, and inline preview count", async () => {
+  it("supports a direct recipient field and keeps the audience estimate inside the preview block", async () => {
     vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(okJson({ logs: [], campaigns: [], summary: {} }))
       .mockResolvedValueOnce(
@@ -30,13 +30,17 @@ describe("AdminCommunicationsCenter", () => {
     render(<AdminCommunicationsCenter cycleId="cycle-1" defaultStageCode="documents" />);
 
     expect(await screen.findByText("Centro de comunicaciones")).toBeInTheDocument();
-    expect(screen.getByLabelText("Buscar por nombre o correo")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Úsalo para acotar la audiencia a un destinatario puntual o a coincidencias parciales.",
-      ),
+      screen.getByLabelText("Filtrar postulantes por nombre o correo", { selector: "input" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("{{application_id}}")).toBeInTheDocument();
+    expect(
+      screen.getByLabelText("Correo puntual (opcional)", { selector: "input" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Variables disponibles")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Correo puntual (opcional)", { selector: "input" }), {
+      target: { value: "dafirebanks@gmail.com" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Vista previa de audiencia" }));
 
@@ -44,12 +48,19 @@ describe("AdminCommunicationsCenter", () => {
     expect(screen.getByText("Hola ejemplo")).toBeInTheDocument();
   });
 
-  it("uses Spanish send preparation copy for manual campaigns", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(okJson({ logs: [], campaigns: [], summary: {} }));
+  it("shows direct-send confirmation copy when a single recipient email is present", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(okJson({ logs: [], campaigns: [], summary: {} }))
+      .mockResolvedValueOnce(okJson({ recipientCount: 1, deduplicated: false }));
 
     render(<AdminCommunicationsCenter cycleId="cycle-1" defaultStageCode="documents" />);
 
     await screen.findByText("Centro de comunicaciones");
-    expect(screen.getByRole("button", { name: "Preparar envío" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Correo puntual (opcional)", { selector: "input" }), {
+      target: { value: "dafirebanks@gmail.com" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Preparar envío" }));
+
+    expect(await screen.findByText("Confirmar envío inmediato a dafirebanks@gmail.com.")).toBeInTheDocument();
   });
 });

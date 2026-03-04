@@ -21,7 +21,8 @@ import type {
 import { ErrorCallout } from "@/components/error-callout";
 import { AdminCommunicationsCenter } from "@/components/admin-communications-center";
 import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
-import { EmailTemplateVariableGuide } from "@/components/email-template-variable-guide";
+import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
+import { FieldHint } from "@/components/field-hint";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
 import {
   DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
@@ -2065,7 +2066,6 @@ export function StageConfigEditor({
                   <button className="btn btn-outline" onClick={addAutomation}>+ Nueva Notificación</button>
                 </div>
               </div>
-              <EmailTemplateVariableGuide title="Variables para plantillas automáticas" />
 
               {automations.map((automation) => (
                 <div className="comm-card" key={automation.localId}>
@@ -2115,7 +2115,12 @@ export function StageConfigEditor({
                         </div>
                       </div>
                       <div className="form-field full">
-                        <label htmlFor={`subject-${automation.localId}`}>Asunto</label>
+                        <label htmlFor={`subject-${automation.localId}`}>
+                          Asunto{" "}
+                          <FieldHint label="Variables disponibles para el asunto">
+                            <EmailTemplateVariableHintContent />
+                          </FieldHint>
+                        </label>
                         <input
                           id={`subject-${automation.localId}`}
                           type="text"
@@ -2130,7 +2135,12 @@ export function StageConfigEditor({
                         />
                       </div>
                       <div className="form-field full">
-                        <label htmlFor={`body-${automation.localId}`}>Cuerpo</label>
+                        <label htmlFor={`body-${automation.localId}`}>
+                          Cuerpo{" "}
+                          <FieldHint label="Variables disponibles para el cuerpo">
+                            <EmailTemplateVariableHintContent />
+                          </FieldHint>
+                        </label>
                         <textarea
                           id={`body-${automation.localId}`}
                           rows={4}
