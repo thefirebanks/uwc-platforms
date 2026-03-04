@@ -141,7 +141,8 @@ function getRecommendationAccessUrl({
   token: string;
   origin: string;
 }) {
-  return `${origin}/recomendacion/${token}`;
+  const baseOrigin = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/u, "") || origin;
+  return `${baseOrigin}/recomendacion/${token}`;
 }
 
 function buildInviteEmailText({

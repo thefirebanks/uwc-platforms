@@ -159,4 +159,104 @@ describe("upsertApplicantRecommendations", () => {
     expect(mockGetSupabaseAdminClient).not.toHaveBeenCalled();
     expect(mockSendEmail).not.toHaveBeenCalled();
   });
+
+  it("uses the configured public app URL for recommendation links instead of the request origin", async () => {
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://uwcperu.org/");
+
+    const insertedRows = [
+      {
+        id: "rec-mentor",
+        application_id: "app-1",
+        requester_id: "user-1",
+        role: "mentor",
+        recommender_email: "mentor@example.com",
+        token: "rec-token",
+        status: "invited",
+        access_expires_at: "2026-07-16T00:00:00.000Z",
+        invite_sent_at: null,
+        opened_at: null,
+        started_at: null,
+        submitted_at: null,
+        invalidated_at: null,
+        invalidation_reason: null,
+        reminder_count: 0,
+        last_reminder_at: null,
+        otp_sent_at: null,
+        otp_verified_at: null,
+        otp_code_hash: null,
+        otp_attempt_count: 0,
+        session_token_hash: null,
+        session_expires_at: null,
+        responses: {},
+        admin_received_at: null,
+        admin_received_by: null,
+        admin_received_reason: null,
+        admin_received_file: null,
+        admin_notes: null,
+        recommender_name: null,
+        created_at: "2026-03-04T00:00:00.000Z",
+      },
+    ];
+    const finalRows = insertedRows.map((row) => ({
+      ...row,
+      status: "sent",
+      invite_sent_at: "2026-03-04T00:00:00.000Z",
+    }));
+
+    const adminQueries: string[] = [];
+    mockGetSupabaseAdminClient.mockReturnValue({
+      from(table: string) {
+        adminQueries.push(table);
+        if (table !== "recommendation_requests") {
+          throw new Error(`Unexpected admin table ${table}`);
+        }
+
+        return {
+          select() {
+            return {
+              eq() {
+                return {
+                  is() {
+                    return {
+                      order: async () => ({ data: [], error: null }),
+                    };
+                  },
+                  order: async () => ({ data: finalRows, error: null }),
+                };
+              },
+            };
+          },
+          insert() {
+            return {
+              select: async () => ({ data: insertedRows, error: null }),
+            };
+          },
+          update() {
+            return {
+              eq() {
+                return { error: null };
+              },
+            };
+          },
+        };
+      },
+    });
+
+    await upsertApplicantRecommendations({
+      supabase: createApplicantSupabase() as never,
+      applicationId: "app-1",
+      applicantId: "user-1",
+      applicantEmail: "applicant@example.com",
+      recommenders: [{ role: "mentor", email: "mentor@example.com" }],
+      origin: "https://uwc-platforms-pr-16.dafirebanks.workers.dev",
+    });
+
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        to: "mentor@example.com",
+        text: expect.stringContaining("https://uwcperu.org/recomendacion/rec-token"),
+      }),
+    );
+    expect(adminQueries).toContain("recommendation_requests");
+  });
 });
