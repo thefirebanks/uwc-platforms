@@ -137,10 +137,12 @@ test.describe("Admin field CRUD (reversible)", () => {
       timeout: 15_000,
     });
 
-    // All four tabs should be visible
+    // The integrated stage workspace exposes the old editor plus the newer comms/Prompt Studio tools.
     await expect(page.getByRole("button", { name: /^Editor de Formulario$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Ajustes y Reglas$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Automatizaciones$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Comunicaciones$/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Prompt Studio$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Estadísticas$/i })).toBeVisible();
 
     // Preview button should be accessible

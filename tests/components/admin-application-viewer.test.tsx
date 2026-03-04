@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminApplicationViewer } from "@/components/admin-application-viewer";
 
@@ -105,5 +105,78 @@ describe("AdminApplicationViewer", () => {
     expect(
       screen.getByText("La postulación no tiene bloqueos activos en Stage 1."),
     ).toBeInTheDocument();
+  });
+
+  it("uses theme-aware surfaces in files and recommendations tabs", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input) => {
+      const url = String(input);
+      if (url.includes("/api/exports?applicationId=app-1")) {
+        return Promise.resolve(
+          okJson({
+            ...applicationExport,
+            recommendations: [
+              {
+                id: "rec-1",
+                role: "mentor",
+                recommender_name: "Mentora Demo",
+                recommender_email: "mentor@example.com",
+                status: "sent",
+                invite_sent_at: "2026-03-03T00:00:00.000Z",
+                submitted_at: null,
+                last_reminder_at: null,
+                reminder_count: 0,
+                admin_received_at: null,
+                admin_received_reason: null,
+                admin_received_file: null,
+                admin_notes: null,
+              },
+            ],
+          }),
+        );
+      }
+      if (url.includes("/api/applications/app-1/admin-edit")) {
+        return Promise.resolve(okJson({ history: [] }));
+      }
+      if (url.includes("/api/applications/app-1/files")) {
+        return Promise.resolve(
+          okJson({
+            files: [
+              {
+                key: "identificationDocument",
+                path: "applications/app-1/document.pdf",
+                title: "Documento de identidad",
+                originalName: "document.pdf",
+                mimeType: "application/pdf",
+                sizeBytes: 1024,
+                uploadedAt: "2026-03-03T00:00:00.000Z",
+                category: null,
+                notes: null,
+                downloadUrl: "https://example.com/document.pdf",
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    render(
+      <AdminApplicationViewer
+        applicationId="app-1"
+        stage1Blockers={[]}
+        onClose={() => {}}
+        onApplicationUpdated={() => {}}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Ana Perez" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Archivos" }));
+    const fileCard = await screen.findByTestId("admin-file-card-identificationDocument");
+    expect(fileCard).toHaveStyle({ background: "var(--surface)" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Recomendaciones" }));
+    const recommendationCard = await screen.findByTestId("admin-recommendation-card-rec-1");
+    expect(recommendationCard).toHaveStyle({ background: "var(--surface)" });
   });
 });

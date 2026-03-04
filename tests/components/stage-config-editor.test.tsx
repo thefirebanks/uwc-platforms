@@ -439,7 +439,7 @@ describe("StageConfigEditor", () => {
     });
   });
 
-  it("shows applicant instructions block in editor for documents stage", () => {
+  it("keeps applicant instructions only under Ajustes y Reglas", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -457,8 +457,113 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    expect(screen.getByText(/Paso inicial: Instrucciones/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Editar instrucciones en Ajustes y Reglas/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Paso inicial: Instrucciones/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    expect(screen.getByLabelText(/Instrucciones de la etapa \(Markdown\)/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Prompt OCR de la etapa/i)).toBeInTheDocument();
+  });
+
+  it("labels the automation tab clearly instead of generic communications", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /^Automatizaciones$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Comunicaciones$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Prompt Studio$/i })).toBeInTheDocument();
+  });
+
+  it("opens Prompt Studio inside the same stage shell from Ajustes y Reglas", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          runs: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Abrir Prompt Studio/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /^Prompt Studio$/i })).toBeInTheDocument();
+      expect(screen.getByText(/Sin pruebas anteriores\./i)).toBeInTheDocument();
+    });
+  });
+
+  it("opens the communications center inside the same stage shell from Automatizaciones", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          logs: [],
+          campaigns: [],
+          summary: {
+            queued: 0,
+            processing: 0,
+            sent: 0,
+            failed: 0,
+            total: 0,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Automatizaciones$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Abrir centro de comunicaciones/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Centro de comunicaciones/i })).toBeInTheDocument();
+    });
   });
 
   it("persists custom sections and field-section assignments in the global save payload", async () => {

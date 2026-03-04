@@ -31,7 +31,7 @@ export async function loginAsAdmin(page: Page): Promise<void> {
  */
 export async function loginAndOpenForm(page: Page): Promise<void> {
   await page.goto("/login");
-  await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+  await page.getByRole("button", { name: /Entrar como postulante demo 1/i }).click();
   await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
 
   const processLink = page
@@ -110,7 +110,11 @@ export async function hasSectionWithTitle(page: Page, title: string): Promise<bo
 export async function resetDemoApplicant(page: Page): Promise<void> {
   await loginAsAdmin(page);
   const status = await page.evaluate(async () => {
-    const r = await fetch("/api/dev/reset-demo-applicant", { method: "POST" });
+    const r = await fetch("/api/dev/reset-demo-applicant", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "applicant.demo@uwcperu.org" }),
+    });
     return r.status;
   });
   if (status !== 200) {

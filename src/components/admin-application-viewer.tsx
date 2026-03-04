@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
 
 /* -------------------------------------------------------------------------- */
@@ -71,6 +71,44 @@ type Stage1Blocker = {
 };
 
 type Tab = "datos" | "archivos" | "recomendaciones" | "historial";
+
+const PANEL_CARD_STYLE: CSSProperties = {
+  padding: "0.75rem 1rem",
+  background: "var(--surface)",
+  border: "1px solid var(--border, var(--sand))",
+  borderRadius: "8px",
+  boxShadow: "var(--shadow-sm)",
+};
+
+const PANEL_SUBTLE_BUTTON_STYLE: CSSProperties = {
+  padding: "0.375rem 0.75rem",
+  fontSize: "0.8125rem",
+  background: "var(--cream)",
+  color: "var(--ink)",
+  border: "1px solid var(--border, var(--sand))",
+  borderRadius: "8px",
+  cursor: "pointer",
+};
+
+const PANEL_ACCENT_BUTTON_STYLE: CSSProperties = {
+  padding: "0.375rem 0.75rem",
+  fontSize: "0.8125rem",
+  background: "var(--uwc-maroon-soft)",
+  color: "var(--uwc-maroon)",
+  border: "1px solid var(--uwc-maroon)",
+  borderRadius: "8px",
+  cursor: "pointer",
+};
+
+const PANEL_SUCCESS_BUTTON_STYLE: CSSProperties = {
+  padding: "0.375rem 0.75rem",
+  fontSize: "0.8125rem",
+  background: "var(--surface)",
+  color: "var(--success)",
+  border: "1px solid var(--success)",
+  borderRadius: "8px",
+  cursor: "pointer",
+};
 
 /* -------------------------------------------------------------------------- */
 /*  Props                                                                     */
@@ -556,7 +594,7 @@ export function AdminApplicationViewer({
           right: 0,
           bottom: 0,
           width: "min(720px, 90vw)",
-          background: "var(--cream, #FAF8F5)",
+          background: "var(--surface, #FFFFFF)",
           boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
           zIndex: 999,
           display: "flex",
@@ -1061,12 +1099,8 @@ export function AdminApplicationViewer({
                   {files.map((f) => (
                     <div
                       key={f.key}
-                      style={{
-                        padding: "0.75rem 1rem",
-                        background: "white",
-                        border: "1px solid var(--border)",
-                        borderRadius: "4px",
-                      }}
+                      data-testid={`admin-file-card-${f.key}`}
+                      style={PANEL_CARD_STYLE}
                     >
                       <div
                         style={{
@@ -1117,14 +1151,7 @@ export function AdminApplicationViewer({
                         <button
                           onClick={() => handleFileMetadataEdit(f)}
                           disabled={busyFileKey === f.key}
-                          style={{
-                            padding: "0.375rem 0.75rem",
-                            fontSize: "0.8125rem",
-                            background: "var(--cream)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "2px",
-                            cursor: "pointer",
-                          }}
+                          style={PANEL_SUBTLE_BUTTON_STYLE}
                         >
                           Editar metadata
                         </button>
@@ -1134,12 +1161,7 @@ export function AdminApplicationViewer({
                             target="_blank"
                             rel="noreferrer"
                             style={{
-                              padding: "0.375rem 0.75rem",
-                              fontSize: "0.8125rem",
-                              background: "var(--uwc-maroon-soft)",
-                              color: "var(--uwc-maroon)",
-                              border: "1px solid var(--uwc-maroon)",
-                              borderRadius: "2px",
+                              ...PANEL_ACCENT_BUTTON_STYLE,
                               textDecoration: "none",
                             }}
                           >
@@ -1152,7 +1174,7 @@ export function AdminApplicationViewer({
                             alignItems: "center",
                             gap: "0.5rem",
                             fontSize: "0.8125rem",
-                            color: "var(--muted)",
+                            color: "var(--ink-light)",
                           }}
                         >
                           <span>Reemplazar</span>
@@ -1189,12 +1211,8 @@ export function AdminApplicationViewer({
                   {data.recommendations.map((rec) => (
                     <div
                       key={rec.id}
-                      style={{
-                        padding: "0.75rem 1rem",
-                        background: "white",
-                        border: "1px solid var(--border)",
-                        borderRadius: "4px",
-                      }}
+                      data-testid={`admin-recommendation-card-${rec.id}`}
+                      style={PANEL_CARD_STYLE}
                     >
                       <div
                         style={{
@@ -1276,14 +1294,7 @@ export function AdminApplicationViewer({
                             )
                           }
                           disabled={busyRecommendationId === rec.id}
-                          style={{
-                            padding: "0.375rem 0.75rem",
-                            fontSize: "0.8125rem",
-                            background: "var(--cream)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "2px",
-                            cursor: "pointer",
-                          }}
+                          style={PANEL_SUBTLE_BUTTON_STYLE}
                         >
                           Editar contacto
                         </button>
@@ -1291,15 +1302,7 @@ export function AdminApplicationViewer({
                           <button
                             onClick={() => handleRecommendationReminder(rec.id)}
                             disabled={busyRecommendationId === rec.id}
-                            style={{
-                              padding: "0.375rem 0.75rem",
-                              fontSize: "0.8125rem",
-                              background: "var(--uwc-maroon-soft)",
-                              color: "var(--uwc-maroon)",
-                              border: "1px solid var(--uwc-maroon)",
-                              borderRadius: "2px",
-                              cursor: "pointer",
-                            }}
+                            style={PANEL_ACCENT_BUTTON_STYLE}
                           >
                             Reenviar recordatorio
                           </button>
@@ -1313,15 +1316,7 @@ export function AdminApplicationViewer({
                               )
                             }
                             disabled={busyRecommendationId === rec.id}
-                            style={{
-                              padding: "0.375rem 0.75rem",
-                              fontSize: "0.8125rem",
-                              background: "white",
-                              border: "1px solid var(--success)",
-                              color: "var(--success)",
-                              borderRadius: "2px",
-                              cursor: "pointer",
-                            }}
+                            style={PANEL_SUCCESS_BUTTON_STYLE}
                           >
                             Registrar manualmente
                           </button>

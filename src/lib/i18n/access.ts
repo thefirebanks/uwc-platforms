@@ -7,8 +7,11 @@ export function canUseEnglishLanguageToggle(profile: {
   const userEmail = profile.email?.trim().toLowerCase() ?? "";
   const configuredDemoAdminEmail =
     process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL?.trim().toLowerCase() ?? "";
-  const configuredDemoApplicantEmail =
-    process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL?.trim().toLowerCase() ?? "";
+  const configuredDemoApplicantEmails = [
+    process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL?.trim().toLowerCase() ?? "",
+    process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL?.trim().toLowerCase() ??
+      "applicant.demo2@uwcperu.org",
+  ].filter(Boolean);
 
   if (profile.role === "admin") {
     return true;
@@ -22,5 +25,5 @@ export function canUseEnglishLanguageToggle(profile: {
     return false;
   }
 
-  return configuredDemoApplicantEmail.length > 0 && configuredDemoApplicantEmail === userEmail;
+  return configuredDemoApplicantEmails.includes(userEmail);
 }

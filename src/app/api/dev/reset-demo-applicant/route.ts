@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { AppError } from "@/lib/errors/app-error";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -6,6 +7,12 @@ import type { Json } from "@/types/supabase";
 
 const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
 const demoApplicantEmail = process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL;
+const demoApplicant2Email =
+  process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL ?? "applicant.demo2@uwcperu.org";
+
+const requestSchema = z.object({
+  email: z.string().email().optional(),
+});
 
 type ApplicationRowForReset = {
   id: string;
@@ -27,7 +34,7 @@ function collectStoredFilePaths(files: Json): string[] {
   });
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   return withErrorHandling(async () => {
     if (!devBypassEnabled) {
       throw new AppError({
@@ -37,11 +44,28 @@ export async function POST() {
       });
     }
 
-    if (!demoApplicantEmail) {
+    const body = (await request.json().catch(() => ({}))) as unknown;
+    const parsed = requestSchema.parse(body);
+    const allowedDemoEmails = [demoApplicantEmail, demoApplicant2Email]
+      .filter((email): email is string => Boolean(email))
+      .map((email) => email.trim().toLowerCase());
+
+    if (allowedDemoEmails.length === 0) {
       throw new AppError({
         message: "Missing demo applicant email",
         userMessage: "Falta configurar el correo del postulante demo.",
         status: 500,
+      });
+    }
+
+    const requestedEmail = parsed.email?.trim().toLowerCase();
+    const targetEmail = requestedEmail ?? allowedDemoEmails[0];
+
+    if (!allowedDemoEmails.includes(targetEmail)) {
+      throw new AppError({
+        message: "Unknown demo applicant email",
+        userMessage: "El correo demo solicitado no está permitido en este entorno.",
+        status: 422,
       });
     }
 
@@ -50,7 +74,7 @@ export async function POST() {
     const { data: profileData, error: profileError } = await supabase
       .from("profiles")
       .select("id, email")
-      .eq("email", demoApplicantEmail)
+      .eq("email", targetEmail)
       .maybeSingle();
 
     if (profileError || !profileData) {
@@ -157,7 +181,7 @@ export async function POST() {
 
     return NextResponse.json({
       success: true,
-      demoApplicantEmail,
+      demoApplicantEmail: targetEmail,
       applicantId,
       deletedByTable,
       storage: {

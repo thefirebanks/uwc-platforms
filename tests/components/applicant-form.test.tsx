@@ -55,6 +55,41 @@ const DEFAULT_STAGE_FIELDS: CycleStageField[] = [
   makeField({ field_key: "identificationDocument", field_label: "Documentos - Documento de identidad", sort_order: 8, section_id: "section-documents", field_type: "file", is_required: true }),
 ];
 
+const STAGE_TWO_SECTIONS: StageSection[] = [
+  makeSection({
+    section_key: "other",
+    title: "Otros campos",
+    sort_order: 1,
+    stage_code: "exam_placeholder",
+  }),
+  makeSection({
+    section_key: "documents",
+    title: "Documentos",
+    sort_order: 2,
+    stage_code: "exam_placeholder",
+  }),
+];
+
+const STAGE_TWO_FIELDS: CycleStageField[] = [
+  makeField({
+    field_key: "examExpectation",
+    field_label: "Otros campos - Disponibilidad para evaluación",
+    sort_order: 1,
+    stage_code: "exam_placeholder",
+    section_id: "section-other",
+    is_required: true,
+  }),
+  makeField({
+    field_key: "foreignerCardDocument",
+    field_label: "Documentos - Sustento adicional",
+    sort_order: 2,
+    stage_code: "exam_placeholder",
+    section_id: "section-documents",
+    field_type: "file",
+    is_required: false,
+  }),
+];
+
 const DRAFT_APP = {
   id: "app-draft",
   applicant_id: "user-1",
@@ -493,6 +528,37 @@ describe("ApplicantApplicationForm", () => {
 
     expect(screen.getAllByText(/Instrucciones/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Checklist rápida de preparación/i)).toBeInTheDocument();
+  });
+
+  it("opens advanced later stages on the first actionable section without edit-response mode", () => {
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-stage-2"
+        sections={STAGE_TWO_SECTIONS}
+        stageFields={STAGE_TWO_FIELDS}
+        stageCode="exam_placeholder"
+        stageLabel="Etapa 2 - Examen"
+        existingApplication={{
+          ...DRAFT_APP,
+          stage_code: "exam_placeholder",
+          status: "advanced",
+          payload: {
+            examExpectation: "",
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText(/Otros campos/i).length).toBeGreaterThan(0);
+    expect(
+      screen.queryByText(/Tu postulación ya fue enviada\. Para cambiar datos/i),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Editar respuesta/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/Disponibilidad para evaluación/i),
+    ).toBeEnabled();
   });
 
   it("does not mark documents/recommenders/review as in-progress for an untouched draft", () => {

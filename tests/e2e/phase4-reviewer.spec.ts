@@ -103,7 +103,7 @@ test.describe("Phase 4 – Reviewer Architecture", () => {
     test.skip(!bypassReady, "Requires dev bypass + demo credentials.");
 
     await page.goto("/login");
-    await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+    await page.getByRole("button", { name: /Entrar como postulante demo 1/i }).click();
     await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
 
     await page.goto("/admin/reviewers");
@@ -115,7 +115,7 @@ test.describe("Phase 4 – Reviewer Architecture", () => {
     test.skip(!bypassReady, "Requires dev bypass + demo credentials.");
 
     await page.goto("/login");
-    await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+    await page.getByRole("button", { name: /Entrar como postulante demo 1/i }).click();
     await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
 
     await page.goto("/reviewer");
@@ -127,7 +127,7 @@ test.describe("Phase 4 – Reviewer Architecture", () => {
     test.skip(!bypassReady, "Requires dev bypass + demo credentials.");
 
     await page.goto("/login");
-    await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+    await page.getByRole("button", { name: /Entrar como postulante demo 1/i }).click();
     await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
 
     const statuses = await page.evaluate(async () => {

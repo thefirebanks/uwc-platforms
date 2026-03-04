@@ -550,6 +550,100 @@ function getSectionFieldStatus({
   });
 }
 
+function isDocumentsStageCode(stageCode?: string) {
+  return !stageCode || stageCode === "documents";
+}
+
+function getInitialActiveSectionId({
+  cycleId,
+  stageCode,
+  stageFields,
+  sections,
+}: {
+  cycleId: string;
+  stageCode?: string;
+  stageFields?: CycleStageField[];
+  sections?: StageSection[];
+}): WizardSectionId {
+  if (isDocumentsStageCode(stageCode)) {
+    return PREP_SECTION_ID;
+  }
+
+  const effectiveStageFields =
+    stageFields && stageFields.length > 0 ? stageFields : buildFallbackStageFields(cycleId);
+  const orderedStageFields = [...effectiveStageFields].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
+  const formStageFields = orderedStageFields.filter(
+    (field) => field.is_active && field.field_type !== "file",
+  );
+  const fileStageFields = orderedStageFields.filter(
+    (field) => field.is_active && field.field_type === "file",
+  );
+  const groupedSections = groupFieldsBySections(formStageFields, sections ?? [], {
+    includeInactive: false,
+    includeFileFields: false,
+  });
+
+  const firstFormSection = groupedSections.find(
+    (section) => section.sectionKey !== "documents" && section.sectionKey !== "recommenders",
+  );
+  if (firstFormSection) {
+    return firstFormSection.sectionKey as WizardSectionId;
+  }
+
+  const hasDocumentStep =
+    fileStageFields.length > 0 ||
+    groupedSections.some((section) => section.sectionKey === "documents");
+  if (hasDocumentStep) {
+    return "documents_uploads";
+  }
+
+  return "review_submit";
+}
+
+function isCurrentStageReadOnly({
+  application,
+  stageCode,
+}: {
+  application: Application | null;
+  stageCode?: string;
+}) {
+  if (!application) {
+    return false;
+  }
+
+  if (application.status === "submitted" || application.status === "ineligible") {
+    return true;
+  }
+
+  return (
+    isDocumentsStageCode(stageCode) &&
+    (application.status === "eligible" || application.status === "advanced")
+  );
+}
+
+function isCurrentStageSubmissionComplete({
+  application,
+  stageCode,
+}: {
+  application: Application | null;
+  stageCode?: string;
+}) {
+  if (!application) {
+    return false;
+  }
+
+  if (application.status === "submitted" || application.status === "ineligible") {
+    return true;
+  }
+
+  return (
+    isDocumentsStageCode(stageCode) &&
+    (application.status === "eligible" || application.status === "advanced")
+  );
+}
+
 export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
@@ -583,13 +677,6 @@ export function ApplicantApplicationForm({
   const copy = useCallback((spanish: string, english: string) => (isEnglish ? english : spanish), [isEnglish]);
   const staticSectionTitles: Record<string, string> = isEnglish ? SECTION_TITLES_EN : SECTION_TITLES_ES;
 
-  const LOCKED_STATUSES = new Set<Application["status"]>([
-    "submitted",
-    "eligible",
-    "ineligible",
-    "advanced",
-  ]);
-
   const [application, setApplication] = useState<Application | null>(existingApplication);
   const [error, setError] = useState<ApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -612,16 +699,18 @@ export function ApplicantApplicationForm({
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formValues, setFormValues] = useState<Record<string, string>>({});
-  const isDocumentsStageInit = !stageCode || stageCode === "documents";
   const [activeSectionId, setActiveSectionId] = useState<WizardSectionId>(
-    isDocumentsStageInit
-      ? PREP_SECTION_ID
-      : "review_submit",
+    getInitialActiveSectionId({
+      cycleId,
+      stageCode,
+      stageFields,
+      sections,
+    }),
   );
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
 
   const isStageClosed = Boolean(stageCloseAt && Date.parse(stageCloseAt) < Date.now());
-  const isLocked = application ? LOCKED_STATUSES.has(application.status) : false;
+  const isLocked = isCurrentStageReadOnly({ application, stageCode });
   const isEditingEnabled = !isStageClosed && (!isLocked || isEditMode);
   const providedStageFields = stageFields ?? EMPTY_STAGE_FIELDS;
   const initialApplicationIdRef = useRef<string | null>(existingApplication?.id ?? null);
@@ -893,13 +982,10 @@ export function ApplicantApplicationForm({
   const submissionStatus = useMemo(
     () =>
       getStepState({
-        complete: Boolean(
-          application &&
-            ["submitted", "eligible", "ineligible", "advanced"].includes(application.status),
-        ),
+        complete: isCurrentStageSubmissionComplete({ application, stageCode }),
         inProgress: false,
       }),
-    [application],
+    [application, stageCode],
   );
 
   const progressWizardSections = useMemo(
@@ -1020,9 +1106,16 @@ export function ApplicantApplicationForm({
     }
 
     if (!wizardSections.some((section) => section.id === activeSectionId)) {
-      setActiveSectionId(wizardSections[0].id);
+      setActiveSectionId(
+        getInitialActiveSectionId({
+          cycleId,
+          stageCode,
+          stageFields,
+          sections,
+        }),
+      );
     }
-  }, [activeSectionId, wizardSections]);
+  }, [activeSectionId, cycleId, sections, stageCode, stageFields, wizardSections]);
 
   useEffect(() => {
     const applicationId = application?.id ?? null;

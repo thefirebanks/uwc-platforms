@@ -137,7 +137,7 @@ test.describe("Applicant application lifecycle (reversible)", () => {
 
   test("applicant cannot access admin routes", async ({ page }) => {
     await page.goto("/login");
-    await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+    await page.getByRole("button", { name: /Entrar como postulante demo 1/i }).click();
     await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
 
     // Attempting to navigate to admin should redirect away from /admin/process/...

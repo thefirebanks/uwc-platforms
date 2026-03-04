@@ -8,7 +8,7 @@ test("demo applicant cannot invoke admin APIs", async ({ page }) => {
   );
 
   await page.goto("/login");
-  await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+  await page.getByRole("button", { name: /Entrar como postulante demo 1/i }).click();
   await expect(page).toHaveURL(/\/applicant/);
 
   const statuses = await page.evaluate(async () => {

@@ -127,16 +127,12 @@ export function AdminDashboard({
   const sections = [
     "process_config",
     "stages",
-    "communications",
-    "ocr_testbed",
     "export",
   ] as const;
 
   const SECTION_LABELS: Record<(typeof sections)[number], string> = {
     process_config: "Reglas generales",
     stages: "Etapas",
-    communications: "Comunicaciones y Examen",
-    ocr_testbed: "Prompt Studio",
     export: "Exportar Datos",
   };
 
@@ -644,13 +640,9 @@ export function AdminDashboard({
               d =
                 "stages" === a
                   ? `${templates.length}/6 plantillas configuradas`
-                  : "communications" === a
-                    ? `${communicationSummary.total} registros`
-                    : "ocr_testbed" === a
-                      ? "Prompt Studio seguro"
-                      : "export" === a
-                        ? "Descarga CSV o Excel"
-                        : "Reglas y configuración";
+                  : "export" === a
+                    ? "Descarga CSV o Excel"
+                    : "Reglas y configuración";
             return (
               <button
                 key={a}

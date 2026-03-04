@@ -19,7 +19,16 @@ import type {
   StageSection,
 } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
+import { AdminCommunicationsCenter } from "@/components/admin-communications-center";
+import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
+import {
+  DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
+  DEFAULT_OCR_PROMPT,
+  DEFAULT_OCR_SCHEMA_TEMPLATE,
+  DEFAULT_OCR_SYSTEM_PROMPT,
+  MODEL_REGISTRY,
+} from "@/lib/server/ocr";
 
 interface ApiError {
   message: string;
@@ -47,6 +56,7 @@ type StageEditorSettingsDraft = {
   closeDate: string;
   previousStageRequirement: string;
   blockIfPreviousNotMet: boolean;
+  ocrPromptTemplate: string;
 };
 
 type StageAdminConfigPayload = {
@@ -284,12 +294,10 @@ function serializePersistedFields(fields: EditableField[]) {
   );
 }
 
-function serializePersistedComms({
+function serializePersistedAutomations({
   automations,
-  ocrPromptTemplate,
 }: {
   automations: EditableAutomation[];
-  ocrPromptTemplate: string;
 }) {
   return JSON.stringify({
     automations: automations.map((automation) => ({
@@ -300,7 +308,6 @@ function serializePersistedComms({
       template_subject: automation.template_subject,
       template_body: automation.template_body,
     })),
-    ocrPromptTemplate: ocrPromptTemplate.trim(),
   });
 }
 
@@ -312,6 +319,7 @@ function serializeSettingsDraft(settings: StageEditorSettingsDraft) {
     closeDate: settings.closeDate,
     previousStageRequirement: settings.previousStageRequirement,
     blockIfPreviousNotMet: settings.blockIfPreviousNotMet,
+    ocrPromptTemplate: settings.ocrPromptTemplate?.trim() ?? "",
   });
 }
 
@@ -358,6 +366,7 @@ export function StageConfigEditor({
   initialAutomations,
   initialOcrPromptTemplate,
   initialStageAdminConfig,
+  initialTab = "editor",
 }: {
   cycleId: string;
   cycleName: string;
@@ -372,6 +381,13 @@ export function StageConfigEditor({
   initialAutomations: StageAutomationTemplate[];
   initialOcrPromptTemplate: string | null;
   initialStageAdminConfig?: Record<string, unknown> | null;
+  initialTab?:
+    | "editor"
+    | "settings"
+    | "automations"
+    | "communications"
+    | "prompt_studio"
+    | "stats";
 }) {
   const router = useRouter();
   const [fields, setFields] = useState<EditableField[]>(mapFieldsWithLocalId(initialFields));
@@ -388,8 +404,8 @@ export function StageConfigEditor({
     initialOcrPromptTemplate ?? DEFAULT_OCR_PROMPT_TEMPLATE,
   );
   const [activeTab, setActiveTab] = useState<
-    "editor" | "settings" | "comms" | "stats"
-  >("editor");
+    "editor" | "settings" | "automations" | "communications" | "prompt_studio" | "stats"
+  >(initialTab);
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [sectionPlaceholders, setSectionPlaceholders] = useState<SectionPlaceholderDraft[]>([]);
 
@@ -409,10 +425,9 @@ export function StageConfigEditor({
     serializePersistedFields(mapFieldsWithLocalId(initialFields)),
   );
   const savedSectionsSnapshotRef = useRef(serializeSections(initialSections));
-  const savedCommsSnapshotRef = useRef(
-    serializePersistedComms({
+  const savedAutomationsSnapshotRef = useRef(
+    serializePersistedAutomations({
       automations: mapAutomationsWithLocalId(initialAutomations),
-      ocrPromptTemplate: initialOcrPromptTemplate ?? DEFAULT_OCR_PROMPT_TEMPLATE,
     }),
   );
   const savedSettingsSnapshotRef = useRef<string | null>(null);
@@ -427,13 +442,12 @@ export function StageConfigEditor({
     () => serializeSections(sections),
     [sections],
   );
-  const persistedCommsSnapshot = useMemo(
+  const persistedAutomationsSnapshot = useMemo(
     () =>
-      serializePersistedComms({
+      serializePersistedAutomations({
         automations,
-        ocrPromptTemplate,
       }),
-    [automations, ocrPromptTemplate],
+    [automations],
   );
 
   function createNewField(nextIndex: number): EditableField {
@@ -541,7 +555,15 @@ export function StageConfigEditor({
     router.push(`/admin/process/${cycleId}/stage/${stageId}/preview`);
   }
 
-  function switchToTab(nextTab: "editor" | "settings" | "comms" | "stats") {
+  function switchToTab(
+    nextTab:
+      | "editor"
+      | "settings"
+      | "automations"
+      | "communications"
+      | "prompt_studio"
+      | "stats",
+  ) {
     startTransition(() => setActiveTab(nextTab));
   }
 
@@ -814,6 +836,10 @@ export function StageConfigEditor({
           typeof body.settings?.blockIfPreviousNotMet === "boolean"
             ? body.settings.blockIfPreviousNotMet
             : blockIfPreviousNotMet,
+        ocrPromptTemplate:
+          typeof body.ocrPromptTemplate === "string"
+            ? body.ocrPromptTemplate
+            : nextSavedOcrPrompt,
       } satisfies StageEditorSettingsDraft;
 
       setSections(nextSavedSections);
@@ -828,9 +854,8 @@ export function StageConfigEditor({
       setBlockIfPreviousNotMet(nextSavedSettings.blockIfPreviousNotMet);
       savedSectionsSnapshotRef.current = serializeSections(nextSavedSections);
       savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
-      savedCommsSnapshotRef.current = serializePersistedComms({
+      savedAutomationsSnapshotRef.current = serializePersistedAutomations({
         automations: nextSavedAutomations,
-        ocrPromptTemplate: nextSavedOcrPrompt,
       });
       savedSettingsSnapshotRef.current = serializeSettingsDraft(nextSavedSettings);
       setLastSavedAtIso(new Date().toISOString());
@@ -895,6 +920,7 @@ export function StageConfigEditor({
         closeDate: settingsCloseDate,
         previousStageRequirement,
         blockIfPreviousNotMet,
+        ocrPromptTemplate,
       }),
     [
       settingsStageName,
@@ -903,6 +929,7 @@ export function StageConfigEditor({
       settingsCloseDate,
       previousStageRequirement,
       blockIfPreviousNotMet,
+      ocrPromptTemplate,
     ],
   );
   if (savedSettingsSnapshotRef.current === null) {
@@ -913,14 +940,14 @@ export function StageConfigEditor({
   const hasUnsavedFieldConfigChanges =
     persistedFieldsSnapshot !== savedFieldsSnapshotRef.current ||
     hasUnsavedSectionsChanges;
-  const hasUnsavedCommsConfigChanges =
-    persistedCommsSnapshot !== savedCommsSnapshotRef.current;
+  const hasUnsavedAutomationsConfigChanges =
+    persistedAutomationsSnapshot !== savedAutomationsSnapshotRef.current;
   const hasUnsavedSettingsConfigChanges =
     settingsDraftSnapshot !== savedSettingsSnapshotRef.current;
   const hasUnsavedSectionDraftChanges = sectionPlaceholders.length > 0;
   const hasUnsavedConfigChanges =
     hasUnsavedFieldConfigChanges ||
-    hasUnsavedCommsConfigChanges ||
+    hasUnsavedAutomationsConfigChanges ||
     hasUnsavedSettingsConfigChanges;
   const canSavePersistedConfig = hasUnsavedConfigChanges && !isSaving;
   const saveStatusTone = isSaving
@@ -941,7 +968,7 @@ export function StageConfigEditor({
   const saveableChangeLabels = [
     hasUnsavedFieldConfigChanges ? "Editor de Formulario" : null,
     hasUnsavedSettingsConfigChanges ? "Ajustes y Reglas" : null,
-    hasUnsavedCommsConfigChanges ? "Comunicaciones" : null,
+    hasUnsavedAutomationsConfigChanges ? "Automatizaciones" : null,
   ].filter(Boolean) as string[];
   const draftOnlyChangeLabels = [
     hasUnsavedSectionDraftChanges ? "Secciones nuevas (placeholder)" : null,
@@ -1456,10 +1483,22 @@ export function StageConfigEditor({
               Ajustes y Reglas
             </button>
             <button
-              className={`page-tab ${activeTab === "comms" ? "active" : ""}`}
-              onClick={() => switchToTab("comms")}
+              className={`page-tab ${activeTab === "automations" ? "active" : ""}`}
+              onClick={() => switchToTab("automations")}
+            >
+              Automatizaciones
+            </button>
+            <button
+              className={`page-tab ${activeTab === "communications" ? "active" : ""}`}
+              onClick={() => switchToTab("communications")}
             >
               Comunicaciones
+            </button>
+            <button
+              className={`page-tab ${activeTab === "prompt_studio" ? "active" : ""}`}
+              onClick={() => switchToTab("prompt_studio")}
+            >
+              Prompt Studio
             </button>
             <button
               className={`page-tab ${activeTab === "stats" ? "active" : ""}`}
@@ -1473,32 +1512,6 @@ export function StageConfigEditor({
         <div className="canvas-body">
           {activeTab === "editor" && (
             <div id="tab-editor" className="tab-content active">
-              {documentsRouteRepresentsMainForm ? (
-                <div className="settings-card" style={{ marginBottom: "1rem" }}>
-                  <div className="settings-card-header">
-                    <h3>Paso inicial: Instrucciones</h3>
-                    <p>
-                      Este paso aparece antes de las secciones del formulario en la vista del
-                      postulante.
-                    </p>
-                  </div>
-                  <div className="editor-grid">
-                    <div className="form-field full">
-                      <label>Texto actual de instrucciones</label>
-                      <textarea value={settingsDescription} rows={3} readOnly />
-                    </div>
-                    <div className="form-field full">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => switchToTab("settings")}
-                      >
-                        Editar instrucciones en Ajustes y Reglas
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
               <div className="field-list">
                 {displayedEditorFields.length === 0 ? (
                   <>
@@ -1995,17 +2008,61 @@ export function StageConfigEditor({
                   </div>
                 </div>
               </div>
+
+              <div className="settings-card">
+                <div className="settings-card-header">
+                  <h3>OCR productivo de la etapa</h3>
+                  <p>
+                    Define el prompt base que usará la validación OCR de esta etapa. Usa Prompt
+                    Studio para experimentar sin tocar la versión productiva.
+                  </p>
+                </div>
+                <div className="editor-grid">
+                  <div className="form-field full">
+                    <label htmlFor="ocr-prompt-settings">Prompt OCR de la etapa</label>
+                    <textarea
+                      id="ocr-prompt-settings"
+                      rows={6}
+                      value={ocrPromptTemplate}
+                      onChange={(event) => setOcrPromptTemplate(event.target.value)}
+                    />
+                    <div className="form-hint">
+                      El sistema sigue forzando salida JSON con <code>summary</code> y{" "}
+                      <code>confidence</code>.
+                    </div>
+                  </div>
+                  <div className="form-field full">
+                    <button
+                      type="button"
+                      className="btn btn-outline"
+                      onClick={() => switchToTab("prompt_studio")}
+                    >
+                      Abrir Prompt Studio
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
-          {activeTab === "comms" && (
-            <div id="tab-comms" className="tab-content active">
+          {activeTab === "automations" && (
+            <div id="tab-automations" className="tab-content active">
               <div className="builder-section-title">Automatizaciones de correo</div>
               <div className="admin-stage-comms-toolbar">
                 <p className="admin-stage-comms-copy">
-                  Define plantillas por evento. Mantén solo las necesarias.
+                  Estas plantillas se disparan automáticamente por evento. Para envíos manuales o
+                  broadcasts, usa el centro de comunicaciones del proceso.
                 </p>
-                <button className="btn btn-outline" onClick={addAutomation}>+ Nueva Notificación</button>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => switchToTab("communications")}
+                  >
+                    Abrir centro de comunicaciones
+                  </button>
+                  <button className="btn btn-outline" onClick={addAutomation}>+ Nueva Notificación</button>
+                </div>
               </div>
 
               {automations.map((automation) => (
@@ -2136,21 +2193,29 @@ export function StageConfigEditor({
                   </div>
                 </div>
               ))}
+            </div>
+          )}
 
-              <div className="builder-section-title" style={{ marginTop: "32px" }}>Prompt OCR (Gemini)</div>
-              <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "16px" }}>
-                Define instrucciones para extraer señales útiles desde documentos. Mantén el prompt claro y en español.
-              </p>
-              <div className="form-field full">
-                <label htmlFor="ocr-prompt">Prompt OCR de la etapa</label>
-                <textarea
-                  id="ocr-prompt"
-                  rows={6}
-                  value={ocrPromptTemplate}
-                  onChange={(event) => setOcrPromptTemplate(event.target.value)}
-                />
-                <div className="hint" style={{ marginTop: "8px" }}>Nota: el sistema siempre fuerza salida JSON con `summary` y `confidence`.</div>
-              </div>
+          {activeTab === "communications" && (
+            <div id="tab-communications" className="tab-content active">
+              <AdminCommunicationsCenter cycleId={cycleId} defaultStageCode={stageCode} />
+            </div>
+          )}
+
+          {activeTab === "prompt_studio" && (
+            <div id="tab-prompt-studio" className="tab-content active">
+              <AdminOcrTestbed
+                cycleId={cycleId}
+                stageCode={stageCode}
+                modelOptions={Object.entries(MODEL_REGISTRY).map(([id, meta]) => ({
+                  id,
+                  name: meta.name,
+                }))}
+                defaultPrompt={DEFAULT_OCR_PROMPT}
+                defaultSystemPrompt={DEFAULT_OCR_SYSTEM_PROMPT}
+                defaultExtractionInstructions={DEFAULT_OCR_EXTRACTION_INSTRUCTIONS}
+                defaultSchemaTemplate={DEFAULT_OCR_SCHEMA_TEMPLATE}
+              />
             </div>
           )}
 
