@@ -12,6 +12,18 @@ type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
 type StageAutomationRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
 type StageTemplateRow = Database["public"]["Tables"]["cycle_stage_templates"]["Row"];
 
+const aiParserSchema = z
+  .object({
+    enabled: z.boolean().optional().default(false),
+    modelId: z.string().trim().min(1).max(120).nullable().optional(),
+    promptTemplate: z.string().trim().max(5000).nullable().optional(),
+    systemPrompt: z.string().trim().max(2000).nullable().optional(),
+    extractionInstructions: z.string().trim().max(6000).nullable().optional(),
+    expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
+    strictSchema: z.boolean().optional().default(true),
+  })
+  .strict();
+
 const fieldSchema = z.object({
   id: z.string().uuid().optional(),
   fieldKey: z.string().min(2).max(60),
@@ -23,6 +35,7 @@ const fieldSchema = z.object({
   sortOrder: z.number().int().min(1).max(200),
   isActive: z.boolean().optional().default(true),
   sectionKey: z.string().min(1).max(120).nullable().optional(),
+  aiParser: aiParserSchema.nullable().optional(),
 });
 
 const automationSchema = z.object({
@@ -95,6 +108,68 @@ function parseStageAdminConfig(value: Json | null | undefined) {
         ? record.blockIfPreviousNotMet
         : null,
   };
+}
+
+function normalizeAiParserConfig({
+  fieldType,
+  aiParser,
+  fieldLabel,
+}: {
+  fieldType: z.infer<typeof fieldSchema>["fieldType"];
+  aiParser: z.infer<typeof aiParserSchema> | null | undefined;
+  fieldLabel: string;
+}): Json | null {
+  if (!aiParser || !aiParser.enabled) {
+    return null;
+  }
+
+  if (fieldType !== "file") {
+    throw new AppError({
+      message: "AI parser enabled for non-file field",
+      userMessage: `Solo los campos de tipo Archivo pueden habilitar parsing IA. Revisa "${fieldLabel}".`,
+      status: 400,
+    });
+  }
+
+  const extractionInstructions = aiParser.extractionInstructions?.trim() ?? "";
+  const expectedSchemaTemplate = aiParser.expectedSchemaTemplate?.trim() ?? "";
+
+  if (!extractionInstructions) {
+    throw new AppError({
+      message: "Missing extraction instructions in AI parser config",
+      userMessage: `Debes definir instrucciones de extracción para "${fieldLabel}" antes de guardar.`,
+      status: 400,
+    });
+  }
+
+  if (!expectedSchemaTemplate) {
+    throw new AppError({
+      message: "Missing expected schema template in AI parser config",
+      userMessage: `Debes definir un esquema JSON esperado para "${fieldLabel}" antes de guardar.`,
+      status: 400,
+    });
+  }
+
+  try {
+    JSON.parse(expectedSchemaTemplate);
+  } catch (error) {
+    throw new AppError({
+      message: "Invalid expected schema template in AI parser config",
+      userMessage: `El esquema JSON esperado de "${fieldLabel}" no es válido.`,
+      status: 400,
+      details: error instanceof Error ? error.message : error,
+    });
+  }
+
+  return {
+    enabled: true,
+    modelId: aiParser.modelId?.trim() || null,
+    promptTemplate: aiParser.promptTemplate?.trim() || null,
+    systemPrompt: aiParser.systemPrompt?.trim() || null,
+    extractionInstructions,
+    expectedSchemaTemplate,
+    strictSchema: aiParser.strictSchema ?? true,
+  } satisfies Record<string, Json>;
 }
 
 async function ensureCycleExists({
@@ -541,6 +616,11 @@ export async function PATCH(
       const resolvedSectionId = field.sectionKey
         ? (sectionKeyToId.get(field.sectionKey.trim()) ?? null)
         : null;
+      const aiParserConfig = normalizeAiParserConfig({
+        fieldType: field.fieldType,
+        aiParser: field.aiParser,
+        fieldLabel: field.fieldLabel.trim(),
+      });
 
       return {
         ...(field.id ? { id: field.id } : {}),
@@ -555,6 +635,7 @@ export async function PATCH(
         sort_order: field.sortOrder,
         is_active: field.isActive,
         section_id: resolvedSectionId,
+        ai_parser_config: aiParserConfig,
       };
     });
 

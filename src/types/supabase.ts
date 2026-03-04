@@ -421,6 +421,7 @@ export interface Database {
           placeholder: string | null;
           help_text: string | null;
           section_id: string | null;
+          ai_parser_config: Json | null;
           sort_order: number;
           is_active: boolean;
           created_at: string;
@@ -436,6 +437,7 @@ export interface Database {
           placeholder?: string | null;
           help_text?: string | null;
           section_id?: string | null;
+          ai_parser_config?: Json | null;
           sort_order?: number;
           is_active?: boolean;
           created_at?: string;
@@ -448,6 +450,7 @@ export interface Database {
           placeholder?: string | null;
           help_text?: string | null;
           section_id?: string | null;
+          ai_parser_config?: Json | null;
           sort_order?: number;
           is_active?: boolean;
         }

@@ -4,7 +4,7 @@ import { buildFallbackStageFields, resolveDocumentStageFields } from "@/lib/stag
 import { validateRequiredFiles, validateStagePayload } from "@/lib/stages/form-schema";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/supabase";
-import type { StageAutomationTrigger, StageCode } from "@/types/domain";
+import type { CycleStageField, StageAutomationTrigger, StageCode } from "@/types/domain";
 
 type ApplicationRow = Database["public"]["Tables"]["applications"]["Row"];
 type StageAutomationRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
@@ -120,7 +120,7 @@ async function isRecommendersRequiredForStage({
   supabase: SupabaseClient<Database>;
   cycleId: string;
   stageCode: StageCode;
-  fields: Database["public"]["Tables"]["cycle_stage_fields"]["Row"][];
+  fields: CycleStageField[];
 }) {
   if (stageCode !== "documents") {
     return false;
@@ -152,7 +152,7 @@ async function isRecommendersRequiredForStage({
   }
 
   return fields.some((field) => {
-    const sectionId = (field as Record<string, unknown>).section_id as string | null | undefined;
+    const sectionId = field.section_id;
     return field.is_required && Boolean(sectionId) && recommenderSectionIds.has(String(sectionId));
   });
 }
