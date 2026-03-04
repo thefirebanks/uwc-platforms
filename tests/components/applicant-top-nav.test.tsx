@@ -55,7 +55,22 @@ describe("ApplicantTopNav", () => {
     expect(screen.getByText("Sesión actual")).toBeInTheDocument();
     expect(screen.getByText("Comité Selección")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+    const menuButton = screen.getByRole("button", { name: "Menu" });
+    Object.defineProperty(menuButton, "getBoundingClientRect", {
+      value: () => ({
+        x: 0,
+        y: 0,
+        top: 0,
+        left: 0,
+        bottom: 40,
+        right: 40,
+        width: 40,
+        height: 40,
+        toJSON: () => ({}),
+      }),
+    });
+
+    fireEvent.click(menuButton);
 
     expect(screen.getAllByText("Sesión actual").length).toBeGreaterThan(0);
     expect(screen.getByText("informes@pe.uwc.org")).toBeInTheDocument();

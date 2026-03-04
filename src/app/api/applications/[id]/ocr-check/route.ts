@@ -154,6 +154,8 @@ export async function POST(
       fileUrl: signedUrlData.signedUrl,
       promptTemplate:
         (templateData as { ocr_prompt_template: string | null } | null)?.ocr_prompt_template ?? null,
+      strictSchema: true,
+      failOnInjectionSignals: true,
     });
 
     const { data: insertedData, error: insertError } = await supabase

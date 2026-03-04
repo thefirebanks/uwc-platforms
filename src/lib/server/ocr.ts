@@ -70,6 +70,36 @@ function clampConfidence(value: unknown) {
   return value;
 }
 
+function normalizeInjectionSignals(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+
+  for (const item of value) {
+    if (typeof item !== "string") {
+      continue;
+    }
+
+    const trimmed = item.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const canonical = trimmed.toLowerCase();
+    if (seen.has(canonical)) {
+      continue;
+    }
+
+    seen.add(canonical);
+    normalized.push(trimmed);
+  }
+
+  return normalized.slice(0, 10);
+}
+
 function extractJsonCandidate(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return null;
@@ -300,6 +330,7 @@ export async function runOcrCheck({
   topP,
   maxTokens,
   strictSchema = false,
+  failOnInjectionSignals = false,
 }: {
   fileUrl: string;
   promptTemplate?: string | null;
@@ -311,6 +342,7 @@ export async function runOcrCheck({
   topP?: number | null;
   maxTokens?: number | null;
   strictSchema?: boolean;
+  failOnInjectionSignals?: boolean;
 }): Promise<{ summary: string; confidence: number; rawResponse: Record<string, unknown> }> {
   const apiKey = process.env.GEMINI_API_KEY;
 
@@ -385,6 +417,7 @@ export async function runOcrCheck({
     schemaTemplate: contract.schemaTemplate,
     parsed: parsed.parsedJson,
   });
+  const injectionSignals = normalizeInjectionSignals(parsed.parsedJson?.injectionSignals);
 
   if (strictSchema && !schemaValidation.valid) {
     throw new AppError({
@@ -398,6 +431,18 @@ export async function runOcrCheck({
     });
   }
 
+  if (failOnInjectionSignals && injectionSignals.length > 0) {
+    throw new AppError({
+      message: "OCR model output flagged prompt injection signals",
+      userMessage: "La validación OCR detectó instrucciones sospechosas en el documento.",
+      status: 422,
+      details: {
+        injectionSignals,
+        outputText,
+      },
+    });
+  }
+
   return {
     summary: parsed.summary,
     confidence: parsed.confidence,
@@ -406,10 +451,7 @@ export async function runOcrCheck({
       parsed: parsed.parsedJson,
       schemaTemplate: contract.schemaTemplate,
       schemaValidation,
-      injectionSignals:
-        Array.isArray(parsed.parsedJson?.injectionSignals)
-          ? parsed.parsedJson.injectionSignals
-          : [],
+      injectionSignals,
       provider: resolvedModelId,
       source: modelResponse,
     },
