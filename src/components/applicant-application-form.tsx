@@ -601,7 +601,7 @@ export function ApplicantApplicationForm({
       initialRecommenders.find((row) => row.role === "friend" && !row.invalidatedAt)?.email ?? "",
   });
   const [loadingRecommenders, setLoadingRecommenders] = useState(false);
-  const [savingRecommenders, setSavingRecommenders] = useState(false);
+  const [savingRecommenderRole, setSavingRecommenderRole] = useState<RecommenderRole | null>(null);
   const [remindingId, setRemindingId] = useState<string | null>(null);
   const [uploadingFieldKey, setUploadingFieldKey] = useState<string | null>(null);
   const [fileTitleEdits, setFileTitleEdits] = useState<Record<string, string>>({});
@@ -1851,7 +1851,7 @@ export function ApplicantApplicationForm({
     setSuccessMessage(copy("Postulación enviada. El comité revisará tu información.", "Application submitted. The committee will review your information."));
   }
 
-  async function saveRecommenders() {
+  async function saveRecommender(role: RecommenderRole) {
     setError(null);
     setSuccessMessage(null);
 
@@ -1870,24 +1870,20 @@ export function ApplicantApplicationForm({
       return;
     }
 
-    const mentorEmail = recommenderInputs.mentor.trim();
-    const friendEmail = recommenderInputs.friend.trim();
+    const email = recommenderInputs[role].trim();
     const normalizedAccountEmail = normalizeEmailAddress(accountEmail);
 
-    if (!mentorEmail && !friendEmail) {
+    if (!email) {
       setError({
         message: copy(
-          "Ingresa al menos un correo de recomendador antes de guardar.",
-          "Enter at least one recommender email before saving.",
+          "Ingresa el correo del recomendador antes de enviar la invitación.",
+          "Enter the recommender email before sending the invitation.",
         ),
       });
       return;
     }
 
-    if (
-      normalizedAccountEmail &&
-      [mentorEmail, friendEmail].some((email) => normalizeEmailAddress(email) === normalizedAccountEmail)
-    ) {
+    if (normalizedAccountEmail && normalizeEmailAddress(email) === normalizedAccountEmail) {
       setError({
         message: copy(
           "No puedes registrarte como tu propio recomendador. Usa dos correos distintos al de tu cuenta.",
@@ -1897,17 +1893,14 @@ export function ApplicantApplicationForm({
       return;
     }
 
-    setSavingRecommenders(true);
+    setSavingRecommenderRole(role);
     try {
       const response = await fetch("/api/recommendations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           applicationId: application.id,
-          recommenders: [
-            mentorEmail ? { role: "mentor", email: mentorEmail } : null,
-            friendEmail ? { role: "friend", email: friendEmail } : null,
-          ].filter((item): item is { role: RecommenderRole; email: string } => Boolean(item)),
+          recommenders: [{ role, email }],
         }),
       });
       const body = await response.json();
@@ -1927,44 +1920,44 @@ export function ApplicantApplicationForm({
       const replacedCount = Number(body.replacedCount ?? 0);
       const failedEmailCount = Number(body.failedEmailCount ?? 0);
       const sentEmailCount = Math.max(createdCount - failedEmailCount, 0);
+      const resolvedRoleLabel = roleLabel(role, language);
 
       const chunks = [];
-      if (sentEmailCount > 0) {
+      if (replacedCount > 0 && sentEmailCount > 0) {
         chunks.push(
           copy(
-            `${sentEmailCount} invitación(es) enviada(s).`,
-            `${sentEmailCount} invitation(s) sent.`,
+            `${resolvedRoleLabel} actualizado. Se envió una nueva invitación.`,
+            `${resolvedRoleLabel} updated. A new invitation was sent.`,
+          ),
+        );
+      } else if (sentEmailCount > 0) {
+        chunks.push(
+          copy(
+            `Invitación enviada a ${email}.`,
+            `Invitation sent to ${email}.`,
           ),
         );
       }
       if (createdCount > 0 && failedEmailCount >= createdCount) {
         chunks.push(
           copy(
-            `${createdCount} recomendador(es) registrado(s).`,
-            `${createdCount} recommender(s) registered.`,
+            `${resolvedRoleLabel} registrado, pero el correo no salió. Usa "Enviar recordatorio" para reintentar.`,
+            `${resolvedRoleLabel} saved, but the email did not go out. Use "Send reminder" to retry.`,
           ),
         );
       }
-      if (replacedCount > 0) {
+      if (replacedCount > 0 && failedEmailCount > 0) {
         chunks.push(
           copy(
-            `${replacedCount} recomendador(es) reemplazado(s) con token nuevo.`,
-            `${replacedCount} recommender(s) replaced with a new token.`,
-          ),
-        );
-      }
-      if (failedEmailCount > 0) {
-        chunks.push(
-          copy(
-            `${failedEmailCount} correo(s) no se enviaron, usa "Enviar recordatorio".`,
-            `${failedEmailCount} email(s) were not sent, use "Send reminder".`,
+            `${resolvedRoleLabel} actualizado, pero no se pudo enviar la nueva invitación.`,
+            `${resolvedRoleLabel} updated, but the new invitation could not be sent.`,
           ),
         );
       }
 
-      setSuccessMessage(chunks.length > 0 ? chunks.join(" ") : copy("Recomendadores actualizados.", "Recommenders updated."));
+      setSuccessMessage(chunks.length > 0 ? chunks.join(" ") : copy("Recomendador actualizado.", "Recommender updated."));
     } finally {
-      setSavingRecommenders(false);
+      setSavingRecommenderRole(null);
     }
   }
 
@@ -2541,38 +2534,60 @@ export function ApplicantApplicationForm({
                         alignItems={{ xs: "flex-start", sm: "center" }}
                         sx={{ mt: 1.2 }}
                       >
-                        {current?.inviteSentAt ? (
-                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
-                            {copy("Invitación", "Invite")}: {new Date(current.inviteSentAt).toLocaleString(locale)}
-                          </Typography>
-                        ) : null}
-                        {current?.submittedAt ? (
-                          <Typography variant="body2" color="success.main" sx={{ fontSize: "0.75rem" }}>
-                            {copy("Formulario enviado", "Form submitted")}: {new Date(current.submittedAt).toLocaleString(locale)}
-                          </Typography>
-                        ) : null}
-                        {current && current.status !== "submitted" ? (
-                          <Button
-                            variant="text"
-                            onClick={() => sendReminder(current.id)}
-                            disabled={remindingId === current.id || !isEditingEnabled}
-                          >
-                            {remindingId === current.id ? copy("Enviando...", "Sending...") : copy("Enviar recordatorio", "Send reminder")}
-                          </Button>
-                        ) : null}
+                        {(() => {
+                          const normalizedCurrentEmail = normalizeEmailAddress(current?.email);
+                          const normalizedInputEmail = normalizeEmailAddress(recommenderInputs[role]);
+                          const shouldShowSaveInvite =
+                            isEditingEnabled &&
+                            current?.status !== "submitted" &&
+                            (!current || normalizedInputEmail !== normalizedCurrentEmail);
+                          const canSaveInvite = shouldShowSaveInvite && Boolean(normalizedInputEmail);
+                          const saveLabel = current
+                            ? copy("Guardar y reenviar", "Save and resend")
+                            : copy("Guardar y enviar", "Save and send");
+                          const reminderLabel = current?.inviteSentAt
+                            ? copy("Enviar recordatorio", "Send reminder")
+                            : copy("Reintentar envío", "Retry send");
+
+                          return (
+                            <>
+                              {shouldShowSaveInvite ? (
+                                <Button
+                                  variant="outlined"
+                                  onClick={() => saveRecommender(role)}
+                                  disabled={!canSaveInvite || savingRecommenderRole === role}
+                                >
+                                  {savingRecommenderRole === role
+                                    ? copy("Enviando...", "Sending...")
+                                    : saveLabel}
+                                </Button>
+                              ) : null}
+                              {current?.inviteSentAt ? (
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+                                  {copy("Invitación", "Invite")}: {new Date(current.inviteSentAt).toLocaleString(locale)}
+                                </Typography>
+                              ) : null}
+                              {current?.submittedAt ? (
+                                <Typography variant="body2" color="success.main" sx={{ fontSize: "0.75rem" }}>
+                                  {copy("Formulario enviado", "Form submitted")}: {new Date(current.submittedAt).toLocaleString(locale)}
+                                </Typography>
+                              ) : null}
+                              {current && current.status !== "submitted" ? (
+                                <Button
+                                  variant="text"
+                                  onClick={() => sendReminder(current.id)}
+                                  disabled={remindingId === current.id || !isEditingEnabled}
+                                >
+                                  {remindingId === current.id ? copy("Enviando...", "Sending...") : reminderLabel}
+                                </Button>
+                              ) : null}
+                            </>
+                          );
+                        })()}
                       </Stack>
                     </Box>
                   );
                 })}
-              </Stack>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 2 }}>
-                <Button
-                  variant="outlined"
-                  onClick={saveRecommenders}
-                  disabled={!isEditingEnabled || savingRecommenders}
-                >
-                  {savingRecommenders ? copy("Guardando...", "Saving...") : copy("Guardar recomendadores", "Save recommenders")}
-                </Button>
               </Stack>
               {loadingRecommenders ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, fontSize: "0.78rem" }}>

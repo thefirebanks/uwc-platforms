@@ -220,25 +220,11 @@ describe("ApplicantApplicationForm", () => {
                 lastReminderAt: null,
                 invalidatedAt: null,
                 createdAt: "2026-02-18T20:00:00.000Z",
-              },
-              {
-                id: "rec-friend",
-                role: "friend",
-                email: "friend@example.com",
-                status: "invited",
-                submittedAt: null,
-                inviteSentAt: null,
-                openedAt: null,
-                startedAt: null,
-                reminderCount: 0,
-                lastReminderAt: null,
-                invalidatedAt: null,
-                createdAt: "2026-02-18T20:00:00.000Z",
-              },
+              }
             ],
-            createdCount: 2,
+            createdCount: 1,
             replacedCount: 0,
-            failedEmailCount: 2,
+            failedEmailCount: 1,
           }),
           { status: 200 },
         ),
@@ -258,15 +244,13 @@ describe("ApplicantApplicationForm", () => {
     fireEvent.change(screen.getByLabelText(/Correo \(Tutor\/Profesor\/Mentor\)/i), {
       target: { value: "mentor@example.com" },
     });
-    fireEvent.change(screen.getByLabelText(/Correo \(Amigo \(no familiar\)\)/i), {
-      target: { value: "friend@example.com" },
-    });
 
-    fireEvent.click(screen.getByRole("button", { name: /Guardar recomendadores/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Guardar y enviar/i })[0]);
 
-    expect(await screen.findByText(/2 recomendador\(es\) registrado\(s\)\./i)).toBeInTheDocument();
-    expect(screen.getByText(/2 correo\(s\) no se enviaron/i)).toBeInTheDocument();
-    expect(screen.queryByText(/2 invitación\(es\) enviada\(s\)\./i)).not.toBeInTheDocument();
+    expect(
+      await screen.findByText(/Tutor\/Profesor\/Mentor registrado, pero el correo no salió/i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Reintentar envío/i })).toBeInTheDocument();
   });
 
   it("allows saving a single recommender without requiring the second one yet", async () => {
@@ -319,9 +303,9 @@ describe("ApplicantApplicationForm", () => {
       target: { value: "mentor@example.com" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Guardar recomendadores/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Guardar y enviar/i })[0]);
 
-    await screen.findByText(/1 invitación\(es\) enviada\(s\)\./i);
+    await screen.findByText(/Invitación enviada a mentor@example\.com\./i);
     expect(fetchSpy).toHaveBeenCalledWith(
       "/api/recommendations",
       expect.objectContaining({
@@ -357,7 +341,7 @@ describe("ApplicantApplicationForm", () => {
       target: { value: "friend@example.com" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Guardar recomendadores/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Guardar y enviar/i })[0]);
 
     expect(
       await screen.findByText(
@@ -406,7 +390,7 @@ describe("ApplicantApplicationForm", () => {
       target: { value: "friend@example.com" },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Guardar recomendadores/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /Guardar y enviar/i })[0]);
 
     expect(
       await screen.findByText(
@@ -414,6 +398,44 @@ describe("ApplicantApplicationForm", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/Error ID: err-rec-config/i)).toBeInTheDocument();
+  });
+
+  it("shows reminder-only controls after a recommender was already invited until the email changes", async () => {
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-reminder-ui"
+        sections={DEFAULT_SECTIONS}
+        stageFields={DEFAULT_STAGE_FIELDS}
+        existingApplication={DRAFT_APP}
+        initialRecommenders={[
+          {
+            id: "rec-mentor",
+            role: "mentor",
+            email: "mentor@example.com",
+            status: "sent",
+            submittedAt: null,
+            inviteSentAt: "2026-02-18T20:00:00.000Z",
+            openedAt: null,
+            startedAt: null,
+            reminderCount: 0,
+            lastReminderAt: null,
+            invalidatedAt: null,
+            createdAt: "2026-02-18T20:00:00.000Z",
+          },
+        ]}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Recomendadores/i })[0]);
+
+    expect(screen.queryByRole("button", { name: /Guardar y reenviar/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Enviar recordatorio/i })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Correo \(Tutor\/Profesor\/Mentor\)/i), {
+      target: { value: "nuevo-mentor@example.com" },
+    });
+
+    expect(screen.getByRole("button", { name: /Guardar y reenviar/i })).toBeInTheDocument();
   });
 
   it("shows progress summary based on submitted state", async () => {
@@ -800,8 +822,8 @@ describe("ApplicantApplicationForm", () => {
     const unregisteredTexts = screen.getAllByText("Sin registrar");
     expect(unregisteredTexts.length).toBe(2);
 
-    // Should show "Guardar recomendadores" button
-    expect(screen.getByRole("button", { name: /Guardar recomendadores/i })).toBeInTheDocument();
+    // Should show one send button per recommender slot
+    expect(screen.getAllByRole("button", { name: /Guardar y enviar/i })).toHaveLength(2);
   });
 
   it("marks the recommender step complete once both recommenders are registered", async () => {
