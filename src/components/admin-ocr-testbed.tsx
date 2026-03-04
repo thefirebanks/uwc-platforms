@@ -442,15 +442,7 @@ export function AdminOcrTestbed({
           </div>
         </div>
 
-        <label
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "8px",
-            marginBottom: "16px",
-            color: "var(--ink)",
-          }}
-        >
+        <label className="ocr-testbed__checkbox">
           <input
             type="checkbox"
             checked={strictSchema}
@@ -465,19 +457,21 @@ export function AdminOcrTestbed({
           </div>
         ) : null}
 
-        <button
-          className="btn btn-primary"
-          onClick={handleRun}
-          disabled={
-            isRunning ||
-            !file ||
-            !prompt.trim() ||
-            !extractionInstructions.trim() ||
-            !expectedSchemaTemplate.trim()
-          }
-        >
-          {isRunning ? "Ejecutando…" : "Ejecutar prueba"}
-        </button>
+        <div className="ocr-testbed__actions">
+          <button
+            className="btn btn-primary"
+            onClick={handleRun}
+            disabled={
+              isRunning ||
+              !file ||
+              !prompt.trim() ||
+              !extractionInstructions.trim() ||
+              !expectedSchemaTemplate.trim()
+            }
+          >
+            {isRunning ? "Ejecutando…" : "Ejecutar prueba"}
+          </button>
+        </div>
       </div>
 
       {result ? (
