@@ -12,17 +12,60 @@ export const bypassReady =
   Boolean(process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL) &&
   Boolean(process.env.NEXT_PUBLIC_DEMO_PASSWORD);
 
+async function clearBrowserSessionState(page: Page) {
+  await page.context().clearCookies();
+  await page.goto("/login");
+  await page.evaluate(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+  });
+  await page.reload({ waitUntil: "load" });
+}
+
+async function loginWithBypass({
+  page,
+  buttonName,
+  expectedUrl,
+}: {
+  page: Page;
+  buttonName: string | RegExp;
+  expectedUrl: RegExp;
+}) {
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => undefined);
+    await clearBrowserSessionState(page);
+    await page.getByRole("button", { name: buttonName }).click();
+
+    try {
+      await expect(page).toHaveURL(expectedUrl, { timeout: 15_000 });
+      return;
+    } catch (error) {
+      const alertText = await page.getByRole("alert").textContent().catch(() => "");
+      const looksTransient = /failed to fetch/i.test(alertText ?? "");
+      lastError = error instanceof Error ? error : new Error(String(error));
+
+      if (!looksTransient || attempt === 1) {
+        throw lastError;
+      }
+
+      await page.waitForTimeout(1_000);
+    }
+  }
+
+  throw lastError ?? new Error("No se pudo iniciar sesión con bypass.");
+}
+
 /**
  * Log in as the demo admin via the dev bypass button and wait for /admin redirect.
  */
 export async function loginAsAdmin(page: Page): Promise<void> {
-  // Wait for any in-flight navigation to settle before navigating to /login.
-  // Without this, afterEach cleanup can hit ERR_ABORTED if the previous test
-  // navigated somewhere that triggers a server-side redirect.
-  await page.waitForLoadState("load", { timeout: 10_000 }).catch(() => undefined);
-  await page.goto("/login");
-  await page.getByRole("button", { name: "Entrar como admin demo" }).click();
-  await expect(page).toHaveURL(/\/admin/, { timeout: 15_000 });
+  await loginWithBypass({
+    page,
+    buttonName: "Entrar como admin demo",
+    expectedUrl: /\/admin/,
+  });
 }
 
 /**
@@ -30,9 +73,11 @@ export async function loginAsAdmin(page: Page): Promise<void> {
  * then navigate to the first available process form.
  */
 export async function loginAndOpenForm(page: Page): Promise<void> {
-  await page.goto("/login");
-  await page.getByRole("button", { name: /Entrar como postulante demo 1/i }).click();
-  await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
+  await loginWithBypass({
+    page,
+    buttonName: /Entrar como postulante demo 1/i,
+    expectedUrl: /\/applicant/,
+  });
 
   const processLink = page
     .getByRole("link")

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ErrorCallout } from "@/components/error-callout";
 import { DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
 import type { OcrTestRun } from "@/types/domain";
 
@@ -30,6 +31,46 @@ type OcrRequestConfig = {
   maxTokens?: number;
   strictSchema?: boolean;
 };
+
+type ApiError = {
+  message: string;
+  errorId?: string;
+};
+
+type EditorSection = "context" | "prompts" | "schema";
+
+function isApiError(value: unknown): value is ApiError {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      "message" in value &&
+      typeof (value as { message?: unknown }).message === "string",
+  );
+}
+
+function normalizeApiError(value: unknown, fallbackMessage: string): ApiError {
+  if (value && typeof value === "object") {
+    const message =
+      typeof (value as { message?: unknown }).message === "string"
+        ? (value as { message: string }).message
+        : fallbackMessage;
+    const errorId =
+      typeof (value as { errorId?: unknown }).errorId === "string"
+        ? (value as { errorId: string }).errorId
+        : undefined;
+    return { message, errorId };
+  }
+
+  return { message: fallbackMessage };
+}
+
+async function readJsonSafely(response: Response) {
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("es-PE", {
@@ -94,16 +135,17 @@ export function AdminOcrTestbed({
   const [topP, setTopP] = useState("0.9");
   const [maxTokens, setMaxTokens] = useState(String(DEFAULT_OCR_MAX_TOKENS));
   const [strictSchema, setStrictSchema] = useState(true);
+  const [editorSection, setEditorSection] = useState<EditorSection>("prompts");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<OcrTestRun | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
+  const [runError, setRunError] = useState<ApiError | null>(null);
   const [showRaw, setShowRaw] = useState(false);
 
   const [history, setHistory] = useState<OcrTestRun[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
-  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<ApiError | null>(null);
   const [comparisonRunId, setComparisonRunId] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
@@ -113,14 +155,18 @@ export function AdminOcrTestbed({
       const params = new URLSearchParams({ limit: "10" });
       if (cycleId) params.set("cycleId", cycleId);
       const res = await fetch(`/api/ocr-testbed?${params.toString()}`);
-      const json = await res.json();
+      const json = await readJsonSafely(res);
       if (!res.ok) {
-        throw new Error(json.error?.userMessage ?? "Error al cargar historial.");
+        throw normalizeApiError(json, "Error al cargar historial.");
       }
-      const runs = (json.runs ?? []) as OcrTestRun[];
+      const runs = (((json as { runs?: OcrTestRun[] } | null) ?? {}).runs ?? []) as OcrTestRun[];
       setHistory(runs);
     } catch (err) {
-      setHistoryError(err instanceof Error ? err.message : "Error desconocido.");
+      setHistoryError(
+        isApiError(err)
+          ? err
+          : { message: err instanceof Error ? err.message : "Error al cargar historial." },
+      );
     } finally {
       setHistoryLoading(false);
     }
@@ -173,14 +219,18 @@ export function AdminOcrTestbed({
         method: "POST",
         body: formData,
       });
-      const json = await res.json();
+      const json = await readJsonSafely(res);
       if (!res.ok) {
-        throw new Error(json.error?.userMessage ?? "Error al ejecutar Prompt Studio.");
+        throw normalizeApiError(json, "Error al ejecutar Prompt Studio.");
       }
-      setResult(json.run as OcrTestRun);
+      setResult(((json as { run?: OcrTestRun } | null) ?? {}).run as OcrTestRun);
       await loadHistory();
     } catch (err) {
-      setRunError(err instanceof Error ? err.message : "Error desconocido.");
+      setRunError(
+        isApiError(err)
+          ? err
+          : { message: err instanceof Error ? err.message : "Error al ejecutar Prompt Studio." },
+      );
     } finally {
       setIsRunning(false);
     }
@@ -281,6 +331,22 @@ export function AdminOcrTestbed({
         <p className="form-hint" style={{ marginBottom: "16px" }}>
           El preámbulo de seguridad es fijo. Usa esta vista para probar sin tocar la extracción productiva.
         </p>
+        <div className="ocr-testbed__intro-card">
+          <div>
+            <strong>Qué procesa hoy</strong>
+            <p className="form-hint">
+              Prompt Studio solo envía el archivo que subes arriba. No toma todavía documentos ni
+              campos del formulario del postulante automáticamente.
+            </p>
+          </div>
+          <div>
+            <strong>Qué significa “Etapa” aquí</strong>
+            <p className="form-hint">
+              Es una etiqueta de contexto para esta corrida. Sirve para guardar historial y para
+              comparar escenarios, no para seleccionar archivos del proceso.
+            </p>
+          </div>
+        </div>
 
         <div
           className={`ocr-testbed__dropzone${file ? " ocr-testbed__dropzone--filled" : ""}`}
@@ -314,147 +380,215 @@ export function AdminOcrTestbed({
           )}
         </div>
 
-        <div className="ocr-testbed__row">
-          <div className="ocr-testbed__field">
-            <label className="field-label" htmlFor="ocr-model">
-              Modelo
-            </label>
-            <select
-              id="ocr-model"
-              className="form-input"
-              value={modelId}
-              onChange={(event) => setModelId(event.target.value)}
-            >
-              {modelOptions.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name}
-                </option>
-              ))}
-            </select>
+        <div className="ocr-testbed__tabs" role="tablist" aria-label="Secciones de Prompt Studio">
+          <button
+            type="button"
+            className={`ocr-testbed__tab${editorSection === "context" ? " is-active" : ""}`}
+            onClick={() => setEditorSection("context")}
+          >
+            Contexto
+          </button>
+          <button
+            type="button"
+            className={`ocr-testbed__tab${editorSection === "prompts" ? " is-active" : ""}`}
+            onClick={() => setEditorSection("prompts")}
+          >
+            Prompts
+          </button>
+          <button
+            type="button"
+            className={`ocr-testbed__tab${editorSection === "schema" ? " is-active" : ""}`}
+            onClick={() => setEditorSection("schema")}
+          >
+            Esquema y parámetros
+          </button>
+        </div>
+
+        {editorSection === "context" ? (
+          <div className="ocr-testbed__panel">
+            <div className="ocr-testbed__row">
+              <div className="ocr-testbed__field">
+                <label className="field-label" htmlFor="ocr-model">
+                  Modelo
+                </label>
+                <select
+                  id="ocr-model"
+                  className="form-input"
+                  value={modelId}
+                  onChange={(event) => setModelId(event.target.value)}
+                >
+                  {modelOptions.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.name}
+                    </option>
+                  ))}
+                </select>
+                <div className="form-hint">Elige el modelo con el que quieres probar esta corrida.</div>
+              </div>
+
+              <div className="ocr-testbed__field">
+                <label className="field-label" htmlFor="ocr-stage">
+                  Contexto / etapa
+                </label>
+                <input
+                  id="ocr-stage"
+                  className="form-input"
+                  value={stageName}
+                  onChange={(event) => setStageName(event.target.value)}
+                  placeholder="documents"
+                />
+                <div className="form-hint">
+                  Esta etiqueta queda guardada en el historial para diferenciar escenarios.
+                </div>
+              </div>
+            </div>
           </div>
+        ) : null}
 
-          <div className="ocr-testbed__field">
-            <label className="field-label" htmlFor="ocr-stage">
-              Etapa
-            </label>
-            <input
-              id="ocr-stage"
-              className="form-input"
-              value={stageName}
-              onChange={(event) => setStageName(event.target.value)}
-              placeholder="documents"
-            />
+        {editorSection === "prompts" ? (
+          <div className="ocr-testbed__panel">
+            <div className="ocr-testbed__prompt-guide">
+              <div className="ocr-testbed__prompt-guide-card">
+                <strong>System prompt adicional</strong>
+                <p className="form-hint">
+                  Ajusta el comportamiento del modelo. Úsalo para priorizar cómo debe razonar, no
+                  para describir el documento.
+                </p>
+              </div>
+              <div className="ocr-testbed__prompt-guide-card">
+                <strong>Instrucciones base</strong>
+                <p className="form-hint">
+                  Define el objetivo general de la corrida. Es el contrato principal de la prueba.
+                </p>
+              </div>
+              <div className="ocr-testbed__prompt-guide-card">
+                <strong>Instrucciones de extracción</strong>
+                <p className="form-hint">
+                  Especifica exactamente qué campos, señales o validaciones debe devolver el modelo.
+                </p>
+              </div>
+            </div>
+
+            <div className="ocr-testbed__field">
+              <label className="field-label" htmlFor="ocr-system-prompt">
+                System prompt adicional
+              </label>
+              <textarea
+                id="ocr-system-prompt"
+                className="form-input"
+                rows={3}
+                value={systemPrompt}
+                onChange={(event) => setSystemPrompt(event.target.value)}
+                placeholder="Instrucciones adicionales para el modelo."
+              />
+            </div>
+
+            <div className="ocr-testbed__field">
+              <label className="field-label" htmlFor="ocr-prompt">
+                Instrucciones base
+              </label>
+              <textarea
+                id="ocr-prompt"
+                className="form-input"
+                rows={3}
+                value={prompt}
+                onChange={(event) => setPrompt(event.target.value)}
+                placeholder="Contrato base para la extracción."
+              />
+            </div>
+
+            <div className="ocr-testbed__field">
+              <label className="field-label" htmlFor="ocr-extraction">
+                Instrucciones de extracción
+              </label>
+              <textarea
+                id="ocr-extraction"
+                className="form-input"
+                rows={4}
+                value={extractionInstructions}
+                onChange={(event) => setExtractionInstructions(event.target.value)}
+                placeholder="Qué debe extraer, resumir y validar."
+              />
+            </div>
           </div>
-        </div>
+        ) : null}
 
-        <div className="ocr-testbed__field">
-          <label className="field-label" htmlFor="ocr-system-prompt">
-            System prompt adicional
-          </label>
-          <textarea
-            id="ocr-system-prompt"
-            className="form-input"
-            rows={3}
-            value={systemPrompt}
-            onChange={(event) => setSystemPrompt(event.target.value)}
-            placeholder="Instrucciones adicionales para el modelo."
-          />
-        </div>
+        {editorSection === "schema" ? (
+          <div className="ocr-testbed__panel">
+            <div className="ocr-testbed__field">
+              <label className="field-label" htmlFor="ocr-schema">
+                Esquema JSON esperado
+              </label>
+              <textarea
+                id="ocr-schema"
+                className="form-input ocr-testbed__code-input"
+                rows={12}
+                value={expectedSchemaTemplate}
+                onChange={(event) => setExpectedSchemaTemplate(event.target.value)}
+                placeholder='{"summary":"string","confidence":0,"findings":["string"]}'
+              />
+              <div className="form-hint">
+                Usa este editor para definir la forma exacta del JSON esperado. Si activas schema
+                estricto, cualquier desvío fallará con error.
+              </div>
+            </div>
 
-        <div className="ocr-testbed__field">
-          <label className="field-label" htmlFor="ocr-prompt">
-            Instrucciones base
-          </label>
-          <textarea
-            id="ocr-prompt"
-            className="form-input"
-            rows={3}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            placeholder="Contrato base para la extracción."
-          />
-        </div>
+            <div className="ocr-testbed__row">
+              <div className="ocr-testbed__field">
+                <label className="field-label" htmlFor="ocr-temperature">
+                  Temperature
+                </label>
+                <input
+                  id="ocr-temperature"
+                  className="form-input"
+                  value={temperature}
+                  onChange={(event) => setTemperature(event.target.value)}
+                  inputMode="decimal"
+                />
+              </div>
+              <div className="ocr-testbed__field">
+                <label className="field-label" htmlFor="ocr-top-p">
+                  Top-P
+                </label>
+                <input
+                  id="ocr-top-p"
+                  className="form-input"
+                  value={topP}
+                  onChange={(event) => setTopP(event.target.value)}
+                  inputMode="decimal"
+                />
+              </div>
+              <div className="ocr-testbed__field">
+                <label className="field-label" htmlFor="ocr-max-tokens">
+                  Max tokens
+                </label>
+                <input
+                  id="ocr-max-tokens"
+                  className="form-input"
+                  value={maxTokens}
+                  onChange={(event) => setMaxTokens(event.target.value)}
+                  inputMode="numeric"
+                />
+              </div>
+            </div>
 
-        <div className="ocr-testbed__field">
-          <label className="field-label" htmlFor="ocr-extraction">
-            Instrucciones de extracción
-          </label>
-          <textarea
-            id="ocr-extraction"
-            className="form-input"
-            rows={4}
-            value={extractionInstructions}
-            onChange={(event) => setExtractionInstructions(event.target.value)}
-            placeholder="Qué debe extraer, resumir y validar."
-          />
-        </div>
-
-        <div className="ocr-testbed__field">
-          <label className="field-label" htmlFor="ocr-schema">
-            Esquema JSON esperado
-          </label>
-          <textarea
-            id="ocr-schema"
-            className="form-input"
-            rows={10}
-            value={expectedSchemaTemplate}
-            onChange={(event) => setExpectedSchemaTemplate(event.target.value)}
-            placeholder='{"summary":"string","confidence":0,"findings":["string"]}'
-          />
-        </div>
-
-        <div className="ocr-testbed__row">
-          <div className="ocr-testbed__field">
-            <label className="field-label" htmlFor="ocr-temperature">
-              Temperature
+            <label className="ocr-testbed__checkbox">
+              <input
+                type="checkbox"
+                checked={strictSchema}
+                onChange={(event) => setStrictSchema(event.target.checked)}
+              />
+              {"Fallar si la respuesta no cumple exactamente el esquema"}
             </label>
-            <input
-              id="ocr-temperature"
-              className="form-input"
-              value={temperature}
-              onChange={(event) => setTemperature(event.target.value)}
-              inputMode="decimal"
-            />
           </div>
-          <div className="ocr-testbed__field">
-            <label className="field-label" htmlFor="ocr-top-p">
-              Top-P
-            </label>
-            <input
-              id="ocr-top-p"
-              className="form-input"
-              value={topP}
-              onChange={(event) => setTopP(event.target.value)}
-              inputMode="decimal"
-            />
-          </div>
-          <div className="ocr-testbed__field">
-            <label className="field-label" htmlFor="ocr-max-tokens">
-              Max tokens
-            </label>
-            <input
-              id="ocr-max-tokens"
-              className="form-input"
-              value={maxTokens}
-              onChange={(event) => setMaxTokens(event.target.value)}
-              inputMode="numeric"
-            />
-          </div>
-        </div>
-
-        <label className="ocr-testbed__checkbox">
-          <input
-            type="checkbox"
-            checked={strictSchema}
-            onChange={(event) => setStrictSchema(event.target.checked)}
-          />
-          {"Fallar si la respuesta no cumple exactamente el esquema"}
-        </label>
+        ) : null}
 
         {runError ? (
-          <div className="error-callout" role="alert">
-            {runError}
-          </div>
+          <ErrorCallout
+            message={runError.message}
+            errorId={runError.errorId}
+            context="prompt_studio_run"
+          />
         ) : null}
 
         <div className="ocr-testbed__actions">
@@ -509,69 +643,53 @@ export function AdminOcrTestbed({
 
         {historyLoading ? <p className="muted-text">Cargando historial…</p> : null}
         {historyError ? (
-          <p className="error-text" role="alert">
-            {historyError}
-          </p>
+          <ErrorCallout
+            message={historyError.message}
+            errorId={historyError.errorId}
+            context="prompt_studio_history"
+          />
         ) : null}
         {!historyLoading && !historyError && history.length === 0 ? (
           <p className="muted-text">Sin pruebas anteriores.</p>
         ) : null}
 
         {history.length > 0 ? (
-          <div className="table-wrapper">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>Archivo</th>
-                  <th>Modelo</th>
-                  <th>Etapa</th>
-                  <th>Schema</th>
-                  <th>Señales</th>
-                  <th>Duración</th>
-                  <th>Fecha</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((run) => {
-                  const schemaValidation = getSchemaValidation(run);
-                  const injectionSignals = getInjectionSignals(run);
+          <div className="ocr-testbed__history-list">
+            {history.map((run) => {
+              const schemaValidation = getSchemaValidation(run);
+              const injectionSignals = getInjectionSignals(run);
 
-                  return (
-                    <tr key={run.id}>
-                      <td
-                        style={{
-                          maxWidth: 180,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        }}
-                        title={run.file_name}
-                      >
-                        {run.file_name}
-                      </td>
-                      <td>{run.model_id}</td>
-                      <td>{run.stage_code}</td>
-                      <td style={{ color: schemaValidation?.valid ? "var(--success)" : "var(--danger)" }}>
-                        {schemaValidation?.valid ? "OK" : "Fail"}
-                      </td>
-                      <td>{injectionSignals.length}</td>
-                      <td>{formatDuration(run.duration_ms)}</td>
-                      <td>{formatDate(run.created_at)}</td>
-                      <td>
-                        <button
-                          className="btn btn-ghost btn-sm"
-                          onClick={() => setComparisonRunId(run.id)}
-                          disabled={result?.id === run.id}
-                        >
-                          Comparar
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              return (
+                <article key={run.id} className="ocr-testbed__history-item">
+                  <div className="ocr-testbed__history-item-top">
+                    <div>
+                      <h5 title={run.file_name}>{run.file_name}</h5>
+                      <div className="form-hint">{formatDate(run.created_at)}</div>
+                    </div>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setComparisonRunId(run.id)}
+                      disabled={result?.id === run.id}
+                    >
+                      Comparar
+                    </button>
+                  </div>
+                  <div className="ocr-testbed__history-meta">
+                    <span className="status-pill admin-chip-neutral">{run.model_id}</span>
+                    <span className="status-pill admin-chip-neutral">{run.stage_code}</span>
+                    <span className={`status-pill ${schemaValidation?.valid ? "complete" : "rejected"}`}>
+                      {schemaValidation?.valid ? "Schema OK" : "Schema inválido"}
+                    </span>
+                    <span className="status-pill admin-chip-neutral">
+                      {injectionSignals.length} señal(es)
+                    </span>
+                    <span className="status-pill admin-chip-neutral">
+                      {formatDuration(run.duration_ms)}
+                    </span>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         ) : null}
       </div>

@@ -485,6 +485,10 @@ describe("StageConfigEditor", () => {
     expect(screen.getByRole("button", { name: /^Automatizaciones$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Comunicaciones$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Prompt Studio$/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Automatizaciones$/i }));
+    expect(screen.getByText("Variables para plantillas automáticas")).toBeInTheDocument();
+    expect(screen.getByText("{{full_name}}")).toBeInTheDocument();
   });
 
   it("opens Prompt Studio inside the same stage shell from Ajustes y Reglas", async () => {

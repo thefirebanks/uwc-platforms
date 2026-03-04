@@ -21,6 +21,7 @@ import type {
 import { ErrorCallout } from "@/components/error-callout";
 import { AdminCommunicationsCenter } from "@/components/admin-communications-center";
 import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
+import { EmailTemplateVariableGuide } from "@/components/email-template-variable-guide";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
 import {
   DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
@@ -2064,6 +2065,7 @@ export function StageConfigEditor({
                   <button className="btn btn-outline" onClick={addAutomation}>+ Nueva Notificación</button>
                 </div>
               </div>
+              <EmailTemplateVariableGuide title="Variables para plantillas automáticas" />
 
               {automations.map((automation) => (
                 <div className="comm-card" key={automation.localId}>
@@ -2091,26 +2093,26 @@ export function StageConfigEditor({
                           <option value="stage_result">Resultado de etapa</option>
                         </select>
                       </div>
-                      <div className="form-field" style={{ display: "flex", alignItems: "flex-end" }}>
-                         <div className="switch-wrapper" style={{ border: "none", background: "none", padding: "0", width: "100%" }}>
-                           <span style={{ fontSize: "0.85rem", fontWeight: 500, marginRight: "12px" }}>Habilitada</span>
-                           <label className="switch">
-                             <input
-                               type="checkbox"
-                               checked={automation.is_enabled}
-                               onChange={(event) =>
-                                 setAutomations((current) =>
-                                   current.map((item) =>
-                                     item.localId === automation.localId
-                                       ? { ...item, is_enabled: event.target.checked }
-                                       : item,
-                                   ),
-                                 )
-                               }
-                             />
-                             <span className="slider"></span>
-                           </label>
-                         </div>
+                      <div className="form-field automation-toggle-field">
+                        <div className="automation-toggle-control">
+                          <span className="automation-toggle-label">Habilitada</span>
+                          <label className="switch">
+                            <input
+                              type="checkbox"
+                              checked={automation.is_enabled}
+                              onChange={(event) =>
+                                setAutomations((current) =>
+                                  current.map((item) =>
+                                    item.localId === automation.localId
+                                      ? { ...item, is_enabled: event.target.checked }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            />
+                            <span className="slider"></span>
+                          </label>
+                        </div>
                       </div>
                       <div className="form-field full">
                         <label htmlFor={`subject-${automation.localId}`}>Asunto</label>

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Application, CommunicationLog, StageCode } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
+import { EmailTemplateVariableGuide } from "@/components/email-template-variable-guide";
 
 interface ApiError {
   message: string;
@@ -234,9 +235,6 @@ export function AdminCommunicationsCenter({
       setBroadcastPreviewSubject(previewBody.subject ?? broadcastSubject);
       setBroadcastPreviewHtml(previewBody.bodyHtml ?? null);
       setBroadcastRecipientCount(Number(countBody.recipientCount ?? 0));
-      setStatusMessage(
-        `Audiencia estimada: ${countBody.recipientCount ?? 0} destinatario(s).`,
-      );
     } finally {
       setIsBroadcastPreviewing(false);
     }
@@ -502,14 +500,17 @@ export function AdminCommunicationsCenter({
             </select>
           </div>
           <div className="form-field">
-            <label htmlFor={`${campaignFieldIdPrefix}-search`}>Búsqueda opcional</label>
+            <label htmlFor={`${campaignFieldIdPrefix}-search`}>Buscar por nombre o correo</label>
             <input
               id={`${campaignFieldIdPrefix}-search`}
               type="text"
               value={broadcastSearch}
               onChange={(event) => setBroadcastSearch(event.target.value)}
-              placeholder="Nombre o correo"
+              placeholder="Sirve para una sola persona o un grupo pequeño"
             />
+            <div className="form-hint">
+              Úsalo para acotar la audiencia a un destinatario puntual o a coincidencias parciales.
+            </div>
           </div>
           <div className="form-field full">
             <label htmlFor={`${campaignFieldIdPrefix}-subject`}>Asunto</label>
@@ -530,26 +531,16 @@ export function AdminCommunicationsCenter({
               onChange={(event) => setBroadcastBody(event.target.value)}
               placeholder="Escribe el mensaje en Markdown."
             />
-            <div className="form-hint">
-              Variables: {`{{full_name}}, {{cycle_name}}, {{application_id}}, {{application_status}}, {{stage_label}}`}.
-            </div>
+            <EmailTemplateVariableGuide compact />
           </div>
         </div>
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            flexWrap: "wrap",
-            marginTop: "16px",
-            alignItems: "center",
-          }}
-        >
+        <div className="communications-action-row">
           <button
             className="btn btn-outline"
             onClick={() => void previewBroadcast()}
             disabled={isBroadcastPreviewing || !broadcastCanRun}
           >
-            {isBroadcastPreviewing ? "Calculando..." : "Vista previa y conteo"}
+            {isBroadcastPreviewing ? "Calculando..." : "Vista previa de audiencia"}
           </button>
           <button
             className="btn btn-outline"
@@ -563,13 +554,8 @@ export function AdminCommunicationsCenter({
             onClick={() => void prepareBroadcastSend()}
             disabled={isBroadcastSending}
           >
-            {isBroadcastSending ? "Preparando..." : "Send now"}
+            {isBroadcastSending ? "Preparando..." : "Preparar envío"}
           </button>
-          {broadcastRecipientCount !== null ? (
-            <span className="status-pill admin-chip-neutral">
-              {broadcastRecipientCount} destinatario(s)
-            </span>
-          ) : null}
         </div>
         {broadcastReadyCount !== null ? (
           <div
@@ -618,30 +604,33 @@ export function AdminCommunicationsCenter({
             </div>
           </div>
         ) : null}
-        {broadcastPreviewHtml ? (
+        {broadcastPreviewHtml || broadcastRecipientCount !== null ? (
           <div
-            style={{
-              marginTop: "20px",
-              border: "1px solid var(--sand)",
-              borderRadius: "var(--radius)",
-              padding: "16px",
-              background: "var(--surface)",
-            }}
+            className="communications-preview-card"
           >
-            <div
-              style={{
-                fontSize: "0.75rem",
-                color: "var(--muted)",
-                textTransform: "uppercase",
-                marginBottom: "6px",
-              }}
-            >
-              Vista previa
+            <div className="communications-preview-card__header">
+              <div>
+                <div className="communications-preview-card__eyebrow">Vista previa</div>
+                <div className="communications-preview-card__title">Audiencia y contenido</div>
+              </div>
+              {broadcastRecipientCount !== null ? (
+                <span className="status-pill admin-chip-neutral">
+                  Audiencia estimada: {broadcastRecipientCount} destinatario(s)
+                </span>
+              ) : null}
             </div>
-            <div style={{ fontWeight: 700, marginBottom: "10px" }}>
-              {broadcastPreviewSubject}
-            </div>
-            <div dangerouslySetInnerHTML={{ __html: broadcastPreviewHtml }} />
+            {broadcastPreviewHtml ? (
+              <>
+                <div style={{ fontWeight: 700, marginBottom: "10px" }}>
+                  {broadcastPreviewSubject}
+                </div>
+                <div dangerouslySetInnerHTML={{ __html: broadcastPreviewHtml }} />
+              </>
+            ) : (
+              <p className="form-hint" style={{ margin: 0 }}>
+                Ejecuta la vista previa para revisar el cuerpo renderizado antes de encolar el envío.
+              </p>
+            )}
           </div>
         ) : null}
         <div className="table-container" style={{ marginTop: "24px" }}>

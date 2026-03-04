@@ -78,6 +78,11 @@ describe("AdminOcrTestbed", () => {
         "El preámbulo de seguridad es fijo. Usa esta vista para probar sin tocar la extracción productiva.",
       ),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Prompt Studio solo envía el archivo que subes arriba. No toma todavía documentos ni campos del formulario del postulante automáticamente.",
+      ),
+    ).toBeInTheDocument();
     expect(await screen.findByText("history.pdf")).toBeInTheDocument();
   });
 
@@ -121,6 +126,7 @@ describe("AdminOcrTestbed", () => {
     fireEvent.change(screen.getByLabelText("Instrucciones de extracción"), {
       target: { value: "Extrae solo señales de riesgo" },
     });
+    fireEvent.click(screen.getByRole("button", { name: "Esquema y parámetros" }));
     fireEvent.change(screen.getByLabelText("Esquema JSON esperado"), {
       target: { value: '{"summary":"string","findings":["string"]}' },
     });
@@ -152,5 +158,61 @@ describe("AdminOcrTestbed", () => {
     expect(await screen.findByText("Comparación")).toBeInTheDocument();
     expect(await screen.findByText("Comparativa rápida")).toBeInTheDocument();
     expect(await screen.findAllByText(/señal\(es\) de prompt injection/)).toHaveLength(2);
+  });
+
+  it("shows standard error callout details when running Prompt Studio fails", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: "No se pudo ejecutar OCR.", errorId: "err-ocr-run" }), {
+          status: 500,
+        }),
+      );
+
+    const { container } = render(
+      <AdminOcrTestbed
+        cycleId="cycle-1"
+        stageCode="documents"
+        modelOptions={modelOptions}
+        defaultPrompt="Prompt base"
+        defaultSystemPrompt="System prompt"
+        defaultExtractionInstructions="Extraer hallazgos"
+        defaultSchemaTemplate='{"summary":"string"}'
+      />,
+    );
+
+    await screen.findByText("history.pdf");
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["fake pdf"], "resume.pdf", { type: "application/pdf" });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Ejecutar prueba" }));
+
+    expect(await screen.findByText("No se pudo ejecutar OCR.")).toBeInTheDocument();
+    expect(screen.getByText("Error ID: err-ocr-run")).toBeInTheDocument();
+  });
+
+  it("shows standard error details when history loading fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ message: "No se pudo cargar historial.", errorId: "err-ocr-history" }), {
+        status: 500,
+      }),
+    );
+
+    render(
+      <AdminOcrTestbed
+        cycleId="cycle-1"
+        stageCode="documents"
+        modelOptions={modelOptions}
+        defaultPrompt="Prompt base"
+        defaultSystemPrompt="System prompt"
+        defaultExtractionInstructions="Extraer hallazgos"
+        defaultSchemaTemplate='{"summary":"string"}'
+      />,
+    );
+
+    expect(await screen.findByText("No se pudo cargar historial.")).toBeInTheDocument();
+    expect(screen.getByText("Error ID: err-ocr-history")).toBeInTheDocument();
   });
 });
