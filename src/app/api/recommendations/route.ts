@@ -19,7 +19,8 @@ const schema = z.object({
         email: z.string().email(),
       }),
     )
-    .length(2),
+    .min(1)
+    .max(2),
 });
 
 const querySchema = z.object({
@@ -111,6 +112,7 @@ export async function PUT(request: NextRequest) {
       supabase,
       applicationId: parsed.data.applicationId,
       applicantId: profile.id,
+      applicantEmail: profile.email,
       recommenders: parsed.data.recommenders as Array<{ role: RecommenderRole; email: string }>,
       origin: request.nextUrl.origin,
     });

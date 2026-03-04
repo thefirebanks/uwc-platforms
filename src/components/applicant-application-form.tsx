@@ -152,6 +152,10 @@ const SPANISH_FIELD_PLACEHOLDER_BY_KEY: Partial<Record<string, string>> = {
   friendRecommenderName: "Nombre completo",
 };
 
+function normalizeEmailAddress(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
+
 const HIDDEN_FIELD_HELP_TEXT_KEYS = new Set([
   "fullName",
   "dateOfBirth",
@@ -1868,12 +1872,26 @@ export function ApplicantApplicationForm({
 
     const mentorEmail = recommenderInputs.mentor.trim();
     const friendEmail = recommenderInputs.friend.trim();
+    const normalizedAccountEmail = normalizeEmailAddress(accountEmail);
 
-    if (!mentorEmail || !friendEmail) {
+    if (!mentorEmail && !friendEmail) {
       setError({
         message: copy(
-          "Debes registrar 2 recomendadores: uno tutor/profesor/mentor y uno amigo.",
-          "You must register 2 recommenders: one tutor/teacher/mentor and one friend.",
+          "Ingresa al menos un correo de recomendador antes de guardar.",
+          "Enter at least one recommender email before saving.",
+        ),
+      });
+      return;
+    }
+
+    if (
+      normalizedAccountEmail &&
+      [mentorEmail, friendEmail].some((email) => normalizeEmailAddress(email) === normalizedAccountEmail)
+    ) {
+      setError({
+        message: copy(
+          "No puedes registrarte como tu propio recomendador. Usa dos correos distintos al de tu cuenta.",
+          "You cannot register yourself as your own recommender. Use two emails different from your account.",
         ),
       });
       return;
@@ -1887,9 +1905,9 @@ export function ApplicantApplicationForm({
         body: JSON.stringify({
           applicationId: application.id,
           recommenders: [
-            { role: "mentor", email: mentorEmail },
-            { role: "friend", email: friendEmail },
-          ],
+            mentorEmail ? { role: "mentor", email: mentorEmail } : null,
+            friendEmail ? { role: "friend", email: friendEmail } : null,
+          ].filter((item): item is { role: RecommenderRole; email: string } => Boolean(item)),
         }),
       });
       const body = await response.json();

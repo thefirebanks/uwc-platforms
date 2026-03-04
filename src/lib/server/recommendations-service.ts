@@ -10,7 +10,6 @@ import type { RecommenderRole, RecommendationStatus } from "@/types/domain";
 type RecommendationRow = Database["public"]["Tables"]["recommendation_requests"]["Row"];
 type RecommendationInsert = Database["public"]["Tables"]["recommendation_requests"]["Insert"];
 
-const RECOMMENDER_ROLES: RecommenderRole[] = ["mentor", "friend"];
 const OTP_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
@@ -272,12 +271,14 @@ export async function upsertApplicantRecommendations({
   supabase,
   applicationId,
   applicantId,
+  applicantEmail,
   recommenders,
   origin,
 }: {
   supabase: SupabaseClient<Database>;
   applicationId: string;
   applicantId: string;
+  applicantEmail: string | null;
   recommenders: Array<{ role: RecommenderRole; email: string }>;
   origin: string;
 }) {
@@ -285,6 +286,7 @@ export async function upsertApplicantRecommendations({
     role: item.role,
     email: normalizeEmail(item.email),
   }));
+  const normalizedApplicantEmail = applicantEmail ? normalizeEmail(applicantEmail) : null;
 
   const uniqueEmails = new Set(normalized.map((item) => item.email));
   if (uniqueEmails.size !== normalized.length) {
@@ -296,12 +298,21 @@ export async function upsertApplicantRecommendations({
     });
   }
 
-  const roles = new Set(normalized.map((item) => item.role));
-  if (roles.size !== RECOMMENDER_ROLES.length) {
+  if (normalizedApplicantEmail && normalized.some((item) => item.email === normalizedApplicantEmail)) {
     throw new AppError({
-      message: "Missing recommender role",
+      message: "Applicant attempted to register themselves as recommender",
       userMessage:
-        "Debes registrar exactamente 2 recomendadores: uno mentor y uno amigo.",
+        "No puedes registrarte como tu propio recomendador. Usa dos correos distintos al de tu cuenta.",
+      status: 400,
+    });
+  }
+
+  const roles = new Set(normalized.map((item) => item.role));
+  if (roles.size !== normalized.length) {
+    throw new AppError({
+      message: "Duplicate recommender role in request",
+      userMessage:
+        "No puedes repetir el mismo tipo de recomendador en un solo guardado.",
       status: 400,
     });
   }

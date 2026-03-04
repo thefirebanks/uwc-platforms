@@ -269,6 +269,153 @@ describe("ApplicantApplicationForm", () => {
     expect(screen.queryByText(/2 invitación\(es\) enviada\(s\)\./i)).not.toBeInTheDocument();
   });
 
+  it("allows saving a single recommender without requiring the second one yet", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url === "/api/recommendations" && init?.method === "PUT") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              recommenders: [
+                {
+                  id: "rec-mentor",
+                  role: "mentor",
+                  email: "mentor@example.com",
+                  status: "sent",
+                  submittedAt: null,
+                  inviteSentAt: "2026-02-18T20:00:00.000Z",
+                  openedAt: null,
+                  startedAt: null,
+                  reminderCount: 0,
+                  lastReminderAt: null,
+                  invalidatedAt: null,
+                  createdAt: "2026-02-18T20:00:00.000Z",
+                },
+              ],
+              createdCount: 1,
+              replacedCount: 0,
+              failedEmailCount: 0,
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+
+      return Promise.resolve(new Response(JSON.stringify({ recommenders: [] }), { status: 200 }));
+    });
+
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-2"
+        sections={DEFAULT_SECTIONS}
+        stageFields={DEFAULT_STAGE_FIELDS}
+        existingApplication={DRAFT_APP}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Recomendadores/i })[0]);
+    fireEvent.change(screen.getByLabelText(/Correo \(Tutor\/Profesor\/Mentor\)/i), {
+      target: { value: "mentor@example.com" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Guardar recomendadores/i }));
+
+    await screen.findByText(/1 invitación\(es\) enviada\(s\)\./i);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/recommendations",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({
+          applicationId: "app-draft",
+          recommenders: [{ role: "mentor", email: "mentor@example.com" }],
+        }),
+      }),
+    );
+  });
+
+  it("blocks applicants from registering themselves as a recommender", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ recommenders: [] }), { status: 200 }),
+    );
+
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-2"
+        sections={DEFAULT_SECTIONS}
+        stageFields={DEFAULT_STAGE_FIELDS}
+        existingApplication={DRAFT_APP}
+        accountEmail="applicant@example.com"
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Recomendadores/i })[0]);
+    fireEvent.change(screen.getByLabelText(/Correo \(Tutor\/Profesor\/Mentor\)/i), {
+      target: { value: " applicant@example.com " },
+    });
+    fireEvent.change(screen.getByLabelText(/Correo \(Amigo/i), {
+      target: { value: "friend@example.com" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Guardar recomendadores/i }));
+
+    expect(
+      await screen.findByText(
+        "No puedes registrarte como tu propio recomendador. Usa dos correos distintos al de tu cuenta.",
+      ),
+    ).toBeInTheDocument();
+    expect(fetchSpy).not.toHaveBeenCalledWith(
+      "/api/recommendations",
+      expect.objectContaining({ method: "PUT" }),
+    );
+  });
+
+  it("shows the server configuration error and error id when recommender registration fails on the backend", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : input.toString();
+
+      if (url === "/api/recommendations" && init?.method === "PUT") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              message: "Falta configuración del servidor. Contacta al administrador con este error.",
+              errorId: "err-rec-config",
+            }),
+            { status: 500 },
+          ),
+        );
+      }
+
+      return Promise.resolve(new Response(JSON.stringify({ recommenders: [] }), { status: 200 }));
+    });
+
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-2"
+        sections={DEFAULT_SECTIONS}
+        stageFields={DEFAULT_STAGE_FIELDS}
+        existingApplication={DRAFT_APP}
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Recomendadores/i })[0]);
+    fireEvent.change(screen.getByLabelText(/Correo \(Tutor\/Profesor\/Mentor\)/i), {
+      target: { value: "mentor@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText(/Correo \(Amigo/i), {
+      target: { value: "friend@example.com" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Guardar recomendadores/i }));
+
+    expect(
+      await screen.findByText(
+        "Falta configuración del servidor. Contacta al administrador con este error.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Error ID: err-rec-config/i)).toBeInTheDocument();
+  });
+
   it("shows progress summary based on submitted state", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(JSON.stringify({ recommenders: [] }), { status: 200 }),
