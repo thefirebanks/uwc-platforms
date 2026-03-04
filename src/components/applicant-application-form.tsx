@@ -2066,8 +2066,15 @@ export function ApplicantApplicationForm({
           isReplacingExistingFile
             ? "Document updated successfully."
             : "Document uploaded successfully.",
-        ),
+          ),
       );
+    } catch {
+      setError({
+        message: copy(
+          "No se pudo completar la subida del archivo. Intenta nuevamente.",
+          "Could not complete the file upload. Please try again.",
+        ),
+      });
     } finally {
       setUploadingFieldKey(null);
     }
