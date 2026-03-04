@@ -16,6 +16,8 @@ import { bypassReady, loginAsAdmin } from "./helpers";
 const DEMO_CYCLE_ID = "98b2f8e4-7266-44b0-acb2-566e2fb2d50e";
 const TEST_FIELD_LABEL = "Campo E2E Test – borrar";
 const TEST_FIELD_KEY = "e2eTestFieldDelete";
+const TEST_PARSER_FIELD_LABEL = "Documento E2E Parsing IA";
+const TEST_PARSER_FIELD_KEY = "e2eAiParserDocument";
 
 /** Wait for the save button to be enabled (pending changes exist), then click it and confirm. */
 async function saveConfig(page: Page): Promise<void> {
@@ -27,22 +29,26 @@ async function saveConfig(page: Page): Promise<void> {
   });
 }
 
-async function cleanupTestField(page: Page): Promise<void> {
+async function cleanupFieldByLabel(page: Page, label: string): Promise<void> {
+  const fieldLabel = page.locator(".field-name").filter({ hasText: label });
+  if (await fieldLabel.isVisible({ timeout: 2_000 }).catch(() => false)) {
+    const fieldCard = fieldLabel.locator(
+      "xpath=ancestor::div[contains(@class,'field-card')]",
+    );
+    page.once("dialog", (dialog) => void dialog.accept());
+    await fieldCard.locator("button.btn-icon.danger").click();
+    await saveConfig(page);
+  }
+}
+
+async function cleanupTestFields(page: Page): Promise<void> {
   await loginAsAdmin(page);
   await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents`);
   await expect(page.getByRole("button", { name: /Guardar configuración/i })).toBeVisible({
     timeout: 15_000,
   });
-  const fieldLabel = page.locator(".field-name").filter({ hasText: TEST_FIELD_LABEL });
-  if (await fieldLabel.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    const fieldCard = fieldLabel.locator(
-      "xpath=ancestor::div[contains(@class,'field-card')]",
-    );
-    // Accept the confirmation dialog that fires when deleting a field
-    page.once("dialog", (dialog) => void dialog.accept());
-    await fieldCard.locator("button.btn-icon.danger").click();
-    await saveConfig(page);
-  }
+  await cleanupFieldByLabel(page, TEST_FIELD_LABEL);
+  await cleanupFieldByLabel(page, TEST_PARSER_FIELD_LABEL);
 }
 
 test.describe("Admin field CRUD (reversible)", () => {
@@ -51,7 +57,7 @@ test.describe("Admin field CRUD (reversible)", () => {
   });
 
   test.afterEach(async ({ page }) => {
-    await cleanupTestField(page);
+    await cleanupTestFields(page);
   });
 
   test("admin can add, verify, and delete a custom field", async ({ page }) => {
@@ -125,5 +131,64 @@ test.describe("Admin field CRUD (reversible)", () => {
 
     // Preview button should be accessible
     await expect(page.locator(".admin-stage-preview-btn")).toBeVisible();
+  });
+
+  test("admin can configure AI parsing on a file field and persist enable/disable states", async ({
+    page,
+  }) => {
+    await loginAsAdmin(page);
+    await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents`);
+    await expect(page.getByRole("button", { name: /Guardar configuración/i })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.getByRole("button", { name: /^Añadir nuevo campo$/i }).last().click();
+    const newFieldCard = page.locator(".field-card.editing").last();
+    await expect(newFieldCard).toBeVisible({ timeout: 5_000 });
+
+    await newFieldCard.locator("input[id^='title-']").click({ clickCount: 3 });
+    await newFieldCard.locator("input[id^='title-']").fill(TEST_PARSER_FIELD_LABEL);
+    await newFieldCard.locator("input[id^='key-']").click({ clickCount: 3 });
+    await newFieldCard.locator("input[id^='key-']").fill(TEST_PARSER_FIELD_KEY);
+    await newFieldCard.locator("select[id^='type-']").selectOption("file");
+    await expect(newFieldCard.getByText(/Parsing con IA/i)).toBeVisible();
+    await newFieldCard.locator(".admin-ai-parser-panel .switch").first().click();
+    await newFieldCard
+      .getByRole("textbox", { name: /Instrucciones de extracción/i })
+      .fill("Extrae nombre completo y número de documento.");
+    await newFieldCard
+      .getByRole("textbox", { name: /Esquema JSON esperado/i })
+      .fill('{"full_name":"string","document_number":"string"}');
+
+    await newFieldCard.getByRole("button", { name: /Aplicar cambios/i }).click();
+    await expect(newFieldCard).not.toBeVisible({ timeout: 5_000 });
+    await saveConfig(page);
+
+    await page.reload();
+    const parserFieldLabel = page.locator(".field-name").filter({ hasText: TEST_PARSER_FIELD_LABEL });
+    await expect(parserFieldLabel).toBeVisible({ timeout: 10_000 });
+
+    const parserFieldCard = parserFieldLabel
+      .locator("xpath=ancestor::div[contains(@class,'field-card')]")
+      .first();
+    await parserFieldCard.locator("button.btn-icon").first().click();
+    await expect(parserFieldCard.getByRole("checkbox", { name: /Habilitar parsing IA/i })).toBeChecked();
+    await expect(
+      parserFieldCard.getByRole("textbox", { name: /Instrucciones de extracción/i }),
+    ).toHaveValue("Extrae nombre completo y número de documento.");
+
+    await parserFieldCard.locator(".admin-ai-parser-panel .switch").first().click();
+    await parserFieldCard.getByRole("button", { name: /Aplicar cambios/i }).click();
+    await saveConfig(page);
+
+    await page.reload();
+    const parserFieldCardAfterDisable = page
+      .locator(".field-card")
+      .filter({ hasText: TEST_PARSER_FIELD_LABEL })
+      .first();
+    await parserFieldCardAfterDisable.locator("button.btn-icon").first().click();
+    await expect(
+      parserFieldCardAfterDisable.getByRole("checkbox", { name: /Habilitar parsing IA/i }),
+    ).not.toBeChecked();
   });
 });

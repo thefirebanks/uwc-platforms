@@ -761,4 +761,149 @@ describe("StageConfigEditor", () => {
     const newField = payload?.fields?.find((f: { fieldKey: string }) => f.fieldKey?.startsWith("custom"));
     expect(newField).toBeTruthy();
   });
+
+  it("persists per-file AI parser config and clears it when field type changes", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            fields: [
+              {
+                id: "field-file",
+                cycle_id: "cycle-1",
+                stage_code: "documents",
+                field_key: "identificationDocument",
+                field_label: "Documento de identidad",
+                field_type: "file",
+                is_required: true,
+                placeholder: null,
+                help_text: null,
+                sort_order: 1,
+                is_active: true,
+                section_id: null,
+                created_at: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            sections: [makeOtherSection()],
+            automations: [],
+            ocrPromptTemplate: "Prompt OCR",
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-file",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "identificationDocument",
+            field_label: "Documento de identidad",
+            field_type: "file",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: null,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Documento de identidad"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Habilitar parsing IA para Documento de identidad/i }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /Instrucciones de extracción/i }), {
+      target: { value: "Extrae solo número de documento y nombre completo." },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /Esquema JSON esperado/i }), {
+      target: { value: "{\"document_number\":\"string\",\"full_name\":\"string\"}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const firstRequest = fetchMock.mock.calls.at(-1)?.[1];
+    const firstPayload =
+      firstRequest && typeof firstRequest === "object" && "body" in firstRequest
+        ? JSON.parse(String(firstRequest.body))
+        : null;
+
+    expect(firstPayload?.fields?.[0]?.aiParser).toMatchObject({
+      enabled: true,
+      extractionInstructions: "Extrae solo número de documento y nombre completo.",
+      expectedSchemaTemplate: "{\"document_number\":\"string\",\"full_name\":\"string\"}",
+      strictSchema: true,
+    });
+
+    fireEvent.change(screen.getByLabelText(/Tipo de campo/i), {
+      target: { value: "short_text" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const secondRequest = fetchMock.mock.calls.at(-1)?.[1];
+    const secondPayload =
+      secondRequest && typeof secondRequest === "object" && "body" in secondRequest
+        ? JSON.parse(String(secondRequest.body))
+        : null;
+    expect(secondPayload?.fields?.[0]?.aiParser).toBeNull();
+  });
+
+  it("does not show AI parser controls for non-file fields", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-1",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "fullName",
+            field_label: "Nombre completo",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: null,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Nombre completo"));
+    expect(
+      screen.queryByRole("checkbox", { name: /Habilitar parsing IA para Nombre completo/i }),
+    ).not.toBeInTheDocument();
+  });
 });
