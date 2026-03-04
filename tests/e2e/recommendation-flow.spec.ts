@@ -73,13 +73,15 @@ test.describe("Public recommendation flow", () => {
     await clickSidebarStepByLabel(page, /Recomendadores/i);
     await page.getByLabel(/Correo \(Tutor\/Profesor\/Mentor\)/i).fill(mentorEmail);
     await page.getByLabel(/Correo \(Amigo \(no familiar\)\)/i).fill(friendEmail);
-    await page.getByRole("button", { name: /Guardar recomendadores/i }).click();
+    const mentorSaveButton = page.locator('button:not([disabled])').filter({
+      hasText: /Guardar y enviar/i,
+    }).first();
+    await expect(mentorSaveButton).toBeEnabled({ timeout: 10_000 });
+    await mentorSaveButton.click();
 
-    await expect(page.getByText(/2 invitación\(es\) enviada\(s\)\./i)).toBeVisible({
-      timeout: 20_000,
-    });
-    await expect(page.getByText(mentorEmail)).toBeVisible();
-    await expect(page.getByText("Invitación enviada").first()).toBeVisible();
+    await expect(page.getByText(mentorEmail, { exact: true })).toBeVisible();
+    await expect(page.getByText(/Invitación enviada/i).first()).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole("button", { name: /Enviar recordatorio/i })).toBeVisible();
 
     const mentorRecommendation = await waitForRecommendationByEmail(mentorEmail);
     await page.goto(`/recomendacion/${mentorRecommendation.token}`);

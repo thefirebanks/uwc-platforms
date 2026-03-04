@@ -5,6 +5,7 @@ import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
+import { partitionConfigRowsById } from "@/lib/server/stage-config-persistence";
 import type { Database, Json } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
@@ -569,34 +570,54 @@ export async function PATCH(
       updated_at: new Date().toISOString(),
     }));
 
-    const [upsertFieldsResult, upsertAutomationsResult] = await Promise.all([
-      fieldRows.length > 0
+    const { inserts: fieldRowsToInsert, updates: fieldRowsToUpdate } =
+      partitionConfigRowsById(fieldRows);
+    const { inserts: automationRowsToInsert, updates: automationRowsToUpdate } =
+      partitionConfigRowsById(automationRows);
+
+    const [
+      updateFieldsResult,
+      insertFieldsResult,
+      updateAutomationsResult,
+      insertAutomationsResult,
+    ] = await Promise.all([
+      fieldRowsToUpdate.length > 0
         ? supabase
             .from("cycle_stage_fields")
-            .upsert(fieldRows, { onConflict: "id" })
+            .upsert(fieldRowsToUpdate, { onConflict: "id" })
         : Promise.resolve({ error: null }),
-      automationRows.length > 0
+      fieldRowsToInsert.length > 0
+        ? supabase
+            .from("cycle_stage_fields")
+            .insert(fieldRowsToInsert)
+        : Promise.resolve({ error: null }),
+      automationRowsToUpdate.length > 0
         ? supabase
             .from("stage_automation_templates")
-            .upsert(automationRows, { onConflict: "id" })
+            .upsert(automationRowsToUpdate, { onConflict: "id" })
+        : Promise.resolve({ error: null }),
+      automationRowsToInsert.length > 0
+        ? supabase
+            .from("stage_automation_templates")
+            .insert(automationRowsToInsert)
         : Promise.resolve({ error: null }),
     ]);
 
-    if (upsertFieldsResult.error) {
+    if (updateFieldsResult.error || insertFieldsResult.error) {
       throw new AppError({
         message: "Failed upserting stage fields",
         userMessage: "No se pudieron guardar los campos de la etapa.",
         status: 500,
-        details: upsertFieldsResult.error,
+        details: updateFieldsResult.error ?? insertFieldsResult.error,
       });
     }
 
-    if (upsertAutomationsResult.error) {
+    if (updateAutomationsResult.error || insertAutomationsResult.error) {
       throw new AppError({
         message: "Failed upserting stage automations",
         userMessage: "No se pudieron guardar las automatizaciones de la etapa.",
         status: 500,
-        details: upsertAutomationsResult.error,
+        details: updateAutomationsResult.error ?? insertAutomationsResult.error,
       });
     }
 

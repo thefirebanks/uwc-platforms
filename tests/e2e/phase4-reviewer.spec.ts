@@ -41,12 +41,12 @@ test.describe("Phase 4 – Reviewer Architecture", () => {
     // Wait for the loading state to resolve
     await expect(page.getByText(/Cargando revisores/i)).toBeHidden({ timeout: 10_000 });
 
-    // Either an empty-state message or a table of reviewers should be visible
-    const emptyState = page.getByText(/No hay revisores registrados/i);
-    const table = page.locator("table");
-    const hasEmpty = await emptyState.isVisible({ timeout: 5_000 }).catch(() => false);
-    const hasTable = await table.isVisible({ timeout: 1_000 }).catch(() => false);
-    expect(hasEmpty || hasTable).toBe(true);
+    await expect
+      .poll(async () => {
+        const text = await page.locator("body").innerText();
+        return /No hay revisores registrados|Nombre\\s+Correo\\s+Acciones/i.test(text);
+      }, { timeout: 10_000 })
+      .toBe(true);
   });
 
   test("admin GET /api/admin/reviewers returns 200 with reviewers array", async ({ page }) => {

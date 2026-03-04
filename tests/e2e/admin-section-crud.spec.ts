@@ -21,6 +21,10 @@ import {
 const DEMO_CYCLE_ID = "98b2f8e4-7266-44b0-acb2-566e2fb2d50e";
 const TEST_SECTION_TITLE = "Sección E2E Test – borrar";
 
+function normalizeSectionHeading(value: string | null | undefined): string {
+  return (value ?? "").replace(/^Sección \d+:\s*/i, "").trim();
+}
+
 async function navigateToStageEditor(page: Page, stageCode = "documents"): Promise<void> {
   await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/${stageCode}`);
   await expect(page.getByRole("button", { name: /Guardar configuración/i })).toBeVisible({
@@ -113,32 +117,35 @@ test.describe("Admin section CRUD (reversible)", () => {
     await loginAsAdmin(page);
     await navigateToStageEditor(page);
 
-    const titleInputs = page.locator("input[id^='section-title-']");
-    const count = await titleInputs.count();
+    const sections = page.locator(".admin-stage-section-heading-row");
+    const count = await sections.count();
     if (count < 2) {
       test.skip(true, "Need at least 2 sections to test reordering");
       return;
     }
 
-    // Record original titles of first two sections
-    const firstTitle = await titleInputs.nth(0).inputValue();
-    const secondTitle = await titleInputs.nth(1).inputValue();
+    const firstHeading = sections.nth(0).locator(".builder-section-title");
+    const secondHeading = sections.nth(1).locator(".builder-section-title");
+    const firstTitle = normalizeSectionHeading(await firstHeading.textContent());
+    const secondTitle = normalizeSectionHeading(await secondHeading.textContent());
+    expect(firstTitle).toBeTruthy();
+    expect(secondTitle).toBeTruthy();
 
     // Move second section up
-    const secondContainer = page.locator(".admin-stage-section-placeholder").nth(1);
+    const secondContainer = sections.nth(1);
     await secondContainer.getByRole("button", { name: "Subir sección" }).click();
 
     // Verify order swapped in the editor
-    await expect(page.locator("input[id^='section-title-']").nth(0)).toHaveValue(secondTitle);
-    await expect(page.locator("input[id^='section-title-']").nth(1)).toHaveValue(firstTitle);
+    await expect(sections.nth(0).locator(".builder-section-title")).toContainText(secondTitle);
+    await expect(sections.nth(1).locator(".builder-section-title")).toContainText(firstTitle);
 
     // Restore by moving it back down
-    const nowFirstContainer = page.locator(".admin-stage-section-placeholder").nth(0);
+    const nowFirstContainer = sections.nth(0);
     await nowFirstContainer.getByRole("button", { name: "Bajar sección" }).click();
 
     // Verify order restored — no save needed as state matches DB snapshot
-    await expect(page.locator("input[id^='section-title-']").nth(0)).toHaveValue(firstTitle);
-    await expect(page.locator("input[id^='section-title-']").nth(1)).toHaveValue(secondTitle);
+    await expect(sections.nth(0).locator(".builder-section-title")).toContainText(firstTitle);
+    await expect(sections.nth(1).locator(".builder-section-title")).toContainText(secondTitle);
   });
 
   test("admin can collapse and expand a section", async ({ page }) => {

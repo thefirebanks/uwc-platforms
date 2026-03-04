@@ -13,13 +13,17 @@ test.describe("Admin candidate viewer", () => {
     await loginAsAdmin(page);
     await page.goto("/admin/candidates");
 
-    const firstCandidateRow = page.locator("tr.admin-candidate-row").first();
-    const hasCandidate = await firstCandidateRow.isVisible({ timeout: 15_000 }).catch(() => false);
-    if (!hasCandidate) {
+    const candidateRows = page.locator("tr.admin-candidate-row");
+    const rowCount = await expect
+      .poll(async () => candidateRows.count(), { timeout: 15_000 })
+      .toBeGreaterThan(0)
+      .then(() => candidateRows.count())
+      .catch(() => 0);
+    if (rowCount === 0) {
       test.skip(true, "No candidate rows available in current preview dataset");
       return;
     }
-    await firstCandidateRow.click();
+    await candidateRows.first().click();
 
     await expect(page.getByText(/Cargando postulación|Datos del formulario/i).first()).toBeVisible({
       timeout: 15_000,
@@ -33,16 +37,20 @@ test.describe("Admin candidate viewer", () => {
     await loginAsAdmin(page);
     await page.goto("/admin/candidates?applicationId=e12f2f2a-11b7-457d-b11f-44681c453f66");
 
-    const firstCandidateRow = page.locator("tr.admin-candidate-row").first();
-    const hasCandidate = await firstCandidateRow.isVisible({ timeout: 15_000 }).catch(() => false);
-    if (!hasCandidate) {
+    const candidateRows = page.locator("tr.admin-candidate-row");
+    const rowCount = await expect
+      .poll(async () => candidateRows.count(), { timeout: 15_000 })
+      .toBeGreaterThan(0)
+      .then(() => candidateRows.count())
+      .catch(() => 0);
+    if (rowCount === 0) {
       test.skip(true, "No candidate rows available in current preview dataset");
       return;
     }
 
     await expect(page.getByText(/Failed to load application/i)).not.toBeVisible();
 
-    await firstCandidateRow.click();
+    await candidateRows.first().click();
     await expect(page.getByText(/Datos del formulario/i)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/Failed to load application/i)).not.toBeVisible();
   });

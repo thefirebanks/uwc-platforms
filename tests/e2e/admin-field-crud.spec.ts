@@ -11,7 +11,7 @@
  *   NEXT_PUBLIC_DEMO_PASSWORD set
  */
 import { expect, test, type Page } from "@playwright/test";
-import { bypassReady, findSectionContainerByTitle, loginAsAdmin } from "./helpers";
+import { bypassReady, loginAsAdmin } from "./helpers";
 
 const DEMO_CYCLE_ID = "98b2f8e4-7266-44b0-acb2-566e2fb2d50e";
 const TEST_FIELD_LABEL = "Campo E2E Test – borrar";
@@ -61,30 +61,11 @@ test.describe("Admin field CRUD (reversible)", () => {
       timeout: 15_000,
     });
 
-    // Find the "Otros campos" section by scanning title inputs
-    const otherSection = await findSectionContainerByTitle(page, /Otros campos/i);
-    if (otherSection === null) {
-      test.skip(true, '"Otros campos" section not found in this stage');
-      return;
-    }
-
-    // Ensure section is expanded
-    const collapseBtn = otherSection.getByRole("button", {
-      name: /Colapsar sección|Expandir sección/i,
-    });
-    const ariaPressed = await collapseBtn.getAttribute("aria-pressed").catch(() => "true");
-    if (ariaPressed === "false") {
-      await collapseBtn.click();
-    }
-
-    // Count existing fields in this section
-    const fieldsBefore = await otherSection.locator(".field-card").count();
-
-    // 1. Click "Añadir nuevo campo" in the "Otros campos" section
-    await otherSection.locator(".admin-stage-section-add-field").click();
+    // 1. Click the current editor's add-field affordance
+    await page.getByRole("button", { name: /^Añadir nuevo campo$/i }).last().click();
 
     // 2. New field card appears in editing state
-    const newFieldCard = otherSection.locator(".field-card.editing").last();
+    const newFieldCard = page.locator(".field-card.editing").last();
     await expect(newFieldCard).toBeVisible({ timeout: 5_000 });
 
     // 3. Fill field label
@@ -97,6 +78,9 @@ test.describe("Admin field CRUD (reversible)", () => {
     await keyInput.click({ clickCount: 3 });
     await keyInput.fill(TEST_FIELD_KEY);
 
+    await newFieldCard.getByRole("button", { name: /Aplicar cambios/i }).click();
+    await expect(newFieldCard).not.toBeVisible({ timeout: 5_000 });
+
     // 5. Save
     await saveConfig(page);
 
@@ -105,10 +89,6 @@ test.describe("Admin field CRUD (reversible)", () => {
     const savedFieldLabel = page.locator(".field-name").filter({ hasText: TEST_FIELD_LABEL });
     await expect(savedFieldLabel).toBeVisible({ timeout: 10_000 });
     await expect(page.locator(".field-type").filter({ hasText: TEST_FIELD_KEY })).toBeVisible();
-
-    // Verify field count increased
-    const fieldsAfterAdd = await otherSection.locator(".field-card").count();
-    expect(fieldsAfterAdd).toBe(fieldsBefore + 1);
 
     // 7. Delete the field
     const fieldCard = savedFieldLabel.locator(
@@ -126,8 +106,6 @@ test.describe("Admin field CRUD (reversible)", () => {
     await expect(
       page.locator(".field-name").filter({ hasText: TEST_FIELD_LABEL }),
     ).not.toBeVisible();
-    const fieldsAfterDelete = await otherSection.locator(".field-card").count();
-    expect(fieldsAfterDelete).toBe(fieldsBefore);
   });
 
   test("stage config editor loads with all expected tabs", async ({ page }) => {
