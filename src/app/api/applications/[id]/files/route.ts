@@ -30,6 +30,14 @@ const adminSchema = z.object({
   reason: z.string().min(4).max(300),
 });
 
+function isAiParserEnabled(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  return (value as { enabled?: unknown }).enabled === true;
+}
+
 async function buildSignedDownloadUrl(path: string) {
   const adminSupabase = getSupabaseAdminClient();
   const { data, error } = await adminSupabase.storage
@@ -51,15 +59,53 @@ export async function GET(
     const { supabase } = await requireAuth(["admin"]);
     const { id } = await context.params;
 
+    const { data: applicationContext, error: applicationContextError } = await supabase
+      .from("applications")
+      .select("cycle_id, stage_code")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (applicationContextError || !applicationContext) {
+      throw new AppError({
+        message: "Application not found while listing files",
+        userMessage: "No se encontró la postulación.",
+        status: 404,
+        details: applicationContextError,
+      });
+    }
+
     const files = await listApplicationFilesForAdmin({
       supabase,
       applicationId: id,
     });
 
+    const { data: stageFieldsData, error: stageFieldsError } = await supabase
+      .from("cycle_stage_fields")
+      .select("field_key, ai_parser_config")
+      .eq("cycle_id", applicationContext.cycle_id)
+      .eq("stage_code", applicationContext.stage_code)
+      .eq("field_type", "file");
+
+    if (stageFieldsError) {
+      throw new AppError({
+        message: "Failed loading stage field parser config",
+        userMessage: "No se pudo cargar la configuración de archivos.",
+        status: 500,
+        details: stageFieldsError,
+      });
+    }
+
+    const parserEnabledByFileKey = new Set(
+      ((stageFieldsData as Array<{ field_key: string; ai_parser_config: unknown }> | null) ?? [])
+        .filter((row) => isAiParserEnabled(row.ai_parser_config))
+        .map((row) => row.field_key),
+    );
+
     const filesWithUrls = await Promise.all(
       files.map(async (file) => ({
         ...file,
         downloadUrl: await buildSignedDownloadUrl(file.path),
+        aiParserEnabled: parserEnabledByFileKey.has(file.key),
       })),
     );
 
