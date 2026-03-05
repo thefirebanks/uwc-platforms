@@ -334,4 +334,39 @@ describe("searchApplications", () => {
       status: 500,
     });
   });
+
+  it("continues when stage evaluations are unavailable", async () => {
+    const supabase = buildSearchSupabaseStub({
+      applications: [
+        {
+          id: "app-1",
+          applicant_id: "user-1",
+          cycle_id: "cycle-1",
+          stage_code: "documents",
+          status: "submitted",
+          payload: { firstName: "Ana" },
+          updated_at: "2026-01-15T00:00:00Z",
+        },
+      ],
+      profileBatchData: [{ id: "user-1", email: "ana@example.com", full_name: "Ana Ruiz" }],
+      cycles: [{ id: "cycle-1", name: "UWC 2026" }],
+      stageEvaluationError: { message: "missing relation" },
+    });
+
+    const result = await searchApplications({
+      supabase,
+      input: {
+        page: 1,
+        pageSize: 50,
+        sortBy: "updated_at",
+        sortOrder: "desc",
+      },
+    });
+
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({
+      reviewOutcome: null,
+      reviewEvaluatedAt: null,
+    });
+  });
 });

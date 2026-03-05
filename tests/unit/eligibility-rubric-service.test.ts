@@ -192,4 +192,71 @@ describe("evaluateApplicationWithRubric", () => {
     expect(result.outcome).toBe("not_eligible");
     expect(result.criteria[0]?.status).toBe("fail");
   });
+
+  it("prioritizes not_eligible over needs_review when both appear", () => {
+    const rubric: EligibilityRubricConfig = {
+      enabled: true,
+      criteria: [
+        {
+          id: "ocr",
+          label: "ID OCR confidence",
+          kind: "ocr_confidence",
+          fileKey: "idDocument",
+          minConfidence: 0.95,
+          onFail: "needs_review",
+          onMissingData: "needs_review",
+        },
+        {
+          id: "nationality",
+          label: "Nationality allowed",
+          kind: "field_in",
+          fieldKey: "nationality",
+          allowedValues: ["Ecuador"],
+          caseSensitive: false,
+          onFail: "not_eligible",
+          onMissingData: "needs_review",
+        },
+      ],
+    };
+
+    const result = evaluateApplicationWithRubric({
+      application: buildApplication(),
+      rubric,
+      recommendations: [],
+      latestOcrByFile: new Map([["idDocument", buildOcrCheck(0.5)]]),
+    });
+
+    expect(result.outcome).toBe("not_eligible");
+  });
+
+  it("supports number parsing from string payload values", () => {
+    const rubric: EligibilityRubricConfig = {
+      enabled: true,
+      criteria: [
+        {
+          id: "grade_min",
+          label: "Minimum grade",
+          kind: "number_between",
+          fieldKey: "gradeAverage",
+          min: 15,
+          onFail: "not_eligible",
+          onMissingData: "needs_review",
+        },
+      ],
+    };
+
+    const result = evaluateApplicationWithRubric({
+      application: buildApplication({
+        payload: {
+          gradeAverage: "15,8",
+        },
+      }),
+      rubric,
+      recommendations: [],
+      latestOcrByFile: new Map(),
+    });
+
+    expect(result.outcome).toBe("eligible");
+    expect(result.criteria[0]?.status).toBe("pass");
+  });
 });
