@@ -1824,6 +1824,12 @@ input:checked + .slider:before { transform: translateX(18px); }
   color: var(--success);
 }
 
+.admin-feedback.error {
+  background: #fde8e8;
+  border-color: rgba(185, 28, 28, 0.28);
+  color: #b91c1c;
+}
+
 .admin-feedback-wrap {
   margin: 24px 40px 0;
 }

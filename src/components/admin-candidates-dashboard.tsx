@@ -216,6 +216,7 @@ export function AdminCandidatesDashboard({
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [rubricRunning, setRubricRunning] = useState(false);
   const [rubricMessage, setRubricMessage] = useState<string | null>(null);
+  const [rubricMessageTone, setRubricMessageTone] = useState<"success" | "error">("success");
 
   // Drawer
   const [viewerApplicationId, setViewerApplicationId] = useState<string | null>(
@@ -410,12 +411,14 @@ export function AdminCandidatesDashboard({
   const handleRunRubric = useCallback(async () => {
     if (cycleFilter === "all") {
       setRubricMessage("Selecciona un proceso para ejecutar la rúbrica automática.");
+      setRubricMessageTone("error");
       return;
     }
 
     const targetStage = stageFilter !== "all" ? stageFilter : "documents";
     setRubricRunning(true);
     setRubricMessage(null);
+    setRubricMessageTone("success");
 
     try {
       const response = await fetch("/api/applications/rubric-evaluate", {
@@ -430,18 +433,22 @@ export function AdminCandidatesDashboard({
       const body = await response.json().catch(() => null);
       if (!response.ok) {
         throw new Error(
-          typeof body?.userMessage === "string"
-            ? body.userMessage
-            : "No se pudo ejecutar la rúbrica automática.",
+          typeof body?.message === "string"
+            ? body.message
+            : typeof body?.userMessage === "string"
+              ? body.userMessage
+              : "No se pudo ejecutar la rúbrica automática.",
         );
       }
 
       setRubricMessage(
         `${body.result.evaluated} evaluadas: ${body.result.outcomes.eligible} elegibles, ${body.result.outcomes.not_eligible} no elegibles, ${body.result.outcomes.needs_review} a revisión.`,
       );
+      setRubricMessageTone("success");
       setFetchTrigger((current) => current + 1);
     } catch (error) {
       setRubricMessage(error instanceof Error ? error.message : "Error ejecutando la rúbrica.");
+      setRubricMessageTone("error");
     } finally {
       setRubricRunning(false);
     }
@@ -537,7 +544,7 @@ export function AdminCandidatesDashboard({
         ) : null}
         <div className="settings-card">
           {rubricMessage ? (
-            <div className="admin-feedback success" style={{ marginBottom: "12px" }}>
+            <div className={`admin-feedback ${rubricMessageTone}`} style={{ marginBottom: "12px" }}>
               {rubricMessage}
             </div>
           ) : null}

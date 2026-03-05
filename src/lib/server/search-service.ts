@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
+import { logger } from "@/lib/logging/logger";
 import type { Database } from "@/types/supabase";
 import type { ApplicationStatus, EligibilityOutcome, StageCode } from "@/types/domain";
 import { getApplicationName } from "@/lib/server/application-service";
@@ -262,10 +263,20 @@ export async function searchApplications({
     cycleMap.set(c.id, c.name);
   }
 
-  const evaluationMap = await getLatestStageEvaluationsByApplicationId({
-    supabase,
-    applicationIds: appRows.map((row) => row.id),
-  });
+  let evaluationMap = new Map<string, Database["public"]["Tables"]["application_stage_evaluations"]["Row"]>();
+  try {
+    evaluationMap = await getLatestStageEvaluationsByApplicationId({
+      supabase,
+      applicationIds: appRows.map((row) => row.id),
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        error,
+      },
+      "Failed loading stage evaluations for search; continuing without review outcomes",
+    );
+  }
 
   /* ---- Step 5: map to AdminCandidateRow ---- */
   const rows: AdminCandidateRow[] = appRows.map((app) => {
