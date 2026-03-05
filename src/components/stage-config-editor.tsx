@@ -14,6 +14,7 @@ import {
 import type {
   CycleStageField,
   CycleStageTemplate,
+  EligibilityRubricConfig,
   StageFieldAiParserConfig,
   StageAutomationTemplate,
   StageCode,
@@ -32,6 +33,10 @@ import {
   DEFAULT_OCR_SYSTEM_PROMPT,
   MODEL_REGISTRY,
 } from "@/lib/server/ocr";
+import {
+  getDefaultEligibilityRubricConfig,
+  parseEligibilityRubricConfig,
+} from "@/lib/rubric/eligibility-rubric";
 
 interface ApiError {
   message: string;
@@ -60,6 +65,7 @@ type StageEditorSettingsDraft = {
   previousStageRequirement: string;
   blockIfPreviousNotMet: boolean;
   ocrPromptTemplate: string;
+  eligibilityRubricJson: string;
 };
 
 type StageAdminConfigPayload = {
@@ -69,6 +75,7 @@ type StageAdminConfigPayload = {
   closeDate?: string | null;
   previousStageRequirement?: string;
   blockIfPreviousNotMet?: boolean;
+  eligibilityRubric?: EligibilityRubricConfig | null;
 };
 
 type FieldAiParserDraft = StageFieldAiParserConfig & {
@@ -362,6 +369,7 @@ function serializeSettingsDraft(settings: StageEditorSettingsDraft) {
     previousStageRequirement: settings.previousStageRequirement,
     blockIfPreviousNotMet: settings.blockIfPreviousNotMet,
     ocrPromptTemplate: settings.ocrPromptTemplate?.trim() ?? "",
+    eligibilityRubricJson: settings.eligibilityRubricJson.trim(),
   });
 }
 
@@ -391,6 +399,7 @@ function parseStageAdminConfig(value: unknown): StageAdminConfigPayload {
       typeof value.blockIfPreviousNotMet === "boolean"
         ? value.blockIfPreviousNotMet
         : undefined,
+    eligibilityRubric: parseEligibilityRubricConfig(value.eligibilityRubric),
   };
 }
 
@@ -872,6 +881,27 @@ export function StageConfigEditor({
       return false;
     }
 
+    let parsedEligibilityRubric: EligibilityRubricConfig;
+    try {
+      const rubricValue = JSON.parse(settingsEligibilityRubricJson);
+      const parsedRubric = parseEligibilityRubricConfig(rubricValue);
+      if (!parsedRubric) {
+        setError({
+          message:
+            "La rúbrica automática no tiene un formato válido. Revisa el JSON antes de guardar.",
+        });
+        setIsSaving(false);
+        return false;
+      }
+      parsedEligibilityRubric = parsedRubric;
+    } catch {
+      setError({
+        message: "La rúbrica automática debe ser JSON válido.",
+      });
+      setIsSaving(false);
+      return false;
+    }
+
     try {
       const response = await fetch(`/api/cycles/${cycleId}/stages/${stageId}/config`, {
         method: "PATCH",
@@ -915,6 +945,7 @@ export function StageConfigEditor({
             closeDate: settingsCloseDate || null,
             previousStageRequirement,
             blockIfPreviousNotMet,
+            eligibilityRubric: parsedEligibilityRubric,
           },
         }),
       });
@@ -956,6 +987,12 @@ export function StageConfigEditor({
           typeof body.ocrPromptTemplate === "string"
             ? body.ocrPromptTemplate
             : nextSavedOcrPrompt,
+        eligibilityRubricJson: JSON.stringify(
+          parseEligibilityRubricConfig(body.settings?.eligibilityRubric) ??
+            parsedEligibilityRubric,
+          null,
+          2,
+        ),
       } satisfies StageEditorSettingsDraft;
 
       setSections(nextSavedSections);
@@ -968,6 +1005,7 @@ export function StageConfigEditor({
       setSettingsCloseDate(nextSavedSettings.closeDate);
       setPreviousStageRequirement(nextSavedSettings.previousStageRequirement);
       setBlockIfPreviousNotMet(nextSavedSettings.blockIfPreviousNotMet);
+      setSettingsEligibilityRubricJson(nextSavedSettings.eligibilityRubricJson);
       savedSectionsSnapshotRef.current = serializeSections(nextSavedSections);
       savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
       savedAutomationsSnapshotRef.current = serializePersistedAutomations({
@@ -1010,6 +1048,13 @@ export function StageConfigEditor({
   const [blockIfPreviousNotMet, setBlockIfPreviousNotMet] = useState(
     parsedStageAdminConfig.blockIfPreviousNotMet ?? documentsRouteRepresentsMainForm,
   );
+  const [settingsEligibilityRubricJson, setSettingsEligibilityRubricJson] = useState(
+    JSON.stringify(
+      parsedStageAdminConfig.eligibilityRubric ?? getDefaultEligibilityRubricConfig(),
+      null,
+      2,
+    ),
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1037,6 +1082,7 @@ export function StageConfigEditor({
         previousStageRequirement,
         blockIfPreviousNotMet,
         ocrPromptTemplate,
+        eligibilityRubricJson: settingsEligibilityRubricJson,
       }),
     [
       settingsStageName,
@@ -1046,6 +1092,7 @@ export function StageConfigEditor({
       previousStageRequirement,
       blockIfPreviousNotMet,
       ocrPromptTemplate,
+      settingsEligibilityRubricJson,
     ],
   );
   if (savedSettingsSnapshotRef.current === null) {
@@ -2304,6 +2351,33 @@ export function StageConfigEditor({
                       />
                       <span className="slider"></span>
                     </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="settings-card">
+                <div className="settings-card-header">
+                  <h3>Rúbrica de Elegibilidad Automática</h3>
+                  <p>
+                    Define criterios para clasificar postulaciones como <strong>eligible</strong>,{" "}
+                    <strong>not_eligible</strong> o <strong>needs_review</strong>.
+                  </p>
+                </div>
+                <div className="editor-grid">
+                  <div className="form-field full">
+                    <label htmlFor={`eligibility-rubric-${stageCode}`}>Configuración JSON de rúbrica</label>
+                    <textarea
+                      id={`eligibility-rubric-${stageCode}`}
+                      rows={14}
+                      value={settingsEligibilityRubricJson}
+                      onChange={(event) => setSettingsEligibilityRubricJson(event.target.value)}
+                      style={{ fontFamily: "monospace" }}
+                    />
+                    <div className="form-hint">
+                      Usa criterios como <code>field_present</code>, <code>file_uploaded</code>,{" "}
+                      <code>recommendations_complete</code> y <code>ocr_confidence</code>. Cada
+                      criterio define <code>onFail</code> y <code>onMissingData</code>.
+                    </div>
                   </div>
                 </div>
               </div>

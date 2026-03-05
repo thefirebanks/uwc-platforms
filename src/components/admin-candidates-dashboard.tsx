@@ -17,6 +17,8 @@ type AdminCandidateRow = {
   region: string;
   stageCode: string;
   status: "draft" | "submitted" | "eligible" | "ineligible" | "advanced";
+  reviewOutcome: "eligible" | "not_eligible" | "needs_review" | null;
+  reviewEvaluatedAt: string | null;
   updatedAt: string;
 };
 
@@ -91,6 +93,20 @@ function getStatusClass(status: AdminCandidateRow["status"]) {
   if (status === "ineligible") return "status-pill rejected";
   if (status === "draft") return "status-pill progress";
   return "status-pill complete";
+}
+
+function getReviewOutcomeLabel(outcome: AdminCandidateRow["reviewOutcome"]) {
+  if (outcome === "eligible") return "Elegible";
+  if (outcome === "not_eligible") return "No elegible";
+  if (outcome === "needs_review") return "Revisión manual";
+  return "Sin dictamen";
+}
+
+function getReviewOutcomeClass(outcome: AdminCandidateRow["reviewOutcome"]) {
+  if (outcome === "eligible") return "status-pill complete";
+  if (outcome === "not_eligible") return "status-pill rejected";
+  if (outcome === "needs_review") return "status-pill progress";
+  return "status-pill admin-chip-neutral";
 }
 
 function getAvatarTone(index: number) {
@@ -198,6 +214,8 @@ export function AdminCandidatesDashboard({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const [rubricRunning, setRubricRunning] = useState(false);
+  const [rubricMessage, setRubricMessage] = useState<string | null>(null);
 
   // Drawer
   const [viewerApplicationId, setViewerApplicationId] = useState<string | null>(
@@ -389,6 +407,46 @@ export function AdminCandidatesDashboard({
     setFetchTrigger((n) => n + 1);
   }, []);
 
+  const handleRunRubric = useCallback(async () => {
+    if (cycleFilter === "all") {
+      setRubricMessage("Selecciona un proceso para ejecutar la rúbrica automática.");
+      return;
+    }
+
+    const targetStage = stageFilter !== "all" ? stageFilter : "documents";
+    setRubricRunning(true);
+    setRubricMessage(null);
+
+    try {
+      const response = await fetch("/api/applications/rubric-evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cycleId: cycleFilter,
+          stageCode: targetStage,
+          trigger: "manual",
+        }),
+      });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(
+          typeof body?.userMessage === "string"
+            ? body.userMessage
+            : "No se pudo ejecutar la rúbrica automática.",
+        );
+      }
+
+      setRubricMessage(
+        `${body.result.evaluated} evaluadas: ${body.result.outcomes.eligible} elegibles, ${body.result.outcomes.not_eligible} no elegibles, ${body.result.outcomes.needs_review} a revisión.`,
+      );
+      setFetchTrigger((current) => current + 1);
+    } catch (error) {
+      setRubricMessage(error instanceof Error ? error.message : "Error ejecutando la rúbrica.");
+    } finally {
+      setRubricRunning(false);
+    }
+  }, [cycleFilter, stageFilter]);
+
   /* ---- Derived ---- */
   const visibleCycleName =
     cycleFilter === "all"
@@ -433,6 +491,15 @@ export function AdminCandidatesDashboard({
             >
               Exportar CSV
             </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void handleRunRubric()}
+              disabled={rubricRunning || cycleFilter === "all"}
+              title={cycleFilter === "all" ? "Selecciona un proceso para ejecutar." : undefined}
+            >
+              {rubricRunning ? "Ejecutando rúbrica..." : "Ejecutar rúbrica automática"}
+            </button>
           </div>
         </div>
       </div>
@@ -469,6 +536,11 @@ export function AdminCandidatesDashboard({
           </div>
         ) : null}
         <div className="settings-card">
+          {rubricMessage ? (
+            <div className="admin-feedback success" style={{ marginBottom: "12px" }}>
+              {rubricMessage}
+            </div>
+          ) : null}
           {cycleFilter !== "all" ? (
             <div className="admin-chip-row" style={{ marginBottom: "16px" }}>
               <span className="status-pill admin-chip-neutral">
@@ -615,6 +687,7 @@ export function AdminCandidatesDashboard({
                   <th>Region</th>
                   <th>Etapa actual</th>
                   <th>Blockers</th>
+                  <th>Dictamen automático</th>
                   <th>Estado</th>
                   <th
                     onClick={() => handleSort("updated_at")}
@@ -631,7 +704,7 @@ export function AdminCandidatesDashboard({
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="admin-empty-cell">
+                    <td colSpan={8} className="admin-empty-cell">
                       <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
                         Buscando candidatos...
                       </span>
@@ -639,7 +712,7 @@ export function AdminCandidatesDashboard({
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="admin-empty-cell">
+                    <td colSpan={8} className="admin-empty-cell">
                       No hay candidatos para los filtros seleccionados.
                     </td>
                   </tr>
@@ -696,6 +769,11 @@ export function AdminCandidatesDashboard({
                           ) : (
                             "—"
                           )}
+                        </td>
+                        <td>
+                          <span className={getReviewOutcomeClass(row.reviewOutcome)}>
+                            {getReviewOutcomeLabel(row.reviewOutcome)}
+                          </span>
                         </td>
                         <td>
                           <span className={getStatusClass(row.status)}>

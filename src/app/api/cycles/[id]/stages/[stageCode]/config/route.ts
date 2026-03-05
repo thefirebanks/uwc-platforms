@@ -6,6 +6,10 @@ import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 import { partitionConfigRowsById } from "@/lib/server/stage-config-persistence";
+import {
+  eligibilityRubricConfigSchema,
+  parseEligibilityRubricConfig,
+} from "@/lib/rubric/eligibility-rubric";
 import type { Database, Json } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
@@ -55,6 +59,7 @@ const settingsSchema = z.object({
   closeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   previousStageRequirement: z.string().min(1).max(160),
   blockIfPreviousNotMet: z.boolean(),
+  eligibilityRubric: eligibilityRubricConfigSchema.optional(),
 });
 
 const sectionSchema = z.object({
@@ -108,6 +113,7 @@ function parseStageAdminConfig(value: Json | null | undefined) {
       typeof record.blockIfPreviousNotMet === "boolean"
         ? record.blockIfPreviousNotMet
         : null,
+    eligibilityRubric: parseEligibilityRubricConfig(record.eligibilityRubric),
   };
 }
 
@@ -380,6 +386,7 @@ export async function GET(
         closeDate: parsedAdminConfig.closeDate ?? null,
         previousStageRequirement: parsedAdminConfig.previousStageRequirement ?? "none",
         blockIfPreviousNotMet: parsedAdminConfig.blockIfPreviousNotMet ?? false,
+        eligibilityRubric: parsedAdminConfig.eligibilityRubric ?? null,
       },
     });
   }, { operation: "cycles.stage_config.get" });
@@ -433,6 +440,7 @@ export async function PATCH(
           closeDate: parsed.data.settings.closeDate ?? null,
           previousStageRequirement: parsed.data.settings.previousStageRequirement,
           blockIfPreviousNotMet: parsed.data.settings.blockIfPreviousNotMet,
+          eligibilityRubric: parsed.data.settings.eligibilityRubric ?? null,
         }
       : {
           stageName: stageTemplate.stage_label,
@@ -443,6 +451,7 @@ export async function PATCH(
             parsedExistingAdminConfig.previousStageRequirement ?? "none",
           blockIfPreviousNotMet:
             parsedExistingAdminConfig.blockIfPreviousNotMet ?? false,
+          eligibilityRubric: parsedExistingAdminConfig.eligibilityRubric ?? null,
         };
 
     // ── Validate field keys ────────────────────────────────────
@@ -760,6 +769,7 @@ export async function PATCH(
         null,
       previousStageRequirement: incomingSettings.previousStageRequirement,
       blockIfPreviousNotMet: incomingSettings.blockIfPreviousNotMet,
+      eligibilityRubric: (incomingSettings.eligibilityRubric ?? null) as Json,
     };
 
     // ── Read back saved state ──────────────────────────────────
@@ -894,6 +904,8 @@ export async function PATCH(
           savedAdminConfig.previousStageRequirement ?? incomingSettings.previousStageRequirement,
         blockIfPreviousNotMet:
           savedAdminConfig.blockIfPreviousNotMet ?? incomingSettings.blockIfPreviousNotMet,
+        eligibilityRubric:
+          savedAdminConfig.eligibilityRubric ?? incomingSettings.eligibilityRubric ?? null,
       },
     });
   }, { operation: "cycles.stage_config.patch" });
