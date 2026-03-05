@@ -2,48 +2,46 @@
 
 This document defines the admin flows for configuring and operating automated rubric review.
 
-## Flow 1: Start from guided mode with a baseline rubric template
-- Goal: quickly enable first-pass automatic screening with common criteria.
+## Flow 1: Wizard happy path (recommended)
+- Goal: configure Stage 1 rubric in business language without touching JSON.
 - Admin actions:
   - Open stage settings (`Ajustes y Reglas`) in Stage 1.
-  - Keep `Modo guiado` selected.
-  - Click `Usar plantilla básica`.
-  - (Optional) adjust criteria from dropdowns/inputs.
-  - Validate, then save.
+  - Keep `Modo guiado (recomendado)`.
+  - Step 1: map evidence sources (identity files, grades files, name field, grade field, authorization, photo, OCR paths).
+  - Step 2: define policy thresholds (allowed birth years, minimum average).
+  - Step 3: review summary and click `Activar rúbrica de esta etapa`.
+  - Save configuration.
 - Expected result:
-  - Rubric is valid and persisted without writing JSON.
-  - Includes baseline checks for required fields, required files, and recommendations.
+  - `admin_config.rubricBlueprintV1` and compiled `admin_config.eligibilityRubric` persist together.
+  - Runtime rubric is generated deterministically from wizard inputs.
 
-## Flow 1B: Start from UWC assistant preset (recommended)
-- Goal: configure Stage 1 rubric quickly using DB-backed field mappings.
+## Flow 2: Wizard blocking validation
+- Goal: prevent partial/incomplete rubric setup from being activated.
 - Admin actions:
-  - Open `Ajustes y Reglas` and find `Asistente rápido: Rúbrica UWC Perú`.
-  - Confirm mapped field keys (identity files, grades docs, name, average grade, authorization, photo).
-  - Adjust OCR JSON paths and thresholds (birth years, average minimum, recommendation completeness) as needed.
-  - Click `Aplicar rúbrica UWC Perú`, validate, and save.
+  - Leave a required mapping empty (for example applicant name field).
+  - Click `Continuar` in Step 1.
 - Expected result:
-  - A default rubric is generated for UWC Stage 1 criteria with editable rules.
-  - The generated config remains fully modifiable in guided mode or advanced JSON.
+  - Wizard shows `Bloqueos del wizard` with plain-language issues.
+  - Save remains blocked when rubric activation is incomplete.
 
-## Flow 2: Add OCR confidence gating for manual-review fallback
-- Goal: route low-confidence OCR outcomes to humans while keeping deterministic pass/fail checks.
-- Admin actions:
-  - Click `Usar plantilla con OCR`.
-  - Adjust `fileKey` and `minConfidence` if needed.
-  - Save.
-- Expected result:
-  - OCR confidence criteria evaluate to `needs_review` when confidence is low/missing.
-
-## Flow 3: Use advanced JSON only for edge cases
+## Flow 3: Advanced mode for edge cases
 - Goal: keep full flexibility for complex business rules without blocking non-technical usage.
 - Admin actions:
-  - Switch to `JSON avanzado`.
-  - Edit JSON directly in the rubric editor.
-  - Click `Validar rúbrica` before save.
-  - Save only once validation passes.
+  - Switch from wizard to `Advanced`.
+  - Use criterion-level editor (`Modo guiado`) or `JSON avanzado`.
+  - Validate rubric before save.
 - Expected result:
   - Detailed validation feedback for malformed or semantically invalid config.
-  - When JSON is valid, guided mode stays synchronized with that config.
+  - Advanced edits can diverge from wizard.
+
+## Flow 4: Reset advanced divergence to wizard
+- Goal: recover from complex custom edits and return to default rubric authoring.
+- Admin actions:
+  - Make a change in Advanced mode.
+  - Click `Restablecer al wizard`.
+- Expected result:
+  - Wizard becomes active again.
+  - Compiled runtime rubric is regenerated from blueprint draft.
 
 ## Supported advanced rule primitives
 - `ocr_field_in`: validate OCR extracted values against an allowed list.
@@ -52,7 +50,7 @@ This document defines the admin flows for configuring and operating automated ru
 - `file_upload_count_between`: enforce/range-check number of uploaded files across keys.
 - `any_of`: pass criterion when at least one condition matches (supports OR scenarios).
 
-## Flow 4: Prevent invalid rubric configurations
+## Flow 5: Prevent invalid rubric configurations
 - Goal: stop invalid logic from reaching runtime.
 - Guardrails enforced:
   - Enabled rubric must contain at least one criterion.
@@ -62,8 +60,8 @@ This document defines the admin flows for configuring and operating automated ru
 - Expected result:
   - Save is blocked with explicit error messages.
 
-## Flow 5: Run rubric evaluation on demand from candidates dashboard
-- Goal: execute automatic review when admin decides (or after deadline in future automation).
+## Flow 6: Run rubric evaluation on demand from candidates dashboard
+- Goal: execute automatic review when admin decides.
 - Admin actions:
   - Open `/admin/candidates`.
   - Select cycle/stage.
@@ -73,7 +71,7 @@ This document defines the admin flows for configuring and operating automated ru
   - Feedback message shows evaluated counts by outcome.
   - `Dictamen automático` column updates (`Elegible`, `No elegible`, `Revisión manual`).
 
-## Flow 6: Handle stage without rubric safely
+## Flow 7: Handle stage without rubric safely
 - Goal: avoid silent failure.
 - Admin actions:
   - Run rubric in stage with rubric disabled or empty.
@@ -82,6 +80,6 @@ This document defines the admin flows for configuring and operating automated ru
 
 ## Browser test coverage
 - `tests/e2e/admin-rubric-flows.spec.ts`
-  - Flow 1, 3, 4 plus guided criterion authoring via stage settings UI interactions.
-- `tests/e2e/admin-rubric-automation.spec.ts`
-  - Flow 5 and 6 via candidates dashboard execution path.
+  - Wizard happy path, blocking validation, advanced divergence/reset.
+- `tests/e2e/admin-rubric-visual.spec.ts`
+  - Wizard Step 1/2/3 visual states, blocking state, candidates execution feedback screenshot.

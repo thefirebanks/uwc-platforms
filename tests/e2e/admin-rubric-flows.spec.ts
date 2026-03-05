@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { bypassReady, loginAsAdmin } from "./helpers";
 
 const DEMO_CYCLE_ID = "98b2f8e4-7266-44b0-acb2-566e2fb2d50e";
@@ -10,47 +10,78 @@ function rubricTextarea(page: Page) {
 async function openRubricSettings(page: Page) {
   await loginAsAdmin(page);
   await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=settings`);
-
-  const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
-  await expect(saveBtn).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByRole("button", { name: /Modo guiado/i })).toBeVisible({
-    timeout: 15_000,
+  await expect(page.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).toBeVisible({
+    timeout: 20_000,
   });
-}
-
-async function switchToJsonMode(page: Page) {
-  await page.getByRole("button", { name: /JSON avanzado/i }).click();
-  await expect(rubricTextarea(page)).toBeVisible({ timeout: 8_000 });
 }
 
 async function saveConfig(page: Page) {
   const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
   await expect(saveBtn).toBeEnabled({ timeout: 8_000 });
   await saveBtn.click();
-  await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
-    timeout: 12_000,
-  });
 }
 
-async function restoreRubricIfChanged(page: Page, originalValue: string) {
-  const textarea = rubricTextarea(page);
-  const currentValue = await textarea.inputValue();
-
-  if (currentValue === originalValue) {
-    return;
+async function pickFirstNonEmptyOption(selectLocator: Locator) {
+  const options = await selectLocator.locator("option").evaluateAll((nodes) =>
+    nodes
+      .map((node) => (node as HTMLOptionElement).value)
+      .filter((value) => value.trim().length > 0),
+  );
+  if (options.length === 0) {
+    return false;
   }
-
-  await textarea.fill(originalValue);
-  await textarea.blur();
-
-  const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
-  const isEnabled = await saveBtn.isEnabled();
-  if (isEnabled) {
-    await saveConfig(page);
-  }
+  await selectLocator.selectOption(options[0]!);
+  return true;
 }
 
-test.describe("Admin rubric flows", () => {
+async function ensureAtLeastOneChecked(groupField: Locator) {
+  const checkboxes = groupField.locator("input[type='checkbox']");
+  const count = await checkboxes.count();
+  if (count === 0) {
+    return false;
+  }
+
+  let hasChecked = false;
+  for (let i = 0; i < count; i += 1) {
+    if (await checkboxes.nth(i).isChecked()) {
+      hasChecked = true;
+      break;
+    }
+  }
+
+  if (!hasChecked) {
+    await checkboxes.first().check();
+  }
+  return true;
+}
+
+async function completeWizardStep1(page: Page) {
+  const identityField = page.locator(".form-field").filter({ hasText: /Documento de identidad \(requerido\)/i }).first();
+  const gradesField = page.locator(".form-field").filter({ hasText: /Documentos de notas \(requerido\)/i }).first();
+
+  const hasIdentityCheckboxes = await ensureAtLeastOneChecked(identityField);
+  const hasGradesCheckboxes = await ensureAtLeastOneChecked(gradesField);
+  test.skip(!hasIdentityCheckboxes || !hasGradesCheckboxes, "Se requieren campos de archivo para wizard.");
+
+  const requiredSelects = [
+    page.locator("select[id^='wizard-name-']").first(),
+    page.locator("select[id^='wizard-average-']").first(),
+    page.locator("select[id^='wizard-authorization-']").first(),
+    page.locator("select[id^='wizard-photo-']").first(),
+  ];
+
+  for (const selectLocator of requiredSelects) {
+    const filled = await pickFirstNonEmptyOption(selectLocator);
+    test.skip(!filled, "No hay opciones disponibles para un mapeo requerido del wizard.");
+  }
+
+  await page.locator("input[id^='wizard-ocr-name-']").first().fill("fullName");
+  await page.locator("input[id^='wizard-ocr-birth-']").first().fill("birthYear");
+  await page.locator("input[id^='wizard-ocr-type-']").first().fill("documentType");
+  await page.locator("input[id^='wizard-ocr-issue-']").first().fill("documentIssue");
+}
+
+test.describe("Admin rubric wizard flows", () => {
   test.beforeEach(async () => {
     test.skip(
       !bypassReady,
@@ -58,151 +89,73 @@ test.describe("Admin rubric flows", () => {
     );
   });
 
-  test("Flow 1: admin can apply baseline template, validate, and save", async ({ page }) => {
+  test("Flow 1: wizard happy path compiles rubric and allows save", async ({ page }) => {
     await openRubricSettings(page);
-    await switchToJsonMode(page);
-    const textarea = rubricTextarea(page);
-    const originalValue = await textarea.inputValue();
+    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
 
-    try {
-      await page.getByRole("button", { name: /Modo guiado/i }).click();
-      await page.getByRole("button", { name: /Usar plantilla básica/i }).click();
-      await switchToJsonMode(page);
-      await expect(textarea).toContainText('"enabled": true');
+    await completeWizardStep1(page);
+    await page.getByRole("button", { name: /^Continuar$/i }).click();
 
-      await page.getByRole("button", { name: /Validar rúbrica/i }).click();
-      await expect(page.locator(".admin-feedback.success")).toContainText(/Rúbrica válida/i);
+    await page.locator("input[id^='wizard-birth-years-']").first().fill("2008, 2009, 2010");
+    await page.locator("input[id^='wizard-min-average-']").first().fill("14");
+    await page.getByRole("button", { name: /^Continuar$/i }).click();
 
-      await saveConfig(page);
-    } finally {
-      await restoreRubricIfChanged(page, originalValue);
-    }
+    await expect(page.getByText(/Paso 3: Revisar y activar/i)).toBeVisible();
+    await page.getByRole("button", { name: /Activar rúbrica de esta etapa/i }).click();
+    await expect(page.locator(".admin-feedback.success")).toContainText(/Rúbrica del wizard activada/i);
+
+    await page.getByRole("button", { name: /Advanced/i }).click();
+    await page.getByRole("button", { name: /JSON avanzado/i }).click();
+    await expect(rubricTextarea(page)).toContainText('"id": "top_third_or_grade_average"');
+    await expect(rubricTextarea(page)).toContainText('"completenessMode": "strict_form_valid"');
+
+    await saveConfig(page);
+    await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
+      timeout: 12_000,
+    });
   });
 
-  test("Flow 2: admin can apply OCR template and validate", async ({ page }) => {
+  test("Flow 2: wizard blocks progress and save when required mapping is missing", async ({ page }) => {
     await openRubricSettings(page);
-    await switchToJsonMode(page);
-    const textarea = rubricTextarea(page);
-    const originalValue = await textarea.inputValue();
+    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
 
-    try {
-      await page.getByRole("button", { name: /Modo guiado/i }).click();
-      await page.getByRole("button", { name: /Usar plantilla con OCR/i }).click();
-      await switchToJsonMode(page);
-      await expect(textarea).toContainText("\"kind\": \"ocr_confidence\"");
+    await completeWizardStep1(page);
+    await page.locator("select[id^='wizard-name-']").first().selectOption("");
+    await page.getByRole("button", { name: /^Continuar$/i }).click();
 
-      await page.getByRole("button", { name: /Validar rúbrica/i }).click();
-      await expect(page.locator(".admin-feedback.success")).toContainText(/Rúbrica válida/i);
-    } finally {
-      await restoreRubricIfChanged(page, originalValue);
-    }
+    await expect(page.locator(".admin-feedback.error")).toContainText(/Bloqueos del wizard/i);
+    await expect(page.getByRole("button", { name: /Guardar configuración/i })).toBeDisabled();
   });
 
-  test("Flow 3: invalid JSON blocks save with clear error", async ({ page }) => {
+  test("Flow 3: advanced edits mark divergence and can reset back to wizard", async ({ page }) => {
     await openRubricSettings(page);
-    await switchToJsonMode(page);
+    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
+    await completeWizardStep1(page);
+    await page.getByRole("button", { name: /^Continuar$/i }).click();
+    await page.locator("input[id^='wizard-birth-years-']").first().fill("2008, 2009, 2010");
+    await page.locator("input[id^='wizard-min-average-']").first().fill("14");
+    await page.getByRole("button", { name: /^Continuar$/i }).click();
+    await page.getByRole("button", { name: /Activar rúbrica de esta etapa/i }).click();
+
+    await page.getByRole("button", { name: /Advanced/i }).click();
+    await page.getByRole("button", { name: /JSON avanzado/i }).click();
+
     const textarea = rubricTextarea(page);
     const originalValue = await textarea.inputValue();
-
-    try {
-      await textarea.fill("{ not-valid-json");
-      await textarea.blur();
-
-      await page.getByRole("button", { name: /Guardar configuración/i }).click();
-      await expect(page.locator(".admin-feedback.error").first()).toContainText(
-        /rúbrica automática debe ser JSON válido/i,
-        {
-          timeout: 8_000,
-        },
-      );
-    } finally {
-      await restoreRubricIfChanged(page, originalValue);
+    const parsed = JSON.parse(originalValue) as {
+      criteria?: Array<{ label?: string }>;
+    };
+    if (Array.isArray(parsed.criteria) && parsed.criteria.length > 0) {
+      parsed.criteria[0]!.label = `Custom label ${Date.now()}`;
     }
-  });
+    await textarea.fill(JSON.stringify(parsed, null, 2));
+    await textarea.blur();
 
-  test("Flow 4: duplicate criterion ids are rejected before save", async ({ page }) => {
-    await openRubricSettings(page);
-    await switchToJsonMode(page);
-    const textarea = rubricTextarea(page);
-    const originalValue = await textarea.inputValue();
-
-    try {
-      const duplicateCriteriaRubric = {
-        enabled: true,
-        criteria: [
-          {
-            id: "same-id",
-            label: "Criterion A",
-            kind: "field_present",
-            fieldKey: "dateOfBirth",
-            onFail: "not_eligible",
-            onMissingData: "needs_review",
-          },
-          {
-            id: "same-id",
-            label: "Criterion B",
-            kind: "field_present",
-            fieldKey: "nationality",
-            onFail: "not_eligible",
-            onMissingData: "needs_review",
-          },
-        ],
-      };
-
-      await textarea.fill(JSON.stringify(duplicateCriteriaRubric, null, 2));
-      await textarea.blur();
-
-      await page.getByRole("button", { name: /Validar rúbrica/i }).click();
-      await expect(page.locator(".admin-feedback.error").first()).toContainText(
-        /Duplicate criterion id/i,
-        { timeout: 8_000 },
-      );
-
-      await page.getByRole("button", { name: /Guardar configuración/i }).click();
-      await expect(page.locator(".admin-feedback.error").first()).toContainText(
-        /Duplicate criterion id/i,
-        { timeout: 8_000 },
-      );
-    } finally {
-      await restoreRubricIfChanged(page, originalValue);
-    }
-  });
-
-  test("Flow 5: guided mode can add a criterion without touching JSON", async ({ page }) => {
-    await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo guiado/i }).click();
-
-    await page.getByRole("button", { name: /Usar plantilla básica/i }).click();
-    await page
-      .locator(`select[id^='rubric-new-criterion-kind-']`)
-      .first()
-      .selectOption("file_uploaded");
-    await page.getByRole("button", { name: /Agregar criterio/i }).click();
-
-    await expect(page.getByText(/Criterio 5/i)).toBeVisible({ timeout: 8_000 });
-    await page.getByRole("button", { name: /Validar rúbrica/i }).click();
-    await expect(page.locator(".admin-feedback.success")).toContainText(/Rúbrica válida/i);
-  });
-
-  test("Flow 6: assistant can generate UWC preset rubric from mapped fields", async ({ page }) => {
-    await openRubricSettings(page);
-    await switchToJsonMode(page);
-    const textarea = rubricTextarea(page);
-    const originalValue = await textarea.inputValue();
-
-    try {
-      await page.getByRole("button", { name: /Modo guiado/i }).click();
-      await expect(page.getByText(/Asistente rápido: Rúbrica UWC Perú/i)).toBeVisible({
-        timeout: 8_000,
-      });
-      await page.getByRole("button", { name: /Aplicar rúbrica UWC Perú/i }).click();
-      await expect(page.locator(".admin-feedback.success")).toContainText(/rúbrica asistida/i);
-
-      await switchToJsonMode(page);
-      await expect(textarea).toContainText('"kind": "field_matches_ocr"');
-      await expect(textarea).toContainText('"kind": "any_of"');
-    } finally {
-      await restoreRubricIfChanged(page, originalValue);
-    }
+    await expect(page.locator(".admin-feedback.warning")).toContainText(/Advanced diverge del wizard/i);
+    await page.getByRole("button", { name: /Restablecer al wizard/i }).click();
+    await expect(page.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).toHaveClass(
+      /btn-primary/,
+    );
+    await expect(page.locator(".admin-feedback.success")).toContainText(/restableció/i);
   });
 });

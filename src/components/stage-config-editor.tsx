@@ -16,6 +16,8 @@ import type {
   CycleStageTemplate,
   EligibilityRubricConfig,
   EligibilityRubricCriterion,
+  RubricBlueprintV1,
+  RubricMeta,
   StageFieldAiParserConfig,
   StageAutomationTemplate,
   StageCode,
@@ -35,8 +37,12 @@ import {
   MODEL_REGISTRY,
 } from "@/lib/server/ocr";
 import {
-  buildUwcStageOneRubricFromDraft,
+  buildUwcStageOneRubricFromBlueprint,
+  createRubricMeta,
   guessUwcStageOnePresetDraft,
+  parseRubricBlueprintV1,
+  tryHydrateBlueprintFromRubric,
+  validateUwcBlueprintDraft,
   type UwcStageOnePresetDraft,
 } from "@/lib/rubric/default-rubric-presets";
 import {
@@ -73,9 +79,13 @@ type StageEditorSettingsDraft = {
   blockIfPreviousNotMet: boolean;
   ocrPromptTemplate: string;
   eligibilityRubricJson: string;
+  rubricBlueprintV1Json: string;
+  rubricMetaJson: string;
 };
 
 type RubricEditorMode = "guided" | "json";
+type RubricAuthoringTab = "wizard" | "advanced";
+type RubricWizardStep = 1 | 2 | 3;
 
 type StageAdminConfigPayload = {
   stageName?: string;
@@ -85,6 +95,8 @@ type StageAdminConfigPayload = {
   previousStageRequirement?: string;
   blockIfPreviousNotMet?: boolean;
   eligibilityRubric?: EligibilityRubricConfig | null;
+  rubricBlueprintV1?: RubricBlueprintV1 | null;
+  rubricMeta?: RubricMeta | null;
 };
 
 type FieldAiParserDraft = StageFieldAiParserConfig & {
@@ -170,6 +182,34 @@ function parseCommaSeparatedNumbers(raw: string) {
   }
 
   return values;
+}
+
+type RubricWizardValidation = {
+  step1Errors: string[];
+  step2Errors: string[];
+  blueprint: RubricBlueprintV1 | null;
+  compilerErrors: string[];
+};
+
+function presetDraftFromBlueprint(blueprint: RubricBlueprintV1): UwcStageOnePresetDraft {
+  return {
+    idDocumentFileKeys: blueprint.mappings.idDocumentFileKeys,
+    gradesDocumentFileKeys: blueprint.mappings.gradesDocumentFileKeys,
+    topThirdProofFileKey: blueprint.mappings.topThirdProofFileKey,
+    applicantNameFieldKey: blueprint.mappings.applicantNameFieldKey,
+    averageGradeFieldKey: blueprint.mappings.averageGradeFieldKey,
+    signedAuthorizationFileKey: blueprint.mappings.signedAuthorizationFileKey,
+    applicantPhotoFileKey: blueprint.mappings.applicantPhotoFileKey,
+    ocrNamePath: blueprint.mappings.ocrPaths.idName,
+    ocrBirthYearPath: blueprint.mappings.ocrPaths.birthYear,
+    ocrDocumentTypePath: blueprint.mappings.ocrPaths.documentType,
+    ocrDocumentIssuePath: blueprint.mappings.ocrPaths.documentIssue,
+    allowedBirthYears: blueprint.policy.allowedBirthYears,
+    minAverageGrade: blueprint.policy.minAverageGrade,
+    recommendationRoles: ["mentor", "friend"],
+    minRecommendationResponses: 0,
+    limitGradesDocumentToSingleUpload: blueprint.policy.gradesCombinationRule === "single_or_review",
+  };
 }
 
 function createUniqueCriterionId(
@@ -634,7 +674,36 @@ function serializeSettingsDraft(settings: StageEditorSettingsDraft) {
     blockIfPreviousNotMet: settings.blockIfPreviousNotMet,
     ocrPromptTemplate: settings.ocrPromptTemplate?.trim() ?? "",
     eligibilityRubricJson: settings.eligibilityRubricJson.trim(),
+    rubricBlueprintV1Json: settings.rubricBlueprintV1Json.trim(),
+    rubricMetaJson: settings.rubricMetaJson.trim(),
   });
+}
+
+function parseRubricMeta(value: unknown): RubricMeta | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (
+    value.presetId === "uwc_stage1" &&
+    typeof value.compiledAt === "string" &&
+    (typeof value.compiledBy === "string" || value.compiledBy === null || value.compiledBy === undefined) &&
+    (value.source === "wizard" || value.source === "advanced") &&
+    value.version === 1
+  ) {
+    return {
+      presetId: "uwc_stage1",
+      compiledAt: value.compiledAt,
+      compiledBy:
+        typeof value.compiledBy === "string"
+          ? value.compiledBy
+          : null,
+      source: value.source,
+      version: 1,
+    };
+  }
+
+  return null;
 }
 
 function parseStageAdminConfig(value: unknown): StageAdminConfigPayload {
@@ -664,6 +733,8 @@ function parseStageAdminConfig(value: unknown): StageAdminConfigPayload {
         ? value.blockIfPreviousNotMet
         : undefined,
     eligibilityRubric: parseEligibilityRubricConfig(value.eligibilityRubric),
+    rubricBlueprintV1: parseRubricBlueprintV1(value.rubricBlueprintV1),
+    rubricMeta: parseRubricMeta(value.rubricMeta),
   };
 }
 
@@ -1158,16 +1229,51 @@ export function StageConfigEditor({
       return false;
     }
 
-    const rubricValidation = validateRubricJsonText(settingsEligibilityRubricJson);
-    if (!rubricValidation.success) {
-      setSettingsEligibilityRubricErrors(rubricValidation.errors);
-      setError({
-        message: `La rúbrica automática no es válida:\n${rubricValidation.errors.slice(0, 6).join("\n")}`,
-      });
-      setIsSaving(false);
-      return false;
+    let parsedEligibilityRubric: EligibilityRubricConfig;
+    let nextRubricBlueprintForSave: RubricBlueprintV1 | null = settingsRubricBlueprint;
+    let nextRubricMetaForSave: RubricMeta | null = settingsRubricMeta;
+
+    const shouldCompileWizardRubric =
+      rubricAuthoringTab === "wizard" &&
+      (settingsEligibilityRubricDraft.enabled ||
+        settingsRubricMeta?.source === "wizard" ||
+        settingsRubricBlueprint !== null);
+
+    if (shouldCompileWizardRubric) {
+      const compiled = compileRubricFromWizard({ silent: true });
+      if (!compiled) {
+        setError({
+          message: `Completa los datos obligatorios del wizard antes de guardar:\n${rubricWizardValidation.step1Errors
+            .concat(rubricWizardValidation.step2Errors)
+            .concat(rubricWizardValidation.compilerErrors)
+            .slice(0, 6)
+            .join("\n")}`,
+        });
+        setIsSaving(false);
+        return false;
+      }
+      parsedEligibilityRubric = compiled.rubric;
+      nextRubricBlueprintForSave = compiled.blueprint;
+      nextRubricMetaForSave = createRubricMeta({ source: "wizard" });
+      setSettingsEligibilityRubricErrors([]);
+    } else {
+      const rubricValidation = validateRubricJsonText(settingsEligibilityRubricJson);
+      if (!rubricValidation.success) {
+        setSettingsEligibilityRubricErrors(rubricValidation.errors);
+        setError({
+          message: `La rúbrica automática no es válida:\n${rubricValidation.errors
+            .slice(0, 6)
+            .join("\n")}`,
+        });
+        setIsSaving(false);
+        return false;
+      }
+      parsedEligibilityRubric = rubricValidation.data;
+      nextRubricMetaForSave =
+        settingsRubricMeta?.source === "wizard" && !rubricAdvancedCustomized
+          ? settingsRubricMeta
+          : createRubricMeta({ source: "advanced" });
     }
-    const parsedEligibilityRubric: EligibilityRubricConfig = rubricValidation.data;
 
     try {
       const response = await fetch(`/api/cycles/${cycleId}/stages/${stageId}/config`, {
@@ -1213,6 +1319,8 @@ export function StageConfigEditor({
             previousStageRequirement,
             blockIfPreviousNotMet,
             eligibilityRubric: parsedEligibilityRubric,
+            rubricBlueprintV1: nextRubricBlueprintForSave,
+            rubricMeta: nextRubricMetaForSave,
           },
         }),
       });
@@ -1232,6 +1340,9 @@ export function StageConfigEditor({
       const nextSavedRubric =
         parseEligibilityRubricConfig(body.settings?.eligibilityRubric) ??
         parsedEligibilityRubric;
+      const nextSavedBlueprint =
+        parseRubricBlueprintV1(body.settings?.rubricBlueprintV1) ?? nextRubricBlueprintForSave;
+      const nextSavedMeta = parseRubricMeta(body.settings?.rubricMeta) ?? nextRubricMetaForSave;
       const nextSavedSettings = {
         stageName:
           typeof body.settings?.stageName === "string"
@@ -1258,6 +1369,8 @@ export function StageConfigEditor({
             ? body.ocrPromptTemplate
             : nextSavedOcrPrompt,
         eligibilityRubricJson: JSON.stringify(nextSavedRubric, null, 2),
+        rubricBlueprintV1Json: JSON.stringify(nextSavedBlueprint ?? null, null, 2),
+        rubricMetaJson: JSON.stringify(nextSavedMeta ?? null, null, 2),
       } satisfies StageEditorSettingsDraft;
 
       setSections(nextSavedSections);
@@ -1272,6 +1385,9 @@ export function StageConfigEditor({
       setBlockIfPreviousNotMet(nextSavedSettings.blockIfPreviousNotMet);
       setSettingsEligibilityRubricDraft(nextSavedRubric);
       setSettingsEligibilityRubricJson(nextSavedSettings.eligibilityRubricJson);
+      setSettingsRubricBlueprint(nextSavedBlueprint);
+      setSettingsRubricMeta(nextSavedMeta);
+      setRubricAuthoringTab(nextSavedMeta?.source === "advanced" ? "advanced" : "wizard");
       setSettingsEligibilityRubricErrors([]);
       savedSectionsSnapshotRef.current = serializeSections(nextSavedSections);
       savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
@@ -1296,6 +1412,17 @@ export function StageConfigEditor({
   const parsedStageAdminConfig = parsedStageAdminConfigRef.current;
   const initialEligibilityRubricConfig =
     parsedStageAdminConfig.eligibilityRubric ?? getDefaultEligibilityRubricConfig();
+  const hydratedBlueprintFromRubric = parsedStageAdminConfig.eligibilityRubric
+    ? tryHydrateBlueprintFromRubric(parsedStageAdminConfig.eligibilityRubric)
+    : null;
+  const initialRubricBlueprint =
+    parsedStageAdminConfig.rubricBlueprintV1 ?? hydratedBlueprintFromRubric;
+  const initialRubricMeta =
+    parsedStageAdminConfig.rubricMeta ??
+    (initialRubricBlueprint ? createRubricMeta({ source: "wizard" }) : null);
+  const initialWizardDraft = initialRubricBlueprint
+    ? presetDraftFromBlueprint(initialRubricBlueprint)
+    : guessUwcStageOnePresetDraft(initialFields);
   const [settingsStageName, setSettingsStageName] = useState(
     parsedStageAdminConfig.stageName ?? displayStageLabel,
   );
@@ -1317,6 +1444,14 @@ export function StageConfigEditor({
   const [blockIfPreviousNotMet, setBlockIfPreviousNotMet] = useState(
     parsedStageAdminConfig.blockIfPreviousNotMet ?? documentsRouteRepresentsMainForm,
   );
+  const [rubricAuthoringTab, setRubricAuthoringTab] = useState<RubricAuthoringTab>(
+    parsedStageAdminConfig.eligibilityRubric && !initialRubricBlueprint ? "advanced" : "wizard",
+  );
+  const [rubricWizardStep, setRubricWizardStep] = useState<RubricWizardStep>(1);
+  const [rubricWizardBlockingErrors, setRubricWizardBlockingErrors] = useState<string[]>([]);
+  const [rubricAdvancedCustomized, setRubricAdvancedCustomized] = useState(
+    Boolean(parsedStageAdminConfig.eligibilityRubric && !initialRubricBlueprint),
+  );
   const [rubricEditorMode, setRubricEditorMode] = useState<RubricEditorMode>("guided");
   const [newRubricCriterionKind, setNewRubricCriterionKind] =
     useState<EligibilityRubricCriterion["kind"]>("field_present");
@@ -1328,12 +1463,16 @@ export function StageConfigEditor({
   const [settingsEligibilityRubricErrors, setSettingsEligibilityRubricErrors] = useState<string[]>(
     [],
   );
+  const [settingsRubricBlueprint, setSettingsRubricBlueprint] = useState<RubricBlueprintV1 | null>(
+    initialRubricBlueprint,
+  );
+  const [settingsRubricMeta, setSettingsRubricMeta] = useState<RubricMeta | null>(initialRubricMeta);
   const suggestedUwcPresetDraft = useMemo(
     () => guessUwcStageOnePresetDraft(orderedFields),
     [orderedFields],
   );
   const [uwcPresetDraft, setUwcPresetDraft] = useState<UwcStageOnePresetDraft>(
-    suggestedUwcPresetDraft,
+    initialWizardDraft,
   );
   const rubricFieldOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -1372,12 +1511,188 @@ export function StageConfigEditor({
   const defaultRubricFileKey = rubricFileFieldOptions[0]?.value ?? "file_key";
   const defaultRubricNumberFieldKey =
     rubricNumberFieldOptions[0]?.value ?? defaultRubricFieldKey;
+  const rubricFieldKeySet = useMemo(
+    () => new Set(rubricFieldOptions.map((option) => option.value)),
+    [rubricFieldOptions],
+  );
+  const rubricFileFieldKeySet = useMemo(
+    () => new Set(rubricFileFieldOptions.map((option) => option.value)),
+    [rubricFileFieldOptions],
+  );
+  const rubricNumberFieldKeySet = useMemo(
+    () => new Set(rubricNumberFieldOptions.map((option) => option.value)),
+    [rubricNumberFieldOptions],
+  );
 
-  function syncGuidedRubricDraft(nextDraft: EligibilityRubricConfig) {
+  const rubricWizardValidation = useMemo<RubricWizardValidation>(() => {
+    const step1Errors: string[] = [];
+    const step2Errors: string[] = [];
+
+    if (uwcPresetDraft.idDocumentFileKeys.length === 0) {
+      step1Errors.push("Selecciona al menos un campo de archivo para identidad.");
+    }
+    if (uwcPresetDraft.idDocumentFileKeys.some((key) => !rubricFileFieldKeySet.has(key))) {
+      step1Errors.push("Uno o más campos de identidad ya no existen en el formulario.");
+    }
+
+    if (uwcPresetDraft.gradesDocumentFileKeys.length === 0) {
+      step1Errors.push("Selecciona al menos un campo de archivo para notas.");
+    }
+    if (uwcPresetDraft.gradesDocumentFileKeys.some((key) => !rubricFileFieldKeySet.has(key))) {
+      step1Errors.push("Uno o más campos de notas ya no existen en el formulario.");
+    }
+
+    if (!uwcPresetDraft.applicantNameFieldKey) {
+      step1Errors.push("Selecciona el campo de nombre del postulante.");
+    } else if (!rubricFieldKeySet.has(uwcPresetDraft.applicantNameFieldKey)) {
+      step1Errors.push("El campo de nombre seleccionado ya no existe.");
+    }
+
+    if (!uwcPresetDraft.averageGradeFieldKey) {
+      step1Errors.push("Selecciona el campo de promedio de notas.");
+    } else if (!rubricNumberFieldKeySet.has(uwcPresetDraft.averageGradeFieldKey)) {
+      step1Errors.push("El campo de promedio debe ser numérico y existir en el formulario.");
+    }
+
+    if (!uwcPresetDraft.signedAuthorizationFileKey) {
+      step1Errors.push("Selecciona el campo de autorización firmada.");
+    } else if (!rubricFileFieldKeySet.has(uwcPresetDraft.signedAuthorizationFileKey)) {
+      step1Errors.push("El campo de autorización seleccionado ya no existe.");
+    }
+
+    if (!uwcPresetDraft.applicantPhotoFileKey) {
+      step1Errors.push("Selecciona el campo de foto del postulante.");
+    } else if (!rubricFileFieldKeySet.has(uwcPresetDraft.applicantPhotoFileKey)) {
+      step1Errors.push("El campo de foto seleccionado ya no existe.");
+    }
+
+    if (
+      uwcPresetDraft.topThirdProofFileKey &&
+      !rubricFileFieldKeySet.has(uwcPresetDraft.topThirdProofFileKey)
+    ) {
+      step1Errors.push("El campo opcional de tercio superior ya no existe.");
+    }
+
+    if (!uwcPresetDraft.ocrNamePath.trim()) {
+      step1Errors.push("Define el path OCR para nombre del documento.");
+    }
+    if (!uwcPresetDraft.ocrBirthYearPath.trim()) {
+      step1Errors.push("Define el path OCR para año de nacimiento.");
+    }
+    if (!uwcPresetDraft.ocrDocumentTypePath.trim()) {
+      step1Errors.push("Define el path OCR para tipo de documento.");
+    }
+    if (!uwcPresetDraft.ocrDocumentIssuePath.trim()) {
+      step1Errors.push("Define el path OCR para observaciones del documento.");
+    }
+
+    if (uwcPresetDraft.allowedBirthYears.length === 0) {
+      step2Errors.push("Ingresa al menos un año de nacimiento permitido.");
+    }
+    if (
+      !Number.isFinite(uwcPresetDraft.minAverageGrade) ||
+      uwcPresetDraft.minAverageGrade < 0 ||
+      uwcPresetDraft.minAverageGrade > 20
+    ) {
+      step2Errors.push("El promedio mínimo debe estar entre 0 y 20.");
+    }
+
+    const parsedBlueprint = validateUwcBlueprintDraft(uwcPresetDraft);
+    if (parsedBlueprint.success) {
+      return {
+        step1Errors,
+        step2Errors,
+        blueprint: parsedBlueprint.data,
+        compilerErrors: [],
+      };
+    }
+
+    const compilerErrors = parsedBlueprint.errors.slice(0, 6);
+    if (step1Errors.length === 0 && step2Errors.length === 0 && compilerErrors.length > 0) {
+      step2Errors.push("La configuración no se pudo compilar. Revisa los datos del wizard.");
+    }
+
+    return {
+      step1Errors,
+      step2Errors,
+      blueprint: null,
+      compilerErrors,
+    };
+  }, [
+    rubricFieldKeySet,
+    rubricFileFieldKeySet,
+    rubricNumberFieldKeySet,
+    uwcPresetDraft,
+  ]);
+
+  function compileRubricFromWizard(options?: { silent?: boolean }) {
+    const blockingErrors = [
+      ...rubricWizardValidation.step1Errors,
+      ...rubricWizardValidation.step2Errors,
+    ];
+    if (!rubricWizardValidation.blueprint || blockingErrors.length > 0) {
+      const fallbackErrors =
+        blockingErrors.length > 0
+          ? blockingErrors
+          : rubricWizardValidation.compilerErrors.length > 0
+            ? rubricWizardValidation.compilerErrors
+            : ["No se pudo compilar la rúbrica desde el wizard."];
+      setRubricWizardBlockingErrors(fallbackErrors);
+      if (!options?.silent) {
+        setError({
+          message: `No se pudo activar la rúbrica del wizard:\n${fallbackErrors
+            .slice(0, 6)
+            .join("\n")}`,
+        });
+      }
+      return null;
+    }
+
+    const compiledRubric = buildUwcStageOneRubricFromBlueprint(rubricWizardValidation.blueprint);
+    syncGuidedRubricDraft(compiledRubric, {
+      source: "wizard",
+      blueprint: rubricWizardValidation.blueprint,
+    });
+    setRubricWizardBlockingErrors([]);
+    setRubricAdvancedCustomized(false);
+    if (!options?.silent) {
+      setError(null);
+      setStatusMessage(
+        "Rúbrica del wizard activada. Guarda configuración para publicarla en esta etapa.",
+      );
+    }
+    return {
+      blueprint: rubricWizardValidation.blueprint,
+      rubric: compiledRubric,
+    };
+  }
+
+  function syncGuidedRubricDraft(
+    nextDraft: EligibilityRubricConfig,
+    options?: {
+      source?: RubricMeta["source"];
+      blueprint?: RubricBlueprintV1 | null;
+      markAdvancedCustomized?: boolean;
+    },
+  ) {
     setSettingsEligibilityRubricDraft(nextDraft);
     setSettingsEligibilityRubricJson(JSON.stringify(nextDraft, null, 2));
     const validation = validateEligibilityRubricConfig(nextDraft);
     setSettingsEligibilityRubricErrors(validation.success ? [] : validation.errors);
+
+    if (options?.blueprint !== undefined) {
+      setSettingsRubricBlueprint(options.blueprint);
+    }
+    if (options?.source) {
+      setSettingsRubricMeta(
+        createRubricMeta({
+          source: options.source,
+        }),
+      );
+    }
+    if (options?.markAdvancedCustomized) {
+      setRubricAdvancedCustomized(true);
+    }
   }
 
   function handleRubricJsonInputChange(nextJson: string) {
@@ -1386,6 +1701,12 @@ export function StageConfigEditor({
     if (validation.success) {
       setSettingsEligibilityRubricDraft(validation.data);
       setSettingsEligibilityRubricErrors([]);
+      setSettingsRubricMeta(
+        createRubricMeta({
+          source: "advanced",
+        }),
+      );
+      setRubricAdvancedCustomized(true);
       return;
     }
     setSettingsEligibilityRubricErrors(validation.errors);
@@ -1402,10 +1723,13 @@ export function StageConfigEditor({
         defaultNumberFieldKey: defaultRubricNumberFieldKey,
       }),
     ];
-    syncGuidedRubricDraft({
-      ...settingsEligibilityRubricDraft,
-      criteria: nextCriteria,
-    });
+    syncGuidedRubricDraft(
+      {
+        ...settingsEligibilityRubricDraft,
+        criteria: nextCriteria,
+      },
+      { source: "advanced", markAdvancedCustomized: true },
+    );
   }
 
   function updateGuidedRubricCriterion(
@@ -1415,20 +1739,26 @@ export function StageConfigEditor({
     const nextCriteria = settingsEligibilityRubricDraft.criteria.map((criterion, index) =>
       index === criterionIndex ? updater(criterion) : criterion,
     );
-    syncGuidedRubricDraft({
-      ...settingsEligibilityRubricDraft,
-      criteria: nextCriteria,
-    });
+    syncGuidedRubricDraft(
+      {
+        ...settingsEligibilityRubricDraft,
+        criteria: nextCriteria,
+      },
+      { source: "advanced", markAdvancedCustomized: true },
+    );
   }
 
   function removeGuidedRubricCriterion(criterionIndex: number) {
     const nextCriteria = settingsEligibilityRubricDraft.criteria.filter(
       (_, index) => index !== criterionIndex,
     );
-    syncGuidedRubricDraft({
-      ...settingsEligibilityRubricDraft,
-      criteria: nextCriteria,
-    });
+    syncGuidedRubricDraft(
+      {
+        ...settingsEligibilityRubricDraft,
+        criteria: nextCriteria,
+      },
+      { source: "advanced", markAdvancedCustomized: true },
+    );
   }
 
   function moveGuidedRubricCriterion(
@@ -1443,15 +1773,21 @@ export function StageConfigEditor({
     const nextCriteria = [...settingsEligibilityRubricDraft.criteria];
     const [moved] = nextCriteria.splice(criterionIndex, 1);
     nextCriteria.splice(targetIndex, 0, moved);
-    syncGuidedRubricDraft({
-      ...settingsEligibilityRubricDraft,
-      criteria: nextCriteria,
-    });
+    syncGuidedRubricDraft(
+      {
+        ...settingsEligibilityRubricDraft,
+        criteria: nextCriteria,
+      },
+      { source: "advanced", markAdvancedCustomized: true },
+    );
   }
 
   function applyRubricTemplate(template: EligibilityRubricConfig, statusMessage: string) {
     setRubricEditorMode("guided");
-    syncGuidedRubricDraft(template);
+    syncGuidedRubricDraft(template, {
+      source: "advanced",
+      markAdvancedCustomized: true,
+    });
     setError(null);
     setStatusMessage(statusMessage);
   }
@@ -1477,6 +1813,12 @@ export function StageConfigEditor({
       setSettingsEligibilityRubricDraft(validation.data);
       setSettingsEligibilityRubricJson(JSON.stringify(validation.data, null, 2));
       setSettingsEligibilityRubricErrors([]);
+      setSettingsRubricMeta(
+        createRubricMeta({
+          source: "advanced",
+        }),
+      );
+      setRubricAdvancedCustomized(true);
       setError(null);
       setStatusMessage(`Rúbrica válida: ${validation.data.criteria.length} criterio(s).`);
       return;
@@ -1506,13 +1848,43 @@ export function StageConfigEditor({
   }
 
   function applyUwcPresetRubric() {
-    const presetRubric = buildUwcStageOneRubricFromDraft(uwcPresetDraft);
-    syncGuidedRubricDraft(presetRubric);
+    compileRubricFromWizard();
+  }
+
+  function moveToNextWizardStep() {
+    const currentStepErrors =
+      rubricWizardStep === 1
+        ? rubricWizardValidation.step1Errors
+        : rubricWizardStep === 2
+          ? rubricWizardValidation.step2Errors
+          : [];
+
+    if (currentStepErrors.length > 0) {
+      setRubricWizardBlockingErrors(currentStepErrors);
+      return;
+    }
+
+    setRubricWizardBlockingErrors([]);
+    setRubricWizardStep((current) => (current === 1 ? 2 : 3));
+  }
+
+  function moveToPreviousWizardStep() {
+    setRubricWizardBlockingErrors([]);
+    setRubricWizardStep((current) => (current === 3 ? 2 : 1));
+  }
+
+  function resetAdvancedCustomizationToWizard() {
+    const result = compileRubricFromWizard({ silent: true });
+    if (!result) {
+      setError({
+        message: "No se pudo restablecer desde el wizard. Revisa los mapeos obligatorios.",
+      });
+      return;
+    }
+    setRubricAuthoringTab("wizard");
     setRubricEditorMode("guided");
     setError(null);
-    setStatusMessage(
-      "Se aplicó la rúbrica asistida UWC. Revisa los mapeos y guarda configuración.",
-    );
+    setStatusMessage("Se restableció la configuración avanzada al preset del wizard.");
   }
 
   useEffect(() => {
@@ -1531,6 +1903,26 @@ export function StageConfigEditor({
       }),
     );
   }, [cycleId, displayStageLabel, settingsStageName, stageCode, stageId]);
+
+  useEffect(() => {
+    if (rubricAuthoringTab !== "wizard") {
+      return;
+    }
+    if (rubricWizardStep === 1) {
+      setRubricWizardBlockingErrors(rubricWizardValidation.step1Errors);
+      return;
+    }
+    if (rubricWizardStep === 2) {
+      setRubricWizardBlockingErrors(rubricWizardValidation.step2Errors);
+      return;
+    }
+    setRubricWizardBlockingErrors([]);
+  }, [
+    rubricAuthoringTab,
+    rubricWizardStep,
+    rubricWizardValidation.step1Errors,
+    rubricWizardValidation.step2Errors,
+  ]);
   const settingsDraftSnapshot = useMemo(
     () =>
       serializeSettingsDraft({
@@ -1542,6 +1934,8 @@ export function StageConfigEditor({
         blockIfPreviousNotMet,
         ocrPromptTemplate,
         eligibilityRubricJson: settingsEligibilityRubricJson,
+        rubricBlueprintV1Json: JSON.stringify(settingsRubricBlueprint ?? null, null, 2),
+        rubricMetaJson: JSON.stringify(settingsRubricMeta ?? null, null, 2),
       }),
     [
       settingsStageName,
@@ -1552,6 +1946,8 @@ export function StageConfigEditor({
       blockIfPreviousNotMet,
       ocrPromptTemplate,
       settingsEligibilityRubricJson,
+      settingsRubricBlueprint,
+      settingsRubricMeta,
     ],
   );
   if (savedSettingsSnapshotRef.current === null) {
@@ -2824,6 +3220,400 @@ export function StageConfigEditor({
                 </div>
                 <div className="editor-grid">
                   <div className="form-field full">
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
+                      <button
+                        type="button"
+                        className={`btn ${rubricAuthoringTab === "wizard" ? "btn-primary" : "btn-outline"}`}
+                        onClick={() => {
+                          setRubricAuthoringTab("wizard");
+                          setRubricWizardStep(1);
+                        }}
+                      >
+                        Modo guiado (recomendado)
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn ${rubricAuthoringTab === "advanced" ? "btn-primary" : "btn-outline"}`}
+                        onClick={() => setRubricAuthoringTab("advanced")}
+                      >
+                        Advanced
+                      </button>
+                    </div>
+                    <div className="form-hint" style={{ marginBottom: "12px" }}>
+                      El wizard usa lenguaje de negocio y compila la rúbrica automáticamente. Advanced queda
+                      disponible para casos fuera del preset.
+                    </div>
+
+                    {rubricAuthoringTab === "wizard" ? (
+                      <div className="admin-stage-settings-stack">
+                        {rubricAdvancedCustomized ? (
+                          <div className="admin-feedback warning" style={{ marginBottom: "10px" }}>
+                            Esta etapa fue personalizada en Advanced. Puedes volver al wizard y restablecer
+                            el preset cuando quieras.
+                          </div>
+                        ) : null}
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+                          <span className={`btn btn-outline ${rubricWizardStep === 1 ? "btn-primary" : ""}`}>
+                            Paso 1: Evidencia
+                          </span>
+                          <span className={`btn btn-outline ${rubricWizardStep === 2 ? "btn-primary" : ""}`}>
+                            Paso 2: Políticas
+                          </span>
+                          <span className={`btn btn-outline ${rubricWizardStep === 3 ? "btn-primary" : ""}`}>
+                            Paso 3: Resumen
+                          </span>
+                        </div>
+
+                        {rubricWizardStep === 1 ? (
+                          <div className="settings-card" style={{ border: "1px solid var(--maroon-soft)" }}>
+                            <div className="settings-card-header">
+                              <h3>Paso 1: Mapear evidencia</h3>
+                              <p>Configura campos de formulario y rutas OCR.</p>
+                            </div>
+                            <div className="editor-grid">
+                              <div className="form-field full">
+                                <label>Documento de identidad (requerido)</label>
+                                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                                  {rubricFileFieldOptions.length > 0 ? (
+                                    rubricFileFieldOptions.map((option) => (
+                                      <label
+                                        key={`wizard-id-${option.value}`}
+                                        style={{ display: "flex", gap: "6px", alignItems: "center" }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={uwcPresetDraft.idDocumentFileKeys.includes(option.value)}
+                                          onChange={() =>
+                                            togglePresetFileKey("idDocumentFileKeys", option.value)
+                                          }
+                                        />
+                                        {option.label}
+                                      </label>
+                                    ))
+                                  ) : (
+                                    <span className="form-hint">
+                                      Necesitas al menos un campo de tipo archivo para continuar.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="form-field full">
+                                <label>Documentos de notas (requerido)</label>
+                                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                                  {rubricFileFieldOptions.length > 0 ? (
+                                    rubricFileFieldOptions.map((option) => (
+                                      <label
+                                        key={`wizard-grades-${option.value}`}
+                                        style={{ display: "flex", gap: "6px", alignItems: "center" }}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={uwcPresetDraft.gradesDocumentFileKeys.includes(option.value)}
+                                          onChange={() =>
+                                            togglePresetFileKey("gradesDocumentFileKeys", option.value)
+                                          }
+                                        />
+                                        {option.label}
+                                      </label>
+                                    ))
+                                  ) : (
+                                    <span className="form-hint">
+                                      Necesitas al menos un campo de tipo archivo para continuar.
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-name-${stageCode}`}>Nombre postulante (requerido)</label>
+                                <select
+                                  id={`wizard-name-${stageCode}`}
+                                  value={uwcPresetDraft.applicantNameFieldKey ?? ""}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      applicantNameFieldKey: event.target.value || null,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Selecciona un campo</option>
+                                  {rubricFieldOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-average-${stageCode}`}>Promedio manual (requerido)</label>
+                                <select
+                                  id={`wizard-average-${stageCode}`}
+                                  value={uwcPresetDraft.averageGradeFieldKey ?? ""}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      averageGradeFieldKey: event.target.value || null,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Selecciona un campo numérico</option>
+                                  {rubricNumberFieldOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-top-third-${stageCode}`}>Prueba tercio superior (opcional)</label>
+                                <select
+                                  id={`wizard-top-third-${stageCode}`}
+                                  value={uwcPresetDraft.topThirdProofFileKey ?? ""}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      topThirdProofFileKey: event.target.value || null,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Sin archivo dedicado</option>
+                                  {rubricFileFieldOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-authorization-${stageCode}`}>
+                                  Autorización firmada (requerido)
+                                </label>
+                                <select
+                                  id={`wizard-authorization-${stageCode}`}
+                                  value={uwcPresetDraft.signedAuthorizationFileKey ?? ""}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      signedAuthorizationFileKey: event.target.value || null,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Selecciona un campo</option>
+                                  {rubricFileFieldOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-photo-${stageCode}`}>Foto del postulante (requerido)</label>
+                                <select
+                                  id={`wizard-photo-${stageCode}`}
+                                  value={uwcPresetDraft.applicantPhotoFileKey ?? ""}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      applicantPhotoFileKey: event.target.value || null,
+                                    }))
+                                  }
+                                >
+                                  <option value="">Selecciona un campo</option>
+                                  {rubricFileFieldOptions.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-ocr-name-${stageCode}`}>OCR path: nombre</label>
+                                <input
+                                  id={`wizard-ocr-name-${stageCode}`}
+                                  type="text"
+                                  value={uwcPresetDraft.ocrNamePath}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      ocrNamePath: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-ocr-birth-${stageCode}`}>OCR path: año nacimiento</label>
+                                <input
+                                  id={`wizard-ocr-birth-${stageCode}`}
+                                  type="text"
+                                  value={uwcPresetDraft.ocrBirthYearPath}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      ocrBirthYearPath: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-ocr-type-${stageCode}`}>OCR path: tipo documento</label>
+                                <input
+                                  id={`wizard-ocr-type-${stageCode}`}
+                                  type="text"
+                                  value={uwcPresetDraft.ocrDocumentTypePath}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      ocrDocumentTypePath: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-ocr-issue-${stageCode}`}>OCR path: excepción documento</label>
+                                <input
+                                  id={`wizard-ocr-issue-${stageCode}`}
+                                  type="text"
+                                  value={uwcPresetDraft.ocrDocumentIssuePath}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      ocrDocumentIssuePath: event.target.value,
+                                    }))
+                                  }
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {rubricWizardStep === 2 ? (
+                          <div className="settings-card" style={{ border: "1px solid var(--maroon-soft)" }}>
+                            <div className="settings-card-header">
+                              <h3>Paso 2: Definir políticas</h3>
+                              <p>Umbrales y manejo de excepciones para la etapa 1.</p>
+                            </div>
+                            <div className="editor-grid">
+                              <div className="form-field">
+                                <label htmlFor={`wizard-birth-years-${stageCode}`}>
+                                  Años de nacimiento permitidos
+                                </label>
+                                <input
+                                  id={`wizard-birth-years-${stageCode}`}
+                                  type="text"
+                                  value={uwcPresetDraft.allowedBirthYears.join(", ")}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      allowedBirthYears: parseCommaSeparatedNumbers(event.target.value),
+                                    }))
+                                  }
+                                />
+                                <div className="form-hint">Ejemplo: 2008, 2009, 2010</div>
+                              </div>
+                              <div className="form-field">
+                                <label htmlFor={`wizard-min-average-${stageCode}`}>Promedio mínimo (0-20)</label>
+                                <input
+                                  id={`wizard-min-average-${stageCode}`}
+                                  type="number"
+                                  min={0}
+                                  max={20}
+                                  step={0.1}
+                                  value={String(uwcPresetDraft.minAverageGrade)}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      minAverageGrade: Number(event.target.value) || 0,
+                                    }))
+                                  }
+                                />
+                              </div>
+                              <div className="form-field full">
+                                <label>Políticas predeterminadas (esta versión)</label>
+                                <div className="form-hint">
+                                  Recomendaciones: <strong>estrict complete</strong>. Combinación de varios
+                                  certificados de notas: <strong>needs_review</strong>. Excepciones de documento
+                                  de identidad: <strong>needs_review</strong>.
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {rubricWizardStep === 3 ? (
+                          <div className="settings-card" style={{ border: "1px solid var(--maroon-soft)" }}>
+                            <div className="settings-card-header">
+                              <h3>Paso 3: Revisar y activar</h3>
+                              <p>Resumen antes de compilar la rúbrica runtime.</p>
+                            </div>
+                            <div className="admin-stage-settings-stack">
+                              <div className="form-hint">
+                                Criterios compilados: documento de identidad, coincidencia de nombre, año de
+                                nacimiento, documentos de notas, tercio superior o promedio, recomendaciones
+                                completas, autorización firmada y foto.
+                              </div>
+                              <div className="form-hint">
+                                Resultado final: falla crítica a <strong>not_eligible</strong>, evidencia dudosa
+                                o incompleta a <strong>needs_review</strong>, todo correcto a{" "}
+                                <strong>eligible</strong>.
+                              </div>
+                              <div className="form-hint">
+                                Ejecución: <strong>manual</strong> desde el dashboard de candidatos.
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {rubricWizardBlockingErrors.length > 0 ? (
+                          <div className="admin-feedback error">
+                            {`Bloqueos del wizard: ${rubricWizardBlockingErrors
+                              .slice(0, 4)
+                              .join(" | ")}`}
+                          </div>
+                        ) : null}
+
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          <button
+                            type="button"
+                            className="btn btn-outline"
+                            onClick={() => setUwcPresetDraft(suggestedUwcPresetDraft)}
+                          >
+                            Recargar sugerencias desde campos
+                          </button>
+                          {rubricWizardStep > 1 ? (
+                            <button
+                              type="button"
+                              className="btn btn-outline"
+                              onClick={moveToPreviousWizardStep}
+                            >
+                              Volver
+                            </button>
+                          ) : null}
+                          {rubricWizardStep < 3 ? (
+                            <button type="button" className="btn btn-primary" onClick={moveToNextWizardStep}>
+                              Continuar
+                            </button>
+                          ) : (
+                            <button type="button" className="btn btn-primary" onClick={applyUwcPresetRubric}>
+                              Activar rúbrica de esta etapa
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {settingsRubricBlueprint && rubricAdvancedCustomized ? (
+                          <div className="admin-feedback warning" style={{ marginBottom: "10px" }}>
+                            Advanced diverge del wizard. Puedes seguir aquí o restablecer al preset recomendado.
+                            <div style={{ marginTop: "8px" }}>
+                              <button
+                                type="button"
+                                className="btn btn-outline"
+                                onClick={resetAdvancedCustomizationToWizard}
+                              >
+                                Restablecer al wizard
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                     <div className="settings-card" style={{ border: "1px solid var(--maroon-soft)", marginBottom: "14px" }}>
                       <div className="settings-card-header">
                         <h3>Asistente rápido: Rúbrica UWC Perú</h3>
@@ -4197,6 +4987,8 @@ export function StageConfigEditor({
                           <code>recommendations_complete</code> y <code>ocr_confidence</code>. Cada
                           criterio define <code>onFail</code> y <code>onMissingData</code>.
                         </div>
+                      </>
+                    )}
                       </>
                     )}
                     {settingsEligibilityRubricErrors.length > 0 ? (
