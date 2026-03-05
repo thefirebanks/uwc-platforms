@@ -4946,7 +4946,8 @@ export function StageConfigEditor({
                                         />
                                         <div className="form-hint">
                                           Usa condiciones <code>field_present</code>, <code>file_uploaded</code>,{" "}
-                                          <code>number_between</code> u <code>ocr_field_in</code>.
+                                          <code>number_between</code>, <code>ocr_field_in</code>,{" "}
+                                          <code>ocr_field_not_in</code> o <code>field_matches_ocr</code>.
                                         </div>
                                       </div>
                                     ) : null}

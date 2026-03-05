@@ -244,6 +244,51 @@ export function buildUwcStageOneRubricFromBlueprint(
   const allowedYears = uniqueStrings(
     blueprint.policy.allowedBirthYears.map((year) => String(year)),
   );
+  const idDocOcrInConditions = ({
+    jsonPath,
+    allowedValues,
+  }: {
+    jsonPath: string;
+    allowedValues: string[];
+  }) =>
+    idDocKeys.map((fileKey) => ({
+      kind: "ocr_field_in" as const,
+      fileKey,
+      jsonPath,
+      allowedValues,
+      caseSensitive: false,
+    }));
+
+  const idDocOcrNotInConditions = ({
+    jsonPath,
+    disallowedValues,
+  }: {
+    jsonPath: string;
+    disallowedValues: string[];
+  }) =>
+    idDocKeys.map((fileKey) => ({
+      kind: "ocr_field_not_in" as const,
+      fileKey,
+      jsonPath,
+      disallowedValues,
+      caseSensitive: false,
+    }));
+
+  const idDocFieldMatchConditions = ({
+    fieldKey,
+    jsonPath,
+  }: {
+    fieldKey: string;
+    jsonPath: string;
+  }) =>
+    idDocKeys.map((fileKey) => ({
+      kind: "field_matches_ocr" as const,
+      fieldKey,
+      fileKey,
+      jsonPath,
+      caseSensitive: false,
+      normalizeWhitespace: true,
+    }));
 
   const criteria: EligibilityRubricConfig["criteria"] = [
     {
@@ -260,49 +305,48 @@ export function buildUwcStageOneRubricFromBlueprint(
     {
       id: "id_document_type_allowed",
       label: "Tipo de documento de identidad permitido",
-      kind: "ocr_field_in",
-      fileKey: idDocKeys[0] ?? "idDocument",
-      jsonPath: blueprint.mappings.ocrPaths.documentType,
-      allowedValues: ["dni", "pasaporte", "carnet_extranjeria"],
-      caseSensitive: false,
+      kind: "any_of",
+      conditions: idDocOcrInConditions({
+        jsonPath: blueprint.mappings.ocrPaths.documentType,
+        allowedValues: ["dni", "pasaporte", "carnet_extranjeria"],
+      }),
       onFail: "needs_review",
       onMissingData: "needs_review",
     },
     {
       id: "id_document_issue_exceptions",
       label: "Documento de identidad sin excepciones observadas",
-      kind: "ocr_field_not_in",
-      fileKey: idDocKeys[0] ?? "idDocument",
-      jsonPath: blueprint.mappings.ocrPaths.documentIssue,
-      disallowedValues: [
-        "expired",
-        "reniec_certificate_instead_of_dni",
-        "birth_certificate_instead_of_dni",
-      ],
-      caseSensitive: false,
+      kind: "any_of",
+      conditions: idDocOcrNotInConditions({
+        jsonPath: blueprint.mappings.ocrPaths.documentIssue,
+        disallowedValues: [
+          "expired",
+          "reniec_certificate_instead_of_dni",
+          "birth_certificate_instead_of_dni",
+        ],
+      }),
       onFail: "needs_review",
       onMissingData: "needs_review",
     },
     {
       id: "applicant_name_matches_id",
       label: "Nombre del formulario coincide con documento de identidad",
-      kind: "field_matches_ocr",
-      fieldKey: blueprint.mappings.applicantNameFieldKey,
-      fileKey: idDocKeys[0] ?? "idDocument",
-      jsonPath: blueprint.mappings.ocrPaths.idName,
-      caseSensitive: false,
-      normalizeWhitespace: true,
+      kind: "any_of",
+      conditions: idDocFieldMatchConditions({
+        fieldKey: blueprint.mappings.applicantNameFieldKey,
+        jsonPath: blueprint.mappings.ocrPaths.idName,
+      }),
       onFail: "needs_review",
       onMissingData: "needs_review",
     },
     {
       id: "birth_year_allowed",
       label: "Año de nacimiento permitido",
-      kind: "ocr_field_in",
-      fileKey: idDocKeys[0] ?? "idDocument",
-      jsonPath: blueprint.mappings.ocrPaths.birthYear,
-      allowedValues: allowedYears.length > 0 ? allowedYears : ["2008", "2009", "2010"],
-      caseSensitive: false,
+      kind: "any_of",
+      conditions: idDocOcrInConditions({
+        jsonPath: blueprint.mappings.ocrPaths.birthYear,
+        allowedValues: allowedYears.length > 0 ? allowedYears : ["2008", "2009", "2010"],
+      }),
       onFail: "not_eligible",
       onMissingData: "needs_review",
     },
@@ -426,6 +470,70 @@ export function createRubricMeta({
 export function tryHydrateBlueprintFromRubric(
   rubric: EligibilityRubricConfig,
 ): RubricBlueprintV1 | null {
+  const extractOcrInSpecs = (criterion: EligibilityRubricConfig["criteria"][number]) => {
+    if (criterion.kind === "ocr_field_in") {
+      return [
+        {
+          fileKey: criterion.fileKey ?? "",
+          jsonPath: criterion.jsonPath ?? "",
+          allowedValues: criterion.allowedValues ?? [],
+        },
+      ];
+    }
+    if (criterion.kind === "any_of") {
+      return (criterion.conditions ?? [])
+        .filter((condition) => condition.kind === "ocr_field_in")
+        .map((condition) => ({
+          fileKey: condition.fileKey ?? "",
+          jsonPath: condition.jsonPath ?? "",
+          allowedValues: condition.allowedValues ?? [],
+        }));
+    }
+    return [];
+  };
+
+  const extractOcrNotInSpecs = (criterion: EligibilityRubricConfig["criteria"][number]) => {
+    if (criterion.kind === "ocr_field_not_in") {
+      return [
+        {
+          fileKey: criterion.fileKey ?? "",
+          jsonPath: criterion.jsonPath ?? "",
+        },
+      ];
+    }
+    if (criterion.kind === "any_of") {
+      return (criterion.conditions ?? [])
+        .filter((condition) => condition.kind === "ocr_field_not_in")
+        .map((condition) => ({
+          fileKey: condition.fileKey ?? "",
+          jsonPath: condition.jsonPath ?? "",
+        }));
+    }
+    return [];
+  };
+
+  const extractFieldMatchSpecs = (criterion: EligibilityRubricConfig["criteria"][number]) => {
+    if (criterion.kind === "field_matches_ocr") {
+      return [
+        {
+          fieldKey: criterion.fieldKey ?? "",
+          fileKey: criterion.fileKey ?? "",
+          jsonPath: criterion.jsonPath ?? "",
+        },
+      ];
+    }
+    if (criterion.kind === "any_of") {
+      return (criterion.conditions ?? [])
+        .filter((condition) => condition.kind === "field_matches_ocr")
+        .map((condition) => ({
+          fieldKey: condition.fieldKey ?? "",
+          fileKey: condition.fileKey ?? "",
+          jsonPath: condition.jsonPath ?? "",
+        }));
+    }
+    return [];
+  };
+
   const byId = new Map(rubric.criteria.map((criterion) => [criterion.id, criterion] as const));
 
   const idUpload = byId.get("id_document_uploaded");
@@ -458,10 +566,6 @@ export function tryHydrateBlueprintFromRubric(
     idUpload.kind !== "any_of" ||
     gradesUpload.kind !== "any_of" ||
     topThirdOrAverage.kind !== "any_of" ||
-    nameMatch.kind !== "field_matches_ocr" ||
-    birthYear.kind !== "ocr_field_in" ||
-    docType.kind !== "ocr_field_in" ||
-    docIssue.kind !== "ocr_field_not_in" ||
     authorization.kind !== "file_uploaded" ||
     photo.kind !== "file_uploaded" ||
     recommendations.kind !== "recommendations_complete"
@@ -469,7 +573,7 @@ export function tryHydrateBlueprintFromRubric(
     return null;
   }
 
-  const idDocumentFileKeys = (idUpload.conditions ?? [])
+  const idDocumentFileKeysFromUpload = (idUpload.conditions ?? [])
     .filter((condition) => condition.kind === "file_uploaded")
     .map((condition) => condition.fileKey ?? "")
     .filter(Boolean);
@@ -491,7 +595,62 @@ export function tryHydrateBlueprintFromRubric(
     (condition) => condition.kind === "number_between",
   )?.min;
 
-  const parsedBirthYears = (birthYear.allowedValues ?? [])
+  const nameMatchSpecs = extractFieldMatchSpecs(nameMatch);
+  const birthYearSpecs = extractOcrInSpecs(birthYear);
+  const docTypeSpecs = extractOcrInSpecs(docType);
+  const docIssueSpecs = extractOcrNotInSpecs(docIssue);
+
+  if (
+    nameMatchSpecs.length === 0 ||
+    birthYearSpecs.length === 0 ||
+    docTypeSpecs.length === 0 ||
+    docIssueSpecs.length === 0
+  ) {
+    return null;
+  }
+
+  const applicantNameFieldKeys = uniqueStrings(nameMatchSpecs.map((spec) => spec.fieldKey));
+  const namePaths = uniqueStrings(nameMatchSpecs.map((spec) => spec.jsonPath));
+  const birthYearPaths = uniqueStrings(birthYearSpecs.map((spec) => spec.jsonPath));
+  const documentTypePaths = uniqueStrings(docTypeSpecs.map((spec) => spec.jsonPath));
+  const documentIssuePaths = uniqueStrings(docIssueSpecs.map((spec) => spec.jsonPath));
+
+  if (
+    applicantNameFieldKeys.length !== 1 ||
+    namePaths.length !== 1 ||
+    birthYearPaths.length !== 1 ||
+    documentTypePaths.length !== 1 ||
+    documentIssuePaths.length !== 1
+  ) {
+    return null;
+  }
+
+  const idDocumentFileKeysFromOcrCriteria = uniqueStrings([
+    ...nameMatchSpecs.map((spec) => spec.fileKey),
+    ...birthYearSpecs.map((spec) => spec.fileKey),
+    ...docTypeSpecs.map((spec) => spec.fileKey),
+    ...docIssueSpecs.map((spec) => spec.fileKey),
+  ]);
+
+  if (idDocumentFileKeysFromOcrCriteria.length === 0) {
+    return null;
+  }
+
+  if (
+    idDocumentFileKeysFromUpload.length > 0 &&
+    idDocumentFileKeysFromUpload.some((fileKey) => !idDocumentFileKeysFromOcrCriteria.includes(fileKey))
+  ) {
+    return null;
+  }
+
+  const idDocumentFileKeys =
+    idDocumentFileKeysFromUpload.length > 0
+      ? idDocumentFileKeysFromUpload
+      : idDocumentFileKeysFromOcrCriteria;
+
+  const parsedBirthYears = uniqueStrings(
+    birthYearSpecs.flatMap((spec) => spec.allowedValues.map((value) => String(value))),
+  )
     .map((value) => Number(value))
     .filter((value) => Number.isInteger(value));
 
@@ -505,15 +664,15 @@ export function tryHydrateBlueprintFromRubric(
       idDocumentFileKeys,
       gradesDocumentFileKeys,
       topThirdProofFileKey,
-      applicantNameFieldKey: nameMatch.fieldKey ?? "",
+      applicantNameFieldKey: applicantNameFieldKeys[0] ?? "",
       averageGradeFieldKey: averageGradeFieldKey ?? "",
       signedAuthorizationFileKey: authorization.fileKey ?? "",
       applicantPhotoFileKey: photo.fileKey ?? "",
       ocrPaths: {
-        idName: nameMatch.jsonPath ?? "",
-        birthYear: birthYear.jsonPath ?? "",
-        documentType: docType.jsonPath ?? "",
-        documentIssue: docIssue.jsonPath ?? "",
+        idName: namePaths[0] ?? "",
+        birthYear: birthYearPaths[0] ?? "",
+        documentType: documentTypePaths[0] ?? "",
+        documentIssue: documentIssuePaths[0] ?? "",
       },
     },
     policy: {

@@ -127,6 +127,18 @@ describe("validateEligibilityRubricConfig", () => {
           conditions: [
             { kind: "file_uploaded", fileKey: "topThirdProof" },
             { kind: "number_between", fieldKey: "gradeAverage", min: 14 },
+            {
+              kind: "field_matches_ocr",
+              fieldKey: "fullName",
+              fileKey: "passportFile",
+              jsonPath: "fullName",
+            },
+            {
+              kind: "ocr_field_not_in",
+              fileKey: "passportFile",
+              jsonPath: "documentIssue",
+              disallowedValues: ["expired"],
+            },
           ],
         },
       ],

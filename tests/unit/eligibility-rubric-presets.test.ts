@@ -69,8 +69,11 @@ describe("default rubric presets", () => {
 
     expect(rubric.enabled).toBe(true);
     expect(rubric.criteria.length).toBeGreaterThanOrEqual(10);
-    expect(rubric.criteria.some((criterion) => criterion.kind === "field_matches_ocr")).toBe(true);
-    expect(rubric.criteria.some((criterion) => criterion.kind === "any_of")).toBe(true);
+    const nameCriterion = rubric.criteria.find((criterion) => criterion.id === "applicant_name_matches_id");
+    expect(nameCriterion?.kind).toBe("any_of");
+    if (nameCriterion?.kind === "any_of") {
+      expect(nameCriterion.conditions?.some((condition) => condition.kind === "field_matches_ocr")).toBe(true);
+    }
   });
 
   it("rejects invalid wizard drafts when critical mappings are missing", () => {
@@ -136,12 +139,18 @@ describe("default rubric presets", () => {
     const gradesComboCriterion = rubric.criteria.find(
       (criterion) => criterion.id === "grades_document_combination_review",
     );
+    const docTypeCriterion = rubric.criteria.find((criterion) => criterion.id === "id_document_type_allowed");
 
     expect(recCriterion?.kind).toBe("recommendations_complete");
     if (recCriterion?.kind === "recommendations_complete") {
       expect(recCriterion.completenessMode).toBe("strict_form_valid");
     }
     expect(gradesComboCriterion?.kind).toBe("file_upload_count_between");
+    expect(docTypeCriterion?.kind).toBe("any_of");
+    if (docTypeCriterion?.kind === "any_of") {
+      expect(docTypeCriterion.conditions?.length).toBe(2);
+      expect(docTypeCriterion.conditions?.every((condition) => condition.kind === "ocr_field_in")).toBe(true);
+    }
   });
 
   it("hydrates blueprint back from compiled rubric", () => {

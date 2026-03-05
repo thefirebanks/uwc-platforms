@@ -340,6 +340,97 @@ function evaluateAnyOfCondition({
         message: `OCR "${condition.jsonPath}" dentro de lista permitida.`,
       };
     }
+    case "ocr_field_not_in": {
+      const ocrCheck = latestOcrByFile.get(condition.fileKey);
+      if (!ocrCheck) {
+        return {
+          status: "missing_data",
+          message: `OCR ausente para "${condition.fileKey}".`,
+        };
+      }
+
+      const ocrValue = normalizeToString(
+        getOcrValueByPath({
+          ocrCheck,
+          jsonPath: condition.jsonPath,
+        }),
+      );
+
+      if (!ocrValue) {
+        return {
+          status: "missing_data",
+          message: `OCR sin valor en "${condition.jsonPath}".`,
+        };
+      }
+
+      const compareValue = condition.caseSensitive ? ocrValue : ocrValue.toLowerCase();
+      const disallowed = condition.disallowedValues.map((value) =>
+        condition.caseSensitive ? value : value.toLowerCase(),
+      );
+
+      if (disallowed.includes(compareValue)) {
+        return {
+          status: "fail",
+          message: `OCR "${condition.jsonPath}" cae en una excepción revisable.`,
+        };
+      }
+
+      return {
+        status: "pass",
+        message: `OCR "${condition.jsonPath}" no cae en excepciones.`,
+      };
+    }
+    case "field_matches_ocr": {
+      const payloadValueRaw = normalizeToString(payload[condition.fieldKey]);
+      if (!payloadValueRaw) {
+        return {
+          status: "missing_data",
+          message: `Campo "${condition.fieldKey}" ausente.`,
+        };
+      }
+
+      const ocrCheck = latestOcrByFile.get(condition.fileKey);
+      if (!ocrCheck) {
+        return {
+          status: "missing_data",
+          message: `OCR ausente para "${condition.fileKey}".`,
+        };
+      }
+
+      const ocrValueRaw = normalizeToString(
+        getOcrValueByPath({
+          ocrCheck,
+          jsonPath: condition.jsonPath,
+        }),
+      );
+      if (!ocrValueRaw) {
+        return {
+          status: "missing_data",
+          message: `OCR sin valor en "${condition.jsonPath}".`,
+        };
+      }
+
+      const normalizeWhitespace = condition.normalizeWhitespace ?? true;
+      const payloadValue = normalizeWhitespace
+        ? payloadValueRaw.replace(/\s+/g, " ").trim()
+        : payloadValueRaw;
+      const ocrValue = normalizeWhitespace ? ocrValueRaw.replace(/\s+/g, " ").trim() : ocrValueRaw;
+
+      const left = condition.caseSensitive ? payloadValue : payloadValue.toLowerCase();
+      const right = condition.caseSensitive ? ocrValue : ocrValue.toLowerCase();
+
+      if (left !== right) {
+        return {
+          status: "fail",
+          message: `Campo "${condition.fieldKey}" no coincide con OCR "${condition.jsonPath}".`,
+        };
+      }
+
+      return {
+        status: "pass",
+        message: `Campo "${condition.fieldKey}" coincide con OCR "${condition.jsonPath}".`,
+      };
+    }
     default: {
       return {
         status: "missing_data",

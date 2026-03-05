@@ -138,11 +138,30 @@ const anyOfConditionOcrFieldInSchema = z.object({
   caseSensitive: z.boolean().default(false),
 });
 
+const anyOfConditionOcrFieldNotInSchema = z.object({
+  kind: z.literal("ocr_field_not_in"),
+  fileKey: z.string().trim().min(1).max(120),
+  jsonPath: z.string().trim().min(1).max(240),
+  disallowedValues: z.array(z.string().trim().min(1).max(160)).min(1).max(100),
+  caseSensitive: z.boolean().default(false),
+});
+
+const anyOfConditionFieldMatchesOcrSchema = z.object({
+  kind: z.literal("field_matches_ocr"),
+  fieldKey: z.string().trim().min(1).max(120),
+  fileKey: z.string().trim().min(1).max(120),
+  jsonPath: z.string().trim().min(1).max(240),
+  caseSensitive: z.boolean().default(false),
+  normalizeWhitespace: z.boolean().default(true),
+});
+
 export const eligibilityAnyOfConditionSchema = z.discriminatedUnion("kind", [
   anyOfConditionFieldPresentSchema,
   anyOfConditionFileUploadedSchema,
   anyOfConditionNumberBetweenSchema,
   anyOfConditionOcrFieldInSchema,
+  anyOfConditionOcrFieldNotInSchema,
+  anyOfConditionFieldMatchesOcrSchema,
 ]);
 
 export type EligibilityAnyOfCondition = z.infer<typeof eligibilityAnyOfConditionSchema>;

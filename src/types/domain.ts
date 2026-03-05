@@ -174,7 +174,9 @@ export type EligibilityAnyOfConditionKind =
   | "field_present"
   | "file_uploaded"
   | "number_between"
-  | "ocr_field_in";
+  | "ocr_field_in"
+  | "ocr_field_not_in"
+  | "field_matches_ocr";
 
 export interface EligibilityAnyOfCondition {
   kind: EligibilityAnyOfConditionKind;
@@ -184,7 +186,9 @@ export interface EligibilityAnyOfCondition {
   max?: number;
   jsonPath?: string;
   allowedValues?: string[];
+  disallowedValues?: string[];
   caseSensitive?: boolean;
+  normalizeWhitespace?: boolean;
 }
 
 export interface EligibilityRubricCriterion {

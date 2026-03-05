@@ -2,7 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   evaluateApplicationWithRubric,
 } from "@/lib/server/eligibility-rubric-service";
-import type { EligibilityRubricConfig } from "@/lib/rubric/eligibility-rubric";
+import {
+  buildUwcStageOneRubricFromBlueprint,
+  parseRubricBlueprintV1,
+} from "@/lib/rubric/default-rubric-presets";
+import {
+  parseEligibilityRubricConfig,
+  type EligibilityRubricConfig,
+} from "@/lib/rubric/eligibility-rubric";
 import type { Database } from "@/types/supabase";
 
 type ApplicationRow = Database["public"]["Tables"]["applications"]["Row"];
@@ -492,5 +499,90 @@ describe("evaluateApplicationWithRubric", () => {
 
     expect(result.outcome).toBe("needs_review");
     expect(result.criteria[0]?.status).toBe("missing_data");
+  });
+
+  it("evaluates identity OCR checks against any mapped ID document key", () => {
+    const blueprint = parseRubricBlueprintV1({
+      version: 1,
+      presetId: "uwc_stage1",
+      execution: { mode: "manual" },
+      mappings: {
+        idDocumentFileKeys: ["dniFile", "passportFile"],
+        gradesDocumentFileKeys: ["gradesOfficial"],
+        topThirdProofFileKey: null,
+        applicantNameFieldKey: "fullName",
+        averageGradeFieldKey: "gradeAverage",
+        signedAuthorizationFileKey: "signedAuthorization",
+        applicantPhotoFileKey: "applicantPhoto",
+        ocrPaths: {
+          idName: "fullName",
+          birthYear: "birthYear",
+          documentType: "documentType",
+          documentIssue: "documentIssue",
+        },
+      },
+      policy: {
+        allowedBirthYears: [2008, 2009, 2010],
+        minAverageGrade: 14,
+        recommendationCompleteness: "strict_form_valid",
+        gradesCombinationRule: "single_or_review",
+        idExceptionRule: "review",
+      },
+    });
+
+    expect(blueprint).not.toBeNull();
+    if (!blueprint) {
+      return;
+    }
+
+    const builtRubric = buildUwcStageOneRubricFromBlueprint(blueprint);
+    const rubric = parseEligibilityRubricConfig(builtRubric);
+    expect(rubric).not.toBeNull();
+    if (!rubric) {
+      return;
+    }
+    const validPayload = {
+      recommenderName: "Mentor Full Name",
+      relationshipTitle: "Tutor principal",
+      knownDuration: "2 years",
+      strengths: "Tiene liderazgo, empatía y constancia demostrada en proyectos escolares.",
+      growthAreas: "Debe mejorar la gestión del tiempo en semanas con múltiples entregables.",
+      endorsement: "Recomiendo firmemente su admisión por madurez, compromiso y potencial.",
+      confirmsNoFamily: true,
+    };
+
+    const result = evaluateApplicationWithRubric({
+      application: buildApplication({
+        payload: {
+          fullName: "Ada Lovelace",
+          gradeAverage: 15,
+        },
+        files: {
+          passportFile: { path: "uploads/passport.pdf" },
+          gradesOfficial: { path: "uploads/grades.pdf" },
+          signedAuthorization: { path: "uploads/auth.pdf" },
+          applicantPhoto: { path: "uploads/photo.jpg" },
+        },
+      }),
+      rubric,
+      recommendations: [
+        buildRecommendation("mentor", true, validPayload),
+        buildRecommendation("friend", true, validPayload),
+      ],
+      latestOcrByFile: new Map([
+        [
+          "passportFile",
+          buildOcrCheck(0.93, {
+            fullName: "Ada Lovelace",
+            birthYear: "2009",
+            documentType: "pasaporte",
+            documentIssue: "clean",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.outcome).toBe("eligible");
+    expect(result.failedCount).toBe(0);
   });
 });
