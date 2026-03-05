@@ -81,16 +81,144 @@ export type EligibilityRubricCriterion = z.infer<typeof eligibilityRubricCriteri
 export const eligibilityRubricConfigSchema = z.object({
   enabled: z.boolean().default(false),
   criteria: z.array(eligibilityRubricCriterionSchema).max(100).default([]),
+}).superRefine((value, context) => {
+  if (value.enabled && value.criteria.length === 0) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["criteria"],
+      message: "Enabled rubrics must include at least one criterion.",
+    });
+  }
+
+  const seenCriterionIds = new Set<string>();
+
+  value.criteria.forEach((criterion, criterionIndex) => {
+    if (seenCriterionIds.has(criterion.id)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["criteria", criterionIndex, "id"],
+        message: `Duplicate criterion id "${criterion.id}".`,
+      });
+    } else {
+      seenCriterionIds.add(criterion.id);
+    }
+
+    if (criterion.kind === "number_between") {
+      if (typeof criterion.min === "number" && typeof criterion.max === "number" && criterion.min > criterion.max) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["criteria", criterionIndex, "min"],
+          message: "number_between criterion requires min <= max.",
+        });
+      }
+    }
+
+    if (criterion.kind === "all_present" || criterion.kind === "any_present") {
+      const seenFieldKeys = new Set<string>();
+      criterion.fieldKeys.forEach((fieldKey, fieldKeyIndex) => {
+        if (seenFieldKeys.has(fieldKey)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["criteria", criterionIndex, "fieldKeys", fieldKeyIndex],
+            message: `Duplicate field key "${fieldKey}".`,
+          });
+        } else {
+          seenFieldKeys.add(fieldKey);
+        }
+      });
+    }
+
+    if (criterion.kind === "field_in") {
+      const normalize = (raw: string) => (criterion.caseSensitive ? raw : raw.toLowerCase());
+      const seenValues = new Set<string>();
+
+      criterion.allowedValues.forEach((allowedValue, allowedValueIndex) => {
+        const normalized = normalize(allowedValue);
+        if (seenValues.has(normalized)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["criteria", criterionIndex, "allowedValues", allowedValueIndex],
+            message: `Duplicate allowed value "${allowedValue}".`,
+          });
+        } else {
+          seenValues.add(normalized);
+        }
+      });
+    }
+
+    if (criterion.kind === "recommendations_complete") {
+      const seenRoles = new Set<string>();
+      criterion.roles.forEach((role, roleIndex) => {
+        if (seenRoles.has(role)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["criteria", criterionIndex, "roles", roleIndex],
+            message: `Duplicate recommendation role "${role}".`,
+          });
+        } else {
+          seenRoles.add(role);
+        }
+      });
+    }
+  });
 });
 
 export type EligibilityRubricConfig = z.infer<typeof eligibilityRubricConfigSchema>;
 
-export function parseEligibilityRubricConfig(value: unknown): EligibilityRubricConfig | null {
+export type EligibilityRubricValidationResult =
+  | {
+      success: true;
+      data: EligibilityRubricConfig;
+      errors: [];
+    }
+  | {
+      success: false;
+      data: null;
+      errors: string[];
+    };
+
+function formatIssuePath(path: PropertyKey[]) {
+  if (path.length === 0) {
+    return "rubric";
+  }
+
+  return path
+    .map((segment) => {
+      if (typeof segment === "number") {
+        return `[${segment}]`;
+      }
+      if (typeof segment === "symbol") {
+        return segment.toString();
+      }
+      return segment;
+    })
+    .join(".");
+}
+
+export function validateEligibilityRubricConfig(value: unknown): EligibilityRubricValidationResult {
   const parsed = eligibilityRubricConfigSchema.safeParse(value);
-  if (!parsed.success) {
+  if (parsed.success) {
+    return {
+      success: true,
+      data: parsed.data,
+      errors: [],
+    };
+  }
+
+  const errors = parsed.error.issues.map((issue) => `${formatIssuePath(issue.path)}: ${issue.message}`);
+  return {
+    success: false,
+    data: null,
+    errors,
+  };
+}
+
+export function parseEligibilityRubricConfig(value: unknown): EligibilityRubricConfig | null {
+  const validation = validateEligibilityRubricConfig(value);
+  if (!validation.success) {
     return null;
   }
-  return parsed.data;
+  return validation.data;
 }
 
 export function getDefaultEligibilityRubricConfig(): EligibilityRubricConfig {

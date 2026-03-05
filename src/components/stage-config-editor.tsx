@@ -36,6 +36,7 @@ import {
 import {
   getDefaultEligibilityRubricConfig,
   parseEligibilityRubricConfig,
+  validateEligibilityRubricConfig,
 } from "@/lib/rubric/eligibility-rubric";
 
 interface ApiError {
@@ -94,6 +95,65 @@ type EditorSection = {
 
 const DEFAULT_OCR_PROMPT_TEMPLATE =
   "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.";
+
+function createBaselineEligibilityRubricTemplate(): EligibilityRubricConfig {
+  return {
+    enabled: true,
+    criteria: [
+      {
+        id: "required_fields",
+        label: "Campos obligatorios base completos",
+        kind: "all_present",
+        fieldKeys: ["dateOfBirth", "nationality"],
+        onFail: "not_eligible",
+        onMissingData: "needs_review",
+      },
+      {
+        id: "grades_uploaded",
+        label: "Certificado de notas cargado",
+        kind: "file_uploaded",
+        fileKey: "grades",
+        onFail: "needs_review",
+        onMissingData: "needs_review",
+      },
+      {
+        id: "id_document_uploaded",
+        label: "Documento de identidad cargado",
+        kind: "file_uploaded",
+        fileKey: "idDocument",
+        onFail: "needs_review",
+        onMissingData: "needs_review",
+      },
+      {
+        id: "recommendations_complete",
+        label: "Recomendaciones requeridas recibidas",
+        kind: "recommendations_complete",
+        roles: ["mentor", "friend"],
+        requireRequested: true,
+        onFail: "not_eligible",
+        onMissingData: "needs_review",
+      },
+    ],
+  };
+}
+
+function createOcrEligibilityRubricTemplate(): EligibilityRubricConfig {
+  return {
+    enabled: true,
+    criteria: [
+      ...createBaselineEligibilityRubricTemplate().criteria,
+      {
+        id: "id_ocr_confidence",
+        label: "OCR de documento de identidad con confianza mínima",
+        kind: "ocr_confidence",
+        fileKey: "idDocument",
+        minConfidence: 0.8,
+        onFail: "needs_review",
+        onMissingData: "needs_review",
+      },
+    ],
+  };
+}
 
 function createDefaultFieldAiParserConfig(): FieldAiParserDraft {
   return {
@@ -884,16 +944,15 @@ export function StageConfigEditor({
     let parsedEligibilityRubric: EligibilityRubricConfig;
     try {
       const rubricValue = JSON.parse(settingsEligibilityRubricJson);
-      const parsedRubric = parseEligibilityRubricConfig(rubricValue);
-      if (!parsedRubric) {
+      const rubricValidation = validateEligibilityRubricConfig(rubricValue);
+      if (!rubricValidation.success) {
         setError({
-          message:
-            "La rúbrica automática no tiene un formato válido. Revisa el JSON antes de guardar.",
+          message: `La rúbrica automática no es válida:\n${rubricValidation.errors.slice(0, 6).join("\n")}`,
         });
         setIsSaving(false);
         return false;
       }
-      parsedEligibilityRubric = parsedRubric;
+      parsedEligibilityRubric = rubricValidation.data;
     } catch {
       setError({
         message: "La rúbrica automática debe ser JSON válido.",
@@ -2366,6 +2425,66 @@ export function StageConfigEditor({
                 <div className="editor-grid">
                   <div className="form-field full">
                     <label htmlFor={`eligibility-rubric-${stageCode}`}>Configuración JSON de rúbrica</label>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() =>
+                          setSettingsEligibilityRubricJson(
+                            JSON.stringify(createBaselineEligibilityRubricTemplate(), null, 2),
+                          )
+                        }
+                      >
+                        Usar plantilla básica
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() =>
+                          setSettingsEligibilityRubricJson(
+                            JSON.stringify(createOcrEligibilityRubricTemplate(), null, 2),
+                          )
+                        }
+                      >
+                        Usar plantilla con OCR
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => {
+                          try {
+                            const parsed = JSON.parse(settingsEligibilityRubricJson);
+                            setSettingsEligibilityRubricJson(JSON.stringify(parsed, null, 2));
+                          } catch {
+                            setError({ message: "No se puede formatear porque el JSON no es válido." });
+                          }
+                        }}
+                      >
+                        Formatear JSON
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        onClick={() => {
+                          try {
+                            const parsed = JSON.parse(settingsEligibilityRubricJson);
+                            const result = validateEligibilityRubricConfig(parsed);
+                            if (result.success) {
+                              setStatusMessage(`Rúbrica válida: ${result.data.criteria.length} criterio(s).`);
+                              setError(null);
+                              return;
+                            }
+                            setError({
+                              message: `La rúbrica automática no es válida:\n${result.errors.slice(0, 6).join("\n")}`,
+                            });
+                          } catch {
+                            setError({ message: "La rúbrica automática debe ser JSON válido." });
+                          }
+                        }}
+                      >
+                        Validar rúbrica
+                      </button>
+                    </div>
                     <textarea
                       id={`eligibility-rubric-${stageCode}`}
                       rows={14}
