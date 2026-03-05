@@ -2,14 +2,16 @@
 
 This document defines the admin flows for configuring and operating automated rubric review.
 
-## Flow 1: Start from a baseline rubric template
+## Flow 1: Start from guided mode with a baseline rubric template
 - Goal: quickly enable first-pass automatic screening with common criteria.
 - Admin actions:
   - Open stage settings (`Ajustes y Reglas`) in Stage 1.
+  - Keep `Modo guiado` selected.
   - Click `Usar plantilla básica`.
+  - (Optional) adjust criteria from dropdowns/inputs.
   - Validate, then save.
 - Expected result:
-  - Rubric JSON is valid and persisted.
+  - Rubric is valid and persisted without writing JSON.
   - Includes baseline checks for required fields, required files, and recommendations.
 
 ## Flow 2: Add OCR confidence gating for manual-review fallback
@@ -21,14 +23,16 @@ This document defines the admin flows for configuring and operating automated ru
 - Expected result:
   - OCR confidence criteria evaluate to `needs_review` when confidence is low/missing.
 
-## Flow 3: Author a custom rubric manually in JSON
-- Goal: allow full flexibility for complex business rules.
+## Flow 3: Use advanced JSON only for edge cases
+- Goal: keep full flexibility for complex business rules without blocking non-technical usage.
 - Admin actions:
+  - Switch to `JSON avanzado`.
   - Edit JSON directly in the rubric editor.
   - Click `Validar rúbrica` before save.
   - Save only once validation passes.
 - Expected result:
   - Detailed validation feedback for malformed or semantically invalid config.
+  - When JSON is valid, guided mode stays synchronized with that config.
 
 ## Flow 4: Prevent invalid rubric configurations
 - Goal: stop invalid logic from reaching runtime.
@@ -60,6 +64,6 @@ This document defines the admin flows for configuring and operating automated ru
 
 ## Browser test coverage
 - `tests/e2e/admin-rubric-flows.spec.ts`
-  - Flow 1, 3, 4 via stage settings UI interactions.
+  - Flow 1, 3, 4 plus guided criterion authoring via stage settings UI interactions.
 - `tests/e2e/admin-rubric-automation.spec.ts`
   - Flow 5 and 6 via candidates dashboard execution path.

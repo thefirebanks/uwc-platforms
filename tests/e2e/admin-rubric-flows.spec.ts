@@ -13,7 +13,14 @@ async function openRubricSettings(page: Page) {
 
   const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
   await expect(saveBtn).toBeVisible({ timeout: 15_000 });
-  await expect(rubricTextarea(page)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole("button", { name: /Modo guiado/i })).toBeVisible({
+    timeout: 15_000,
+  });
+}
+
+async function switchToJsonMode(page: Page) {
+  await page.getByRole("button", { name: /JSON avanzado/i }).click();
+  await expect(rubricTextarea(page)).toBeVisible({ timeout: 8_000 });
 }
 
 async function saveConfig(page: Page) {
@@ -53,11 +60,14 @@ test.describe("Admin rubric flows", () => {
 
   test("Flow 1: admin can apply baseline template, validate, and save", async ({ page }) => {
     await openRubricSettings(page);
+    await switchToJsonMode(page);
     const textarea = rubricTextarea(page);
     const originalValue = await textarea.inputValue();
 
     try {
+      await page.getByRole("button", { name: /Modo guiado/i }).click();
       await page.getByRole("button", { name: /Usar plantilla básica/i }).click();
+      await switchToJsonMode(page);
       await expect(textarea).toContainText('"enabled": true');
 
       await page.getByRole("button", { name: /Validar rúbrica/i }).click();
@@ -71,11 +81,14 @@ test.describe("Admin rubric flows", () => {
 
   test("Flow 2: admin can apply OCR template and validate", async ({ page }) => {
     await openRubricSettings(page);
+    await switchToJsonMode(page);
     const textarea = rubricTextarea(page);
     const originalValue = await textarea.inputValue();
 
     try {
+      await page.getByRole("button", { name: /Modo guiado/i }).click();
       await page.getByRole("button", { name: /Usar plantilla con OCR/i }).click();
+      await switchToJsonMode(page);
       await expect(textarea).toContainText("\"kind\": \"ocr_confidence\"");
 
       await page.getByRole("button", { name: /Validar rúbrica/i }).click();
@@ -87,6 +100,7 @@ test.describe("Admin rubric flows", () => {
 
   test("Flow 3: invalid JSON blocks save with clear error", async ({ page }) => {
     await openRubricSettings(page);
+    await switchToJsonMode(page);
     const textarea = rubricTextarea(page);
     const originalValue = await textarea.inputValue();
 
@@ -95,9 +109,12 @@ test.describe("Admin rubric flows", () => {
       await textarea.blur();
 
       await page.getByRole("button", { name: /Guardar configuración/i }).click();
-      await expect(page.getByText(/rúbrica automática debe ser JSON válido/i)).toBeVisible({
-        timeout: 8_000,
-      });
+      await expect(page.locator(".admin-feedback.error").first()).toContainText(
+        /rúbrica automática debe ser JSON válido/i,
+        {
+          timeout: 8_000,
+        },
+      );
     } finally {
       await restoreRubricIfChanged(page, originalValue);
     }
@@ -105,6 +122,7 @@ test.describe("Admin rubric flows", () => {
 
   test("Flow 4: duplicate criterion ids are rejected before save", async ({ page }) => {
     await openRubricSettings(page);
+    await switchToJsonMode(page);
     const textarea = rubricTextarea(page);
     const originalValue = await textarea.inputValue();
 
@@ -135,12 +153,34 @@ test.describe("Admin rubric flows", () => {
       await textarea.blur();
 
       await page.getByRole("button", { name: /Validar rúbrica/i }).click();
-      await expect(page.getByText(/Duplicate criterion id/i)).toBeVisible({ timeout: 8_000 });
+      await expect(page.locator(".admin-feedback.error").first()).toContainText(
+        /Duplicate criterion id/i,
+        { timeout: 8_000 },
+      );
 
       await page.getByRole("button", { name: /Guardar configuración/i }).click();
-      await expect(page.getByText(/Duplicate criterion id/i)).toBeVisible({ timeout: 8_000 });
+      await expect(page.locator(".admin-feedback.error").first()).toContainText(
+        /Duplicate criterion id/i,
+        { timeout: 8_000 },
+      );
     } finally {
       await restoreRubricIfChanged(page, originalValue);
     }
+  });
+
+  test("Flow 5: guided mode can add a criterion without touching JSON", async ({ page }) => {
+    await openRubricSettings(page);
+    await page.getByRole("button", { name: /Modo guiado/i }).click();
+
+    await page.getByRole("button", { name: /Usar plantilla básica/i }).click();
+    await page
+      .locator(`select[id^='rubric-new-criterion-kind-']`)
+      .first()
+      .selectOption("file_uploaded");
+    await page.getByRole("button", { name: /Agregar criterio/i }).click();
+
+    await expect(page.getByText(/Criterio 5/i)).toBeVisible({ timeout: 8_000 });
+    await page.getByRole("button", { name: /Validar rúbrica/i }).click();
+    await expect(page.locator(".admin-feedback.success")).toContainText(/Rúbrica válida/i);
   });
 });

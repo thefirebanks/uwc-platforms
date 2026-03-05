@@ -12,7 +12,7 @@
 
 3. Authoring flow was slow for first-time admins.
 - Symptom: JSON-only entry required starting from scratch.
-- Fix: added quick actions in settings: baseline template, OCR template, format JSON, validate rubric.
+- Fix: replaced JSON-only authoring with dual mode (`Modo guiado` + `JSON avanzado`) and kept quick actions: baseline template, OCR template, validate rubric.
 
 4. Search endpoint could fail before migration was applied.
 - Symptom: `/admin/candidates` emitted server errors if `application_stage_evaluations` table was missing in DB cache.

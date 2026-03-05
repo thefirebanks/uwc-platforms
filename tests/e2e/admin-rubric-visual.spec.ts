@@ -27,10 +27,13 @@ test.describe("Admin rubric visual checks", () => {
     await loginAsAdmin(page);
     await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=settings`);
 
+    await expect(page.getByRole("button", { name: /Modo guiado/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { name: /JSON avanzado/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /Usar plantilla básica/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /Usar plantilla con OCR/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /Validar rúbrica/i })).toBeVisible();
-    await expect(rubricTextarea(page)).toBeVisible();
 
     await page.screenshot({
       path: screenshotPath("01-stage-settings-rubric-controls.png"),
@@ -41,6 +44,7 @@ test.describe("Admin rubric visual checks", () => {
   test("captures validation error rendering", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=settings`);
+    await page.getByRole("button", { name: /JSON avanzado/i }).click();
 
     const textarea = rubricTextarea(page);
     const originalValue = await textarea.inputValue();
@@ -49,7 +53,10 @@ test.describe("Admin rubric visual checks", () => {
       await textarea.fill("{ invalid-json");
       await page.getByRole("button", { name: /Validar rúbrica/i }).click();
 
-      await expect(page.getByText(/JSON válido/i)).toBeVisible({ timeout: 8_000 });
+      await expect(page.locator(".admin-feedback.error").first()).toContainText(
+        /JSON válido/i,
+        { timeout: 8_000 },
+      );
 
       await page.screenshot({
         path: screenshotPath("02-rubric-validation-error.png"),
