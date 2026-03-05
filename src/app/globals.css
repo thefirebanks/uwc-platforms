@@ -2505,9 +2505,18 @@ input:checked + .slider:before { transform: translateX(18px); }
 
 .admin-ai-parser-schema-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
+  grid-template-columns: minmax(0, 1.55fr) minmax(150px, 180px) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.admin-ai-parser-schema-row .btn {
+  height: 46px;
+  padding-inline: 14px;
+}
+
+.admin-ai-parser-key-input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .admin-ai-parser-schema-preview {
@@ -2659,16 +2668,24 @@ input:checked + .slider:before { transform: translateX(18px); }
 }
 
 .rubric-number-stepper {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  display: inline-grid;
+  grid-template-columns: auto auto auto;
   align-items: center;
   gap: 8px;
+  width: max-content;
 }
 
 .rubric-number-stepper .btn {
-  min-width: 36px;
+  min-width: 40px;
+  min-height: 40px;
   padding-inline: 0;
   justify-content: center;
+}
+
+.rubric-number-stepper-input {
+  width: 82px;
+  min-width: 82px;
+  text-align: center;
 }
 
 .rubric-number-stepper input[type="number"] {
@@ -2715,6 +2732,120 @@ input:checked + .slider:before { transform: translateX(18px); }
 .rubric-summary-list {
   display: grid;
   gap: 6px;
+}
+
+.rubric-ocr-mapping-shell {
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: color-mix(in srgb, var(--surface) 92%, var(--paper));
+}
+
+.rubric-ocr-mapping-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rubric-ocr-mapping-header h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.rubric-ocr-mapping-header .form-hint {
+  margin-top: 2px;
+}
+
+.rubric-ocr-grid {
+  margin-top: 2px;
+}
+
+.rubric-ocr-available-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rubric-review-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.rubric-review-card {
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 94%, var(--paper));
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.rubric-review-card h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.rubric-review-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.rubric-review-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--sand-light);
+  font-size: 0.9rem;
+}
+
+.rubric-review-row span {
+  color: var(--ink-light);
+}
+
+.rubric-review-row strong {
+  text-align: right;
+}
+
+.rubric-review-outcomes {
+  display: grid;
+  gap: 8px;
+}
+
+.rubric-review-outcome {
+  border: 1px solid var(--sand);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: var(--ink-light);
+}
+
+.rubric-review-outcome span {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.rubric-review-outcome.eligible {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--sand));
+  background: color-mix(in srgb, var(--success-soft) 75%, var(--surface));
+}
+
+.rubric-review-outcome.not-eligible {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--sand));
+  background: color-mix(in srgb, var(--danger-soft) 75%, var(--surface));
+}
+
+.rubric-review-outcome.needs-review {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--sand));
+  background: color-mix(in srgb, var(--warning-soft) 80%, var(--surface));
 }
 
 .rubric-wizard-actions {
@@ -3039,8 +3170,24 @@ input:checked + .slider:before { transform: translateX(18px); }
     grid-template-columns: 1fr;
   }
 
+  .rubric-number-stepper,
+  .rubric-number-stepper-input {
+    width: 100%;
+  }
+
   .rubric-number-stepper {
-    grid-template-columns: 1fr;
+    grid-template-columns: 44px minmax(0, 1fr) 44px;
+  }
+
+  .rubric-ocr-mapping-header,
+  .rubric-review-card-head,
+  .rubric-review-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rubric-review-row strong {
+    text-align: left;
   }
 }
 

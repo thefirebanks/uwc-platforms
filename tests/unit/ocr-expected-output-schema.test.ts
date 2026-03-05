@@ -17,7 +17,7 @@ describe("ocr expected output schema helpers", () => {
 
     expect(normalized).toEqual([
       { key: "Fecha_de_Nacimiento", type: "date" },
-      { key: "NRO_DOC", type: "number" },
+      { key: "NRO-DOC", type: "number" },
     ]);
   });
 
@@ -80,5 +80,9 @@ describe("ocr expected output schema helpers", () => {
 
   it("normalizes bare keys safely", () => {
     expect(normalizeOcrOutputKey(" 123 Numero Doc ")).toBe("field_123_Numero_Doc");
+  });
+
+  it("keeps underscores and dashes in OCR keys", () => {
+    expect(normalizeOcrOutputKey("fecha-de_nacimiento")).toBe("fecha-de_nacimiento");
   });
 });

@@ -1765,16 +1765,16 @@ export function StageConfigEditor({
     }
 
     if (!uwcPresetDraft.ocrNamePath.trim()) {
-      step1Errors.push("Define el path OCR para nombre del documento.");
+      step1Errors.push("Define el campo OCR para nombre del documento.");
     }
     if (!uwcPresetDraft.ocrBirthYearPath.trim()) {
-      step1Errors.push("Define el path OCR para año de nacimiento.");
+      step1Errors.push("Define el campo OCR para año de nacimiento.");
     }
     if (!uwcPresetDraft.ocrDocumentTypePath.trim()) {
-      step1Errors.push("Define el path OCR para tipo de documento.");
+      step1Errors.push("Define el campo OCR para tipo de documento.");
     }
     if (!uwcPresetDraft.ocrDocumentIssuePath.trim()) {
-      step1Errors.push("Define el path OCR para observaciones del documento.");
+      step1Errors.push("Define el campo OCR para observaciones del documento.");
     }
     if (availableOcrPaths.size === 0) {
       step1Errors.push(
@@ -1785,25 +1785,33 @@ export function StageConfigEditor({
       availableOcrPaths.size > 0 &&
       !availableOcrPaths.has(uwcPresetDraft.ocrNamePath.trim())
     ) {
-      step1Errors.push("El path OCR de nombre debe venir de los campos esperados en Parsing con IA.");
+      step1Errors.push(
+        "El campo OCR de nombre debe venir de los campos esperados en Parsing con IA.",
+      );
     }
     if (
       availableOcrPaths.size > 0 &&
       !availableOcrPaths.has(uwcPresetDraft.ocrBirthYearPath.trim())
     ) {
-      step1Errors.push("El path OCR de año de nacimiento debe venir de los campos esperados en Parsing con IA.");
+      step1Errors.push(
+        "El campo OCR de año de nacimiento debe venir de los campos esperados en Parsing con IA.",
+      );
     }
     if (
       availableOcrPaths.size > 0 &&
       !availableOcrPaths.has(uwcPresetDraft.ocrDocumentTypePath.trim())
     ) {
-      step1Errors.push("El path OCR de tipo de documento debe venir de los campos esperados en Parsing con IA.");
+      step1Errors.push(
+        "El campo OCR de tipo de documento debe venir de los campos esperados en Parsing con IA.",
+      );
     }
     if (
       availableOcrPaths.size > 0 &&
       !availableOcrPaths.has(uwcPresetDraft.ocrDocumentIssuePath.trim())
     ) {
-      step1Errors.push("El path OCR de excepción de documento debe venir de los campos esperados en Parsing con IA.");
+      step1Errors.push(
+        "El campo OCR de excepción de documento debe venir de los campos esperados en Parsing con IA.",
+      );
     }
 
     if (uwcPresetDraft.allowedBirthYears.length === 0) {
@@ -1857,9 +1865,23 @@ export function StageConfigEditor({
   const wizardBlockingCount =
     rubricWizardValidation.step1Errors.length + rubricWizardValidation.step2Errors.length;
 
-  const wizardSummaryItems = useMemo(() => {
-    const formatFileKeys = (keys: string[]) =>
-      keys.map((key) => rubricFileLabelByKey.get(key) ?? key).join(", ");
+  const wizardReviewSummary = useMemo(() => {
+    const formatFileList = (keys: string[]) =>
+      keys.length > 0 ? keys.map((key) => rubricFileLabelByKey.get(key) ?? key).join(", ") : "Sin selección";
+    const formatSingleFile = (key: string | null) =>
+      key ? (rubricFileLabelByKey.get(key) ?? key) : "Sin selección";
+    const formatField = (key: string | null) =>
+      key ? (rubricFieldLabelByKey.get(key) ?? key) : "Sin selección";
+    const formatOcrField = (path: string) => {
+      const trimmed = path.trim();
+      if (!trimmed) {
+        return "Sin selección";
+      }
+      return (
+        selectedIdDocumentOcrPathOptions.find((option) => option.value === trimmed)?.label ?? trimmed
+      );
+    };
+
     const gradePolicyLabel =
       GRADES_COMBINATION_POLICY_OPTIONS.find(
         (option) => option.value === uwcPresetDraft.gradesCombinationRule,
@@ -1872,42 +1894,54 @@ export function StageConfigEditor({
         (option) => option.value === uwcPresetDraft.recommendationCompleteness,
       )?.label ?? uwcPresetDraft.recommendationCompleteness;
 
-    return [
-      `Identidad: ${formatFileKeys(uwcPresetDraft.idDocumentFileKeys) || "Sin selección"}.`,
-      `Nombre postulante: ${
-        (uwcPresetDraft.applicantNameFieldKey &&
-          (rubricFieldLabelByKey.get(uwcPresetDraft.applicantNameFieldKey) ??
-            uwcPresetDraft.applicantNameFieldKey)) ||
-        "Sin selección"
-      }.`,
-      `Nacimiento OCR (${uwcPresetDraft.ocrBirthYearPath || "sin path"}) en años permitidos: ${
-        uwcPresetDraft.allowedBirthYears.length > 0
-          ? uwcPresetDraft.allowedBirthYears.join(", ")
-          : "sin años configurados"
-      }.`,
-      `Notas: ${formatFileKeys(uwcPresetDraft.gradesDocumentFileKeys) || "Sin selección"} (${gradePolicyLabel}).`,
-      `Tercio superior o promedio >= ${uwcPresetDraft.minAverageGrade.toFixed(1).replace(/\.0$/, "")}.`,
-      `Recomendaciones: ${recommendationPolicyLabel}${
-        uwcPresetDraft.recommendationCompleteness === "minimum_answers"
-          ? ` (mínimo ${Math.max(0, Math.trunc(uwcPresetDraft.minRecommendationResponses))} respuesta(s))`
-          : ""
-      }.`,
-      `Excepciones de documento de identidad: ${idExceptionPolicyLabel}.`,
-      `Autorización: ${
-        (uwcPresetDraft.signedAuthorizationFileKey &&
-          (rubricFileLabelByKey.get(uwcPresetDraft.signedAuthorizationFileKey) ??
-            uwcPresetDraft.signedAuthorizationFileKey)) ||
-        "Sin selección"
-      }. Foto: ${
-        (uwcPresetDraft.applicantPhotoFileKey &&
-          (rubricFileLabelByKey.get(uwcPresetDraft.applicantPhotoFileKey) ??
-            uwcPresetDraft.applicantPhotoFileKey)) ||
-        "Sin selección"
-      }.`,
-      "Resultado: incumplimiento crítico -> not_eligible. Duda/falta de evidencia -> needs_review. Todo en orden -> eligible.",
-      "Ejecución: manual desde dashboard de candidatos.",
-    ];
-  }, [rubricFieldLabelByKey, rubricFileLabelByKey, uwcPresetDraft]);
+    return {
+      evidence: [
+        { label: "Documentos de identidad", value: formatFileList(uwcPresetDraft.idDocumentFileKeys) },
+        { label: "Documentos de notas", value: formatFileList(uwcPresetDraft.gradesDocumentFileKeys) },
+        { label: "Nombre del postulante", value: formatField(uwcPresetDraft.applicantNameFieldKey) },
+        { label: "Promedio manual", value: formatField(uwcPresetDraft.averageGradeFieldKey) },
+        { label: "Prueba de tercio superior", value: formatSingleFile(uwcPresetDraft.topThirdProofFileKey) },
+        { label: "Autorización firmada", value: formatSingleFile(uwcPresetDraft.signedAuthorizationFileKey) },
+        { label: "Foto del postulante", value: formatSingleFile(uwcPresetDraft.applicantPhotoFileKey) },
+      ],
+      ocrMappings: [
+        { label: "Nombre en documento", value: formatOcrField(uwcPresetDraft.ocrNamePath) },
+        { label: "Año de nacimiento", value: formatOcrField(uwcPresetDraft.ocrBirthYearPath) },
+        { label: "Tipo de documento", value: formatOcrField(uwcPresetDraft.ocrDocumentTypePath) },
+        { label: "Excepción de documento", value: formatOcrField(uwcPresetDraft.ocrDocumentIssuePath) },
+      ],
+      policies: [
+        {
+          label: "Años de nacimiento permitidos",
+          value:
+            uwcPresetDraft.allowedBirthYears.length > 0
+              ? uwcPresetDraft.allowedBirthYears.join(", ")
+              : "Sin configuración",
+        },
+        {
+          label: "Promedio mínimo",
+          value: uwcPresetDraft.minAverageGrade.toFixed(1).replace(/\.0$/, ""),
+        },
+        {
+          label: "Recomendaciones",
+          value: `${recommendationPolicyLabel}${
+            uwcPresetDraft.recommendationCompleteness === "minimum_answers"
+              ? ` (mínimo ${Math.max(0, Math.trunc(uwcPresetDraft.minRecommendationResponses))} respuesta(s))`
+              : ""
+          }`,
+        },
+        {
+          label: "Múltiples certificados de notas",
+          value: gradePolicyLabel,
+        },
+        {
+          label: "Excepciones de documento de identidad",
+          value: idExceptionPolicyLabel,
+        },
+      ],
+      availableOcrFields: selectedIdDocumentOcrPathOptions.map((option) => option.value),
+    };
+  }, [rubricFieldLabelByKey, rubricFileLabelByKey, selectedIdDocumentOcrPathOptions, uwcPresetDraft]);
 
   function compileRubricFromWizard(options?: { silent?: boolean }) {
     const blockingErrors = [
@@ -3274,8 +3308,12 @@ export function StageConfigEditor({
                                               >
                                                 <input
                                                   type="text"
+                                                  className="admin-ai-parser-key-input"
                                                   value={outputField.key}
-                                                  placeholder="fecha_de_nacimiento"
+                                                  placeholder="fecha-de-nacimiento"
+                                                  autoCapitalize="none"
+                                                  autoCorrect="off"
+                                                  spellCheck={false}
                                                   onChange={(event) =>
                                                     updateExpectedOutputField(field.localId, fieldIndex, {
                                                       key: event.target.value,
@@ -3322,6 +3360,7 @@ export function StageConfigEditor({
                                           <div className="form-hint">
                                             Cada campo se guarda como valor estructurado y también con prefijo{" "}
                                             <code>{`${field.field_key}_...`}</code> en el resultado OCR.
+                                            Usa letras, números, guiones medios (`-`) o bajos (`_`).
                                           </div>
                                         </div>
                                         <details className="admin-ai-parser-advanced">
@@ -3860,109 +3899,131 @@ export function StageConfigEditor({
                                   ))}
                                 </select>
                               </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-ocr-name-${stageCode}`}>
-                                  OCR path: nombre <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <select
-                                  id={`wizard-ocr-name-${stageCode}`}
-                                  value={uwcPresetDraft.ocrNamePath}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      ocrNamePath: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecciona un campo OCR</option>
-                                  {buildWizardOcrPathOptions(uwcPresetDraft.ocrNamePath).map((option) => (
-                                    <option key={`wizard-ocr-name-option-${option.value}`} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-ocr-birth-${stageCode}`}>
-                                  OCR path: año nacimiento <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <select
-                                  id={`wizard-ocr-birth-${stageCode}`}
-                                  value={uwcPresetDraft.ocrBirthYearPath}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      ocrBirthYearPath: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecciona un campo OCR</option>
-                                  {buildWizardOcrPathOptions(uwcPresetDraft.ocrBirthYearPath).map((option) => (
-                                    <option key={`wizard-ocr-birth-option-${option.value}`} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-ocr-type-${stageCode}`}>
-                                  OCR path: tipo documento <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <select
-                                  id={`wizard-ocr-type-${stageCode}`}
-                                  value={uwcPresetDraft.ocrDocumentTypePath}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      ocrDocumentTypePath: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecciona un campo OCR</option>
-                                  {buildWizardOcrPathOptions(uwcPresetDraft.ocrDocumentTypePath).map((option) => (
-                                    <option key={`wizard-ocr-type-option-${option.value}`} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-ocr-issue-${stageCode}`}>
-                                  OCR path: excepción documento <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <select
-                                  id={`wizard-ocr-issue-${stageCode}`}
-                                  value={uwcPresetDraft.ocrDocumentIssuePath}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      ocrDocumentIssuePath: event.target.value,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecciona un campo OCR</option>
-                                  {buildWizardOcrPathOptions(uwcPresetDraft.ocrDocumentIssuePath).map((option) => (
-                                    <option key={`wizard-ocr-issue-option-${option.value}`} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              {selectedIdDocumentOcrPathOptions.length === 0 ? (
-                                <div className="form-field full">
-                                  <div className="form-hint">
-                                    Activa Parsing con IA en al menos un documento de identidad y define campos esperados para poblar estas rutas OCR.
+                              <div className="form-field full rubric-ocr-mapping-shell">
+                                <div className="rubric-ocr-mapping-header">
+                                  <div>
+                                    <h4>Campos OCR para evaluación automática</h4>
+                                    <p className="form-hint">
+                                      La fuente es Parsing con IA en los documentos de identidad seleccionados.
+                                    </p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={() => switchToTab("editor")}
+                                  >
+                                    Editar campos OCR
+                                  </button>
+                                </div>
+                                <div className="editor-grid rubric-ocr-grid">
+                                  <div className="form-field">
+                                    <label htmlFor={`wizard-ocr-name-${stageCode}`}>
+                                      Campo OCR: nombre en documento{" "}
+                                      <span className="rubric-required-badge">Requerido</span>
+                                    </label>
+                                    <select
+                                      id={`wizard-ocr-name-${stageCode}`}
+                                      value={uwcPresetDraft.ocrNamePath}
+                                      onChange={(event) =>
+                                        setUwcPresetDraft((current) => ({
+                                          ...current,
+                                          ocrNamePath: event.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">Selecciona un campo OCR</option>
+                                      {buildWizardOcrPathOptions(uwcPresetDraft.ocrNamePath).map((option) => (
+                                        <option key={`wizard-ocr-name-option-${option.value}`} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="form-field">
+                                    <label htmlFor={`wizard-ocr-birth-${stageCode}`}>
+                                      Campo OCR: año de nacimiento{" "}
+                                      <span className="rubric-required-badge">Requerido</span>
+                                    </label>
+                                    <select
+                                      id={`wizard-ocr-birth-${stageCode}`}
+                                      value={uwcPresetDraft.ocrBirthYearPath}
+                                      onChange={(event) =>
+                                        setUwcPresetDraft((current) => ({
+                                          ...current,
+                                          ocrBirthYearPath: event.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">Selecciona un campo OCR</option>
+                                      {buildWizardOcrPathOptions(uwcPresetDraft.ocrBirthYearPath).map((option) => (
+                                        <option key={`wizard-ocr-birth-option-${option.value}`} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="form-field">
+                                    <label htmlFor={`wizard-ocr-type-${stageCode}`}>
+                                      Campo OCR: tipo de documento{" "}
+                                      <span className="rubric-required-badge">Requerido</span>
+                                    </label>
+                                    <select
+                                      id={`wizard-ocr-type-${stageCode}`}
+                                      value={uwcPresetDraft.ocrDocumentTypePath}
+                                      onChange={(event) =>
+                                        setUwcPresetDraft((current) => ({
+                                          ...current,
+                                          ocrDocumentTypePath: event.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">Selecciona un campo OCR</option>
+                                      {buildWizardOcrPathOptions(uwcPresetDraft.ocrDocumentTypePath).map((option) => (
+                                        <option key={`wizard-ocr-type-option-${option.value}`} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div className="form-field">
+                                    <label htmlFor={`wizard-ocr-issue-${stageCode}`}>
+                                      Campo OCR: excepción de documento{" "}
+                                      <span className="rubric-required-badge">Requerido</span>
+                                    </label>
+                                    <select
+                                      id={`wizard-ocr-issue-${stageCode}`}
+                                      value={uwcPresetDraft.ocrDocumentIssuePath}
+                                      onChange={(event) =>
+                                        setUwcPresetDraft((current) => ({
+                                          ...current,
+                                          ocrDocumentIssuePath: event.target.value,
+                                        }))
+                                      }
+                                    >
+                                      <option value="">Selecciona un campo OCR</option>
+                                      {buildWizardOcrPathOptions(uwcPresetDraft.ocrDocumentIssuePath).map((option) => (
+                                        <option key={`wizard-ocr-issue-option-${option.value}`} value={option.value}>
+                                          {option.label}
+                                        </option>
+                                      ))}
+                                    </select>
                                   </div>
                                 </div>
-                              ) : null}
-                              {selectedIdDocumentOcrPathOptions.length > 0 ? (
-                                <div className="form-field full">
+                                {selectedIdDocumentOcrPathOptions.length === 0 ? (
                                   <div className="form-hint">
-                                    Campos OCR disponibles:{" "}
-                                    {selectedIdDocumentOcrPathOptions.map((option) => option.value).join(", ")}
+                                    Activa Parsing con IA en al menos un documento de identidad y define campos
+                                    esperados para poblar estas opciones OCR.
                                   </div>
-                                </div>
-                              ) : null}
+                                ) : (
+                                  <div className="rubric-ocr-available-list">
+                                    {selectedIdDocumentOcrPathOptions.map((option) => (
+                                      <span key={`available-ocr-${option.value}`} className="rubric-choice-pill">
+                                        {option.value}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         ) : null}
@@ -3999,16 +4060,23 @@ export function StageConfigEditor({
                                   </button>
                                   <input
                                     id={`wizard-min-average-${stageCode}`}
+                                    className="rubric-number-stepper-input"
                                     type="number"
                                     min={0}
                                     max={20}
                                     step={0.1}
                                     value={String(uwcPresetDraft.minAverageGrade)}
                                     onChange={(event) =>
-                                      setUwcPresetDraft((current) => ({
-                                        ...current,
-                                        minAverageGrade: Number(event.target.value) || 0,
-                                      }))
+                                      setUwcPresetDraft((current) => {
+                                        const parsedValue = Number(event.target.value);
+                                        const nextValue = Number.isFinite(parsedValue)
+                                          ? Math.min(20, Math.max(0, parsedValue))
+                                          : 0;
+                                        return {
+                                          ...current,
+                                          minAverageGrade: nextValue,
+                                        };
+                                      })
                                     }
                                   />
                                   <button
@@ -4129,14 +4197,76 @@ export function StageConfigEditor({
                           <div className="settings-card rubric-wizard-card">
                             <div className="settings-card-header">
                               <h3>Paso 3: Revisar y activar</h3>
-                              <p>Resumen antes de compilar la rúbrica runtime.</p>
+                              <p>Revisa la configuración final antes de activarla en la etapa.</p>
                             </div>
-                            <div className="rubric-summary-list">
-                              {wizardSummaryItems.map((item, index) => (
-                                <div key={`wizard-summary-${index}`} className="form-hint">
-                                  {`${index + 1}) ${item}`}
+                            <div className="rubric-review-grid">
+                              <section className="rubric-review-card">
+                                <h4>Evidencia y campos principales</h4>
+                                {wizardReviewSummary.evidence.map((row) => (
+                                  <div key={`review-evidence-${row.label}`} className="rubric-review-row">
+                                    <span>{row.label}</span>
+                                    <strong>{row.value}</strong>
+                                  </div>
+                                ))}
+                              </section>
+                              <section className="rubric-review-card">
+                                <div className="rubric-review-card-head">
+                                  <h4>Campos OCR usados en la rúbrica</h4>
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={() => switchToTab("editor")}
+                                  >
+                                    Editar en Parsing con IA
+                                  </button>
                                 </div>
-                              ))}
+                                <p className="form-hint">
+                                  Los campos OCR vienen de los campos esperados definidos en Parsing con IA para los
+                                  documentos de identidad seleccionados.
+                                </p>
+                                {wizardReviewSummary.ocrMappings.map((row) => (
+                                  <div key={`review-ocr-${row.label}`} className="rubric-review-row">
+                                    <span>{row.label}</span>
+                                    <strong>{row.value}</strong>
+                                  </div>
+                                ))}
+                                {wizardReviewSummary.availableOcrFields.length > 0 ? (
+                                  <div className="rubric-ocr-available-list">
+                                    {wizardReviewSummary.availableOcrFields.map((fieldKey) => (
+                                      <span key={`review-ocr-option-${fieldKey}`} className="rubric-choice-pill">
+                                        {fieldKey}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </section>
+                              <section className="rubric-review-card">
+                                <h4>Políticas y umbrales</h4>
+                                {wizardReviewSummary.policies.map((row) => (
+                                  <div key={`review-policy-${row.label}`} className="rubric-review-row">
+                                    <span>{row.label}</span>
+                                    <strong>{row.value}</strong>
+                                  </div>
+                                ))}
+                              </section>
+                              <section className="rubric-review-card">
+                                <h4>Resultado automático</h4>
+                                <div className="rubric-review-outcomes">
+                                  <div className="rubric-review-outcome eligible">
+                                    <span>eligible</span>
+                                    Todo correcto, pasa a la siguiente etapa.
+                                  </div>
+                                  <div className="rubric-review-outcome not-eligible">
+                                    <span>not_eligible</span>
+                                    Falla crítica en criterios obligatorios.
+                                  </div>
+                                  <div className="rubric-review-outcome needs-review">
+                                    <span>needs_review</span>
+                                    Falta evidencia o hay ambiguedad para revisión humana.
+                                  </div>
+                                </div>
+                                <p className="form-hint">Ejecución: manual desde dashboard de candidatos.</p>
+                              </section>
                             </div>
                           </div>
                         ) : null}

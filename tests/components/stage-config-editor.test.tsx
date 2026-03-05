@@ -1322,7 +1322,7 @@ describe("StageConfigEditor", () => {
     });
     fireEvent.click(screen.getByText(/Opciones avanzadas/i));
     fireEvent.change(screen.getByRole("textbox", { name: /Esquema JSON esperado \(avanzado\)/i }), {
-      target: { value: "{\"document_number\":\"string\",\"full_name\":\"string\"}" },
+      target: { value: "{\"document_number\":\"string\",\"birth-year\":\"int\"}" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
 
@@ -1337,10 +1337,10 @@ describe("StageConfigEditor", () => {
     expect(firstPayload?.fields?.[0]?.aiParser).toMatchObject({
       enabled: true,
       extractionInstructions: "Extrae solo número de documento y nombre completo.",
-      expectedSchemaTemplate: "{\"document_number\":\"string\",\"full_name\":\"string\"}",
+      expectedSchemaTemplate: "{\"document_number\":\"string\",\"birth-year\":\"int\"}",
       expectedOutputFields: [
         { key: "document_number", type: "text" },
-        { key: "full_name", type: "text" },
+        { key: "birth-year", type: "number" },
       ],
       strictSchema: true,
     });
@@ -1481,16 +1481,16 @@ describe("StageConfigEditor", () => {
     fireEvent.change(screen.getByRole("combobox", { name: /Foto del postulante/i }), {
       target: { value: "applicantPhoto" },
     });
-    fireEvent.change(screen.getByLabelText(/OCR path: nombre/i), {
+    fireEvent.change(screen.getByLabelText(/Campo OCR: nombre/i), {
       target: { value: "fullName" },
     });
-    fireEvent.change(screen.getByLabelText(/OCR path: año nacimiento/i), {
+    fireEvent.change(screen.getByLabelText(/Campo OCR: año de nacimiento/i), {
       target: { value: "birthYear" },
     });
-    fireEvent.change(screen.getByLabelText(/OCR path: tipo documento/i), {
+    fireEvent.change(screen.getByLabelText(/Campo OCR: tipo de documento/i), {
       target: { value: "documentType" },
     });
-    fireEvent.change(screen.getByLabelText(/OCR path: excepción documento/i), {
+    fireEvent.change(screen.getByLabelText(/Campo OCR: excepción de documento/i), {
       target: { value: "documentIssue" },
     });
 
@@ -1517,12 +1517,8 @@ describe("StageConfigEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Continuar$/i }));
 
     expect(screen.getByText(/m[ií]nimo 2 respuesta/i)).toBeInTheDocument();
-    expect(
-      screen.getByText(/Si hay varios certificados\s*->\s*not_eligible/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Si hay excepción\s*->\s*not_eligible/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Múltiples certificados de notas/i)).toBeInTheDocument();
+    expect(screen.getByText(/Excepciones de documento de identidad/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Activar rúbrica de esta etapa/i }));
     fireEvent.click(screen.getByRole("button", { name: /Guardar configuración/i }));

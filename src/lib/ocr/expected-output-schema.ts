@@ -69,9 +69,10 @@ function resolvePathValue(root: unknown, path: string): unknown {
 export function normalizeOcrOutputKey(raw: string): string {
   const cleaned = raw
     .trim()
-    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/[^a-zA-Z0-9_-]+/g, "_")
     .replace(/_+/g, "_")
-    .replace(/^_+|_+$/g, "");
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "");
 
   if (!cleaned) {
     return "";
