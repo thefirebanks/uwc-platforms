@@ -1,85 +1,62 @@
 # Rubric Admin Flows
 
-This document defines the admin flows for configuring and operating automated rubric review.
+This is the full flow inventory for rubric authoring and execution in Stage 1, plus where each flow is tested.
 
-## Flow 1: Wizard happy path (recommended)
-- Goal: configure Stage 1 rubric in business language without touching JSON.
-- Admin actions:
-  - Open stage settings (`Ajustes y Reglas`) in Stage 1.
-  - Keep `Modo guiado (recomendado)`.
-  - Step 1: map evidence sources (identity files, grades files, name field, grade field, authorization, photo, OCR paths).
-  - Step 2: define policy thresholds (allowed birth years, minimum average).
-  - Step 3: review summary and click `Activar rúbrica de esta etapa`.
-  - Save configuration.
-- Expected result:
-  - `admin_config.rubricBlueprintV1` and compiled `admin_config.eligibilityRubric` persist together.
-  - Runtime rubric is generated deterministically from wizard inputs.
+## Authoring flows (wizard-first)
 
-## Flow 2: Wizard blocking validation
-- Goal: prevent partial/incomplete rubric setup from being activated.
-- Admin actions:
-  - Leave a required mapping empty (for example applicant name field).
-  - Click `Continuar` in Step 1.
-- Expected result:
-  - Wizard shows `Bloqueos del wizard` with plain-language issues.
-  - Save remains blocked when rubric activation is incomplete.
+1. `F01` Start wizard and configure all required mappings in Step 1.
+2. `F02` Move from Step 1 to Step 2 only when required mappings are complete.
+3. `F03` Configure Step 2 policy thresholds (allowed years + minimum average).
+4. `F04` Move from Step 2 to Step 3 only when thresholds are valid.
+5. `F05` Activate compiled rubric from Step 3.
+6. `F06` Save stage config with wizard-derived blueprint + compiled rubric + rubric meta.
+7. `F07` Reload page and confirm wizard remains the default authoring mode.
+8. `F08` Use “Recargar sugerencias desde campos” to repopulate missing wizard values.
 
-## Flow 3: Advanced mode for edge cases
-- Goal: keep full flexibility for complex business rules without blocking non-technical usage.
-- Admin actions:
-  - Switch from wizard to `Advanced`.
-  - Use criterion-level editor (`Modo guiado`) or `JSON avanzado`.
-  - Validate rubric before save.
-- Expected result:
-  - Detailed validation feedback for malformed or semantically invalid config.
-  - Advanced edits can diverge from wizard.
+## Validation and blocking flows
 
-## Flow 4: Reset advanced divergence to wizard
-- Goal: recover from complex custom edits and return to default rubric authoring.
-- Admin actions:
-  - Make a change in Advanced mode.
-  - Click `Restablecer al wizard`.
-- Expected result:
-  - Wizard becomes active again.
-  - Compiled runtime rubric is regenerated from blueprint draft.
+1. `F09` Missing required mapping in Step 1 shows blocking errors.
+2. `F10` Invalid Step 2 thresholds show blocking errors and prevent progression.
+3. `F11` Saving with incomplete wizard setup is blocked with plain-language error.
+4. `F12` Invalid Advanced JSON shows rubric validation errors.
+5. `F13` Attempting to switch Advanced JSON -> Guided while JSON is invalid is blocked.
 
-## Supported advanced rule primitives
-- `ocr_field_in`: validate OCR extracted values against an allowed list.
-- `ocr_field_not_in`: flag OCR extracted exception values for review.
-- `field_matches_ocr`: compare applicant payload value with OCR extraction.
-- `file_upload_count_between`: enforce/range-check number of uploaded files across keys.
-- `any_of`: pass criterion when at least one condition matches (supports OR scenarios).
+## Advanced customization flows
 
-## Flow 5: Prevent invalid rubric configurations
-- Goal: stop invalid logic from reaching runtime.
-- Guardrails enforced:
-  - Enabled rubric must contain at least one criterion.
-  - Criterion IDs must be unique.
-  - `number_between` requires `min <= max` when both are set.
-  - Duplicate keys/values inside criteria are rejected.
-- Expected result:
-  - Save is blocked with explicit error messages.
+1. `F14` Open Advanced tab and inspect compiled rubric in JSON mode.
+2. `F15` Edit Advanced rubric JSON and mark divergence from wizard.
+3. `F16` Reset advanced divergence back to wizard preset safely.
+4. `F17` Validate advanced rubric before save.
 
-## Flow 6: Run rubric evaluation on demand from candidates dashboard
-- Goal: execute automatic review when admin decides.
-- Admin actions:
-  - Open `/admin/candidates`.
-  - Select cycle/stage.
-  - Click `Ejecutar rúbrica automática`.
-- Expected result:
-  - API executes evaluation.
-  - Feedback message shows evaluated counts by outcome.
-  - `Dictamen automático` column updates (`Elegible`, `No elegible`, `Revisión manual`).
+## Rubric execution flows (candidates dashboard)
 
-## Flow 7: Handle stage without rubric safely
-- Goal: avoid silent failure.
-- Admin actions:
-  - Run rubric in stage with rubric disabled or empty.
-- Expected result:
-  - Clear user-facing message indicates rubric is disabled or unconfigured.
+1. `F18` Run rubric manually with selected cycle and stage.
+2. `F19` Running rubric without selecting a cycle is blocked in UI.
+3. `F20` Running rubric against stage with missing/disabled rubric returns explicit error feedback.
 
-## Browser test coverage
-- `tests/e2e/admin-rubric-flows.spec.ts`
-  - Wizard happy path, blocking validation, advanced divergence/reset.
-- `tests/e2e/admin-rubric-visual.spec.ts`
-  - Wizard Step 1/2/3 visual states, blocking state, candidates execution feedback screenshot.
+## Compatibility and resilience flows
+
+1. `F21` Hydrate wizard blueprint from compiled rubric when possible.
+2. `F22` Preserve existing advanced custom rubric without data loss.
+3. `F23` Evaluate identity OCR criteria across all mapped identity file keys.
+4. `F24` Strict recommendation completeness routes manual-only submissions to `needs_review`.
+
+## Current test mapping
+
+1. `F01/F02/F03/F05/F06/F14` covered by `Flow 1: wizard happy path compiles rubric and allows save` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+2. `F09/F11` covered by `Flow 2: wizard blocks progress and save when required mapping is missing` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+3. `F15/F16` covered by `Flow 3: advanced edits mark divergence and can reset back to wizard` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+4. `F04/F10` covered by `Flow 4: wizard step 2 blocks invalid thresholds` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+5. `F08` covered by `Flow 5: recargar sugerencias repopulates wizard mappings` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+6. `F12/F17` covered by `Flow 6: advanced JSON invalid shows errors and save is blocked` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+7. `F13` covered by `Flow 7: advanced JSON errors prevent switching back to guided mode` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+8. `F07` covered by `Flow 8: wizard save survives reload and remains active` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+9. `F19` covered by `Flow 9: candidates dashboard requires cycle selection before running rubric` in [admin-rubric-flows.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-flows.spec.ts).
+10. `F18/F20` covered by `captures rubric execution feedback in candidates dashboard` in [admin-rubric-visual.spec.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/e2e/admin-rubric-visual.spec.ts).
+11. `F21/F23` covered by [eligibility-rubric-presets.test.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/unit/eligibility-rubric-presets.test.ts) and [eligibility-rubric-service.test.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/unit/eligibility-rubric-service.test.ts).
+12. `F24` covered by [eligibility-rubric-service.test.ts](/Users/dafirebanks/Projects/uwc-platforms/tests/unit/eligibility-rubric-service.test.ts).
+
+## Remaining known risk areas to watch
+
+1. Stage-specific candidate fixtures are sparse, so some dashboard execution tests validate error/surface behavior more than deep per-candidate outcome deltas.
+2. Wizard hydration falls back to Advanced when a rubric is heavily customized outside the blueprint model; this is expected but should be monitored with telemetry.

@@ -87,6 +87,21 @@ async function completeWizardStep1(page: Page) {
   await page.locator("input[id^='wizard-ocr-issue-']").first().fill("documentIssue");
 }
 
+async function completeWizardStep2(page: Page, options?: { birthYears?: string; minAverage?: string }) {
+  await page.locator("input[id^='wizard-birth-years-']").first().fill(options?.birthYears ?? "2008, 2009, 2010");
+  await page.locator("input[id^='wizard-min-average-']").first().fill(options?.minAverage ?? "14");
+}
+
+async function activateWizardRubric(page: Page) {
+  await completeWizardStep1(page);
+  await page.getByRole("button", { name: /^Continuar$/i }).click();
+  await completeWizardStep2(page);
+  await page.getByRole("button", { name: /^Continuar$/i }).click();
+  await expect(page.getByText(/Paso 3: Revisar y activar/i)).toBeVisible();
+  await page.getByRole("button", { name: /Activar rúbrica de esta etapa/i }).click();
+  await expect(page.getByText(/Rúbrica del wizard activada/i)).toBeVisible();
+}
+
 test.describe("Admin rubric wizard flows", () => {
   test.beforeEach(async () => {
     test.skip(
@@ -99,16 +114,7 @@ test.describe("Admin rubric wizard flows", () => {
     await openRubricSettings(page);
     await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
 
-    await completeWizardStep1(page);
-    await page.getByRole("button", { name: /^Continuar$/i }).click();
-
-    await page.locator("input[id^='wizard-birth-years-']").first().fill("2008, 2009, 2010");
-    await page.locator("input[id^='wizard-min-average-']").first().fill("14");
-    await page.getByRole("button", { name: /^Continuar$/i }).click();
-
-    await expect(page.getByText(/Paso 3: Revisar y activar/i)).toBeVisible();
-    await page.getByRole("button", { name: /Activar rúbrica de esta etapa/i }).click();
-    await expect(page.getByText(/Rúbrica del wizard activada/i)).toBeVisible();
+    await activateWizardRubric(page);
 
     await page.getByRole("button", { name: /Advanced/i }).click();
     await page.getByRole("button", { name: /JSON avanzado/i }).click();
@@ -136,12 +142,7 @@ test.describe("Admin rubric wizard flows", () => {
   test("Flow 3: advanced edits mark divergence and can reset back to wizard", async ({ page }) => {
     await openRubricSettings(page);
     await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
-    await completeWizardStep1(page);
-    await page.getByRole("button", { name: /^Continuar$/i }).click();
-    await page.locator("input[id^='wizard-birth-years-']").first().fill("2008, 2009, 2010");
-    await page.locator("input[id^='wizard-min-average-']").first().fill("14");
-    await page.getByRole("button", { name: /^Continuar$/i }).click();
-    await page.getByRole("button", { name: /Activar rúbrica de esta etapa/i }).click();
+    await activateWizardRubric(page);
 
     await page.getByRole("button", { name: /Advanced/i }).click();
     await page.getByRole("button", { name: /JSON avanzado/i }).click();
@@ -163,5 +164,87 @@ test.describe("Admin rubric wizard flows", () => {
       /btn-primary/,
     );
     await expect(page.getByText(/Se restableció la configuración avanzada/i)).toBeVisible();
+  });
+
+  test("Flow 4: wizard step 2 blocks invalid thresholds", async ({ page }) => {
+    await openRubricSettings(page);
+    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
+    await completeWizardStep1(page);
+    await page.getByRole("button", { name: /^Continuar$/i }).click();
+
+    await completeWizardStep2(page, { birthYears: "", minAverage: "25" });
+    await page.getByRole("button", { name: /^Continuar$/i }).click();
+
+    await expect(page.getByText(/Paso 2: Definir políticas/i)).toBeVisible();
+    await expect(page.locator(".admin-feedback.error")).toContainText(/Bloqueos del wizard/i);
+    await expect(page.locator(".admin-feedback.error")).toContainText(/nacimiento permitido|promedio mínimo/i);
+  });
+
+  test("Flow 5: recargar sugerencias repopulates wizard mappings", async ({ page }) => {
+    await openRubricSettings(page);
+    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
+    await completeWizardStep1(page);
+
+    const ocrNameInput = page.locator("input[id^='wizard-ocr-name-']").first();
+    await ocrNameInput.fill("");
+    await expect(ocrNameInput).toHaveValue("");
+
+    await page.getByRole("button", { name: /Recargar sugerencias desde campos/i }).click();
+    await expect(ocrNameInput).not.toHaveValue("");
+  });
+
+  test("Flow 6: advanced JSON invalid shows errors and save is blocked", async ({ page }) => {
+    await openRubricSettings(page);
+    await page.getByRole("button", { name: /Advanced/i }).click();
+    await page.getByRole("button", { name: /JSON avanzado/i }).click();
+
+    const textarea = rubricTextarea(page);
+    await textarea.fill("{\"enabled\": true");
+    await textarea.blur();
+
+    await expect(page.locator(".admin-feedback.error")).toContainText(/Errores de rúbrica/i);
+    await saveConfig(page);
+    await expect(page.locator(".admin-feedback.error")).toContainText(/rúbrica automática no es válida|JSON válido/i);
+  });
+
+  test("Flow 7: advanced JSON errors prevent switching back to guided mode", async ({ page }) => {
+    await openRubricSettings(page);
+    await page.getByRole("button", { name: /Advanced/i }).click();
+    await page.getByRole("button", { name: /JSON avanzado/i }).click();
+
+    const textarea = rubricTextarea(page);
+    await textarea.fill("{\"enabled\": true");
+    await textarea.blur();
+    await expect(page.locator(".admin-feedback.error")).toContainText(/Errores de rúbrica/i);
+
+    await page.getByRole("button", { name: /^Modo guiado$/i }).click();
+    await expect(page.getByText(/No puedes volver al modo guiado/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /JSON avanzado/i })).toHaveClass(/btn-primary/);
+  });
+
+  test("Flow 8: wizard save survives reload and remains active", async ({ page }) => {
+    await openRubricSettings(page);
+    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
+    await activateWizardRubric(page);
+    await saveConfig(page);
+    await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
+      timeout: 12_000,
+    });
+
+    await page.reload();
+    await expect(page.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).toHaveClass(/btn-primary/);
+    await expect(page.getByText(/Paso 1: Mapear evidencia/i)).toBeVisible();
+  });
+
+  test("Flow 9: candidates dashboard requires cycle selection before running rubric", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/admin/candidates");
+    const runButton = page.getByRole("button", { name: /Ejecutar rúbrica automática/i });
+
+    const cycleFilter = page.locator("select.filter-select").first();
+    await cycleFilter.selectOption("all");
+
+    await expect(runButton).toBeDisabled();
+    await expect(runButton).toHaveAttribute("title", /Selecciona un proceso/i);
   });
 });
