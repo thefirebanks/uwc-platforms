@@ -9,6 +9,8 @@ const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
 const demoApplicantEmail = process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL;
 const demoApplicant2Email =
   process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL ?? "applicant.demo2@uwcperu.org";
+const demoApplicant3Email =
+  process.env.NEXT_PUBLIC_DEMO_APPLICANT_3_EMAIL ?? "applicant.demo3@uwcperu.org";
 
 const requestSchema = z.object({
   email: z.string().email().optional(),
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as unknown;
     const parsed = requestSchema.parse(body);
-    const allowedDemoEmails = [demoApplicantEmail, demoApplicant2Email]
+    const allowedDemoEmails = [demoApplicantEmail, demoApplicant2Email, demoApplicant3Email]
       .filter((email): email is string => Boolean(email))
       .map((email) => email.trim().toLowerCase());
 
