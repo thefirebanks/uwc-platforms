@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildUwcStageOneRubricFromBlueprint,
   buildUwcStageOneRubricFromDraft,
   guessUwcStageOnePresetDraft,
+  parseRubricBlueprintV1,
+  tryHydrateBlueprintFromRubric,
+  validateUwcBlueprintDraft,
 } from "@/lib/rubric/default-rubric-presets";
 import type { CycleStageField } from "@/types/domain";
 
@@ -67,5 +71,102 @@ describe("default rubric presets", () => {
     expect(rubric.criteria.length).toBeGreaterThanOrEqual(10);
     expect(rubric.criteria.some((criterion) => criterion.kind === "field_matches_ocr")).toBe(true);
     expect(rubric.criteria.some((criterion) => criterion.kind === "any_of")).toBe(true);
+  });
+
+  it("rejects invalid wizard drafts when critical mappings are missing", () => {
+    const validation = validateUwcBlueprintDraft({
+      idDocumentFileKeys: [],
+      gradesDocumentFileKeys: ["gradesOfficial"],
+      topThirdProofFileKey: null,
+      applicantNameFieldKey: null,
+      averageGradeFieldKey: null,
+      signedAuthorizationFileKey: null,
+      applicantPhotoFileKey: null,
+      ocrNamePath: "",
+      ocrBirthYearPath: "",
+      ocrDocumentTypePath: "",
+      ocrDocumentIssuePath: "",
+      allowedBirthYears: [],
+      minAverageGrade: 14,
+      recommendationRoles: ["mentor", "friend"],
+      minRecommendationResponses: 0,
+      limitGradesDocumentToSingleUpload: true,
+    });
+
+    expect(validation.success).toBe(false);
+    expect(validation.errors.length).toBeGreaterThan(0);
+  });
+
+  it("compiles strict recommendation rule and grades-combination review from blueprint", () => {
+    const blueprint = parseRubricBlueprintV1({
+      version: 1,
+      presetId: "uwc_stage1",
+      execution: { mode: "manual" },
+      mappings: {
+        idDocumentFileKeys: ["dniFile", "passportFile"],
+        gradesDocumentFileKeys: ["gradesA", "gradesB"],
+        topThirdProofFileKey: "topThirdProof",
+        applicantNameFieldKey: "fullName",
+        averageGradeFieldKey: "gradeAverage",
+        signedAuthorizationFileKey: "signedAuthorization",
+        applicantPhotoFileKey: "applicantPhoto",
+        ocrPaths: {
+          idName: "fullName",
+          birthYear: "birthYear",
+          documentType: "documentType",
+          documentIssue: "documentIssue",
+        },
+      },
+      policy: {
+        allowedBirthYears: [2008, 2009, 2010],
+        minAverageGrade: 14,
+        recommendationCompleteness: "strict_form_valid",
+        gradesCombinationRule: "single_or_review",
+        idExceptionRule: "review",
+      },
+    });
+
+    expect(blueprint).not.toBeNull();
+    if (!blueprint) {
+      return;
+    }
+
+    const rubric = buildUwcStageOneRubricFromBlueprint(blueprint);
+    const recCriterion = rubric.criteria.find((criterion) => criterion.id === "recommendations_completed");
+    const gradesComboCriterion = rubric.criteria.find(
+      (criterion) => criterion.id === "grades_document_combination_review",
+    );
+
+    expect(recCriterion?.kind).toBe("recommendations_complete");
+    if (recCriterion?.kind === "recommendations_complete") {
+      expect(recCriterion.completenessMode).toBe("strict_form_valid");
+    }
+    expect(gradesComboCriterion?.kind).toBe("file_upload_count_between");
+  });
+
+  it("hydrates blueprint back from compiled rubric", () => {
+    const rubric = buildUwcStageOneRubricFromDraft({
+      idDocumentFileKeys: ["dniUpload"],
+      gradesDocumentFileKeys: ["gradesOfficial"],
+      topThirdProofFileKey: "topThirdProof",
+      applicantNameFieldKey: "fullName",
+      averageGradeFieldKey: "gradeAverage",
+      signedAuthorizationFileKey: "signedAuthorization",
+      applicantPhotoFileKey: "applicantPhoto",
+      ocrNamePath: "fullName",
+      ocrBirthYearPath: "birthYear",
+      ocrDocumentTypePath: "documentType",
+      ocrDocumentIssuePath: "documentIssue",
+      allowedBirthYears: [2008, 2009, 2010],
+      minAverageGrade: 14,
+      recommendationRoles: ["mentor", "friend"],
+      minRecommendationResponses: 0,
+      limitGradesDocumentToSingleUpload: true,
+    });
+
+    const hydrated = tryHydrateBlueprintFromRubric(rubric);
+    expect(hydrated).not.toBeNull();
+    expect(hydrated?.policy.recommendationCompleteness).toBe("strict_form_valid");
+    expect(hydrated?.execution.mode).toBe("manual");
   });
 });

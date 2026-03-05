@@ -37,6 +37,7 @@ function buildRecommendation(
   role: "mentor" | "friend",
   submitted = true,
   responses: Record<string, unknown> = {},
+  overrides?: Partial<RecommendationRow>,
 ): RecommendationRow {
   return {
     id: `rec-${role}`,
@@ -69,6 +70,7 @@ function buildRecommendation(
     admin_received_file: {},
     admin_notes: null,
     created_at: "2026-03-01T00:00:00Z",
+    ...overrides,
   };
 }
 
@@ -120,6 +122,7 @@ describe("evaluateApplicationWithRubric", () => {
           roles: ["mentor", "friend"],
           requireRequested: true,
           minFilledResponses: 0,
+          completenessMode: "minimum_answers",
           onFail: "not_eligible",
           onMissingData: "needs_review",
         },
@@ -374,6 +377,7 @@ describe("evaluateApplicationWithRubric", () => {
           roles: ["mentor", "friend"],
           requireRequested: true,
           minFilledResponses: 2,
+          completenessMode: "minimum_answers",
           onFail: "not_eligible",
           onMissingData: "needs_review",
         },
@@ -392,5 +396,101 @@ describe("evaluateApplicationWithRubric", () => {
 
     expect(result.outcome).toBe("not_eligible");
     expect(result.criteria[0]?.status).toBe("fail");
+  });
+
+  it("enforces strict_form_valid recommendations with validated payloads", () => {
+    const rubric: EligibilityRubricConfig = {
+      enabled: true,
+      criteria: [
+        {
+          id: "recs_strict",
+          label: "Recommendations strict",
+          kind: "recommendations_complete",
+          roles: ["mentor", "friend"],
+          requireRequested: true,
+          minFilledResponses: 0,
+          completenessMode: "strict_form_valid",
+          onFail: "not_eligible",
+          onMissingData: "needs_review",
+        },
+      ],
+    };
+
+    const validPayload = {
+      recommenderName: "Mentor Full Name",
+      relationshipTitle: "Tutor principal",
+      knownDuration: "2 years",
+      strengths: "Tiene liderazgo, empatía y constancia demostrada en proyectos escolares.",
+      growthAreas: "Debe mejorar la gestión del tiempo en semanas con múltiples entregables.",
+      endorsement: "Recomiendo firmemente su admisión por madurez, compromiso y potencial.",
+      confirmsNoFamily: true,
+    };
+
+    const result = evaluateApplicationWithRubric({
+      application: buildApplication(),
+      rubric,
+      recommendations: [
+        buildRecommendation("mentor", true, validPayload),
+        buildRecommendation("friend", true, validPayload),
+      ],
+      latestOcrByFile: new Map(),
+    });
+
+    expect(result.outcome).toBe("eligible");
+    expect(result.criteria[0]?.status).toBe("pass");
+  });
+
+  it("routes manual-only recommendations to needs_review in strict mode", () => {
+    const rubric: EligibilityRubricConfig = {
+      enabled: true,
+      criteria: [
+        {
+          id: "recs_strict_manual",
+          label: "Recommendations strict",
+          kind: "recommendations_complete",
+          roles: ["mentor", "friend"],
+          requireRequested: true,
+          minFilledResponses: 0,
+          completenessMode: "strict_form_valid",
+          onFail: "not_eligible",
+          onMissingData: "needs_review",
+        },
+      ],
+    };
+
+    const validPayload = {
+      recommenderName: "Mentor Full Name",
+      relationshipTitle: "Tutor principal",
+      knownDuration: "2 years",
+      strengths: "Tiene liderazgo, empatía y constancia demostrada en proyectos escolares.",
+      growthAreas: "Debe mejorar la gestión del tiempo en semanas con múltiples entregables.",
+      endorsement: "Recomiendo firmemente su admisión por madurez, compromiso y potencial.",
+      confirmsNoFamily: true,
+    };
+
+    const manualFriendRecommendation = buildRecommendation(
+      "friend",
+      false,
+      validPayload,
+      {
+        status: "invited",
+        submitted_at: null,
+        admin_received_at: "2026-03-04T00:00:00Z",
+        admin_received_reason: "manual_upload",
+      },
+    );
+
+    const result = evaluateApplicationWithRubric({
+      application: buildApplication(),
+      rubric,
+      recommendations: [
+        buildRecommendation("mentor", true, validPayload),
+        manualFriendRecommendation,
+      ],
+      latestOcrByFile: new Map(),
+    });
+
+    expect(result.outcome).toBe("needs_review");
+    expect(result.criteria[0]?.status).toBe("missing_data");
   });
 });

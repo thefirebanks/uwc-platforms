@@ -1,7 +1,10 @@
+import { z } from "zod";
 import type {
   CycleStageField,
   EligibilityRubricConfig,
   RecommenderRole,
+  RubricBlueprintV1,
+  RubricMeta,
 } from "@/types/domain";
 
 type LightweightField = Pick<CycleStageField, "field_key" | "field_label" | "field_type">;
@@ -25,6 +28,38 @@ export type UwcStageOnePresetDraft = {
   limitGradesDocumentToSingleUpload: boolean;
 };
 
+const ocrPathsSchema = z.object({
+  idName: z.string().trim().min(1).max(200),
+  birthYear: z.string().trim().min(1).max(200),
+  documentType: z.string().trim().min(1).max(200),
+  documentIssue: z.string().trim().min(1).max(200),
+});
+
+export const rubricBlueprintV1Schema = z.object({
+  version: z.literal(1),
+  presetId: z.literal("uwc_stage1"),
+  execution: z.object({
+    mode: z.literal("manual"),
+  }),
+  mappings: z.object({
+    idDocumentFileKeys: z.array(z.string().trim().min(1).max(120)).min(1).max(3),
+    gradesDocumentFileKeys: z.array(z.string().trim().min(1).max(120)).min(1).max(8),
+    topThirdProofFileKey: z.string().trim().min(1).max(120).nullable(),
+    applicantNameFieldKey: z.string().trim().min(1).max(120),
+    averageGradeFieldKey: z.string().trim().min(1).max(120),
+    signedAuthorizationFileKey: z.string().trim().min(1).max(120),
+    applicantPhotoFileKey: z.string().trim().min(1).max(120),
+    ocrPaths: ocrPathsSchema,
+  }),
+  policy: z.object({
+    allowedBirthYears: z.array(z.number().int().min(1900).max(2100)).min(1).max(10),
+    minAverageGrade: z.number().min(0).max(20),
+    recommendationCompleteness: z.literal("strict_form_valid"),
+    gradesCombinationRule: z.literal("single_or_review"),
+    idExceptionRule: z.literal("review"),
+  }),
+});
+
 function normalizeText(value: string) {
   return value.toLowerCase().trim();
 }
@@ -34,7 +69,7 @@ function containsAny(text: string, tokens: string[]) {
 }
 
 function uniqueStrings(values: string[]) {
-  return Array.from(new Set(values.filter(Boolean)));
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
 
 function findFileKeys(fields: LightweightField[], keywords: string[]) {
@@ -141,20 +176,74 @@ export function guessUwcStageOnePresetDraft(
     allowedBirthYears: [2008, 2009, 2010],
     minAverageGrade: 14,
     recommendationRoles: ["mentor", "friend"],
-    minRecommendationResponses: 2,
+    minRecommendationResponses: 0,
     limitGradesDocumentToSingleUpload: true,
   };
 }
 
-export function buildUwcStageOneRubricFromDraft(
-  draft: UwcStageOnePresetDraft,
+export function validateUwcBlueprintDraft(draft: UwcStageOnePresetDraft) {
+  const candidate = {
+    version: 1,
+    presetId: "uwc_stage1",
+    execution: { mode: "manual" },
+    mappings: {
+      idDocumentFileKeys: uniqueStrings(draft.idDocumentFileKeys).slice(0, 3),
+      gradesDocumentFileKeys: uniqueStrings(draft.gradesDocumentFileKeys),
+      topThirdProofFileKey: draft.topThirdProofFileKey?.trim() || null,
+      applicantNameFieldKey: draft.applicantNameFieldKey?.trim() || "",
+      averageGradeFieldKey: draft.averageGradeFieldKey?.trim() || "",
+      signedAuthorizationFileKey: draft.signedAuthorizationFileKey?.trim() || "",
+      applicantPhotoFileKey: draft.applicantPhotoFileKey?.trim() || "",
+      ocrPaths: {
+        idName: draft.ocrNamePath.trim(),
+        birthYear: draft.ocrBirthYearPath.trim(),
+        documentType: draft.ocrDocumentTypePath.trim(),
+        documentIssue: draft.ocrDocumentIssuePath.trim(),
+      },
+    },
+    policy: {
+      allowedBirthYears: Array.from(new Set(draft.allowedBirthYears)).sort((a, b) => a - b),
+      minAverageGrade: draft.minAverageGrade,
+      recommendationCompleteness: "strict_form_valid",
+      gradesCombinationRule: "single_or_review",
+      idExceptionRule: "review",
+    },
+  } satisfies RubricBlueprintV1;
+
+  const parsed = rubricBlueprintV1Schema.safeParse(candidate);
+  if (parsed.success) {
+    return {
+      success: true as const,
+      data: parsed.data as RubricBlueprintV1,
+      errors: [] as string[],
+    };
+  }
+
+  const errors = parsed.error.issues.map((issue) => {
+    const path = issue.path.join(".");
+    return path ? `${path}: ${issue.message}` : issue.message;
+  });
+
+  return {
+    success: false as const,
+    data: null,
+    errors,
+  };
+}
+
+export function parseRubricBlueprintV1(value: unknown): RubricBlueprintV1 | null {
+  const parsed = rubricBlueprintV1Schema.safeParse(value);
+  return parsed.success ? (parsed.data as RubricBlueprintV1) : null;
+}
+
+export function buildUwcStageOneRubricFromBlueprint(
+  blueprint: RubricBlueprintV1,
 ): EligibilityRubricConfig {
-  const idDocKeys = uniqueStrings(draft.idDocumentFileKeys).slice(0, 3);
-  const gradesDocKeys = uniqueStrings(draft.gradesDocumentFileKeys);
-  const allowedYears = uniqueStrings(draft.allowedBirthYears.map((year) => String(year)));
-  const recommendationRoles = draft.recommendationRoles.length > 0
-    ? draft.recommendationRoles
-    : (["mentor", "friend"] satisfies RecommenderRole[]);
+  const idDocKeys = uniqueStrings(blueprint.mappings.idDocumentFileKeys).slice(0, 3);
+  const gradesDocKeys = uniqueStrings(blueprint.mappings.gradesDocumentFileKeys);
+  const allowedYears = uniqueStrings(
+    blueprint.policy.allowedBirthYears.map((year) => String(year)),
+  );
 
   const criteria: EligibilityRubricConfig["criteria"] = [
     {
@@ -173,7 +262,7 @@ export function buildUwcStageOneRubricFromDraft(
       label: "Tipo de documento de identidad permitido",
       kind: "ocr_field_in",
       fileKey: idDocKeys[0] ?? "idDocument",
-      jsonPath: draft.ocrDocumentTypePath,
+      jsonPath: blueprint.mappings.ocrPaths.documentType,
       allowedValues: ["dni", "pasaporte", "carnet_extranjeria"],
       caseSensitive: false,
       onFail: "needs_review",
@@ -184,7 +273,7 @@ export function buildUwcStageOneRubricFromDraft(
       label: "Documento de identidad sin excepciones observadas",
       kind: "ocr_field_not_in",
       fileKey: idDocKeys[0] ?? "idDocument",
-      jsonPath: draft.ocrDocumentIssuePath,
+      jsonPath: blueprint.mappings.ocrPaths.documentIssue,
       disallowedValues: [
         "expired",
         "reniec_certificate_instead_of_dni",
@@ -198,9 +287,9 @@ export function buildUwcStageOneRubricFromDraft(
       id: "applicant_name_matches_id",
       label: "Nombre del formulario coincide con documento de identidad",
       kind: "field_matches_ocr",
-      fieldKey: draft.applicantNameFieldKey ?? "fullName",
+      fieldKey: blueprint.mappings.applicantNameFieldKey,
       fileKey: idDocKeys[0] ?? "idDocument",
-      jsonPath: draft.ocrNamePath,
+      jsonPath: blueprint.mappings.ocrPaths.idName,
       caseSensitive: false,
       normalizeWhitespace: true,
       onFail: "needs_review",
@@ -211,7 +300,7 @@ export function buildUwcStageOneRubricFromDraft(
       label: "Año de nacimiento permitido",
       kind: "ocr_field_in",
       fileKey: idDocKeys[0] ?? "idDocument",
-      jsonPath: draft.ocrBirthYearPath,
+      jsonPath: blueprint.mappings.ocrPaths.birthYear,
       allowedValues: allowedYears.length > 0 ? allowedYears : ["2008", "2009", "2010"],
       caseSensitive: false,
       onFail: "not_eligible",
@@ -233,18 +322,18 @@ export function buildUwcStageOneRubricFromDraft(
       label: "Prueba de tercio superior o promedio mínimo",
       kind: "any_of",
       conditions: [
-        ...(draft.topThirdProofFileKey
+        ...(blueprint.mappings.topThirdProofFileKey
           ? [
               {
                 kind: "file_uploaded" as const,
-                fileKey: draft.topThirdProofFileKey,
+                fileKey: blueprint.mappings.topThirdProofFileKey,
               },
             ]
           : []),
         {
           kind: "number_between" as const,
-          fieldKey: draft.averageGradeFieldKey ?? "gradeAverage",
-          min: draft.minAverageGrade,
+          fieldKey: blueprint.mappings.averageGradeFieldKey,
+          min: blueprint.policy.minAverageGrade,
         },
       ],
       onFail: "not_eligible",
@@ -254,9 +343,10 @@ export function buildUwcStageOneRubricFromDraft(
       id: "recommendations_completed",
       label: "Recomendaciones enviadas y completas",
       kind: "recommendations_complete",
-      roles: recommendationRoles,
+      roles: ["mentor", "friend"],
       requireRequested: true,
-      minFilledResponses: Math.max(0, draft.minRecommendationResponses),
+      minFilledResponses: 0,
+      completenessMode: blueprint.policy.recommendationCompleteness,
       onFail: "not_eligible",
       onMissingData: "needs_review",
     },
@@ -264,7 +354,7 @@ export function buildUwcStageOneRubricFromDraft(
       id: "signed_authorization_uploaded",
       label: "Autorización firmada cargada",
       kind: "file_uploaded",
-      fileKey: draft.signedAuthorizationFileKey ?? "signedAuthorization",
+      fileKey: blueprint.mappings.signedAuthorizationFileKey,
       onFail: "not_eligible",
       onMissingData: "not_eligible",
     },
@@ -272,13 +362,13 @@ export function buildUwcStageOneRubricFromDraft(
       id: "applicant_photo_uploaded",
       label: "Foto del postulante cargada",
       kind: "file_uploaded",
-      fileKey: draft.applicantPhotoFileKey ?? "applicantPhoto",
+      fileKey: blueprint.mappings.applicantPhotoFileKey,
       onFail: "not_eligible",
       onMissingData: "not_eligible",
     },
   ];
 
-  if (draft.limitGradesDocumentToSingleUpload && gradesDocKeys.length > 1) {
+  if (blueprint.policy.gradesCombinationRule === "single_or_review" && gradesDocKeys.length > 1) {
     criteria.splice(6, 0, {
       id: "grades_document_combination_review",
       label: "Combinación de documentos de notas requiere revisión",
@@ -295,4 +385,147 @@ export function buildUwcStageOneRubricFromDraft(
     enabled: true,
     criteria,
   };
+}
+
+export function buildUwcStageOneRubricFromDraft(
+  draft: UwcStageOnePresetDraft,
+): EligibilityRubricConfig {
+  const validated = validateUwcBlueprintDraft(draft);
+  if (!validated.success) {
+    // Fallback to ensure backward compatibility when caller still expects a rubric.
+    const fallback = guessUwcStageOnePresetDraft([]);
+    const fallbackValidated = validateUwcBlueprintDraft(fallback);
+    if (!fallbackValidated.success) {
+      return {
+        enabled: false,
+        criteria: [],
+      };
+    }
+    return buildUwcStageOneRubricFromBlueprint(fallbackValidated.data);
+  }
+
+  return buildUwcStageOneRubricFromBlueprint(validated.data);
+}
+
+export function createRubricMeta({
+  source,
+  compiledBy,
+}: {
+  source: RubricMeta["source"];
+  compiledBy?: string | null;
+}): RubricMeta {
+  return {
+    presetId: "uwc_stage1",
+    compiledAt: new Date().toISOString(),
+    compiledBy: compiledBy ?? null,
+    source,
+    version: 1,
+  };
+}
+
+export function tryHydrateBlueprintFromRubric(
+  rubric: EligibilityRubricConfig,
+): RubricBlueprintV1 | null {
+  const byId = new Map(rubric.criteria.map((criterion) => [criterion.id, criterion] as const));
+
+  const idUpload = byId.get("id_document_uploaded");
+  const gradesUpload = byId.get("grades_documents_uploaded");
+  const topThirdOrAverage = byId.get("top_third_or_grade_average");
+  const nameMatch = byId.get("applicant_name_matches_id");
+  const birthYear = byId.get("birth_year_allowed");
+  const docType = byId.get("id_document_type_allowed");
+  const docIssue = byId.get("id_document_issue_exceptions");
+  const authorization = byId.get("signed_authorization_uploaded");
+  const photo = byId.get("applicant_photo_uploaded");
+  const recommendations = byId.get("recommendations_completed");
+
+  if (
+    !idUpload ||
+    !gradesUpload ||
+    !topThirdOrAverage ||
+    !nameMatch ||
+    !birthYear ||
+    !docType ||
+    !docIssue ||
+    !authorization ||
+    !photo ||
+    !recommendations
+  ) {
+    return null;
+  }
+
+  if (
+    idUpload.kind !== "any_of" ||
+    gradesUpload.kind !== "any_of" ||
+    topThirdOrAverage.kind !== "any_of" ||
+    nameMatch.kind !== "field_matches_ocr" ||
+    birthYear.kind !== "ocr_field_in" ||
+    docType.kind !== "ocr_field_in" ||
+    docIssue.kind !== "ocr_field_not_in" ||
+    authorization.kind !== "file_uploaded" ||
+    photo.kind !== "file_uploaded" ||
+    recommendations.kind !== "recommendations_complete"
+  ) {
+    return null;
+  }
+
+  const idDocumentFileKeys = (idUpload.conditions ?? [])
+    .filter((condition) => condition.kind === "file_uploaded")
+    .map((condition) => condition.fileKey ?? "")
+    .filter(Boolean);
+
+  const gradesDocumentFileKeys = (gradesUpload.conditions ?? [])
+    .filter((condition) => condition.kind === "file_uploaded")
+    .map((condition) => condition.fileKey ?? "")
+    .filter(Boolean);
+
+  const topThirdProofFileKey = (topThirdOrAverage.conditions ?? []).find(
+    (condition) => condition.kind === "file_uploaded",
+  )?.fileKey ?? null;
+
+  const averageGradeFieldKey = (topThirdOrAverage.conditions ?? []).find(
+    (condition) => condition.kind === "number_between",
+  )?.fieldKey ?? null;
+
+  const minAverageGrade = (topThirdOrAverage.conditions ?? []).find(
+    (condition) => condition.kind === "number_between",
+  )?.min;
+
+  const parsedBirthYears = (birthYear.allowedValues ?? [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value));
+
+  const candidate: RubricBlueprintV1 = {
+    version: 1,
+    presetId: "uwc_stage1",
+    execution: {
+      mode: "manual",
+    },
+    mappings: {
+      idDocumentFileKeys,
+      gradesDocumentFileKeys,
+      topThirdProofFileKey,
+      applicantNameFieldKey: nameMatch.fieldKey ?? "",
+      averageGradeFieldKey: averageGradeFieldKey ?? "",
+      signedAuthorizationFileKey: authorization.fileKey ?? "",
+      applicantPhotoFileKey: photo.fileKey ?? "",
+      ocrPaths: {
+        idName: nameMatch.jsonPath ?? "",
+        birthYear: birthYear.jsonPath ?? "",
+        documentType: docType.jsonPath ?? "",
+        documentIssue: docIssue.jsonPath ?? "",
+      },
+    },
+    policy: {
+      allowedBirthYears: parsedBirthYears,
+      minAverageGrade:
+        typeof minAverageGrade === "number" ? minAverageGrade : 14,
+      recommendationCompleteness: "strict_form_valid",
+      gradesCombinationRule: "single_or_review",
+      idExceptionRule: "review",
+    },
+  };
+
+  const parsed = rubricBlueprintV1Schema.safeParse(candidate);
+  return parsed.success ? (parsed.data as RubricBlueprintV1) : null;
 }

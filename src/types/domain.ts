@@ -205,6 +205,7 @@ export interface EligibilityRubricCriterion {
   roles?: RecommenderRole[];
   requireRequested?: boolean;
   minFilledResponses?: number;
+  completenessMode?: "minimum_answers" | "strict_form_valid";
   minConfidence?: number;
   jsonPath?: string;
   normalizeWhitespace?: boolean;
@@ -217,6 +218,44 @@ export interface EligibilityRubricCriterion {
 export interface EligibilityRubricConfig {
   enabled: boolean;
   criteria: EligibilityRubricCriterion[];
+}
+
+export interface RubricBlueprintV1 {
+  version: 1;
+  presetId: "uwc_stage1";
+  execution: {
+    mode: "manual";
+  };
+  mappings: {
+    idDocumentFileKeys: string[];
+    gradesDocumentFileKeys: string[];
+    topThirdProofFileKey: string | null;
+    applicantNameFieldKey: string;
+    averageGradeFieldKey: string;
+    signedAuthorizationFileKey: string;
+    applicantPhotoFileKey: string;
+    ocrPaths: {
+      idName: string;
+      birthYear: string;
+      documentType: string;
+      documentIssue: string;
+    };
+  };
+  policy: {
+    allowedBirthYears: number[];
+    minAverageGrade: number;
+    recommendationCompleteness: "strict_form_valid";
+    gradesCombinationRule: "single_or_review";
+    idExceptionRule: "review";
+  };
+}
+
+export interface RubricMeta {
+  presetId: "uwc_stage1";
+  compiledAt: string;
+  compiledBy?: string | null;
+  source: "wizard" | "advanced";
+  version: 1;
 }
 
 export interface CycleStageField {

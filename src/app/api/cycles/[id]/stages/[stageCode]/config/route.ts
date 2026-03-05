@@ -10,6 +10,10 @@ import {
   eligibilityRubricConfigSchema,
   parseEligibilityRubricConfig,
 } from "@/lib/rubric/eligibility-rubric";
+import {
+  parseRubricBlueprintV1,
+  rubricBlueprintV1Schema,
+} from "@/lib/rubric/default-rubric-presets";
 import type { Database, Json } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
@@ -60,6 +64,17 @@ const settingsSchema = z.object({
   previousStageRequirement: z.string().min(1).max(160),
   blockIfPreviousNotMet: z.boolean(),
   eligibilityRubric: eligibilityRubricConfigSchema.optional(),
+  rubricBlueprintV1: rubricBlueprintV1Schema.nullable().optional(),
+  rubricMeta: z
+    .object({
+      presetId: z.literal("uwc_stage1"),
+      compiledAt: z.string().datetime(),
+      compiledBy: z.string().uuid().nullable().optional(),
+      source: z.enum(["wizard", "advanced"]),
+      version: z.literal(1),
+    })
+    .nullable()
+    .optional(),
 });
 
 const sectionSchema = z.object({
@@ -114,6 +129,13 @@ function parseStageAdminConfig(value: Json | null | undefined) {
         ? record.blockIfPreviousNotMet
         : null,
     eligibilityRubric: parseEligibilityRubricConfig(record.eligibilityRubric),
+    rubricBlueprintV1: parseRubricBlueprintV1(record.rubricBlueprintV1),
+    rubricMeta:
+      record.rubricMeta &&
+      typeof record.rubricMeta === "object" &&
+      !Array.isArray(record.rubricMeta)
+        ? (record.rubricMeta as Record<string, Json>)
+        : null,
   };
 }
 
@@ -387,6 +409,8 @@ export async function GET(
         previousStageRequirement: parsedAdminConfig.previousStageRequirement ?? "none",
         blockIfPreviousNotMet: parsedAdminConfig.blockIfPreviousNotMet ?? false,
         eligibilityRubric: parsedAdminConfig.eligibilityRubric ?? null,
+        rubricBlueprintV1: parsedAdminConfig.rubricBlueprintV1 ?? null,
+        rubricMeta: parsedAdminConfig.rubricMeta ?? null,
       },
     });
   }, { operation: "cycles.stage_config.get" });
@@ -441,6 +465,8 @@ export async function PATCH(
           previousStageRequirement: parsed.data.settings.previousStageRequirement,
           blockIfPreviousNotMet: parsed.data.settings.blockIfPreviousNotMet,
           eligibilityRubric: parsed.data.settings.eligibilityRubric ?? null,
+          rubricBlueprintV1: parsed.data.settings.rubricBlueprintV1 ?? null,
+          rubricMeta: parsed.data.settings.rubricMeta ?? null,
         }
       : {
           stageName: stageTemplate.stage_label,
@@ -452,6 +478,8 @@ export async function PATCH(
           blockIfPreviousNotMet:
             parsedExistingAdminConfig.blockIfPreviousNotMet ?? false,
           eligibilityRubric: parsedExistingAdminConfig.eligibilityRubric ?? null,
+          rubricBlueprintV1: parsedExistingAdminConfig.rubricBlueprintV1 ?? null,
+          rubricMeta: parsedExistingAdminConfig.rubricMeta ?? null,
         };
 
     // ── Validate field keys ────────────────────────────────────
@@ -770,6 +798,8 @@ export async function PATCH(
       previousStageRequirement: incomingSettings.previousStageRequirement,
       blockIfPreviousNotMet: incomingSettings.blockIfPreviousNotMet,
       eligibilityRubric: (incomingSettings.eligibilityRubric ?? null) as Json,
+      rubricBlueprintV1: (incomingSettings.rubricBlueprintV1 ?? null) as Json,
+      rubricMeta: (incomingSettings.rubricMeta ?? null) as Json,
     };
 
     // ── Read back saved state ──────────────────────────────────
@@ -906,6 +936,12 @@ export async function PATCH(
           savedAdminConfig.blockIfPreviousNotMet ?? incomingSettings.blockIfPreviousNotMet,
         eligibilityRubric:
           savedAdminConfig.eligibilityRubric ?? incomingSettings.eligibilityRubric ?? null,
+        rubricBlueprintV1:
+          savedAdminConfig.rubricBlueprintV1 ?? incomingSettings.rubricBlueprintV1 ?? null,
+        rubricMeta:
+          (savedAdminConfig.rubricMeta as Json | null) ??
+          (incomingSettings.rubricMeta as Json | null) ??
+          null,
       },
     });
   }, { operation: "cycles.stage_config.patch" });

@@ -9,6 +9,7 @@ import {
 } from "@/lib/rubric/eligibility-rubric";
 import type { Database } from "@/types/supabase";
 import type { ApplicationStatus } from "@/types/domain";
+import { validateRecommendationPayload } from "@/lib/server/recommendations-service";
 
 type ApplicationRow = Database["public"]["Tables"]["applications"]["Row"];
 type RecommendationRow = Database["public"]["Tables"]["recommendation_requests"]["Row"];
@@ -218,6 +219,14 @@ function isRecommendationComplete(recommendation: RecommendationRow) {
     Boolean(recommendation.submitted_at) ||
     Boolean(recommendation.admin_received_at)
   );
+}
+
+function isRecommendationSubmittedOnline(recommendation: RecommendationRow) {
+  return recommendation.status === "submitted" || Boolean(recommendation.submitted_at);
+}
+
+function isRecommendationManuallyReceivedOnly(recommendation: RecommendationRow) {
+  return Boolean(recommendation.admin_received_at) && !isRecommendationSubmittedOnline(recommendation);
 }
 
 type AnyOfConditionResult = {
@@ -459,11 +468,25 @@ function evaluateCriterion({
             return false;
           }
 
+          if (criterion.completenessMode === "strict_form_valid") {
+            if (!isRecommendationSubmittedOnline(recommendation)) {
+              return false;
+            }
+
+            const validation = validateRecommendationPayload({
+              role: recommendation.role,
+              payload: responses,
+            });
+
+            return validation.isValid;
+          }
+
           const filledCount = Object.values(responses).filter((value) => !isMissing(value)).length;
           return filledCount >= (criterion.minFilledResponses ?? 0);
         });
 
-        return { role, requested, completed, withContent };
+        const manualReceivedWithoutSubmission = roleRows.some(isRecommendationManuallyReceivedOnly);
+        return { role, requested, completed, withContent, manualReceivedWithoutSubmission };
       });
 
       const missingRequested = roleStatuses
@@ -484,6 +507,22 @@ function evaluateCriterion({
         .filter((entry) => !entry.withContent)
         .map((entry) => entry.role);
       if (incompleteContent.length > 0) {
+        if (criterion.completenessMode === "strict_form_valid") {
+          const manualReceivedOnlyRoles = roleStatuses
+            .filter((entry) => entry.manualReceivedWithoutSubmission)
+            .map((entry) => entry.role);
+
+          if (manualReceivedOnlyRoles.length > 0) {
+            return missing(
+              `Recomendaciones de ${manualReceivedOnlyRoles.join(", ")} fueron registradas manualmente y requieren revisión.`,
+            );
+          }
+
+          return fail(
+            `Recomendaciones incompletas para: ${incompleteContent.join(", ")} (se requiere formulario completo y validado).`,
+          );
+        }
+
         return fail(
           `Recomendaciones incompletas para: ${incompleteContent.join(", ")} (mínimo ${
             criterion.minFilledResponses ?? 0

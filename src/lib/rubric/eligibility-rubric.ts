@@ -56,6 +56,7 @@ const recommendationsCompleteCriterionSchema = criterionBaseSchema.extend({
     .default(["mentor", "friend"]),
   requireRequested: z.boolean().default(true),
   minFilledResponses: z.number().int().min(0).max(50).default(0),
+  completenessMode: z.enum(["minimum_answers", "strict_form_valid"]).default("minimum_answers"),
 });
 
 const ocrConfidenceCriterionSchema = criterionBaseSchema.extend({
