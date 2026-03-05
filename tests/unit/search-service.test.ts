@@ -33,6 +33,12 @@ type StubConfig = {
   profileBatchError?: unknown;
   cycles?: Array<{ id: string; name: string }>;
   cycleError?: unknown;
+  stageEvaluations?: Array<{
+    application_id: string;
+    outcome: "eligible" | "not_eligible" | "needs_review";
+    evaluated_at: string;
+  }>;
+  stageEvaluationError?: unknown;
 };
 
 function buildSearchSupabaseStub(config: StubConfig = {}) {
@@ -89,6 +95,17 @@ function buildSearchSupabaseStub(config: StubConfig = {}) {
           in: vi.fn().mockResolvedValue({
             data: config.cycles ?? [],
             error: config.cycleError ?? null,
+          }),
+        }),
+      };
+    }
+
+    if (table === "application_stage_evaluations") {
+      return {
+        select: vi.fn().mockReturnValue({
+          in: vi.fn().mockResolvedValue({
+            data: config.stageEvaluations ?? [],
+            error: config.stageEvaluationError ?? null,
           }),
         }),
       };

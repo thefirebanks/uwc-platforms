@@ -36,3 +36,10 @@ Before merge:
   - `sbu link --project-ref lnuugnvwjyndvxhzbuib`
   - `sbu migration list`
   - `sbu db push`
+
+## Execution Defaults
+- Use `bun` for install, run, lint, test, typecheck, and build commands in this repository.
+- Prefer `sbu` (Supabase CLI wrapper) and `gh` (GitHub CLI) when database or GitHub operations are needed.
+- For feature work, always perform browser-level verification (manual flow or E2E) to visually confirm behavior.
+- Assume local execution authority for running and testing the project end-to-end.
+- Keep progress in small, logical git commits instead of one large commit.
