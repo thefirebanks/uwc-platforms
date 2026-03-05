@@ -5,7 +5,14 @@ import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/supabase";
 
-const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
+const deploymentEnvironment = (
+  process.env.VERCEL_ENV ??
+  process.env.NEXT_PUBLIC_VERCEL_ENV ??
+  ""
+).toLowerCase();
+const isProductionDeployment = deploymentEnvironment === "production";
+const devBypassEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true" && !isProductionDeployment;
 const demoApplicantEmail = process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL;
 const demoApplicant2Email =
   process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL ?? "applicant.demo2@uwcperu.org";
