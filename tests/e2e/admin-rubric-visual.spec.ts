@@ -31,6 +31,8 @@ test.describe("Admin rubric visual checks", () => {
       timeout: 15_000,
     });
     await expect(page.getByRole("button", { name: /JSON avanzado/i })).toBeVisible();
+    await expect(page.getByText(/Asistente rápido: Rúbrica UWC Perú/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Aplicar rúbrica UWC Perú/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /Usar plantilla básica/i })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByRole("button", { name: /Usar plantilla con OCR/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /Validar rúbrica/i })).toBeVisible();

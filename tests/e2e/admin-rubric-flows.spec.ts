@@ -183,4 +183,26 @@ test.describe("Admin rubric flows", () => {
     await page.getByRole("button", { name: /Validar rúbrica/i }).click();
     await expect(page.locator(".admin-feedback.success")).toContainText(/Rúbrica válida/i);
   });
+
+  test("Flow 6: assistant can generate UWC preset rubric from mapped fields", async ({ page }) => {
+    await openRubricSettings(page);
+    await switchToJsonMode(page);
+    const textarea = rubricTextarea(page);
+    const originalValue = await textarea.inputValue();
+
+    try {
+      await page.getByRole("button", { name: /Modo guiado/i }).click();
+      await expect(page.getByText(/Asistente rápido: Rúbrica UWC Perú/i)).toBeVisible({
+        timeout: 8_000,
+      });
+      await page.getByRole("button", { name: /Aplicar rúbrica UWC Perú/i }).click();
+      await expect(page.locator(".admin-feedback.success")).toContainText(/rúbrica asistida/i);
+
+      await switchToJsonMode(page);
+      await expect(textarea).toContainText('"kind": "field_matches_ocr"');
+      await expect(textarea).toContainText('"kind": "any_of"');
+    } finally {
+      await restoreRubricIfChanged(page, originalValue);
+    }
+  });
 });

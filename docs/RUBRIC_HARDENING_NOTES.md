@@ -22,6 +22,10 @@
 - Symptom: baseline template used payload presence checks for file inputs.
 - Fix: baseline template now uses `file_uploaded` criteria for document keys.
 
+6. Real admissions criteria required richer logic than simple field checks.
+- Symptom: criteria like “top-third proof OR minimum average”, OCR exception flags, and name-vs-ID consistency were awkward or impossible.
+- Fix: added extensible criterion primitives (`any_of`, `ocr_field_in`, `ocr_field_not_in`, `field_matches_ocr`, `file_upload_count_between`) plus a UWC assistant preset that maps rules from DB-backed stage fields.
+
 ## Implemented verification
 - Unit tests: rubric schema, rubric evaluator, search fallback behavior.
 - Browser E2E tests: admin rubric authoring flows and execution flows.

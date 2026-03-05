@@ -14,6 +14,17 @@ This document defines the admin flows for configuring and operating automated ru
   - Rubric is valid and persisted without writing JSON.
   - Includes baseline checks for required fields, required files, and recommendations.
 
+## Flow 1B: Start from UWC assistant preset (recommended)
+- Goal: configure Stage 1 rubric quickly using DB-backed field mappings.
+- Admin actions:
+  - Open `Ajustes y Reglas` and find `Asistente rápido: Rúbrica UWC Perú`.
+  - Confirm mapped field keys (identity files, grades docs, name, average grade, authorization, photo).
+  - Adjust OCR JSON paths and thresholds (birth years, average minimum, recommendation completeness) as needed.
+  - Click `Aplicar rúbrica UWC Perú`, validate, and save.
+- Expected result:
+  - A default rubric is generated for UWC Stage 1 criteria with editable rules.
+  - The generated config remains fully modifiable in guided mode or advanced JSON.
+
 ## Flow 2: Add OCR confidence gating for manual-review fallback
 - Goal: route low-confidence OCR outcomes to humans while keeping deterministic pass/fail checks.
 - Admin actions:
@@ -33,6 +44,13 @@ This document defines the admin flows for configuring and operating automated ru
 - Expected result:
   - Detailed validation feedback for malformed or semantically invalid config.
   - When JSON is valid, guided mode stays synchronized with that config.
+
+## Supported advanced rule primitives
+- `ocr_field_in`: validate OCR extracted values against an allowed list.
+- `ocr_field_not_in`: flag OCR extracted exception values for review.
+- `field_matches_ocr`: compare applicant payload value with OCR extraction.
+- `file_upload_count_between`: enforce/range-check number of uploaded files across keys.
+- `any_of`: pass criterion when at least one condition matches (supports OR scenarios).
 
 ## Flow 4: Prevent invalid rubric configurations
 - Goal: stop invalid logic from reaching runtime.
