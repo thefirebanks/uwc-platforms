@@ -22,21 +22,6 @@ function makeOtherSection(overrides?: Partial<StageSection>): StageSection {
   };
 }
 
-function makeIdentitySection(overrides?: Partial<StageSection>): StageSection {
-  return {
-    id: "section-identity",
-    cycle_id: "cycle-1",
-    stage_code: "documents",
-    section_key: "identity",
-    title: "Datos personales",
-    description: "Datos base del postulante",
-    sort_order: 1,
-    is_visible: true,
-    created_at: "2026-01-01T00:00:00.000Z",
-    ...overrides,
-  };
-}
-
 describe("StageConfigEditor", () => {
   const stageTemplates = [
     {
@@ -542,7 +527,9 @@ describe("StageConfigEditor", () => {
     });
   });
 
-  it("shows applicant sub-group emoji cues for known section keys", () => {
+  it("renames a section from the section toolbar pencil action", () => {
+    const promptMock = vi.spyOn(window, "prompt").mockReturnValue("Identidad actualizada");
+
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -555,7 +542,7 @@ describe("StageConfigEditor", () => {
         stageTemplates={[...stageTemplates]}
         initialFields={[
           {
-            id: "field-identity-1",
+            id: "field-1",
             cycle_id: "cycle-1",
             stage_code: "documents",
             field_key: "fullName",
@@ -570,15 +557,128 @@ describe("StageConfigEditor", () => {
             created_at: "2026-01-01T00:00:00.000Z",
           },
         ]}
-        initialSections={[makeIdentitySection(), makeOtherSection({ sort_order: 2 })]}
+        initialSections={[
+          {
+            id: "section-identity",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            section_key: "identity",
+            title: "Datos personales",
+            description: "",
+            sort_order: 1,
+            is_visible: true,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          makeOtherSection({ sort_order: 2 }),
+        ]}
         initialAutomations={[]}
         initialOcrPromptTemplate="Prompt OCR"
       />,
     );
 
-    const emojiHint = screen.getByLabelText("Iconos visibles en la vista de postulante");
-    expect(emojiHint).toHaveTextContent("👤");
-    expect(emojiHint).toHaveTextContent("📍");
+    fireEvent.click(screen.getAllByRole("button", { name: "Editar nombre de sección" })[0]!);
+
+    expect(promptMock).toHaveBeenCalledWith("Nuevo nombre de la sección", "Datos personales");
+    expect(screen.getByText("Sección 1: Identidad actualizada")).toBeInTheDocument();
+  });
+
+  it("appends a newly created section at the end of the section list", () => {
+    const { container } = render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-a",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "fullName",
+            field_label: "Nombre",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: "section-a",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "field-b",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "schoolName",
+            field_label: "Colegio",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 2,
+            is_active: true,
+            section_id: "section-b",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "field-other",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "legacyExtra",
+            field_label: "Otro",
+            field_type: "short_text",
+            is_required: false,
+            placeholder: null,
+            help_text: null,
+            sort_order: 3,
+            is_active: true,
+            section_id: "section-other",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[
+          {
+            id: "section-a",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            section_key: "identity",
+            title: "Sección A",
+            description: "",
+            sort_order: 1,
+            is_visible: true,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "section-b",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            section_key: "family",
+            title: "Sección B",
+            description: "",
+            sort_order: 2,
+            is_visible: true,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          makeOtherSection({ sort_order: 99 }),
+        ]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Añadir nueva sección/i }));
+
+    const sectionHeadings = Array.from(
+      container.querySelectorAll(".admin-stage-section-heading-row .builder-section-title"),
+    )
+      .map((node) => node.textContent?.trim() ?? "")
+      .filter(Boolean);
+
+    expect(sectionHeadings.at(-1)).toBe("Sección 4: Nueva sección 4");
   });
 
   it("opens the communications center inside the same stage shell from Automatizaciones", async () => {

@@ -25,7 +25,6 @@ import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
 import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
 import { FieldHint } from "@/components/field-hint";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
-import { getSubGroupsForSection } from "@/lib/stages/field-sub-groups";
 import {
   DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
   DEFAULT_OCR_PROMPT,
@@ -193,28 +192,17 @@ function deriveEditorSections(
   }
 
   const result: EditorSection[] = [];
-  let otherResolved: EditorSection | null = null;
 
   for (const s of sortedSections) {
     const sectionFields = buckets.get(s.id) ?? [];
 
-    const resolved: EditorSection = {
+    result.push({
       id: s.id,
       sectionKey: s.section_key,
       title: s.title,
       description: s.description,
       fields: sectionFields,
-    };
-
-    if (s.section_key === "other") {
-      otherResolved = resolved;
-    } else {
-      result.push(resolved);
-    }
-  }
-
-  if (otherResolved) {
-    result.push(otherResolved);
+    });
   }
 
   return result;
@@ -596,19 +584,65 @@ export function StageConfigEditor({
   }
 
   function addNextSection() {
-    const newSection: StageSection = {
-      id: crypto.randomUUID(),
-      cycle_id: cycleId,
-      stage_code: stageCode,
-      section_key: `custom-${crypto.randomUUID().slice(0, 8)}`,
-      title: `Nueva sección ${sections.length + 1}`,
-      description: "",
-      sort_order: sections.length + 1,
-      is_visible: true,
-      created_at: new Date().toISOString(),
-    };
-    setSections((current) => [...current, newSection]);
-    setStatusMessage(`Se creó la sección “${newSection.title}”. Guarda configuración para persistir.`);
+    const newSectionTitle = `Nueva sección ${sections.length + 1}`;
+    const newSectionId = crypto.randomUUID();
+    const newSectionKey = `custom-${crypto.randomUUID().slice(0, 8)}`;
+    const createdAt = new Date().toISOString();
+
+    setSections((current) => {
+      const maxSortOrder = current.reduce(
+        (highest, section) => Math.max(highest, section.sort_order),
+        0,
+      );
+      const newSection: StageSection = {
+        id: newSectionId,
+        cycle_id: cycleId,
+        stage_code: stageCode,
+        section_key: newSectionKey,
+        title: newSectionTitle,
+        description: "",
+        sort_order: maxSortOrder + 1,
+        is_visible: true,
+        created_at: createdAt,
+      };
+      return [...current, newSection];
+    });
+    setStatusMessage(`Se creó la sección “${newSectionTitle}”. Guarda configuración para persistir.`);
+  }
+
+  function renameSection(sectionId: string) {
+    const section = sections.find((item) => item.id === sectionId);
+    if (!section) {
+      return;
+    }
+
+    if (typeof window === "undefined" || typeof window.prompt !== "function") {
+      return;
+    }
+
+    const nextTitle = window.prompt("Nuevo nombre de la sección", section.title);
+    if (nextTitle === null) {
+      return;
+    }
+
+    const sanitizedTitle = nextTitle.trim();
+    if (!sanitizedTitle) {
+      setStatusMessage("El nombre de la sección no puede estar vacío.");
+      return;
+    }
+
+    if (sanitizedTitle === section.title) {
+      return;
+    }
+
+    setSections((current) =>
+      current.map((item) =>
+        item.id === sectionId
+          ? { ...item, title: sanitizedTitle }
+          : item,
+      ),
+    );
+    setStatusMessage(`Sección renombrada a “${sanitizedTitle}”. Guarda configuración para persistir.`);
   }
 
   async function openPreview() {
@@ -1101,10 +1135,6 @@ export function StageConfigEditor({
         : [],
     [activeTab, editorSections],
   );
-  const editorHasOtherSection = useMemo(
-    () => activeTab === "editor" && editorSections.some((section) => section.sectionKey === "other"),
-    [activeTab, editorSections],
-  );
   const sectionPositionById = useMemo(() => {
     const total = editorSections.length;
     return new Map(
@@ -1312,15 +1342,6 @@ export function StageConfigEditor({
     options?: { canCollapse?: boolean },
   ) {
     const section = sections.find((s) => s.id === sectionId);
-    const sectionEmojis = section
-      ? Array.from(
-          new Set(
-            getSubGroupsForSection(section.section_key)
-              .map((group) => group.icon)
-              .filter((icon): icon is string => typeof icon === "string" && icon.trim().length > 0),
-          ),
-        )
-      : [];
     const position = sectionPositionById.get(sectionId);
     const isCollapsed = collapsedSectionIdSet.has(sectionId);
     const canCollapse = options?.canCollapse ?? true;
@@ -1330,18 +1351,7 @@ export function StageConfigEditor({
 
     return (
       <div className="admin-stage-section-heading-row">
-        <div className="admin-stage-section-heading-copy">
-          <div className="builder-section-title">{heading}</div>
-          {sectionEmojis.length > 0 ? (
-            <div className="admin-stage-section-heading-emojis" aria-label="Iconos visibles en la vista de postulante">
-              {sectionEmojis.map((emoji) => (
-                <span key={`${sectionId}-${emoji}`} className="admin-stage-section-heading-emoji" aria-hidden="true">
-                  {emoji}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <div className="builder-section-title">{heading}</div>
         <div className="admin-stage-section-header-actions" role="group" aria-label="Acciones de sección">
           <button
             type="button"
@@ -1383,6 +1393,26 @@ export function StageConfigEditor({
             >
               <path d="M12 5v14" />
               <path d="m19 12-7 7-7-7" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="admin-stage-section-header-btn"
+            onClick={() => renameSection(sectionId)}
+            title="Editar nombre de sección"
+            aria-label="Editar nombre de sección"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
             </svg>
           </button>
           <button
@@ -1651,9 +1681,6 @@ export function StageConfigEditor({
                     editorFieldSectionMeta.sectionIdByLastFieldId.get(field.localId) ?? null;
                   const sectionId =
                     editorFieldSectionMeta.sectionIdByFieldId.get(field.localId) ?? null;
-                  const currentEditorSection = sectionId
-                    ? editorSections.find((s) => s.id === sectionId)
-                    : null;
                   const isSectionCollapsed = sectionId ? collapsedSectionIdSet.has(sectionId) : false;
                   const aiParserConfig = normalizeFieldAiParserConfig(field.ai_parser_config);
 
@@ -1663,11 +1690,6 @@ export function StageConfigEditor({
 
                   return (
                     <div key={field.localId}>
-                      {isSectionStart && currentEditorSection?.sectionKey === "other" && emptySections.length > 0
-                        ? emptySections.map((emptySection) =>
-                            renderEmptySection(emptySection),
-                          )
-                        : null}
                       {isSectionStart && sectionId ? renderSectionHeading(sectionHeading, sectionId) : null}
                       {isSectionStart && isSectionCollapsed ? (
                         null
@@ -2140,11 +2162,9 @@ export function StageConfigEditor({
                     </div>
                   </div>
                 ))}
-                {!editorHasOtherSection
-                  ? emptySections.map((section) =>
-                      renderEmptySection(section),
-                    )
-                  : null}
+                {emptySections.map((section) =>
+                  renderEmptySection(section),
+                )}
                 <div className="admin-stage-editor-add-section">
                   <button
                     type="button"
