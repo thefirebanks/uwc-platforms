@@ -328,6 +328,7 @@ function serializePersistedFields(fields: EditableField[]) {
       is_required: field.is_required,
       placeholder: field.placeholder ?? "",
       help_text: field.help_text ?? "",
+      group_name: field.group_name?.trim() || null,
       sort_order: field.sort_order,
       is_active: field.is_active,
       ai_parser_config: normalizeFieldAiParserConfig(field.ai_parser_config),
@@ -505,6 +506,7 @@ export function StageConfigEditor({
       is_required: false,
       placeholder: "",
       help_text: "",
+      group_name: null,
       sort_order: nextIndex,
       is_active: true,
       section_id: null,
@@ -883,6 +885,7 @@ export function StageConfigEditor({
             isRequired: field.is_required,
             placeholder: field.placeholder,
             helpText: field.help_text,
+            groupName: field.group_name?.trim() || null,
             sortOrder: index + 1,
             isActive: field.is_active,
             sectionKey: sections.find((s) => s.id === field.section_id)?.section_key ?? null,
@@ -1875,6 +1878,28 @@ export function StageConfigEditor({
                                     )
                                   }
                                 />
+                              </div>
+                              <div className="form-field full">
+                                <label htmlFor={`group-name-${field.localId}`}>
+                                  Nombre de grupo (opcional)
+                                </label>
+                                <input
+                                  id={`group-name-${field.localId}`}
+                                  type="text"
+                                  defaultValue={field.group_name ?? ""}
+                                  onBlur={(event) =>
+                                    setFields((current) =>
+                                      current.map((item) =>
+                                        item.localId === field.localId
+                                          ? { ...item, group_name: event.target.value.trim() || null }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                                <small className="admin-text-muted">
+                                  Si lo completas, este campo se mostrará agrupado bajo ese título en la vista del postulante.
+                                </small>
                               </div>
 
                               <div className="form-field full" style={{ marginTop: "16px" }}>

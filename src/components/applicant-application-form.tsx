@@ -1786,6 +1786,110 @@ export function ApplicantApplicationForm({
         ? nonGradeFields.filter((f) => !DEFERRED_SCHOOL_FIELDS.has(f.field_key))
         : nonGradeFields;
 
+    const customGroupedFieldNames = Array.from(
+      new Set(
+        topNonGradeFields
+          .map((field) => field.group_name?.trim() ?? "")
+          .filter((groupName) => groupName.length > 0),
+      ),
+    );
+    const hasCustomFieldGroups = customGroupedFieldNames.length > 0;
+
+    if (hasCustomFieldGroups) {
+      const fieldsByCustomGroup = new Map<string, CycleStageField[]>();
+      for (const groupName of customGroupedFieldNames) {
+        fieldsByCustomGroup.set(groupName, []);
+      }
+      const ungroupedFields = topNonGradeFields.filter((field) => {
+        const groupName = field.group_name?.trim() ?? "";
+        if (!groupName) {
+          return true;
+        }
+        fieldsByCustomGroup.get(groupName)?.push(field);
+        return false;
+      });
+
+      return (
+        <Box>
+          {ungroupedFields.length > 0 ? (
+            <Box sx={{ mb: "28px", animation: "fadeUp 0.35s ease", animationFillMode: "backwards" }}>
+              {renderFieldGrid(ungroupedFields, sectionId)}
+            </Box>
+          ) : null}
+
+          {customGroupedFieldNames.map((groupName, idx) => {
+            const groupedFields = fieldsByCustomGroup.get(groupName) ?? [];
+            if (groupedFields.length === 0) {
+              return null;
+            }
+            return (
+              <Box
+                key={`${sectionId}-${groupName}`}
+                sx={{
+                  mb: "28px",
+                  animation: "fadeUp 0.35s ease",
+                  animationFillMode: "backwards",
+                  animationDelay: `${(idx + 1) * 0.05}s`,
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "0.68rem",
+                    fontWeight: 600,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    mb: "14px",
+                    pb: 1,
+                    borderBottom: "1px solid var(--sand-light, #F3EFEB)",
+                  }}
+                >
+                  {groupName}
+                </Typography>
+                {renderFieldGrid(groupedFields, sectionId)}
+              </Box>
+            );
+          })}
+
+          {gradeFields.length > 0 ? (
+            <Box sx={{ mt: 1 }}>
+              <Typography
+                sx={{
+                  fontSize: "0.68rem",
+                  fontWeight: 600,
+                  letterSpacing: "0.06em",
+                  textTransform: "uppercase",
+                  color: "var(--muted)",
+                  mb: "14px",
+                  pb: 1,
+                  borderBottom: "1px solid var(--sand-light, #F3EFEB)",
+                }}
+              >
+                {isEnglish ? "Official grades by year" : "Notas oficiales por año"}
+              </Typography>
+              <GradesTable
+                fields={gradeFields}
+                formValues={formValues}
+                onFieldChange={(key, value) => {
+                  setFormValues((current) => ({ ...current, [key]: value }));
+                  markFieldDirty();
+                }}
+                onFieldBlur={() => {}}
+                disabled={!isEditingEnabled}
+                language={language}
+              />
+            </Box>
+          ) : null}
+
+          {deferredSchoolFields.length > 0 ? (
+            <Box sx={{ mt: 3 }}>
+              {renderFieldGrid(deferredSchoolFields, sectionId)}
+            </Box>
+          ) : null}
+        </Box>
+      );
+    }
+
     // If no sub-groups, render flat
     if (subGroups.length === 0) {
       return (

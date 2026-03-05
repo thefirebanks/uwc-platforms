@@ -580,6 +580,29 @@ describe("ApplicantApplicationForm", () => {
     expect(screen.queryAllByText(/En progreso/i).length).toBe(0);
   });
 
+  it("renders optional field groups and bypasses legacy hardcoded subgroup cards", () => {
+    const groupedIdentityFields = DEFAULT_STAGE_FIELDS.map((field) => {
+      if (field.field_key === "fullName" || field.field_key === "nationality") {
+        return { ...field, group_name: "Datos base" };
+      }
+      return field;
+    });
+
+    render(
+      <ApplicantApplicationForm
+        cycleId="cycle-custom-groups"
+        sections={DEFAULT_SECTIONS}
+        stageFields={groupedIdentityFields}
+        existingApplication={DRAFT_APP}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Datos personales/i }));
+
+    expect(screen.getByText("Datos base")).toBeInTheDocument();
+    expect(screen.queryByText(/^Identidad$/i)).not.toBeInTheDocument();
+  });
+
   it("does not mark documents in progress when file uploads are all optional and empty", () => {
     const optionalDocumentsFields = DEFAULT_STAGE_FIELDS.map((field) =>
       field.field_key === "identificationDocument"

@@ -681,6 +681,89 @@ describe("StageConfigEditor", () => {
     expect(sectionHeadings.at(-1)).toBe("Sección 4: Nueva sección 4");
   });
 
+  it("persists optional group name for fields", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fields: [
+            {
+              id: "field-1",
+              cycle_id: "cycle-1",
+              stage_code: "documents",
+              field_key: "fullName",
+              field_label: "Nombre completo",
+              field_type: "short_text",
+              is_required: true,
+              placeholder: null,
+              help_text: null,
+              group_name: "Identidad",
+              sort_order: 1,
+              is_active: true,
+              section_id: "section-other",
+              created_at: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          sections: [makeOtherSection()],
+          automations: [],
+          ocrPromptTemplate: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-1",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "fullName",
+            field_label: "Nombre completo",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            group_name: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: "section-other",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Nombre completo"));
+    const groupNameInput = screen.getByLabelText(/Nombre de grupo \(opcional\)/i);
+    fireEvent.change(groupNameInput, { target: { value: "Identidad" } });
+    fireEvent.blur(groupNameInput);
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const request = fetchMock.mock.calls.at(-1)?.[1];
+    const payload =
+      request && typeof request === "object" && "body" in request
+        ? JSON.parse(String(request.body))
+        : null;
+
+    expect(payload?.fields?.[0]?.groupName).toBe("Identidad");
+  });
+
   it("opens the communications center inside the same stage shell from Automatizaciones", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(

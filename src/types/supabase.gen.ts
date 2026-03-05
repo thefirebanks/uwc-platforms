@@ -428,6 +428,7 @@ export type Database = {
           field_label: string
           field_type: string
           help_text: string | null
+          group_name: string | null
           id: string
           is_active: boolean
           is_required: boolean
@@ -443,6 +444,7 @@ export type Database = {
           field_label: string
           field_type: string
           help_text?: string | null
+          group_name?: string | null
           id?: string
           is_active?: boolean
           is_required?: boolean
@@ -458,6 +460,7 @@ export type Database = {
           field_label?: string
           field_type?: string
           help_text?: string | null
+          group_name?: string | null
           id?: string
           is_active?: boolean
           is_required?: boolean

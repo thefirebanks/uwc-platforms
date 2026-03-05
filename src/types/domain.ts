@@ -163,6 +163,7 @@ export interface CycleStageField {
   is_required: boolean;
   placeholder: string | null;
   help_text: string | null;
+  group_name?: string | null;
   sort_order: number;
   is_active: boolean;
   section_id: string | null;
