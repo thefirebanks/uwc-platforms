@@ -74,7 +74,10 @@ export default async function ApplicantPage() {
 
   return (
     <>
-      <ApplicantTopNav />
+      <ApplicantTopNav
+        accountDisplayName={profile.full_name ?? null}
+        accountEmail={profile.email}
+      />
       <Box sx={{ pt: "var(--topbar-height)" }}>
         <Container maxWidth="lg" sx={{ py: 4 }}>
           <ApplicantProcessesDashboard

@@ -143,6 +143,16 @@ export interface CycleStageTemplate {
   created_at: string;
 }
 
+export interface StageFieldAiParserConfig {
+  enabled: boolean;
+  modelId?: string | null;
+  promptTemplate?: string | null;
+  systemPrompt?: string | null;
+  extractionInstructions: string;
+  expectedSchemaTemplate: string;
+  strictSchema: boolean;
+}
+
 export interface CycleStageField {
   id: string;
   cycle_id: string;
@@ -153,9 +163,11 @@ export interface CycleStageField {
   is_required: boolean;
   placeholder: string | null;
   help_text: string | null;
+  group_name?: string | null;
   sort_order: number;
   is_active: boolean;
   section_id: string | null;
+  ai_parser_config?: unknown | null;
   created_at: string;
 }
 

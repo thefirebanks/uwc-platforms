@@ -26,6 +26,12 @@ export default async function AdminProcessPage({
   if (requestedSection === "applications") {
     redirect(`/admin/candidates?cycleId=${cycleId}`);
   }
+  if (requestedSection === "communications") {
+    redirect(`/admin/process/${cycleId}/stage/documents?tab=communications`);
+  }
+  if (requestedSection === "ocr_testbed") {
+    redirect(`/admin/process/${cycleId}/stage/documents?tab=prompt_studio`);
+  }
   const supabase = await getSupabaseServerClient();
   const { data: cycle } = await supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle();
 
@@ -53,8 +59,6 @@ export default async function AdminProcessPage({
       cycle={cycle as SelectionProcess}
       initialWorkspaceSection={
         requestedSection === "stages" ? "stages"
-          : requestedSection === "communications" ? "communications"
-          : requestedSection === "ocr_testbed" ? "ocr_testbed"
           : requestedSection === "export" ? "export"
           : "process_config"
       }

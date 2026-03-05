@@ -31,6 +31,7 @@ export type AdminEditableFileEntry = {
   uploadedAt: string | null;
   category: string | null;
   notes: string | null;
+  aiParserEnabled?: boolean;
 };
 
 function parseStoredFileEntry({

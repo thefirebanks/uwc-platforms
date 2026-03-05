@@ -4,6 +4,7 @@ import { canUseEnglishLanguageToggle } from "@/lib/i18n/access";
 describe("canUseEnglishLanguageToggle", () => {
   afterEach(() => {
     delete process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL;
+    delete process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL;
     delete process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL;
   });
 
@@ -31,6 +32,17 @@ describe("canUseEnglishLanguageToggle", () => {
         email: "real.applicant@school.edu",
       }),
     ).toBe(false);
+  });
+
+  it("allows the second seeded demo applicant email too", () => {
+    process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL = "applicant.demo2@uwcperu.org";
+
+    expect(
+      canUseEnglishLanguageToggle({
+        role: "applicant",
+        email: "applicant.demo2@uwcperu.org",
+      }),
+    ).toBe(true);
   });
 
   it("rejects applicants when demo email is missing", () => {

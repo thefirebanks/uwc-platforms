@@ -26,7 +26,7 @@ test.describe("Applicant form – sidebar redesign", () => {
 
   test("opening a process starts on Instrucciones", async ({ page }) => {
     await page.goto("/login");
-    await page.getByRole("button", { name: "Entrar como postulante demo" }).click();
+    await page.getByRole("button", { name: /Entrar como postulante demo 1/i }).click();
     await expect(page).toHaveURL(/\/applicant/, { timeout: 15_000 });
 
     const processLink = page

@@ -16,8 +16,10 @@ import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 
 export default async function StageConfigPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ cycleId: string; stageCode: string }>;
+  searchParams?: Promise<{ tab?: string | string[] }>;
 }) {
   const profile = await getSessionProfileOrRedirect();
 
@@ -26,6 +28,10 @@ export default async function StageConfigPage({
   }
 
   const { cycleId, stageCode } = await params;
+  const resolvedSearchParams = (await searchParams) ?? {};
+  const requestedTab = Array.isArray(resolvedSearchParams.tab)
+    ? resolvedSearchParams.tab[0]
+    : resolvedSearchParams.tab;
 
   const supabase = await getSupabaseServerClient();
   const [{ data: cycleData }, { data: templateRows }] = await Promise.all([
@@ -130,6 +136,15 @@ export default async function StageConfigPage({
       initialOcrPromptTemplate={selectedTemplate.ocr_prompt_template ?? null}
       initialStageAdminConfig={selectedTemplate.admin_config ?? null}
       initialSections={(sectionsData as StageSection[] | null) ?? []}
+      initialTab={
+        requestedTab === "settings" ||
+        requestedTab === "automations" ||
+        requestedTab === "communications" ||
+        requestedTab === "prompt_studio" ||
+        requestedTab === "stats"
+          ? requestedTab
+          : "editor"
+      }
     />
   );
 }

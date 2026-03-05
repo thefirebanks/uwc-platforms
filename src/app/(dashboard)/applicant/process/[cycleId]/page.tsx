@@ -70,17 +70,29 @@ export default async function ApplicantProcessPage({
         .maybeSingle(),
     ]);
 
-  const { data: recommenderRows } =
-    existingApplication?.id && currentStageCode === "documents"
-      ? await getSupabaseAdminClient()
-          .from("recommendation_requests")
-          .select("*")
-          .eq("application_id", existingApplication.id)
-          .order("created_at", { ascending: false })
-      : { data: [] as RecommendationRequest[] };
+  let recommenderRows: RecommendationRequest[] = [];
+
+  if (existingApplication?.id && currentStageCode === "documents") {
+    try {
+      const { data } = await getSupabaseAdminClient()
+        .from("recommendation_requests")
+        .select("*")
+        .eq("application_id", existingApplication.id)
+        .order("created_at", { ascending: false });
+
+      recommenderRows = (data as RecommendationRequest[] | null) ?? [];
+    } catch (error) {
+      console.error("Failed preloading applicant recommenders", {
+        applicantId: profile.id,
+        cycleId,
+        applicationId: existingApplication.id,
+        error,
+      });
+    }
+  }
 
   const initialRecommenders = (
-    (recommenderRows as RecommendationRequest[] | null) ?? []
+    recommenderRows ?? []
   ).map((row) => ({
     id: row.id,
     role: row.role,
@@ -111,6 +123,8 @@ export default async function ApplicantProcessPage({
     <ApplicantApplicationForm
       existingApplication={existingApplication}
       cycleId={cycleId}
+      accountDisplayName={profile.full_name ?? null}
+      accountEmail={profile.email}
       cycleName={(cycle as SelectionProcess).name}
       stageCode={currentStageCode}
       stageLabel={template?.stage_label ?? undefined}

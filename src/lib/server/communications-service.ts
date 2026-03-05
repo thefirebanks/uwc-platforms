@@ -53,6 +53,7 @@ export type BroadcastRecipientFilter = {
   stageCode?: StageCode;
   status?: ApplicationStatus;
   search?: string;
+  directRecipientEmail?: string;
 };
 
 export type BroadcastSendInput = {
@@ -87,6 +88,10 @@ export type CommunicationCampaignSummary = {
 };
 
 const BROADCAST_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
+
+function isValidEmailAddress(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value);
+}
 
 function emptySummary() {
   return {
@@ -487,6 +492,63 @@ async function loadCycleName({
   return data.name;
 }
 
+async function loadStageLabel({
+  supabase,
+  cycleId,
+  stageCode,
+}: {
+  supabase: SupabaseClient<Database>;
+  cycleId: string;
+  stageCode?: StageCode;
+}) {
+  if (!stageCode) {
+    return "Proceso";
+  }
+
+  const { data, error } = await supabase
+    .from("cycle_stage_templates")
+    .select("stage_label")
+    .eq("cycle_id", cycleId)
+    .eq("stage_code", stageCode)
+    .maybeSingle();
+
+  if (error) {
+    throw new AppError({
+      message: "Failed loading stage label for communications",
+      userMessage: "No se pudo cargar la etapa de esta comunicación.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  return data?.stage_label ?? stageCode;
+}
+
+function buildCommunicationTemplateContext({
+  recipientEmail,
+  recipientName,
+  applicationId,
+  applicationStatus,
+  cycleName,
+  stageLabel,
+}: {
+  recipientEmail: string;
+  recipientName?: string | null;
+  applicationId?: string | null;
+  applicationStatus?: ApplicationStatus | string | null;
+  cycleName: string;
+  stageLabel: string;
+}) {
+  return {
+    full_name: recipientName?.trim() || recipientEmail,
+    applicant_email: recipientEmail,
+    application_id: applicationId ?? "",
+    application_status: applicationStatus ?? "",
+    cycle_name: cycleName,
+    stage_label: stageLabel,
+  };
+}
+
 export async function sendCommunicationEmail(
   communication: CommunicationRow,
 ): Promise<EmailDeliveryResult> {
@@ -510,6 +572,67 @@ export async function sendCommunicationEmail(
       errorMessage: "No se pudo conectar con el proveedor de correo.",
     };
   }
+}
+
+export async function sendDirectCommunication({
+  supabase,
+  input,
+}: {
+  supabase: SupabaseClient<Database>;
+  input: BroadcastSendInput;
+}) {
+  assertEmailProviderConfigured();
+
+  const directRecipientEmail = input.recipientFilter.directRecipientEmail?.trim().toLowerCase();
+  if (!directRecipientEmail || !isValidEmailAddress(directRecipientEmail)) {
+    throw new AppError({
+      message: "Invalid direct recipient email",
+      userMessage: "Debes indicar un correo válido para el envío puntual.",
+      status: 400,
+    });
+  }
+
+  const cycleName = await loadCycleName({
+    supabase,
+    cycleId: input.recipientFilter.cycleId,
+  });
+  const stageLabel = await loadStageLabel({
+    supabase,
+    cycleId: input.recipientFilter.cycleId,
+    stageCode: input.recipientFilter.stageCode,
+  });
+  const context = buildCommunicationTemplateContext({
+    recipientEmail: directRecipientEmail,
+    cycleName,
+    stageLabel,
+    applicationStatus: input.recipientFilter.status ?? "",
+  });
+  const subject = renderTemplate(input.subject, context);
+  const bodyText = renderTemplate(input.bodyTemplate, context);
+  const bodyHtml = `<div style="font-family:Arial,sans-serif;line-height:1.6;">${renderSafeMarkdown(bodyText)}</div>`;
+  const delivery = await sendEmail({
+    to: directRecipientEmail,
+    subject,
+    text: bodyText,
+    html: bodyHtml,
+  });
+
+  if (!delivery.delivered) {
+    throw new AppError({
+      message: "Direct communication send failed",
+      userMessage: delivery.errorMessage,
+      status: 502,
+      details: {
+        recipientEmail: directRecipientEmail,
+      },
+    });
+  }
+
+  return {
+    recipientCount: 1,
+    recipientEmail: directRecipientEmail,
+    providerMessageId: delivery.providerMessageId,
+  };
 }
 
 export async function listCommunicationLogs({
@@ -763,6 +886,32 @@ export async function queueBroadcastCampaign({
   supabase: SupabaseClient<Database>;
   input: BroadcastSendInput;
 }) {
+  const directRecipientEmail = input.recipientFilter.directRecipientEmail?.trim().toLowerCase();
+  if (directRecipientEmail) {
+    if (!isValidEmailAddress(directRecipientEmail)) {
+      throw new AppError({
+        message: "Invalid direct recipient email in broadcast payload",
+        userMessage: "Debes indicar un correo válido para el envío puntual.",
+        status: 400,
+      });
+    }
+
+    if (input.dryRun) {
+      return {
+        campaign: null,
+        recipientCount: 1,
+        recipients: [],
+        deduplicated: false,
+      };
+    }
+
+    throw new AppError({
+      message: "Direct recipient payload must be handled by direct-send flow",
+      userMessage: "El envío puntual debe procesarse como envío directo.",
+      status: 400,
+    });
+  }
+
   const recipients = await resolveBroadcastRecipients({
     supabase,
     filter: input.recipientFilter,
@@ -856,14 +1005,14 @@ export async function queueBroadcastCampaign({
   const createdCampaign = campaignData as CommunicationCampaignRow;
 
   const logsToInsert = recipients.map((recipient) => {
-    const context = {
-      full_name: recipient.fullName,
-      applicant_email: recipient.email,
-      application_id: recipient.applicationId,
-      application_status: recipient.applicationStatus,
-      cycle_name: cycleName,
-      stage_label: recipient.stageCode,
-    };
+    const context = buildCommunicationTemplateContext({
+      recipientEmail: recipient.email,
+      recipientName: recipient.fullName,
+      applicationId: recipient.applicationId,
+      applicationStatus: recipient.applicationStatus,
+      cycleName,
+      stageLabel: recipient.stageCode,
+    });
 
     return {
       application_id: recipient.applicationId,

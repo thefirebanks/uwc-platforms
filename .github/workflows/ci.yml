@@ -85,14 +85,35 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy --name=uwc-platforms-pr-${{ github.event.pull_request.number }}
-          secrets: |
-            SUPABASE_SECRET_KEY
-            GEMINI_API_KEY
-            GOOGLE_GMAIL_CLIENT_ID
-            GOOGLE_GMAIL_CLIENT_SECRET
-            GOOGLE_GMAIL_REFRESH_TOKEN
-            GOOGLE_GMAIL_SENDER_EMAIL
         env:
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_GMAIL_CLIENT_ID: ${{ secrets.GOOGLE_GMAIL_CLIENT_ID }}
+          GOOGLE_GMAIL_CLIENT_SECRET: ${{ secrets.GOOGLE_GMAIL_CLIENT_SECRET }}
+          GOOGLE_GMAIL_REFRESH_TOKEN: ${{ secrets.GOOGLE_GMAIL_REFRESH_TOKEN }}
+          GOOGLE_GMAIL_SENDER_EMAIL: ${{ secrets.GOOGLE_GMAIL_SENDER_EMAIL }}
+
+      - name: Sync preview worker secrets
+        if: github.event_name == 'pull_request'
+        run: |
+          node <<'EOF'
+          const fs = require('fs');
+          fs.writeFileSync(
+            '/tmp/preview-secrets.json',
+            JSON.stringify({
+              SUPABASE_SECRET_KEY: process.env.SUPABASE_SECRET_KEY,
+              GEMINI_API_KEY: process.env.GEMINI_API_KEY,
+              GOOGLE_GMAIL_CLIENT_ID: process.env.GOOGLE_GMAIL_CLIENT_ID,
+              GOOGLE_GMAIL_CLIENT_SECRET: process.env.GOOGLE_GMAIL_CLIENT_SECRET,
+              GOOGLE_GMAIL_REFRESH_TOKEN: process.env.GOOGLE_GMAIL_REFRESH_TOKEN,
+              GOOGLE_GMAIL_SENDER_EMAIL: process.env.GOOGLE_GMAIL_SENDER_EMAIL,
+            }),
+          );
+          EOF
+          bunx wrangler secret bulk /tmp/preview-secrets.json --name=uwc-platforms-pr-${{ github.event.pull_request.number }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_GMAIL_CLIENT_ID: ${{ secrets.GOOGLE_GMAIL_CLIENT_ID }}

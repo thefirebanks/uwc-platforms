@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
 
 /* -------------------------------------------------------------------------- */
@@ -50,6 +50,18 @@ type AdminFileEntry = {
   category: string | null;
   notes: string | null;
   downloadUrl: string | null;
+  aiParserEnabled?: boolean;
+};
+
+type ApiError = {
+  message: string;
+  errorId?: string;
+};
+
+type OcrRunResult = {
+  summary: string;
+  confidence: number;
+  createdAt: string;
 };
 
 type EditLogEntry = {
@@ -71,6 +83,69 @@ type Stage1Blocker = {
 };
 
 type Tab = "datos" | "archivos" | "recomendaciones" | "historial";
+
+const PANEL_CARD_STYLE: CSSProperties = {
+  padding: "0.75rem 1rem",
+  background: "var(--surface)",
+  border: "1px solid var(--border, var(--sand))",
+  borderRadius: "8px",
+  boxShadow: "var(--shadow-sm)",
+};
+
+const PANEL_SUBTLE_BUTTON_STYLE: CSSProperties = {
+  padding: "0.375rem 0.75rem",
+  fontSize: "0.8125rem",
+  background: "var(--cream)",
+  color: "var(--ink)",
+  border: "1px solid var(--border, var(--sand))",
+  borderRadius: "8px",
+  cursor: "pointer",
+};
+
+const PANEL_ACCENT_BUTTON_STYLE: CSSProperties = {
+  padding: "0.375rem 0.75rem",
+  fontSize: "0.8125rem",
+  background: "var(--uwc-maroon-soft)",
+  color: "var(--uwc-maroon)",
+  border: "1px solid var(--uwc-maroon)",
+  borderRadius: "8px",
+  cursor: "pointer",
+};
+
+const PANEL_SUCCESS_BUTTON_STYLE: CSSProperties = {
+  padding: "0.375rem 0.75rem",
+  fontSize: "0.8125rem",
+  background: "var(--surface)",
+  color: "var(--success)",
+  border: "1px solid var(--success)",
+  borderRadius: "8px",
+  cursor: "pointer",
+};
+
+function normalizeApiError(value: unknown, fallbackMessage: string): ApiError {
+  if (value && typeof value === "object") {
+    return {
+      message:
+        typeof (value as { message?: unknown }).message === "string"
+          ? (value as { message: string }).message
+          : fallbackMessage,
+      errorId:
+        typeof (value as { errorId?: unknown }).errorId === "string"
+          ? (value as { errorId: string }).errorId
+          : undefined,
+    };
+  }
+
+  return { message: fallbackMessage };
+}
+
+async function readJsonSafely(response: Response) {
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    return null;
+  }
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Props                                                                     */
@@ -111,6 +186,8 @@ export function AdminApplicationViewer({
   const [transitioning, setTransitioning] = useState(false);
   const [busyFileKey, setBusyFileKey] = useState<string | null>(null);
   const [busyRecommendationId, setBusyRecommendationId] = useState<string | null>(null);
+  const [ocrResultByFileKey, setOcrResultByFileKey] = useState<Record<string, OcrRunResult>>({});
+  const [ocrErrorByFileKey, setOcrErrorByFileKey] = useState<Record<string, ApiError | null>>({});
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -159,6 +236,8 @@ export function AdminApplicationViewer({
       setFiles([]);
       setEditLog([]);
       setEditing(false);
+      setOcrResultByFileKey({});
+      setOcrErrorByFileKey({});
       return;
     }
 
@@ -167,6 +246,8 @@ export function AdminApplicationViewer({
     setError(null);
     setEditing(false);
     setEditChanges({});
+    setOcrResultByFileKey({});
+    setOcrErrorByFileKey({});
 
     loadViewerData()
       .then(() => {
@@ -405,6 +486,55 @@ export function AdminApplicationViewer({
     [applicationId, loadViewerData, onApplicationUpdated],
   );
 
+  const handleRunFileOcr = useCallback(
+    async (fileKey: string) => {
+      if (!applicationId) {
+        return;
+      }
+
+      setBusyFileKey(fileKey);
+      setOcrErrorByFileKey((current) => ({ ...current, [fileKey]: null }));
+      try {
+        const response = await fetch(`/api/applications/${applicationId}/ocr-check`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileKey }),
+        });
+        const body = await readJsonSafely(response);
+
+        if (!response.ok) {
+          throw normalizeApiError(body, "No se pudo ejecutar el parsing IA.");
+        }
+
+        const parsedBody = body as { summary?: string; confidence?: number; createdAt?: string } | null;
+        setOcrResultByFileKey((current) => ({
+          ...current,
+          [fileKey]: {
+            summary:
+              typeof parsedBody?.summary === "string"
+                ? parsedBody.summary
+                : "Parsing completado.",
+            confidence:
+              typeof parsedBody?.confidence === "number" ? parsedBody.confidence : 0,
+            createdAt:
+              typeof parsedBody?.createdAt === "string"
+                ? parsedBody.createdAt
+                : new Date().toISOString(),
+          },
+        }));
+      } catch (error) {
+        const apiError =
+          error && typeof error === "object" && "message" in error
+            ? (error as ApiError)
+            : { message: "No se pudo ejecutar el parsing IA." };
+        setOcrErrorByFileKey((current) => ({ ...current, [fileKey]: apiError }));
+      } finally {
+        setBusyFileKey(null);
+      }
+    },
+    [applicationId],
+  );
+
   const handleRecommendationEdit = useCallback(
     async (recommendationId: string, currentName: string | null, currentEmail: string, currentNotes: string | null) => {
       const recommenderName = window.prompt("Nombre del recomendador (opcional):", currentName ?? "");
@@ -556,7 +686,7 @@ export function AdminApplicationViewer({
           right: 0,
           bottom: 0,
           width: "min(720px, 90vw)",
-          background: "var(--cream, #FAF8F5)",
+          background: "var(--surface, #FFFFFF)",
           boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
           zIndex: 999,
           display: "flex",
@@ -1061,12 +1191,8 @@ export function AdminApplicationViewer({
                   {files.map((f) => (
                     <div
                       key={f.key}
-                      style={{
-                        padding: "0.75rem 1rem",
-                        background: "white",
-                        border: "1px solid var(--border)",
-                        borderRadius: "4px",
-                      }}
+                      data-testid={`admin-file-card-${f.key}`}
+                      style={PANEL_CARD_STYLE}
                     >
                       <div
                         style={{
@@ -1117,14 +1243,7 @@ export function AdminApplicationViewer({
                         <button
                           onClick={() => handleFileMetadataEdit(f)}
                           disabled={busyFileKey === f.key}
-                          style={{
-                            padding: "0.375rem 0.75rem",
-                            fontSize: "0.8125rem",
-                            background: "var(--cream)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "2px",
-                            cursor: "pointer",
-                          }}
+                          style={PANEL_SUBTLE_BUTTON_STYLE}
                         >
                           Editar metadata
                         </button>
@@ -1134,17 +1253,21 @@ export function AdminApplicationViewer({
                             target="_blank"
                             rel="noreferrer"
                             style={{
-                              padding: "0.375rem 0.75rem",
-                              fontSize: "0.8125rem",
-                              background: "var(--uwc-maroon-soft)",
-                              color: "var(--uwc-maroon)",
-                              border: "1px solid var(--uwc-maroon)",
-                              borderRadius: "2px",
+                              ...PANEL_ACCENT_BUTTON_STYLE,
                               textDecoration: "none",
                             }}
                           >
                             Descargar
                           </a>
+                        ) : null}
+                        {f.aiParserEnabled ? (
+                          <button
+                            onClick={() => void handleRunFileOcr(f.key)}
+                            disabled={busyFileKey === f.key}
+                            style={PANEL_SUCCESS_BUTTON_STYLE}
+                          >
+                            {busyFileKey === f.key ? "Analizando..." : "Analizar con IA"}
+                          </button>
                         ) : null}
                         <label
                           style={{
@@ -1152,7 +1275,7 @@ export function AdminApplicationViewer({
                             alignItems: "center",
                             gap: "0.5rem",
                             fontSize: "0.8125rem",
-                            color: "var(--muted)",
+                            color: "var(--ink-light)",
                           }}
                         >
                           <span>Reemplazar</span>
@@ -1167,6 +1290,48 @@ export function AdminApplicationViewer({
                           />
                         </label>
                       </div>
+                      {ocrResultByFileKey[f.key] ? (
+                        <div
+                          style={{
+                            marginTop: "0.75rem",
+                            padding: "0.625rem 0.75rem",
+                            borderRadius: "8px",
+                            background: "var(--paper)",
+                            border: "1px solid var(--border, var(--sand))",
+                          }}
+                        >
+                          <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "var(--muted)" }}>
+                            Parsing IA
+                          </div>
+                          <div style={{ marginTop: "0.25rem", fontSize: "0.8125rem" }}>
+                            {ocrResultByFileKey[f.key]?.summary}
+                          </div>
+                          <div style={{ marginTop: "0.25rem", fontSize: "0.75rem", color: "var(--muted)" }}>
+                            Confianza: {Math.round((ocrResultByFileKey[f.key]?.confidence ?? 0) * 100)}% ·{" "}
+                            {new Date(ocrResultByFileKey[f.key]!.createdAt).toLocaleString("es-PE")}
+                          </div>
+                        </div>
+                      ) : null}
+                      {ocrErrorByFileKey[f.key] ? (
+                        <div
+                          style={{
+                            marginTop: "0.75rem",
+                            padding: "0.625rem 0.75rem",
+                            borderRadius: "8px",
+                            background: "var(--error-soft, #fdecec)",
+                            border: "1px solid var(--error, #c62828)",
+                            color: "var(--error, #c62828)",
+                            fontSize: "0.8125rem",
+                          }}
+                        >
+                          <div>{ocrErrorByFileKey[f.key]?.message}</div>
+                          {ocrErrorByFileKey[f.key]?.errorId ? (
+                            <div style={{ marginTop: "0.25rem", fontSize: "0.75rem" }}>
+                              Error ID: {ocrErrorByFileKey[f.key]?.errorId}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -1189,12 +1354,8 @@ export function AdminApplicationViewer({
                   {data.recommendations.map((rec) => (
                     <div
                       key={rec.id}
-                      style={{
-                        padding: "0.75rem 1rem",
-                        background: "white",
-                        border: "1px solid var(--border)",
-                        borderRadius: "4px",
-                      }}
+                      data-testid={`admin-recommendation-card-${rec.id}`}
+                      style={PANEL_CARD_STYLE}
                     >
                       <div
                         style={{
@@ -1276,14 +1437,7 @@ export function AdminApplicationViewer({
                             )
                           }
                           disabled={busyRecommendationId === rec.id}
-                          style={{
-                            padding: "0.375rem 0.75rem",
-                            fontSize: "0.8125rem",
-                            background: "var(--cream)",
-                            border: "1px solid var(--border)",
-                            borderRadius: "2px",
-                            cursor: "pointer",
-                          }}
+                          style={PANEL_SUBTLE_BUTTON_STYLE}
                         >
                           Editar contacto
                         </button>
@@ -1291,15 +1445,7 @@ export function AdminApplicationViewer({
                           <button
                             onClick={() => handleRecommendationReminder(rec.id)}
                             disabled={busyRecommendationId === rec.id}
-                            style={{
-                              padding: "0.375rem 0.75rem",
-                              fontSize: "0.8125rem",
-                              background: "var(--uwc-maroon-soft)",
-                              color: "var(--uwc-maroon)",
-                              border: "1px solid var(--uwc-maroon)",
-                              borderRadius: "2px",
-                              cursor: "pointer",
-                            }}
+                            style={PANEL_ACCENT_BUTTON_STYLE}
                           >
                             Reenviar recordatorio
                           </button>
@@ -1313,15 +1459,7 @@ export function AdminApplicationViewer({
                               )
                             }
                             disabled={busyRecommendationId === rec.id}
-                            style={{
-                              padding: "0.375rem 0.75rem",
-                              fontSize: "0.8125rem",
-                              background: "white",
-                              border: "1px solid var(--success)",
-                              color: "var(--success)",
-                              borderRadius: "2px",
-                              cursor: "pointer",
-                            }}
+                            style={PANEL_SUCCESS_BUTTON_STYLE}
                           >
                             Registrar manualmente
                           </button>

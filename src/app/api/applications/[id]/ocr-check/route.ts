@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Buffer } from "node:buffer";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
@@ -15,6 +16,24 @@ const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(30).default(10),
 });
 
+const fieldAiParserSchema = z
+  .object({
+    enabled: z.boolean().optional().default(false),
+    modelId: z.string().trim().min(1).max(120).nullable().optional(),
+    promptTemplate: z.string().trim().max(5000).nullable().optional(),
+    systemPrompt: z.string().trim().max(2000).nullable().optional(),
+    extractionInstructions: z.string().trim().max(6000).nullable().optional(),
+    expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
+    strictSchema: z.boolean().optional().default(true),
+  })
+  .strict();
+
+type FieldAiParserConfig = z.infer<typeof fieldAiParserSchema>;
+type ResolvedFieldAiParserConfig = FieldAiParserConfig & {
+  extractionInstructions: string;
+  expectedSchemaTemplate: string;
+};
+
 function resolveFilePath(value: unknown) {
   if (typeof value === "string") {
     return value;
@@ -29,6 +48,52 @@ function resolveFilePath(value: unknown) {
   }
 
   return null;
+}
+
+function inferMimeTypeFromPath(path: string) {
+  const normalized = path.toLowerCase();
+  if (normalized.endsWith(".pdf")) return "application/pdf";
+  if (normalized.endsWith(".png")) return "image/png";
+  if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) return "image/jpeg";
+  if (normalized.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
+}
+
+function parseFieldAiParserConfigOrNull(value: unknown): ResolvedFieldAiParserConfig | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const parsed = fieldAiParserSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new AppError({
+      message: "Malformed ai_parser_config in stage field",
+      userMessage: "La configuración de parsing IA del campo es inválida.",
+      status: 500,
+      details: parsed.error.flatten(),
+    });
+  }
+
+  if (!parsed.data.enabled) {
+    return null;
+  }
+
+  const extractionInstructions = parsed.data.extractionInstructions?.trim();
+  const expectedSchemaTemplate = parsed.data.expectedSchemaTemplate?.trim();
+
+  if (!extractionInstructions || !expectedSchemaTemplate) {
+    throw new AppError({
+      message: "Incomplete ai_parser_config in stage field",
+      userMessage: "La configuración de parsing IA del campo está incompleta.",
+      status: 500,
+    });
+  }
+
+  return {
+    ...parsed.data,
+    extractionInstructions,
+    expectedSchemaTemplate,
+  };
 }
 
 export async function GET(
@@ -131,15 +196,69 @@ export async function POST(
       });
     }
 
-    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+    const { data: fileBlob, error: downloadError } = await supabase.storage
       .from("application-documents")
-      .createSignedUrl(filePath, 60);
+      .download(filePath);
 
-    if (signedUrlError || !signedUrlData?.signedUrl) {
+    if (downloadError || !fileBlob) {
       throw new AppError({
-        message: "Could not create signed URL for OCR",
+        message: "Could not download file for OCR",
         userMessage: "No se pudo preparar el archivo para OCR.",
         status: 500,
+        details: downloadError,
+      });
+    }
+
+    const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
+
+    const { data: fieldData, error: fieldError } = await supabase
+      .from("cycle_stage_fields")
+      .select("field_type, ai_parser_config")
+      .eq("cycle_id", application.cycle_id)
+      .eq("stage_code", application.stage_code)
+      .eq("field_key", parsed.data.fileKey)
+      .maybeSingle();
+
+    if (fieldError) {
+      throw new AppError({
+        message: "Failed loading field parser config",
+        userMessage: "No se pudo cargar la configuración de parsing IA del archivo.",
+        status: 500,
+        details: fieldError,
+      });
+    }
+
+    if (!fieldData || fieldData.field_type !== "file") {
+      throw new AppError({
+        message: "OCR requested for non-file field",
+        userMessage: "Este campo no es de tipo archivo.",
+        status: 400,
+      });
+    }
+
+    const parserConfig = parseFieldAiParserConfigOrNull(
+      (fieldData as { ai_parser_config: unknown }).ai_parser_config,
+    );
+
+    if (!parserConfig) {
+      throw new AppError({
+        message: "AI parser is not configured for file field",
+        userMessage: "Este archivo no tiene parsing IA habilitado en el editor de formulario.",
+        status: 400,
+      });
+    }
+
+    const extractionInstructions = parserConfig.extractionInstructions;
+    const expectedSchemaTemplate = parserConfig.expectedSchemaTemplate;
+
+    try {
+      JSON.parse(expectedSchemaTemplate);
+    } catch (error) {
+      throw new AppError({
+        message: "Invalid parser schema template in field config",
+        userMessage: "El esquema JSON de parsing IA no es válido para este archivo.",
+        status: 500,
+        details: error instanceof Error ? error.message : error,
       });
     }
 
@@ -151,9 +270,21 @@ export async function POST(
       .maybeSingle();
 
     const result = await runOcrCheck({
-      fileUrl: signedUrlData.signedUrl,
+      document: {
+        fileName: parsed.data.fileKey,
+        mimeType: fileBlob.type || inferMimeTypeFromPath(filePath),
+        dataBase64: fileBuffer.toString("base64"),
+      },
+      modelId: parserConfig.modelId ?? null,
       promptTemplate:
-        (templateData as { ocr_prompt_template: string | null } | null)?.ocr_prompt_template ?? null,
+        parserConfig.promptTemplate ??
+        (templateData as { ocr_prompt_template: string | null } | null)?.ocr_prompt_template ??
+        null,
+      systemPrompt: parserConfig.systemPrompt ?? null,
+      extractionInstructions,
+      expectedSchemaTemplate,
+      strictSchema: parserConfig.strictSchema ?? true,
+      failOnInjectionSignals: true,
     });
 
     const { data: insertedData, error: insertError } = await supabase

@@ -5,11 +5,24 @@ import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
+import { partitionConfigRowsById } from "@/lib/server/stage-config-persistence";
 import type { Database, Json } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
 type StageAutomationRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
 type StageTemplateRow = Database["public"]["Tables"]["cycle_stage_templates"]["Row"];
+
+const aiParserSchema = z
+  .object({
+    enabled: z.boolean().optional().default(false),
+    modelId: z.string().trim().min(1).max(120).nullable().optional(),
+    promptTemplate: z.string().trim().max(5000).nullable().optional(),
+    systemPrompt: z.string().trim().max(2000).nullable().optional(),
+    extractionInstructions: z.string().trim().max(6000).nullable().optional(),
+    expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
+    strictSchema: z.boolean().optional().default(true),
+  })
+  .strict();
 
 const fieldSchema = z.object({
   id: z.string().uuid().optional(),
@@ -19,9 +32,11 @@ const fieldSchema = z.object({
   isRequired: z.boolean(),
   placeholder: z.string().max(180).nullable().optional(),
   helpText: z.string().max(220).nullable().optional(),
+  groupName: z.string().trim().max(120).nullable().optional(),
   sortOrder: z.number().int().min(1).max(200),
   isActive: z.boolean().optional().default(true),
   sectionKey: z.string().min(1).max(120).nullable().optional(),
+  aiParser: aiParserSchema.nullable().optional(),
 });
 
 const automationSchema = z.object({
@@ -94,6 +109,68 @@ function parseStageAdminConfig(value: Json | null | undefined) {
         ? record.blockIfPreviousNotMet
         : null,
   };
+}
+
+function normalizeAiParserConfig({
+  fieldType,
+  aiParser,
+  fieldLabel,
+}: {
+  fieldType: z.infer<typeof fieldSchema>["fieldType"];
+  aiParser: z.infer<typeof aiParserSchema> | null | undefined;
+  fieldLabel: string;
+}): Json | null {
+  if (!aiParser || !aiParser.enabled) {
+    return null;
+  }
+
+  if (fieldType !== "file") {
+    throw new AppError({
+      message: "AI parser enabled for non-file field",
+      userMessage: `Solo los campos de tipo Archivo pueden habilitar parsing IA. Revisa "${fieldLabel}".`,
+      status: 400,
+    });
+  }
+
+  const extractionInstructions = aiParser.extractionInstructions?.trim() ?? "";
+  const expectedSchemaTemplate = aiParser.expectedSchemaTemplate?.trim() ?? "";
+
+  if (!extractionInstructions) {
+    throw new AppError({
+      message: "Missing extraction instructions in AI parser config",
+      userMessage: `Debes definir instrucciones de extracción para "${fieldLabel}" antes de guardar.`,
+      status: 400,
+    });
+  }
+
+  if (!expectedSchemaTemplate) {
+    throw new AppError({
+      message: "Missing expected schema template in AI parser config",
+      userMessage: `Debes definir un esquema JSON esperado para "${fieldLabel}" antes de guardar.`,
+      status: 400,
+    });
+  }
+
+  try {
+    JSON.parse(expectedSchemaTemplate);
+  } catch (error) {
+    throw new AppError({
+      message: "Invalid expected schema template in AI parser config",
+      userMessage: `El esquema JSON esperado de "${fieldLabel}" no es válido.`,
+      status: 400,
+      details: error instanceof Error ? error.message : error,
+    });
+  }
+
+  return {
+    enabled: true,
+    modelId: aiParser.modelId?.trim() || null,
+    promptTemplate: aiParser.promptTemplate?.trim() || null,
+    systemPrompt: aiParser.systemPrompt?.trim() || null,
+    extractionInstructions,
+    expectedSchemaTemplate,
+    strictSchema: aiParser.strictSchema ?? true,
+  } satisfies Record<string, Json>;
 }
 
 async function ensureCycleExists({
@@ -540,6 +617,11 @@ export async function PATCH(
       const resolvedSectionId = field.sectionKey
         ? (sectionKeyToId.get(field.sectionKey.trim()) ?? null)
         : null;
+      const aiParserConfig = normalizeAiParserConfig({
+        fieldType: field.fieldType,
+        aiParser: field.aiParser,
+        fieldLabel: field.fieldLabel.trim(),
+      });
 
       return {
         ...(field.id ? { id: field.id } : {}),
@@ -551,9 +633,11 @@ export async function PATCH(
         is_required: field.isRequired,
         placeholder: field.placeholder ?? null,
         help_text: field.helpText ?? null,
+        group_name: field.groupName?.trim() || null,
         sort_order: field.sortOrder,
         is_active: field.isActive,
         section_id: resolvedSectionId,
+        ai_parser_config: aiParserConfig,
       };
     });
 
@@ -569,34 +653,54 @@ export async function PATCH(
       updated_at: new Date().toISOString(),
     }));
 
-    const [upsertFieldsResult, upsertAutomationsResult] = await Promise.all([
-      fieldRows.length > 0
+    const { inserts: fieldRowsToInsert, updates: fieldRowsToUpdate } =
+      partitionConfigRowsById(fieldRows);
+    const { inserts: automationRowsToInsert, updates: automationRowsToUpdate } =
+      partitionConfigRowsById(automationRows);
+
+    const [
+      updateFieldsResult,
+      insertFieldsResult,
+      updateAutomationsResult,
+      insertAutomationsResult,
+    ] = await Promise.all([
+      fieldRowsToUpdate.length > 0
         ? supabase
             .from("cycle_stage_fields")
-            .upsert(fieldRows, { onConflict: "id" })
+            .upsert(fieldRowsToUpdate, { onConflict: "id" })
         : Promise.resolve({ error: null }),
-      automationRows.length > 0
+      fieldRowsToInsert.length > 0
+        ? supabase
+            .from("cycle_stage_fields")
+            .insert(fieldRowsToInsert)
+        : Promise.resolve({ error: null }),
+      automationRowsToUpdate.length > 0
         ? supabase
             .from("stage_automation_templates")
-            .upsert(automationRows, { onConflict: "id" })
+            .upsert(automationRowsToUpdate, { onConflict: "id" })
+        : Promise.resolve({ error: null }),
+      automationRowsToInsert.length > 0
+        ? supabase
+            .from("stage_automation_templates")
+            .insert(automationRowsToInsert)
         : Promise.resolve({ error: null }),
     ]);
 
-    if (upsertFieldsResult.error) {
+    if (updateFieldsResult.error || insertFieldsResult.error) {
       throw new AppError({
         message: "Failed upserting stage fields",
         userMessage: "No se pudieron guardar los campos de la etapa.",
         status: 500,
-        details: upsertFieldsResult.error,
+        details: updateFieldsResult.error ?? insertFieldsResult.error,
       });
     }
 
-    if (upsertAutomationsResult.error) {
+    if (updateAutomationsResult.error || insertAutomationsResult.error) {
       throw new AppError({
         message: "Failed upserting stage automations",
         userMessage: "No se pudieron guardar las automatizaciones de la etapa.",
         status: 500,
-        details: upsertAutomationsResult.error,
+        details: updateAutomationsResult.error ?? insertAutomationsResult.error,
       });
     }
 

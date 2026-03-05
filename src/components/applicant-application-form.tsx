@@ -31,7 +31,7 @@ import {
   groupFieldsBySections,
   type ResolvedSection,
 } from "@/lib/stages/applicant-sections";
-import { getSubGroupsForSection, isBooleanField, getBooleanFieldLabels, type SubGroupDef } from "@/lib/stages/field-sub-groups";
+import { isBooleanField, getBooleanFieldLabels } from "@/lib/stages/field-sub-groups";
 
 interface ApiError {
   message: string;
@@ -151,6 +151,10 @@ const SPANISH_FIELD_PLACEHOLDER_BY_KEY: Partial<Record<string, string>> = {
   mentorRecommenderName: "Nombre completo",
   friendRecommenderName: "Nombre completo",
 };
+
+function normalizeEmailAddress(value: string | null | undefined) {
+  return (value ?? "").trim().toLowerCase();
+}
 
 const HIDDEN_FIELD_HELP_TEXT_KEYS = new Set([
   "fullName",
@@ -546,9 +550,105 @@ function getSectionFieldStatus({
   });
 }
 
+function isDocumentsStageCode(stageCode?: string) {
+  return !stageCode || stageCode === "documents";
+}
+
+function getInitialActiveSectionId({
+  cycleId,
+  stageCode,
+  stageFields,
+  sections,
+}: {
+  cycleId: string;
+  stageCode?: string;
+  stageFields?: CycleStageField[];
+  sections?: StageSection[];
+}): WizardSectionId {
+  if (isDocumentsStageCode(stageCode)) {
+    return PREP_SECTION_ID;
+  }
+
+  const effectiveStageFields =
+    stageFields && stageFields.length > 0 ? stageFields : buildFallbackStageFields(cycleId);
+  const orderedStageFields = [...effectiveStageFields].sort(
+    (a, b) => a.sort_order - b.sort_order,
+  );
+  const formStageFields = orderedStageFields.filter(
+    (field) => field.is_active && field.field_type !== "file",
+  );
+  const fileStageFields = orderedStageFields.filter(
+    (field) => field.is_active && field.field_type === "file",
+  );
+  const groupedSections = groupFieldsBySections(formStageFields, sections ?? [], {
+    includeInactive: false,
+    includeFileFields: false,
+  });
+
+  const firstFormSection = groupedSections.find(
+    (section) => section.sectionKey !== "documents" && section.sectionKey !== "recommenders",
+  );
+  if (firstFormSection) {
+    return firstFormSection.sectionKey as WizardSectionId;
+  }
+
+  const hasDocumentStep =
+    fileStageFields.length > 0 ||
+    groupedSections.some((section) => section.sectionKey === "documents");
+  if (hasDocumentStep) {
+    return "documents_uploads";
+  }
+
+  return "review_submit";
+}
+
+function isCurrentStageReadOnly({
+  application,
+  stageCode,
+}: {
+  application: Application | null;
+  stageCode?: string;
+}) {
+  if (!application) {
+    return false;
+  }
+
+  if (application.status === "submitted" || application.status === "ineligible") {
+    return true;
+  }
+
+  return (
+    isDocumentsStageCode(stageCode) &&
+    (application.status === "eligible" || application.status === "advanced")
+  );
+}
+
+function isCurrentStageSubmissionComplete({
+  application,
+  stageCode,
+}: {
+  application: Application | null;
+  stageCode?: string;
+}) {
+  if (!application) {
+    return false;
+  }
+
+  if (application.status === "submitted" || application.status === "ineligible") {
+    return true;
+  }
+
+  return (
+    isDocumentsStageCode(stageCode) &&
+    (application.status === "eligible" || application.status === "advanced")
+  );
+}
+
 export function ApplicantApplicationForm({
   existingApplication,
   cycleId,
+  accountDisplayName,
+  accountEmail,
   cycleName,
   stageCode,
   stageLabel,
@@ -560,6 +660,8 @@ export function ApplicantApplicationForm({
 }: {
   existingApplication: Application | null;
   cycleId: string;
+  accountDisplayName?: string | null;
+  accountEmail?: string | null;
   cycleName?: string;
   stageCode?: string;
   stageLabel?: string;
@@ -575,13 +677,6 @@ export function ApplicantApplicationForm({
   const copy = useCallback((spanish: string, english: string) => (isEnglish ? english : spanish), [isEnglish]);
   const staticSectionTitles: Record<string, string> = isEnglish ? SECTION_TITLES_EN : SECTION_TITLES_ES;
 
-  const LOCKED_STATUSES = new Set<Application["status"]>([
-    "submitted",
-    "eligible",
-    "ineligible",
-    "advanced",
-  ]);
-
   const [application, setApplication] = useState<Application | null>(existingApplication);
   const [error, setError] = useState<ApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -593,7 +688,7 @@ export function ApplicantApplicationForm({
       initialRecommenders.find((row) => row.role === "friend" && !row.invalidatedAt)?.email ?? "",
   });
   const [loadingRecommenders, setLoadingRecommenders] = useState(false);
-  const [savingRecommenders, setSavingRecommenders] = useState(false);
+  const [savingRecommenderRole, setSavingRecommenderRole] = useState<RecommenderRole | null>(null);
   const [remindingId, setRemindingId] = useState<string | null>(null);
   const [uploadingFieldKey, setUploadingFieldKey] = useState<string | null>(null);
   const [fileTitleEdits, setFileTitleEdits] = useState<Record<string, string>>({});
@@ -604,16 +699,18 @@ export function ApplicantApplicationForm({
   const [hasPendingChanges, setHasPendingChanges] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formValues, setFormValues] = useState<Record<string, string>>({});
-  const isDocumentsStageInit = !stageCode || stageCode === "documents";
   const [activeSectionId, setActiveSectionId] = useState<WizardSectionId>(
-    isDocumentsStageInit
-      ? PREP_SECTION_ID
-      : "review_submit",
+    getInitialActiveSectionId({
+      cycleId,
+      stageCode,
+      stageFields,
+      sections,
+    }),
   );
   const [isSidebarHidden, setIsSidebarHidden] = useState(false);
 
   const isStageClosed = Boolean(stageCloseAt && Date.parse(stageCloseAt) < Date.now());
-  const isLocked = application ? LOCKED_STATUSES.has(application.status) : false;
+  const isLocked = isCurrentStageReadOnly({ application, stageCode });
   const isEditingEnabled = !isStageClosed && (!isLocked || isEditMode);
   const providedStageFields = stageFields ?? EMPTY_STAGE_FIELDS;
   const initialApplicationIdRef = useRef<string | null>(existingApplication?.id ?? null);
@@ -885,13 +982,10 @@ export function ApplicantApplicationForm({
   const submissionStatus = useMemo(
     () =>
       getStepState({
-        complete: Boolean(
-          application &&
-            ["submitted", "eligible", "ineligible", "advanced"].includes(application.status),
-        ),
+        complete: isCurrentStageSubmissionComplete({ application, stageCode }),
         inProgress: false,
       }),
-    [application],
+    [application, stageCode],
   );
 
   const progressWizardSections = useMemo(
@@ -1012,9 +1106,16 @@ export function ApplicantApplicationForm({
     }
 
     if (!wizardSections.some((section) => section.id === activeSectionId)) {
-      setActiveSectionId(wizardSections[0].id);
+      setActiveSectionId(
+        getInitialActiveSectionId({
+          cycleId,
+          stageCode,
+          stageFields,
+          sections,
+        }),
+      );
     }
-  }, [activeSectionId, wizardSections]);
+  }, [activeSectionId, cycleId, sections, stageCode, stageFields, wizardSections]);
 
   useEffect(() => {
     const applicationId = application?.id ?? null;
@@ -1518,124 +1619,6 @@ export function ApplicantApplicationForm({
     );
   }
 
-  function renderSubGroupCard(subGroup: SubGroupDef, fields: CycleStageField[], sectionId: string) {
-    const sgLabel = isEnglish ? subGroup.labelEn : subGroup.label;
-
-    if (subGroup.variant === "guardian") {
-      return (
-        <Box
-          key={subGroup.key}
-          sx={{
-            background: "var(--surface, #fff)",
-            border: "1px solid var(--sand-light, #F3EFEB)",
-            borderRadius: "var(--radius-lg, 12px)",
-            p: "20px",
-            mb: 2,
-          }}
-        >
-          {/* Guardian header */}
-          <Box sx={{ display: "flex", alignItems: "center", gap: "10px", mb: 2 }}>
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "0.85rem",
-                background: subGroup.iconBg,
-                color: subGroup.iconColor,
-              }}
-            >
-              {subGroup.guardianNumber}
-            </Box>
-            <Box>
-              <Typography sx={{ fontWeight: 500, fontSize: "0.9rem", color: "var(--ink)" }}>
-                {sgLabel}
-              </Typography>
-              {(isEnglish ? subGroup.subtitleEn : subGroup.subtitle) ? (
-                <Typography sx={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                  {isEnglish ? subGroup.subtitleEn : subGroup.subtitle}
-                </Typography>
-              ) : null}
-            </Box>
-          </Box>
-          {renderFieldGrid(fields, sectionId)}
-        </Box>
-      );
-    }
-
-    if (subGroup.variant === "card") {
-      return (
-        <Box
-          key={subGroup.key}
-          sx={{
-            background: "var(--surface, #fff)",
-            border: "1px solid var(--sand-light, #F3EFEB)",
-            borderRadius: "var(--radius-lg, 12px)",
-            p: "20px",
-            mb: 2,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: "14px" }}>
-            {subGroup.iconBg ? (
-              <Box
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "0.85rem",
-                  lineHeight: 1,
-                  background: subGroup.iconBg,
-                  color: subGroup.iconColor,
-                }}
-                aria-hidden="true"
-              >
-                {subGroup.icon ?? null}
-              </Box>
-            ) : null}
-            <Typography
-              sx={{
-                fontFamily: "var(--font-display)",
-                fontSize: "1rem",
-                fontWeight: 500,
-                color: "var(--ink)",
-              }}
-            >
-              {sgLabel}
-            </Typography>
-          </Box>
-          {renderFieldGrid(fields, sectionId)}
-        </Box>
-      );
-    }
-
-    // Default: form-group with label divider
-    return (
-      <Box key={subGroup.key} sx={{ mb: "28px" }}>
-        <Typography
-          sx={{
-            fontSize: "0.68rem",
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "var(--muted)",
-            mb: "14px",
-            pb: 1,
-            borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-          }}
-        >
-          {sgLabel}
-        </Typography>
-        {renderFieldGrid(fields, sectionId)}
-      </Box>
-    );
-  }
-
   function renderEditableFields({
     fields,
     sectionId,
@@ -1643,8 +1626,6 @@ export function ApplicantApplicationForm({
     fields: CycleStageField[];
     sectionId: string;
   }) {
-    const subGroups = getSubGroupsForSection(sectionId);
-
     // Separate grade fields for the school section
     const gradeFields = sectionId === "school" ? fields.filter((f) => isGradeField(f.field_key)) : [];
     const allNonGradeFields = sectionId === "school" ? fields.filter((f) => !isGradeField(f.field_key)) : fields;
@@ -1685,13 +1666,73 @@ export function ApplicantApplicationForm({
         ? nonGradeFields.filter((f) => !DEFERRED_SCHOOL_FIELDS.has(f.field_key))
         : nonGradeFields;
 
-    // If no sub-groups, render flat
-    if (subGroups.length === 0) {
+    const customGroupedFieldNames = Array.from(
+      new Set(
+        topNonGradeFields
+          .map((field) => field.group_name?.trim() ?? "")
+          .filter((groupName) => groupName.length > 0),
+      ),
+    );
+    const hasCustomFieldGroups = customGroupedFieldNames.length > 0;
+
+    if (hasCustomFieldGroups) {
+      const fieldsByCustomGroup = new Map<string, CycleStageField[]>();
+      for (const groupName of customGroupedFieldNames) {
+        fieldsByCustomGroup.set(groupName, []);
+      }
+      const ungroupedFields = topNonGradeFields.filter((field) => {
+        const groupName = field.group_name?.trim() ?? "";
+        if (!groupName) {
+          return true;
+        }
+        fieldsByCustomGroup.get(groupName)?.push(field);
+        return false;
+      });
+
       return (
         <Box>
-          {renderFieldGrid(topNonGradeFields, sectionId)}
+          {ungroupedFields.length > 0 ? (
+            <Box sx={{ mb: "28px", animation: "fadeUp 0.35s ease", animationFillMode: "backwards" }}>
+              {renderFieldGrid(ungroupedFields, sectionId)}
+            </Box>
+          ) : null}
+
+          {customGroupedFieldNames.map((groupName, idx) => {
+            const groupedFields = fieldsByCustomGroup.get(groupName) ?? [];
+            if (groupedFields.length === 0) {
+              return null;
+            }
+            return (
+              <Box
+                key={`${sectionId}-${groupName}`}
+                sx={{
+                  mb: "28px",
+                  animation: "fadeUp 0.35s ease",
+                  animationFillMode: "backwards",
+                  animationDelay: `${(idx + 1) * 0.05}s`,
+                }}
+              >
+                <Typography
+                  sx={{
+                    fontSize: "0.68rem",
+                    fontWeight: 600,
+                    letterSpacing: "0.06em",
+                    textTransform: "uppercase",
+                    color: "var(--muted)",
+                    mb: "14px",
+                    pb: 1,
+                    borderBottom: "1px solid var(--sand-light, #F3EFEB)",
+                  }}
+                >
+                  {groupName}
+                </Typography>
+                {renderFieldGrid(groupedFields, sectionId)}
+              </Box>
+            );
+          })}
+
           {gradeFields.length > 0 ? (
-            <Box sx={{ mt: 3 }}>
+            <Box sx={{ mt: 1 }}>
               <Typography
                 sx={{
                   fontSize: "0.68rem",
@@ -1704,7 +1745,7 @@ export function ApplicantApplicationForm({
                   borderBottom: "1px solid var(--sand-light, #F3EFEB)",
                 }}
               >
-                {isEnglish ? "Official grades by year" : "Notas oficiales por a\u00f1o"}
+                {isEnglish ? "Official grades by year" : "Notas oficiales por año"}
               </Typography>
               <GradesTable
                 fields={gradeFields}
@@ -1719,8 +1760,9 @@ export function ApplicantApplicationForm({
               />
             </Box>
           ) : null}
+
           {deferredSchoolFields.length > 0 ? (
-            <Box sx={{ mt: gradeFields.length > 0 ? 3 : 0 }}>
+            <Box sx={{ mt: 3 }}>
               {renderFieldGrid(deferredSchoolFields, sectionId)}
             </Box>
           ) : null}
@@ -1728,44 +1770,9 @@ export function ApplicantApplicationForm({
       );
     }
 
-    // Collect all sub-grouped field keys
-    const subGroupedKeys = new Set<string>();
-    for (const sg of subGroups) {
-      for (const k of sg.fieldKeys) subGroupedKeys.add(k);
-    }
-
-    // Fields not in any sub-group (rendered first, ungrouped)
-    const ungroupedFields = topNonGradeFields.filter((f) => !subGroupedKeys.has(f.field_key));
-
     return (
       <Box>
-        {/* Ungrouped fields first */}
-        {ungroupedFields.length > 0 ? (
-          <Box sx={{ mb: "28px", animation: "fadeUp 0.35s ease", animationFillMode: "backwards" }}>
-            {renderFieldGrid(ungroupedFields, sectionId)}
-          </Box>
-        ) : null}
-
-        {/* Sub-groups */}
-        {subGroups.map((sg, idx) => {
-          const subGroupOrder = new Map(Array.from(sg.fieldKeys).map((key, orderIdx) => [key, orderIdx]));
-          const sgFields = topNonGradeFields
-            .filter((f) => sg.fieldKeys.has(f.field_key))
-            .sort((a, b) => (subGroupOrder.get(a.field_key) ?? 999) - (subGroupOrder.get(b.field_key) ?? 999));
-          if (sgFields.length === 0) return null;
-          return (
-            <Box
-              key={sg.key}
-              sx={{
-                animation: "fadeUp 0.35s ease",
-                animationFillMode: "backwards",
-                animationDelay: `${(idx + 1) * 0.05}s`,
-              }}
-            >
-              {renderSubGroupCard(sg, sgFields, sectionId)}
-            </Box>
-          );
-        })}
+        {renderFieldGrid(topNonGradeFields, sectionId)}
 
         {/* Grades table for school section */}
         {gradeFields.length > 0 ? (
@@ -1781,8 +1788,8 @@ export function ApplicantApplicationForm({
                 pb: 1,
                 borderBottom: "1px solid var(--sand-light, #F3EFEB)",
               }}
-            >
-              {isEnglish ? "Official grades by year" : "Notas oficiales por a\u00f1o"}
+              >
+              {isEnglish ? "Official grades by year" : "Notas oficiales por año"}
             </Typography>
             <GradesTable
               fields={gradeFields}
@@ -1799,7 +1806,7 @@ export function ApplicantApplicationForm({
         ) : null}
 
         {deferredSchoolFields.length > 0 ? (
-          <Box sx={{ mt: 3 }}>
+          <Box sx={{ mt: gradeFields.length > 0 ? 3 : 0 }}>
             {renderFieldGrid(deferredSchoolFields, sectionId)}
           </Box>
         ) : null}
@@ -1843,7 +1850,7 @@ export function ApplicantApplicationForm({
     setSuccessMessage(copy("Postulación enviada. El comité revisará tu información.", "Application submitted. The committee will review your information."));
   }
 
-  async function saveRecommenders() {
+  async function saveRecommender(role: RecommenderRole) {
     setError(null);
     setSuccessMessage(null);
 
@@ -1862,30 +1869,37 @@ export function ApplicantApplicationForm({
       return;
     }
 
-    const mentorEmail = recommenderInputs.mentor.trim();
-    const friendEmail = recommenderInputs.friend.trim();
+    const email = recommenderInputs[role].trim();
+    const normalizedAccountEmail = normalizeEmailAddress(accountEmail);
 
-    if (!mentorEmail || !friendEmail) {
+    if (!email) {
       setError({
         message: copy(
-          "Debes registrar 2 recomendadores: uno tutor/profesor/mentor y uno amigo.",
-          "You must register 2 recommenders: one tutor/teacher/mentor and one friend.",
+          "Ingresa el correo del recomendador antes de enviar la invitación.",
+          "Enter the recommender email before sending the invitation.",
         ),
       });
       return;
     }
 
-    setSavingRecommenders(true);
+    if (normalizedAccountEmail && normalizeEmailAddress(email) === normalizedAccountEmail) {
+      setError({
+        message: copy(
+          "No puedes registrarte como tu propio recomendador. Usa dos correos distintos al de tu cuenta.",
+          "You cannot register yourself as your own recommender. Use two emails different from your account.",
+        ),
+      });
+      return;
+    }
+
+    setSavingRecommenderRole(role);
     try {
       const response = await fetch("/api/recommendations", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           applicationId: application.id,
-          recommenders: [
-            { role: "mentor", email: mentorEmail },
-            { role: "friend", email: friendEmail },
-          ],
+          recommenders: [{ role, email }],
         }),
       });
       const body = await response.json();
@@ -1905,44 +1919,44 @@ export function ApplicantApplicationForm({
       const replacedCount = Number(body.replacedCount ?? 0);
       const failedEmailCount = Number(body.failedEmailCount ?? 0);
       const sentEmailCount = Math.max(createdCount - failedEmailCount, 0);
+      const resolvedRoleLabel = roleLabel(role, language);
 
       const chunks = [];
-      if (sentEmailCount > 0) {
+      if (replacedCount > 0 && sentEmailCount > 0) {
         chunks.push(
           copy(
-            `${sentEmailCount} invitación(es) enviada(s).`,
-            `${sentEmailCount} invitation(s) sent.`,
+            `${resolvedRoleLabel} actualizado. Se envió una nueva invitación.`,
+            `${resolvedRoleLabel} updated. A new invitation was sent.`,
+          ),
+        );
+      } else if (sentEmailCount > 0) {
+        chunks.push(
+          copy(
+            `Invitación enviada a ${email}.`,
+            `Invitation sent to ${email}.`,
           ),
         );
       }
       if (createdCount > 0 && failedEmailCount >= createdCount) {
         chunks.push(
           copy(
-            `${createdCount} recomendador(es) registrado(s).`,
-            `${createdCount} recommender(s) registered.`,
+            `${resolvedRoleLabel} registrado, pero el correo no salió. Usa "Enviar recordatorio" para reintentar.`,
+            `${resolvedRoleLabel} saved, but the email did not go out. Use "Send reminder" to retry.`,
           ),
         );
       }
-      if (replacedCount > 0) {
+      if (replacedCount > 0 && failedEmailCount > 0) {
         chunks.push(
           copy(
-            `${replacedCount} recomendador(es) reemplazado(s) con token nuevo.`,
-            `${replacedCount} recommender(s) replaced with a new token.`,
-          ),
-        );
-      }
-      if (failedEmailCount > 0) {
-        chunks.push(
-          copy(
-            `${failedEmailCount} correo(s) no se enviaron, usa "Enviar recordatorio".`,
-            `${failedEmailCount} email(s) were not sent, use "Send reminder".`,
+            `${resolvedRoleLabel} actualizado, pero no se pudo enviar la nueva invitación.`,
+            `${resolvedRoleLabel} updated, but the new invitation could not be sent.`,
           ),
         );
       }
 
-      setSuccessMessage(chunks.length > 0 ? chunks.join(" ") : copy("Recomendadores actualizados.", "Recommenders updated."));
+      setSuccessMessage(chunks.length > 0 ? chunks.join(" ") : copy("Recomendador actualizado.", "Recommender updated."));
     } finally {
-      setSavingRecommenders(false);
+      setSavingRecommenderRole(null);
     }
   }
 
@@ -2062,8 +2076,15 @@ export function ApplicantApplicationForm({
           isReplacingExistingFile
             ? "Document updated successfully."
             : "Document uploaded successfully.",
-        ),
+          ),
       );
+    } catch {
+      setError({
+        message: copy(
+          "No se pudo completar la subida del archivo. Intenta nuevamente.",
+          "Could not complete the file upload. Please try again.",
+        ),
+      });
     } finally {
       setUploadingFieldKey(null);
     }
@@ -2094,6 +2115,8 @@ export function ApplicantApplicationForm({
     <Box>
       {/* Fixed top navigation */}
       <ApplicantTopNav
+        accountDisplayName={accountDisplayName}
+        accountEmail={accountEmail}
         draftStatusLabel={draftStatusLabel}
         draftStatusDot={sidebarDraftDot}
         modeStatusLabel={modeStatusLabel}
@@ -2510,38 +2533,60 @@ export function ApplicantApplicationForm({
                         alignItems={{ xs: "flex-start", sm: "center" }}
                         sx={{ mt: 1.2 }}
                       >
-                        {current?.inviteSentAt ? (
-                          <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
-                            {copy("Invitación", "Invite")}: {new Date(current.inviteSentAt).toLocaleString(locale)}
-                          </Typography>
-                        ) : null}
-                        {current?.submittedAt ? (
-                          <Typography variant="body2" color="success.main" sx={{ fontSize: "0.75rem" }}>
-                            {copy("Formulario enviado", "Form submitted")}: {new Date(current.submittedAt).toLocaleString(locale)}
-                          </Typography>
-                        ) : null}
-                        {current && current.status !== "submitted" ? (
-                          <Button
-                            variant="text"
-                            onClick={() => sendReminder(current.id)}
-                            disabled={remindingId === current.id || !isEditingEnabled}
-                          >
-                            {remindingId === current.id ? copy("Enviando...", "Sending...") : copy("Enviar recordatorio", "Send reminder")}
-                          </Button>
-                        ) : null}
+                        {(() => {
+                          const normalizedCurrentEmail = normalizeEmailAddress(current?.email);
+                          const normalizedInputEmail = normalizeEmailAddress(recommenderInputs[role]);
+                          const shouldShowSaveInvite =
+                            isEditingEnabled &&
+                            current?.status !== "submitted" &&
+                            (!current || normalizedInputEmail !== normalizedCurrentEmail);
+                          const canSaveInvite = shouldShowSaveInvite && Boolean(normalizedInputEmail);
+                          const saveLabel = current
+                            ? copy("Guardar y reenviar", "Save and resend")
+                            : copy("Guardar y enviar", "Save and send");
+                          const reminderLabel = current?.inviteSentAt
+                            ? copy("Enviar recordatorio", "Send reminder")
+                            : copy("Reintentar envío", "Retry send");
+
+                          return (
+                            <>
+                              {shouldShowSaveInvite ? (
+                                <Button
+                                  variant="outlined"
+                                  onClick={() => saveRecommender(role)}
+                                  disabled={!canSaveInvite || savingRecommenderRole === role}
+                                >
+                                  {savingRecommenderRole === role
+                                    ? copy("Enviando...", "Sending...")
+                                    : saveLabel}
+                                </Button>
+                              ) : null}
+                              {current?.inviteSentAt ? (
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
+                                  {copy("Invitación", "Invite")}: {new Date(current.inviteSentAt).toLocaleString(locale)}
+                                </Typography>
+                              ) : null}
+                              {current?.submittedAt ? (
+                                <Typography variant="body2" color="success.main" sx={{ fontSize: "0.75rem" }}>
+                                  {copy("Formulario enviado", "Form submitted")}: {new Date(current.submittedAt).toLocaleString(locale)}
+                                </Typography>
+                              ) : null}
+                              {current && current.status !== "submitted" ? (
+                                <Button
+                                  variant="text"
+                                  onClick={() => sendReminder(current.id)}
+                                  disabled={remindingId === current.id || !isEditingEnabled}
+                                >
+                                  {remindingId === current.id ? copy("Enviando...", "Sending...") : reminderLabel}
+                                </Button>
+                              ) : null}
+                            </>
+                          );
+                        })()}
                       </Stack>
                     </Box>
                   );
                 })}
-              </Stack>
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={1} sx={{ mt: 2 }}>
-                <Button
-                  variant="outlined"
-                  onClick={saveRecommenders}
-                  disabled={!isEditingEnabled || savingRecommenders}
-                >
-                  {savingRecommenders ? copy("Guardando...", "Saving...") : copy("Guardar recomendadores", "Save recommenders")}
-                </Button>
               </Stack>
               {loadingRecommenders ? (
                 <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, fontSize: "0.78rem" }}>

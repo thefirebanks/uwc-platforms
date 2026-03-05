@@ -63,9 +63,9 @@ export async function POST(
     }
 
     return NextResponse.json({
-      path: objectPath,
+      path: data.path ?? objectPath,
       token: data.token,
-      signedUrl: `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/upload/sign/application-documents/${objectPath}?token=${data.token}`,
+      signedUrl: data.signedUrl,
     });
   }, { operation: "applications.upload_url.create" });
 }

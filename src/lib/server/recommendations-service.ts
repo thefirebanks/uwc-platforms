@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
+import { logger } from "@/lib/logging/logger";
 import { assertApplicantCanEditCycle } from "@/lib/server/application-service";
 import { sendEmail } from "@/lib/server/email-provider";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -10,7 +11,6 @@ import type { RecommenderRole, RecommendationStatus } from "@/types/domain";
 type RecommendationRow = Database["public"]["Tables"]["recommendation_requests"]["Row"];
 type RecommendationInsert = Database["public"]["Tables"]["recommendation_requests"]["Insert"];
 
-const RECOMMENDER_ROLES: RecommenderRole[] = ["mentor", "friend"];
 const OTP_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
@@ -102,6 +102,8 @@ async function sendRawEmail({
       details: result.errorMessage,
     });
   }
+
+  return result;
 }
 
 function asSummary(row: RecommendationRow): RecommendationSummary {
@@ -139,7 +141,8 @@ function getRecommendationAccessUrl({
   token: string;
   origin: string;
 }) {
-  return `${origin}/recomendacion/${token}`;
+  const baseOrigin = process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/u, "") || origin;
+  return `${baseOrigin}/recomendacion/${token}`;
 }
 
 function buildInviteEmailText({
@@ -272,12 +275,14 @@ export async function upsertApplicantRecommendations({
   supabase,
   applicationId,
   applicantId,
+  applicantEmail,
   recommenders,
   origin,
 }: {
   supabase: SupabaseClient<Database>;
   applicationId: string;
   applicantId: string;
+  applicantEmail: string | null;
   recommenders: Array<{ role: RecommenderRole; email: string }>;
   origin: string;
 }) {
@@ -285,6 +290,7 @@ export async function upsertApplicantRecommendations({
     role: item.role,
     email: normalizeEmail(item.email),
   }));
+  const normalizedApplicantEmail = applicantEmail ? normalizeEmail(applicantEmail) : null;
 
   const uniqueEmails = new Set(normalized.map((item) => item.email));
   if (uniqueEmails.size !== normalized.length) {
@@ -296,12 +302,21 @@ export async function upsertApplicantRecommendations({
     });
   }
 
-  const roles = new Set(normalized.map((item) => item.role));
-  if (roles.size !== RECOMMENDER_ROLES.length) {
+  if (normalizedApplicantEmail && normalized.some((item) => item.email === normalizedApplicantEmail)) {
     throw new AppError({
-      message: "Missing recommender role",
+      message: "Applicant attempted to register themselves as recommender",
       userMessage:
-        "Debes registrar exactamente 2 recomendadores: uno mentor y uno amigo.",
+        "No puedes registrarte como tu propio recomendador. Usa dos correos distintos al de tu cuenta.",
+      status: 400,
+    });
+  }
+
+  const roles = new Set(normalized.map((item) => item.role));
+  if (roles.size !== normalized.length) {
+    throw new AppError({
+      message: "Duplicate recommender role in request",
+      userMessage:
+        "No puedes repetir el mismo tipo de recomendador en un solo guardado.",
       status: 400,
     });
   }
@@ -434,14 +449,21 @@ export async function upsertApplicantRecommendations({
     insertedRows = insertedData as RecommendationRow[];
   }
 
-  const emailResults: Array<{ id: string; sent: boolean }> = [];
+  const emailResults: Array<{
+    id: string;
+    role: RecommenderRole;
+    email: string;
+    sent: boolean;
+    providerMessageId: string | null;
+    errorMessage: string | null;
+  }> = [];
   for (const row of insertedRows) {
     const accessUrl = getRecommendationAccessUrl({
       token: row.token,
       origin,
     });
     try {
-      await sendRawEmail({
+      const delivery = await sendRawEmail({
         to: row.recommender_email,
         subject: `UWC Perú · Solicitud de recomendación (${roleLabel(row.role)})`,
         text: buildInviteEmailText({
@@ -463,9 +485,50 @@ export async function upsertApplicantRecommendations({
       if (markSentError) {
         throw markSentError;
       }
-      emailResults.push({ id: row.id, sent: true });
-    } catch {
-      emailResults.push({ id: row.id, sent: false });
+      emailResults.push({
+        id: row.id,
+        role: row.role,
+        email: row.recommender_email,
+        sent: true,
+        providerMessageId: delivery.providerMessageId,
+        errorMessage: null,
+      });
+      logger.info(
+        {
+          recommendationId: row.id,
+          role: row.role,
+          email: row.recommender_email,
+          provider: "gmail",
+          providerMessageId: delivery.providerMessageId,
+        },
+        "Recommendation invite sent",
+      );
+    } catch (error) {
+      const errorMessage =
+        error instanceof AppError
+          ? error.details
+            ? String(error.details)
+            : error.message
+          : error instanceof Error
+            ? error.message
+            : "Unknown recommendation invite delivery error";
+      emailResults.push({
+        id: row.id,
+        role: row.role,
+        email: row.recommender_email,
+        sent: false,
+        providerMessageId: null,
+        errorMessage,
+      });
+      logger.warn(
+        {
+          recommendationId: row.id,
+          role: row.role,
+          email: row.recommender_email,
+          error: errorMessage,
+        },
+        "Recommendation invite failed",
+      );
     }
   }
 
@@ -491,6 +554,7 @@ export async function upsertApplicantRecommendations({
     createdCount: insertedRows.length,
     replacedCount: idsToInvalidate.length,
     failedEmailCount: emailResults.filter((result) => !result.sent).length,
+    deliveryResults: emailResults,
   };
 }
 
@@ -605,7 +669,7 @@ export async function sendRecommendationReminder({
     origin,
   });
 
-  await sendRawEmail({
+  const reminderDelivery = await sendRawEmail({
     to: rec.recommender_email,
     subject: `UWC Perú · Recordatorio de recomendación (${roleLabel(rec.role)})`,
     text: buildInviteEmailText({
@@ -615,6 +679,16 @@ export async function sendRecommendationReminder({
       isReminder: true,
     }),
   });
+  logger.info(
+    {
+      recommendationId: rec.id,
+      role: rec.role,
+      email: rec.recommender_email,
+      provider: "gmail",
+      providerMessageId: reminderDelivery.providerMessageId,
+    },
+    "Recommendation reminder sent",
+  );
 
   const { data: updatedData, error: updateError } = await adminSupabase
     .from("recommendation_requests")
@@ -917,11 +991,21 @@ export async function requestRecommendationOtp(token: string) {
   const now = Date.now();
   const adminSupabase = getSupabaseAdminClient();
 
-  await sendRawEmail({
+  const otpDelivery = await sendRawEmail({
     to: row.recommender_email,
     subject: "UWC Perú · Código OTP para recomendación",
     text: buildOtpEmailText({ role: row.role, code }),
   });
+  logger.info(
+    {
+      recommendationId: row.id,
+      role: row.role,
+      email: row.recommender_email,
+      provider: "gmail",
+      providerMessageId: otpDelivery.providerMessageId,
+    },
+    "Recommendation OTP sent",
+  );
 
   const { error: updateError } = await adminSupabase
     .from("recommendation_requests")

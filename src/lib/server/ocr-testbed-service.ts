@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { AppError } from "@/lib/errors/app-error";
 import { runOcrCheck, DEFAULT_MODEL_ID, DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
@@ -79,24 +80,14 @@ export async function runOcrTest({
     });
   }
 
-  /* Create signed URL (60 s expiry — enough for Gemini to fetch) */
-  const { data: signedData, error: signedError } = await supabase.storage
-    .from(STORAGE_BUCKET)
-    .createSignedUrl(storagePath, 60);
-
-  if (signedError || !signedData?.signedUrl) {
-    throw new AppError({
-      message: "Failed creating signed URL for OCR test",
-      userMessage: "No se pudo generar la URL del archivo.",
-      status: 500,
-      details: signedError,
-    });
-  }
-
   /* Run OCR */
   const start = Date.now();
   const ocrResult = await runOcrCheck({
-    fileUrl: signedData.signedUrl,
+    document: {
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      dataBase64: Buffer.from(fileBuffer).toString("base64"),
+    },
     promptTemplate,
     modelId,
     systemPrompt,
@@ -125,6 +116,7 @@ export async function runOcrTest({
       raw_response: {
         ...(ocrResult.rawResponse as Record<string, unknown>),
         requestConfig: {
+          promptTemplate: promptTemplate.trim(),
           systemPrompt: systemPrompt?.trim() || null,
           extractionInstructions: extractionInstructions?.trim() || promptTemplate,
           expectedSchemaTemplate: expectedSchemaTemplate?.trim() || null,

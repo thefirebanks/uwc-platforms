@@ -23,7 +23,14 @@ import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
 const demoAdminEmail = process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL;
 const demoApplicantEmail = process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL;
+const demoApplicant2Email =
+  process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL ?? "applicant.demo2@uwcperu.org";
 const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
+
+const demoApplicantAccounts = [
+  { key: "applicant_1", email: demoApplicantEmail, label: "Entrar como postulante demo 1" },
+  { key: "applicant_2", email: demoApplicant2Email, label: "Entrar como postulante demo 2" },
+].filter((account): account is { key: string; email: string; label: string } => Boolean(account.email));
 
 export default function LoginPage() {
   const router = useRouter();
@@ -58,8 +65,8 @@ export default function LoginPage() {
     }
   }
 
-  async function loginWithDemo(role: "admin" | "applicant") {
-    if (!demoPassword || !demoAdminEmail || !demoApplicantEmail) {
+  async function loginWithDemo(role: "admin" | "applicant", applicantEmail?: string) {
+    if (!demoPassword || !demoAdminEmail || demoApplicantAccounts.length === 0) {
       setError("Faltan variables de bypass de desarrollo.");
       return;
     }
@@ -73,7 +80,10 @@ export default function LoginPage() {
       resetSupabaseBrowserClient();
       const supabase = getSupabaseBrowserClient({ forceNew: true });
       await supabase.auth.signOut({ scope: "local" }).catch(() => undefined);
-      const email = role === "admin" ? demoAdminEmail : demoApplicantEmail;
+      const email =
+        role === "admin"
+          ? demoAdminEmail
+          : applicantEmail ?? demoApplicantAccounts[0]?.email ?? demoApplicantEmail;
       const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email,
         password: demoPassword,
@@ -95,7 +105,7 @@ export default function LoginPage() {
     }
   }
 
-  async function resetDemoApplicantSubmission() {
+  async function resetDemoApplicantSubmission(email: string) {
     setError(null);
     setSuccessMessage(null);
     setIsResettingDemo(true);
@@ -103,6 +113,8 @@ export default function LoginPage() {
     try {
       const response = await fetch("/api/dev/reset-demo-applicant", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
       });
       const body = (await response.json().catch(() => null)) as
         | { message?: string; deletedByTable?: Record<string, number>; storage?: { warning?: string | null } }
@@ -117,8 +129,8 @@ export default function LoginPage() {
       const storageWarning = body?.storage?.warning;
       setSuccessMessage(
         storageWarning
-          ? `Postulación demo reiniciada (${deletedApplications} postulación/es). Nota de almacenamiento: ${storageWarning}`
-          : `Postulación demo reiniciada (${deletedApplications} postulación/es). Ya puedes entrar como postulante demo y empezar desde cero.`,
+          ? `${email}: postulación demo reiniciada (${deletedApplications} postulación/es). Nota de almacenamiento: ${storageWarning}`
+          : `${email}: postulación demo reiniciada (${deletedApplications} postulación/es). Ya puedes entrar y empezar desde cero.`,
       );
     } catch {
       setError("Error inesperado al reiniciar la postulación demo.");
@@ -160,23 +172,36 @@ export default function LoginPage() {
                   >
                     Entrar como admin demo
                   </Button>
-                  <Button
-                    variant="outlined"
-                    onClick={() => loginWithDemo("applicant")}
-                    disabled={isSubmitting || isResettingDemo}
-                  >
-                    Entrar como postulante demo
-                  </Button>
                 </Stack>
-                <Button
-                  variant="text"
-                  color="inherit"
-                  onClick={resetDemoApplicantSubmission}
-                  disabled={isSubmitting || isResettingDemo}
-                  sx={{ alignSelf: "flex-start" }}
-                >
-                  {isResettingDemo ? "Reiniciando postulación demo..." : "Reiniciar postulación demo"}
-                </Button>
+                <Stack spacing={1.5}>
+                  {demoApplicantAccounts.map((account) => (
+                    <Stack
+                      key={account.key}
+                      direction={{ xs: "column", sm: "row" }}
+                      spacing={1.5}
+                      alignItems={{ xs: "stretch", sm: "center" }}
+                    >
+                      <Button
+                        variant="outlined"
+                        onClick={() => loginWithDemo("applicant", account.email)}
+                        disabled={isSubmitting || isResettingDemo}
+                      >
+                        {account.label}
+                      </Button>
+                      <Button
+                        variant="text"
+                        color="inherit"
+                        onClick={() => resetDemoApplicantSubmission(account.email)}
+                        disabled={isSubmitting || isResettingDemo}
+                        sx={{ alignSelf: "flex-start" }}
+                      >
+                        {isResettingDemo
+                          ? `Reiniciando ${account.email}...`
+                          : `Reiniciar ${account.email}`}
+                      </Button>
+                    </Stack>
+                  ))}
+                </Stack>
               </>
             ) : null}
           </Stack>

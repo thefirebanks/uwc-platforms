@@ -14,12 +14,24 @@ import {
 import type {
   CycleStageField,
   CycleStageTemplate,
+  StageFieldAiParserConfig,
   StageAutomationTemplate,
   StageCode,
   StageSection,
 } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
+import { AdminCommunicationsCenter } from "@/components/admin-communications-center";
+import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
+import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
+import { FieldHint } from "@/components/field-hint";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
+import {
+  DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
+  DEFAULT_OCR_PROMPT,
+  DEFAULT_OCR_SCHEMA_TEMPLATE,
+  DEFAULT_OCR_SYSTEM_PROMPT,
+  MODEL_REGISTRY,
+} from "@/lib/server/ocr";
 
 interface ApiError {
   message: string;
@@ -47,6 +59,7 @@ type StageEditorSettingsDraft = {
   closeDate: string;
   previousStageRequirement: string;
   blockIfPreviousNotMet: boolean;
+  ocrPromptTemplate: string;
 };
 
 type StageAdminConfigPayload = {
@@ -56,6 +69,12 @@ type StageAdminConfigPayload = {
   closeDate?: string | null;
   previousStageRequirement?: string;
   blockIfPreviousNotMet?: boolean;
+};
+
+type FieldAiParserDraft = StageFieldAiParserConfig & {
+  modelId: string | null;
+  promptTemplate: string | null;
+  systemPrompt: string | null;
 };
 
 type EditorSection = {
@@ -69,12 +88,54 @@ type EditorSection = {
 const DEFAULT_OCR_PROMPT_TEMPLATE =
   "Analiza el documento y entrega una validación preliminar para comité. Resume hallazgos clave sobre legibilidad, coherencia y posibles señales de alteración.";
 
+function createDefaultFieldAiParserConfig(): FieldAiParserDraft {
+  return {
+    enabled: true,
+    modelId: null,
+    promptTemplate: null,
+    systemPrompt: null,
+    extractionInstructions: DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
+    expectedSchemaTemplate: DEFAULT_OCR_SCHEMA_TEMPLATE,
+    strictSchema: true,
+  };
+}
+
+function normalizeFieldAiParserConfig(value: unknown): FieldAiParserDraft | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  if (value.enabled !== true) {
+    return null;
+  }
+
+  const extractionInstructions =
+    typeof value.extractionInstructions === "string" && value.extractionInstructions.trim().length > 0
+      ? value.extractionInstructions
+      : DEFAULT_OCR_EXTRACTION_INSTRUCTIONS;
+  const expectedSchemaTemplate =
+    typeof value.expectedSchemaTemplate === "string" && value.expectedSchemaTemplate.trim().length > 0
+      ? value.expectedSchemaTemplate
+      : DEFAULT_OCR_SCHEMA_TEMPLATE;
+
+  return {
+    enabled: true,
+    modelId: typeof value.modelId === "string" ? value.modelId : null,
+    promptTemplate: typeof value.promptTemplate === "string" ? value.promptTemplate : null,
+    systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : null,
+    extractionInstructions,
+    expectedSchemaTemplate,
+    strictSchema: typeof value.strictSchema === "boolean" ? value.strictSchema : true,
+  };
+}
+
 
 function mapFieldsWithLocalId(fields: CycleStageField[]) {
   return [...fields]
     .sort((a, b) => a.sort_order - b.sort_order)
     .map((field) => ({
       ...field,
+      ai_parser_config: normalizeFieldAiParserConfig(field.ai_parser_config),
       localId: field.id,
     }));
 }
@@ -131,28 +192,17 @@ function deriveEditorSections(
   }
 
   const result: EditorSection[] = [];
-  let otherResolved: EditorSection | null = null;
 
   for (const s of sortedSections) {
     const sectionFields = buckets.get(s.id) ?? [];
 
-    const resolved: EditorSection = {
+    result.push({
       id: s.id,
       sectionKey: s.section_key,
       title: s.title,
       description: s.description,
       fields: sectionFields,
-    };
-
-    if (s.section_key === "other") {
-      otherResolved = resolved;
-    } else {
-      result.push(resolved);
-    }
-  }
-
-  if (otherResolved) {
-    result.push(otherResolved);
+    });
   }
 
   return result;
@@ -278,18 +328,18 @@ function serializePersistedFields(fields: EditableField[]) {
       is_required: field.is_required,
       placeholder: field.placeholder ?? "",
       help_text: field.help_text ?? "",
+      group_name: field.group_name?.trim() || null,
       sort_order: field.sort_order,
       is_active: field.is_active,
+      ai_parser_config: normalizeFieldAiParserConfig(field.ai_parser_config),
     })),
   );
 }
 
-function serializePersistedComms({
+function serializePersistedAutomations({
   automations,
-  ocrPromptTemplate,
 }: {
   automations: EditableAutomation[];
-  ocrPromptTemplate: string;
 }) {
   return JSON.stringify({
     automations: automations.map((automation) => ({
@@ -300,7 +350,6 @@ function serializePersistedComms({
       template_subject: automation.template_subject,
       template_body: automation.template_body,
     })),
-    ocrPromptTemplate: ocrPromptTemplate.trim(),
   });
 }
 
@@ -312,6 +361,7 @@ function serializeSettingsDraft(settings: StageEditorSettingsDraft) {
     closeDate: settings.closeDate,
     previousStageRequirement: settings.previousStageRequirement,
     blockIfPreviousNotMet: settings.blockIfPreviousNotMet,
+    ocrPromptTemplate: settings.ocrPromptTemplate?.trim() ?? "",
   });
 }
 
@@ -358,6 +408,7 @@ export function StageConfigEditor({
   initialAutomations,
   initialOcrPromptTemplate,
   initialStageAdminConfig,
+  initialTab = "editor",
 }: {
   cycleId: string;
   cycleName: string;
@@ -372,6 +423,13 @@ export function StageConfigEditor({
   initialAutomations: StageAutomationTemplate[];
   initialOcrPromptTemplate: string | null;
   initialStageAdminConfig?: Record<string, unknown> | null;
+  initialTab?:
+    | "editor"
+    | "settings"
+    | "automations"
+    | "communications"
+    | "prompt_studio"
+    | "stats";
 }) {
   const router = useRouter();
   const [fields, setFields] = useState<EditableField[]>(mapFieldsWithLocalId(initialFields));
@@ -388,8 +446,8 @@ export function StageConfigEditor({
     initialOcrPromptTemplate ?? DEFAULT_OCR_PROMPT_TEMPLATE,
   );
   const [activeTab, setActiveTab] = useState<
-    "editor" | "settings" | "comms" | "stats"
-  >("editor");
+    "editor" | "settings" | "automations" | "communications" | "prompt_studio" | "stats"
+  >(initialTab);
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
   const [sectionPlaceholders, setSectionPlaceholders] = useState<SectionPlaceholderDraft[]>([]);
 
@@ -409,10 +467,9 @@ export function StageConfigEditor({
     serializePersistedFields(mapFieldsWithLocalId(initialFields)),
   );
   const savedSectionsSnapshotRef = useRef(serializeSections(initialSections));
-  const savedCommsSnapshotRef = useRef(
-    serializePersistedComms({
+  const savedAutomationsSnapshotRef = useRef(
+    serializePersistedAutomations({
       automations: mapAutomationsWithLocalId(initialAutomations),
-      ocrPromptTemplate: initialOcrPromptTemplate ?? DEFAULT_OCR_PROMPT_TEMPLATE,
     }),
   );
   const savedSettingsSnapshotRef = useRef<string | null>(null);
@@ -427,13 +484,12 @@ export function StageConfigEditor({
     () => serializeSections(sections),
     [sections],
   );
-  const persistedCommsSnapshot = useMemo(
+  const persistedAutomationsSnapshot = useMemo(
     () =>
-      serializePersistedComms({
+      serializePersistedAutomations({
         automations,
-        ocrPromptTemplate,
       }),
-    [automations, ocrPromptTemplate],
+    [automations],
   );
 
   function createNewField(nextIndex: number): EditableField {
@@ -450,15 +506,41 @@ export function StageConfigEditor({
       is_required: false,
       placeholder: "",
       help_text: "",
+      group_name: null,
       sort_order: nextIndex,
       is_active: true,
       section_id: null,
+      ai_parser_config: null,
       created_at: new Date().toISOString(),
     };
   }
 
   function applyOrderedFields(nextFields: EditableField[]) {
     setFields(nextFields.map((field, index) => ({ ...field, sort_order: index + 1 })));
+  }
+
+  function updateFieldByLocalId(
+    localId: string,
+    updater: (field: EditableField) => EditableField,
+  ) {
+    setFields((current) =>
+      current.map((item) => (item.localId === localId ? updater(item) : item)),
+    );
+  }
+
+  function updateFieldAiParserConfig(
+    localId: string,
+    updater: (current: FieldAiParserDraft) => FieldAiParserDraft | null,
+  ) {
+    updateFieldByLocalId(localId, (field) => {
+      const baseConfig =
+        normalizeFieldAiParserConfig(field.ai_parser_config) ??
+        createDefaultFieldAiParserConfig();
+      return {
+        ...field,
+        ai_parser_config: updater(baseConfig),
+      };
+    });
   }
 
   function insertFieldAt(
@@ -504,19 +586,65 @@ export function StageConfigEditor({
   }
 
   function addNextSection() {
-    const newSection: StageSection = {
-      id: crypto.randomUUID(),
-      cycle_id: cycleId,
-      stage_code: stageCode,
-      section_key: `custom-${crypto.randomUUID().slice(0, 8)}`,
-      title: `Nueva sección ${sections.length + 1}`,
-      description: "",
-      sort_order: sections.length + 1,
-      is_visible: true,
-      created_at: new Date().toISOString(),
-    };
-    setSections((current) => [...current, newSection]);
-    setStatusMessage(`Se creó la sección “${newSection.title}”. Guarda configuración para persistir.`);
+    const newSectionTitle = `Nueva sección ${sections.length + 1}`;
+    const newSectionId = crypto.randomUUID();
+    const newSectionKey = `custom-${crypto.randomUUID().slice(0, 8)}`;
+    const createdAt = new Date().toISOString();
+
+    setSections((current) => {
+      const maxSortOrder = current.reduce(
+        (highest, section) => Math.max(highest, section.sort_order),
+        0,
+      );
+      const newSection: StageSection = {
+        id: newSectionId,
+        cycle_id: cycleId,
+        stage_code: stageCode,
+        section_key: newSectionKey,
+        title: newSectionTitle,
+        description: "",
+        sort_order: maxSortOrder + 1,
+        is_visible: true,
+        created_at: createdAt,
+      };
+      return [...current, newSection];
+    });
+    setStatusMessage(`Se creó la sección “${newSectionTitle}”. Guarda configuración para persistir.`);
+  }
+
+  function renameSection(sectionId: string) {
+    const section = sections.find((item) => item.id === sectionId);
+    if (!section) {
+      return;
+    }
+
+    if (typeof window === "undefined" || typeof window.prompt !== "function") {
+      return;
+    }
+
+    const nextTitle = window.prompt("Nuevo nombre de la sección", section.title);
+    if (nextTitle === null) {
+      return;
+    }
+
+    const sanitizedTitle = nextTitle.trim();
+    if (!sanitizedTitle) {
+      setStatusMessage("El nombre de la sección no puede estar vacío.");
+      return;
+    }
+
+    if (sanitizedTitle === section.title) {
+      return;
+    }
+
+    setSections((current) =>
+      current.map((item) =>
+        item.id === sectionId
+          ? { ...item, title: sanitizedTitle }
+          : item,
+      ),
+    );
+    setStatusMessage(`Sección renombrada a “${sanitizedTitle}”. Guarda configuración para persistir.`);
   }
 
   async function openPreview() {
@@ -541,7 +669,15 @@ export function StageConfigEditor({
     router.push(`/admin/process/${cycleId}/stage/${stageId}/preview`);
   }
 
-  function switchToTab(nextTab: "editor" | "settings" | "comms" | "stats") {
+  function switchToTab(
+    nextTab:
+      | "editor"
+      | "settings"
+      | "automations"
+      | "communications"
+      | "prompt_studio"
+      | "stats",
+  ) {
     startTransition(() => setActiveTab(nextTab));
   }
 
@@ -749,9 +885,11 @@ export function StageConfigEditor({
             isRequired: field.is_required,
             placeholder: field.placeholder,
             helpText: field.help_text,
+            groupName: field.group_name?.trim() || null,
             sortOrder: index + 1,
             isActive: field.is_active,
             sectionKey: sections.find((s) => s.id === field.section_id)?.section_key ?? null,
+            aiParser: normalizeFieldAiParserConfig(field.ai_parser_config),
           })),
           sections: sections.map((s, index) => ({
             sectionKey: s.section_key,
@@ -814,6 +952,10 @@ export function StageConfigEditor({
           typeof body.settings?.blockIfPreviousNotMet === "boolean"
             ? body.settings.blockIfPreviousNotMet
             : blockIfPreviousNotMet,
+        ocrPromptTemplate:
+          typeof body.ocrPromptTemplate === "string"
+            ? body.ocrPromptTemplate
+            : nextSavedOcrPrompt,
       } satisfies StageEditorSettingsDraft;
 
       setSections(nextSavedSections);
@@ -828,9 +970,8 @@ export function StageConfigEditor({
       setBlockIfPreviousNotMet(nextSavedSettings.blockIfPreviousNotMet);
       savedSectionsSnapshotRef.current = serializeSections(nextSavedSections);
       savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
-      savedCommsSnapshotRef.current = serializePersistedComms({
+      savedAutomationsSnapshotRef.current = serializePersistedAutomations({
         automations: nextSavedAutomations,
-        ocrPromptTemplate: nextSavedOcrPrompt,
       });
       savedSettingsSnapshotRef.current = serializeSettingsDraft(nextSavedSettings);
       setLastSavedAtIso(new Date().toISOString());
@@ -895,6 +1036,7 @@ export function StageConfigEditor({
         closeDate: settingsCloseDate,
         previousStageRequirement,
         blockIfPreviousNotMet,
+        ocrPromptTemplate,
       }),
     [
       settingsStageName,
@@ -903,6 +1045,7 @@ export function StageConfigEditor({
       settingsCloseDate,
       previousStageRequirement,
       blockIfPreviousNotMet,
+      ocrPromptTemplate,
     ],
   );
   if (savedSettingsSnapshotRef.current === null) {
@@ -913,14 +1056,14 @@ export function StageConfigEditor({
   const hasUnsavedFieldConfigChanges =
     persistedFieldsSnapshot !== savedFieldsSnapshotRef.current ||
     hasUnsavedSectionsChanges;
-  const hasUnsavedCommsConfigChanges =
-    persistedCommsSnapshot !== savedCommsSnapshotRef.current;
+  const hasUnsavedAutomationsConfigChanges =
+    persistedAutomationsSnapshot !== savedAutomationsSnapshotRef.current;
   const hasUnsavedSettingsConfigChanges =
     settingsDraftSnapshot !== savedSettingsSnapshotRef.current;
   const hasUnsavedSectionDraftChanges = sectionPlaceholders.length > 0;
   const hasUnsavedConfigChanges =
     hasUnsavedFieldConfigChanges ||
-    hasUnsavedCommsConfigChanges ||
+    hasUnsavedAutomationsConfigChanges ||
     hasUnsavedSettingsConfigChanges;
   const canSavePersistedConfig = hasUnsavedConfigChanges && !isSaving;
   const saveStatusTone = isSaving
@@ -941,7 +1084,7 @@ export function StageConfigEditor({
   const saveableChangeLabels = [
     hasUnsavedFieldConfigChanges ? "Editor de Formulario" : null,
     hasUnsavedSettingsConfigChanges ? "Ajustes y Reglas" : null,
-    hasUnsavedCommsConfigChanges ? "Comunicaciones" : null,
+    hasUnsavedAutomationsConfigChanges ? "Automatizaciones" : null,
   ].filter(Boolean) as string[];
   const draftOnlyChangeLabels = [
     hasUnsavedSectionDraftChanges ? "Secciones nuevas (placeholder)" : null,
@@ -993,10 +1136,6 @@ export function StageConfigEditor({
       activeTab === "editor"
         ? editorSections.filter((section) => section.fields.length === 0)
         : [],
-    [activeTab, editorSections],
-  );
-  const editorHasOtherSection = useMemo(
-    () => activeTab === "editor" && editorSections.some((section) => section.sectionKey === "other"),
     [activeTab, editorSections],
   );
   const sectionPositionById = useMemo(() => {
@@ -1262,6 +1401,26 @@ export function StageConfigEditor({
           <button
             type="button"
             className="admin-stage-section-header-btn"
+            onClick={() => renameSection(sectionId)}
+            title="Editar nombre de sección"
+            aria-label="Editar nombre de sección"
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M12 20h9" />
+              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="admin-stage-section-header-btn"
             onClick={() => removeSection(sectionId)}
             disabled={!canDelete}
             title={
@@ -1456,10 +1615,22 @@ export function StageConfigEditor({
               Ajustes y Reglas
             </button>
             <button
-              className={`page-tab ${activeTab === "comms" ? "active" : ""}`}
-              onClick={() => switchToTab("comms")}
+              className={`page-tab ${activeTab === "automations" ? "active" : ""}`}
+              onClick={() => switchToTab("automations")}
+            >
+              Automatizaciones
+            </button>
+            <button
+              className={`page-tab ${activeTab === "communications" ? "active" : ""}`}
+              onClick={() => switchToTab("communications")}
             >
               Comunicaciones
+            </button>
+            <button
+              className={`page-tab ${activeTab === "prompt_studio" ? "active" : ""}`}
+              onClick={() => switchToTab("prompt_studio")}
+            >
+              Prompt Studio
             </button>
             <button
               className={`page-tab ${activeTab === "stats" ? "active" : ""}`}
@@ -1470,35 +1641,17 @@ export function StageConfigEditor({
           </div>
         </div>
 
-        <div className="canvas-body">
+        <div
+          className={`canvas-body${
+            activeTab === "communications" ||
+            activeTab === "prompt_studio" ||
+            activeTab === "automations"
+              ? " wide"
+              : ""
+          }`}
+        >
           {activeTab === "editor" && (
             <div id="tab-editor" className="tab-content active">
-              {documentsRouteRepresentsMainForm ? (
-                <div className="settings-card" style={{ marginBottom: "1rem" }}>
-                  <div className="settings-card-header">
-                    <h3>Paso inicial: Instrucciones</h3>
-                    <p>
-                      Este paso aparece antes de las secciones del formulario en la vista del
-                      postulante.
-                    </p>
-                  </div>
-                  <div className="editor-grid">
-                    <div className="form-field full">
-                      <label>Texto actual de instrucciones</label>
-                      <textarea value={settingsDescription} rows={3} readOnly />
-                    </div>
-                    <div className="form-field full">
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => switchToTab("settings")}
-                      >
-                        Editar instrucciones en Ajustes y Reglas
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
               <div className="field-list">
                 {displayedEditorFields.length === 0 ? (
                   <>
@@ -1531,10 +1684,8 @@ export function StageConfigEditor({
                     editorFieldSectionMeta.sectionIdByLastFieldId.get(field.localId) ?? null;
                   const sectionId =
                     editorFieldSectionMeta.sectionIdByFieldId.get(field.localId) ?? null;
-                  const currentEditorSection = sectionId
-                    ? editorSections.find((s) => s.id === sectionId)
-                    : null;
                   const isSectionCollapsed = sectionId ? collapsedSectionIdSet.has(sectionId) : false;
+                  const aiParserConfig = normalizeFieldAiParserConfig(field.ai_parser_config);
 
                   if (isSectionCollapsed && !isSectionStart) {
                     return null;
@@ -1542,11 +1693,6 @@ export function StageConfigEditor({
 
                   return (
                     <div key={field.localId}>
-                      {isSectionStart && currentEditorSection?.sectionKey === "other" && emptySections.length > 0
-                        ? emptySections.map((emptySection) =>
-                            renderEmptySection(emptySection),
-                          )
-                        : null}
                       {isSectionStart && sectionId ? renderSectionHeading(sectionHeading, sectionId) : null}
                       {isSectionStart && isSectionCollapsed ? (
                         null
@@ -1596,6 +1742,11 @@ export function StageConfigEditor({
                             </div>
                             <div className="field-type">
                               {getFieldTypeLabel(field.field_type)} • id: <code>{field.field_key}</code>
+                              {field.group_name?.trim() ? (
+                                <>
+                                  {" "}• grupo: <span>{field.group_name}</span>
+                                </>
+                              ) : null}
                             </div>
                           </div>
                           <div className="field-actions">
@@ -1677,18 +1828,23 @@ export function StageConfigEditor({
                                 <select
                                   id={`type-${field.localId}`}
                                   value={field.field_type}
-                                  onChange={(event) =>
+                                  onChange={(event) => {
+                                    const nextType = event.target.value as CycleStageField["field_type"];
                                     setFields((current) =>
                                       current.map((item) =>
                                         item.localId === field.localId
                                           ? {
                                               ...item,
-                                              field_type: event.target.value as CycleStageField["field_type"],
+                                              field_type: nextType,
+                                              ai_parser_config:
+                                                nextType === "file"
+                                                  ? normalizeFieldAiParserConfig(item.ai_parser_config)
+                                                  : null,
                                             }
                                           : item,
                                       ),
-                                    )
-                                  }
+                                    );
+                                  }}
                                 >
                                   <option value="short_text">Texto corto</option>
                                   <option value="long_text">Texto largo</option>
@@ -1727,6 +1883,28 @@ export function StageConfigEditor({
                                     )
                                   }
                                 />
+                              </div>
+                              <div className="form-field full">
+                                <label htmlFor={`group-name-${field.localId}`}>
+                                  Nombre de grupo (opcional)
+                                </label>
+                                <input
+                                  id={`group-name-${field.localId}`}
+                                  type="text"
+                                  defaultValue={field.group_name ?? ""}
+                                  onBlur={(event) =>
+                                    setFields((current) =>
+                                      current.map((item) =>
+                                        item.localId === field.localId
+                                          ? { ...item, group_name: event.target.value.trim() || null }
+                                          : item,
+                                      ),
+                                    )
+                                  }
+                                />
+                                <small className="admin-text-muted">
+                                  Si lo completas, este campo se mostrará agrupado bajo ese título en la vista del postulante.
+                                </small>
                               </div>
 
                               <div className="form-field full" style={{ marginTop: "16px" }}>
@@ -1774,6 +1952,142 @@ export function StageConfigEditor({
                                     <span className="slider"></span>
                                   </label>
                                 </div>
+                                {field.field_type === "file" ? (
+                                  <div className="admin-ai-parser-panel">
+                                    <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)" }}>
+                                      <div>
+                                        <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>
+                                          Parsing con IA{" "}
+                                          <FieldHint label="Qué hace parsing con IA">
+                                            Habilita el análisis OCR con esquema JSON para este archivo desde la vista de administración.
+                                          </FieldHint>
+                                        </div>
+                                        <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                                          Actívalo solo para archivos que quieras procesar automáticamente.
+                                        </div>
+                                      </div>
+                                      <label className="switch">
+                                        <input
+                                          type="checkbox"
+                                          aria-label={`Habilitar parsing IA para ${field.field_label}`}
+                                          checked={Boolean(aiParserConfig?.enabled)}
+                                          onChange={(event) => {
+                                            if (event.target.checked) {
+                                              updateFieldByLocalId(field.localId, (item) => ({
+                                                ...item,
+                                                ai_parser_config: createDefaultFieldAiParserConfig(),
+                                              }));
+                                              return;
+                                            }
+                                            updateFieldByLocalId(field.localId, (item) => ({
+                                              ...item,
+                                              ai_parser_config: null,
+                                            }));
+                                          }}
+                                        />
+                                        <span className="slider"></span>
+                                      </label>
+                                    </div>
+                                    {aiParserConfig?.enabled ? (
+                                      <div className="admin-ai-parser-editor">
+                                        <div className="form-field full">
+                                          <label htmlFor={`ai-parser-extraction-${field.localId}`}>
+                                            Instrucciones de extracción{" "}
+                                            <FieldHint label="Cómo redactar la extracción">
+                                              Especifica exactamente qué datos extraer y cómo validarlos. Evita instrucciones ambiguas.
+                                            </FieldHint>
+                                          </label>
+                                          <textarea
+                                            id={`ai-parser-extraction-${field.localId}`}
+                                            rows={4}
+                                            value={aiParserConfig.extractionInstructions}
+                                            onChange={(event) =>
+                                              updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                ...currentConfig,
+                                                extractionInstructions: event.target.value,
+                                              }))
+                                            }
+                                          />
+                                        </div>
+                                        <div className="form-field full">
+                                          <label htmlFor={`ai-parser-schema-${field.localId}`}>
+                                            Esquema JSON esperado{" "}
+                                            <FieldHint label="Formato del esquema">
+                                              Debe ser JSON válido y reflejar la estructura exacta esperada en la respuesta.
+                                            </FieldHint>
+                                          </label>
+                                          <textarea
+                                            id={`ai-parser-schema-${field.localId}`}
+                                            rows={6}
+                                            value={aiParserConfig.expectedSchemaTemplate}
+                                            onChange={(event) =>
+                                              updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                ...currentConfig,
+                                                expectedSchemaTemplate: event.target.value,
+                                              }))
+                                            }
+                                            style={{ fontFamily: "monospace" }}
+                                          />
+                                        </div>
+                                        <details className="admin-ai-parser-advanced">
+                                          <summary>Opciones avanzadas</summary>
+                                          <div className="form-field full">
+                                            <label htmlFor={`ai-parser-system-${field.localId}`}>
+                                              System prompt adicional
+                                            </label>
+                                            <textarea
+                                              id={`ai-parser-system-${field.localId}`}
+                                              rows={3}
+                                              value={aiParserConfig.systemPrompt ?? ""}
+                                              onChange={(event) =>
+                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                  ...currentConfig,
+                                                  systemPrompt: event.target.value || null,
+                                                }))
+                                              }
+                                            />
+                                          </div>
+                                          <div className="form-field full">
+                                            <label htmlFor={`ai-parser-prompt-${field.localId}`}>
+                                              Prompt base opcional
+                                            </label>
+                                            <textarea
+                                              id={`ai-parser-prompt-${field.localId}`}
+                                              rows={3}
+                                              value={aiParserConfig.promptTemplate ?? ""}
+                                              onChange={(event) =>
+                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                  ...currentConfig,
+                                                  promptTemplate: event.target.value || null,
+                                                }))
+                                              }
+                                            />
+                                          </div>
+                                        </details>
+                                        <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)" }}>
+                                          <div>
+                                            <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>Validación estricta de esquema</div>
+                                            <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Falla la corrida si el JSON no coincide exactamente con el esquema.</div>
+                                          </div>
+                                          <label className="switch">
+                                            <input
+                                              type="checkbox"
+                                              aria-label={`Validación estricta para ${field.field_label}`}
+                                              checked={aiParserConfig.strictSchema}
+                                              onChange={(event) =>
+                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
+                                                  ...currentConfig,
+                                                  strictSchema: event.target.checked,
+                                                }))
+                                              }
+                                            />
+                                            <span className="slider"></span>
+                                          </label>
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                             <div className="admin-field-editor-footer">
@@ -1878,11 +2192,9 @@ export function StageConfigEditor({
                     </div>
                   </div>
                 ))}
-                {!editorHasOtherSection
-                  ? emptySections.map((section) =>
-                      renderEmptySection(section),
-                    )
-                  : null}
+                {emptySections.map((section) =>
+                  renderEmptySection(section),
+                )}
                 <div className="admin-stage-editor-add-section">
                   <button
                     type="button"
@@ -1995,17 +2307,28 @@ export function StageConfigEditor({
                   </div>
                 </div>
               </div>
+
             </div>
           )}
 
-          {activeTab === "comms" && (
-            <div id="tab-comms" className="tab-content active">
+          {activeTab === "automations" && (
+            <div id="tab-automations" className="tab-content active">
               <div className="builder-section-title">Automatizaciones de correo</div>
               <div className="admin-stage-comms-toolbar">
                 <p className="admin-stage-comms-copy">
-                  Define plantillas por evento. Mantén solo las necesarias.
+                  Estas plantillas se disparan automáticamente por evento. Para envíos manuales o
+                  broadcasts, usa el centro de comunicaciones del proceso.
                 </p>
-                <button className="btn btn-outline" onClick={addAutomation}>+ Nueva Notificación</button>
+                <div className="admin-stage-comms-toolbar-actions">
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => switchToTab("communications")}
+                  >
+                    Abrir centro de comunicaciones
+                  </button>
+                  <button className="btn btn-outline" onClick={addAutomation}>+ Nueva Notificación</button>
+                </div>
               </div>
 
               {automations.map((automation) => (
@@ -2015,7 +2338,7 @@ export function StageConfigEditor({
                   </div>
                   <div className="comm-content">
                     <div className="editor-grid">
-                      <div className="form-field">
+                      <div className="form-field automation-event-field">
                         <label htmlFor={`event-${automation.localId}`}>Evento</label>
                         <select
                           id={`event-${automation.localId}`}
@@ -2034,29 +2357,34 @@ export function StageConfigEditor({
                           <option value="stage_result">Resultado de etapa</option>
                         </select>
                       </div>
-                      <div className="form-field" style={{ display: "flex", alignItems: "flex-end" }}>
-                         <div className="switch-wrapper" style={{ border: "none", background: "none", padding: "0", width: "100%" }}>
-                           <span style={{ fontSize: "0.85rem", fontWeight: 500, marginRight: "12px" }}>Habilitada</span>
-                           <label className="switch">
-                             <input
-                               type="checkbox"
-                               checked={automation.is_enabled}
-                               onChange={(event) =>
-                                 setAutomations((current) =>
-                                   current.map((item) =>
-                                     item.localId === automation.localId
-                                       ? { ...item, is_enabled: event.target.checked }
-                                       : item,
-                                   ),
-                                 )
-                               }
-                             />
-                             <span className="slider"></span>
-                           </label>
-                         </div>
+                      <div className="form-field automation-toggle-field">
+                        <div className="automation-toggle-control">
+                          <span className="automation-toggle-label">Habilitada</span>
+                          <label className="switch">
+                            <input
+                              type="checkbox"
+                              checked={automation.is_enabled}
+                              onChange={(event) =>
+                                setAutomations((current) =>
+                                  current.map((item) =>
+                                    item.localId === automation.localId
+                                      ? { ...item, is_enabled: event.target.checked }
+                                      : item,
+                                  ),
+                                )
+                              }
+                            />
+                            <span className="slider"></span>
+                          </label>
+                        </div>
                       </div>
                       <div className="form-field full">
-                        <label htmlFor={`subject-${automation.localId}`}>Asunto</label>
+                        <label htmlFor={`subject-${automation.localId}`}>
+                          Asunto{" "}
+                          <FieldHint label="Variables disponibles para el asunto">
+                            <EmailTemplateVariableHintContent />
+                          </FieldHint>
+                        </label>
                         <input
                           id={`subject-${automation.localId}`}
                           type="text"
@@ -2071,7 +2399,12 @@ export function StageConfigEditor({
                         />
                       </div>
                       <div className="form-field full">
-                        <label htmlFor={`body-${automation.localId}`}>Cuerpo</label>
+                        <label htmlFor={`body-${automation.localId}`}>
+                          Cuerpo{" "}
+                          <FieldHint label="Variables disponibles para el cuerpo">
+                            <EmailTemplateVariableHintContent />
+                          </FieldHint>
+                        </label>
                         <textarea
                           id={`body-${automation.localId}`}
                           rows={4}
@@ -2086,7 +2419,7 @@ export function StageConfigEditor({
                         />
                       </div>
                     </div>
-                    <div className="comm-actions" style={{ marginTop: "16px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                    <div className="comm-actions comm-actions--row">
                       {isUuid(automation.id) && (
                         <>
                           <button
@@ -2136,21 +2469,29 @@ export function StageConfigEditor({
                   </div>
                 </div>
               ))}
+            </div>
+          )}
 
-              <div className="builder-section-title" style={{ marginTop: "32px" }}>Prompt OCR (Gemini)</div>
-              <p style={{ fontSize: "0.85rem", color: "var(--muted)", marginBottom: "16px" }}>
-                Define instrucciones para extraer señales útiles desde documentos. Mantén el prompt claro y en español.
-              </p>
-              <div className="form-field full">
-                <label htmlFor="ocr-prompt">Prompt OCR de la etapa</label>
-                <textarea
-                  id="ocr-prompt"
-                  rows={6}
-                  value={ocrPromptTemplate}
-                  onChange={(event) => setOcrPromptTemplate(event.target.value)}
-                />
-                <div className="hint" style={{ marginTop: "8px" }}>Nota: el sistema siempre fuerza salida JSON con `summary` y `confidence`.</div>
-              </div>
+          {activeTab === "communications" && (
+            <div id="tab-communications" className="tab-content active">
+              <AdminCommunicationsCenter cycleId={cycleId} defaultStageCode={stageCode} />
+            </div>
+          )}
+
+          {activeTab === "prompt_studio" && (
+            <div id="tab-prompt-studio" className="tab-content active">
+              <AdminOcrTestbed
+                cycleId={cycleId}
+                stageCode={stageCode}
+                modelOptions={Object.entries(MODEL_REGISTRY).map(([id, meta]) => ({
+                  id,
+                  name: meta.name,
+                }))}
+                defaultPrompt={DEFAULT_OCR_PROMPT}
+                defaultSystemPrompt={DEFAULT_OCR_SYSTEM_PROMPT}
+                defaultExtractionInstructions={DEFAULT_OCR_EXTRACTION_INSTRUCTIONS}
+                defaultSchemaTemplate={DEFAULT_OCR_SCHEMA_TEMPLATE}
+              />
             </div>
           )}
 

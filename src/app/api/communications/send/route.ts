@@ -7,6 +7,7 @@ import { recordAuditEvent } from "@/lib/logging/audit";
 import { queueStageResultAutomations } from "@/lib/server/automation-service";
 import {
   queueBroadcastCampaign,
+  sendDirectCommunication,
 } from "@/lib/server/communications-service";
 
 const schema = z.object({
@@ -23,6 +24,7 @@ const schema = z.object({
     stageCode: z.enum(["documents", "exam_placeholder"]).optional(),
     status: z.enum(["draft", "submitted", "eligible", "ineligible", "advanced"]).optional(),
     search: z.string().max(160).optional(),
+    directRecipientEmail: z.string().email().optional(),
     idempotencyKey: z.string().min(8).max(200).optional(),
   }).optional(),
 });
@@ -67,22 +69,51 @@ export async function POST(request: NextRequest) {
     }
 
     if (parsed.data.broadcast) {
+      const broadcastInput = {
+        actorId: profile.id,
+        name: parsed.data.broadcast.name,
+        subject: parsed.data.broadcast.subject,
+        bodyTemplate: parsed.data.broadcast.bodyTemplate,
+        recipientFilter: {
+          cycleId: parsed.data.broadcast.cycleId,
+          stageCode: parsed.data.broadcast.stageCode as "documents" | "exam_placeholder" | undefined,
+          status: parsed.data.broadcast.status,
+          search: parsed.data.broadcast.search,
+          directRecipientEmail: parsed.data.broadcast.directRecipientEmail,
+        },
+        idempotencyKey: parsed.data.broadcast.idempotencyKey,
+        dryRun: parsed.data.dryRun,
+      } as const;
+
+      if (parsed.data.broadcast.directRecipientEmail && !parsed.data.dryRun) {
+        const result = await sendDirectCommunication({
+          supabase,
+          input: broadcastInput,
+        });
+
+        await recordAuditEvent({
+          supabase,
+          actorId: profile.id,
+          action: "communications.direct_sent",
+          metadata: {
+            cycleId: parsed.data.broadcast.cycleId,
+            recipientEmail: result.recipientEmail,
+            providerMessageId: result.providerMessageId,
+          },
+          requestId,
+        });
+
+        return NextResponse.json({
+          campaignId: null,
+          recipientCount: result.recipientCount,
+          deduplicated: false,
+          deliveryMode: "direct",
+        });
+      }
+
       const result = await queueBroadcastCampaign({
         supabase,
-        input: {
-          actorId: profile.id,
-          name: parsed.data.broadcast.name,
-          subject: parsed.data.broadcast.subject,
-          bodyTemplate: parsed.data.broadcast.bodyTemplate,
-          recipientFilter: {
-            cycleId: parsed.data.broadcast.cycleId,
-            stageCode: parsed.data.broadcast.stageCode as "documents" | "exam_placeholder" | undefined,
-            status: parsed.data.broadcast.status,
-            search: parsed.data.broadcast.search,
-          },
-          idempotencyKey: parsed.data.broadcast.idempotencyKey,
-          dryRun: parsed.data.dryRun,
-        },
+        input: broadcastInput,
       });
 
       await recordAuditEvent({

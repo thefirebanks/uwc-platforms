@@ -439,7 +439,7 @@ describe("StageConfigEditor", () => {
     });
   });
 
-  it("shows applicant instructions block in editor for documents stage", () => {
+  it("keeps applicant instructions only under Ajustes y Reglas", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -457,8 +457,354 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    expect(screen.getByText(/Paso inicial: Instrucciones/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Editar instrucciones en Ajustes y Reglas/i })).toBeInTheDocument();
+    expect(screen.queryByText(/Paso inicial: Instrucciones/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    expect(screen.getByLabelText(/Instrucciones de la etapa \(Markdown\)/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Prompt OCR de la etapa/i)).not.toBeInTheDocument();
+  });
+
+  it("labels the automation tab clearly instead of generic communications", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /^Automatizaciones$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Comunicaciones$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Prompt Studio$/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Automatizaciones$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /\+ Nueva Notificación/i }));
+    expect(screen.getByLabelText(/Variables disponibles para el asunto/i)).toBeInTheDocument();
+    expect(screen.queryByText("Variables para plantillas automáticas")).not.toBeInTheDocument();
+  });
+
+  it("opens Prompt Studio inside the same stage shell from Ajustes y Reglas", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          runs: [],
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Prompt Studio$/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /^Prompt Studio$/i })).toBeInTheDocument();
+      expect(screen.getByText(/Sin pruebas anteriores\./i)).toBeInTheDocument();
+    });
+  });
+
+  it("renames a section from the section toolbar pencil action", () => {
+    const promptMock = vi.spyOn(window, "prompt").mockReturnValue("Identidad actualizada");
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-1",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "fullName",
+            field_label: "Nombre completo",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: "section-identity",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[
+          {
+            id: "section-identity",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            section_key: "identity",
+            title: "Datos personales",
+            description: "",
+            sort_order: 1,
+            is_visible: true,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          makeOtherSection({ sort_order: 2 }),
+        ]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Editar nombre de sección" })[0]!);
+
+    expect(promptMock).toHaveBeenCalledWith("Nuevo nombre de la sección", "Datos personales");
+    expect(screen.getByText("Sección 1: Identidad actualizada")).toBeInTheDocument();
+  });
+
+  it("appends a newly created section at the end of the section list", () => {
+    const { container } = render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-a",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "fullName",
+            field_label: "Nombre",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: "section-a",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "field-b",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "schoolName",
+            field_label: "Colegio",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 2,
+            is_active: true,
+            section_id: "section-b",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "field-other",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "legacyExtra",
+            field_label: "Otro",
+            field_type: "short_text",
+            is_required: false,
+            placeholder: null,
+            help_text: null,
+            sort_order: 3,
+            is_active: true,
+            section_id: "section-other",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[
+          {
+            id: "section-a",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            section_key: "identity",
+            title: "Sección A",
+            description: "",
+            sort_order: 1,
+            is_visible: true,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          {
+            id: "section-b",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            section_key: "family",
+            title: "Sección B",
+            description: "",
+            sort_order: 2,
+            is_visible: true,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+          makeOtherSection({ sort_order: 99 }),
+        ]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /\+ Añadir nueva sección/i }));
+
+    const sectionHeadings = Array.from(
+      container.querySelectorAll(".admin-stage-section-heading-row .builder-section-title"),
+    )
+      .map((node) => node.textContent?.trim() ?? "")
+      .filter(Boolean);
+
+    expect(sectionHeadings.at(-1)).toBe("Sección 4: Nueva sección 4");
+  });
+
+  it("persists optional group name for fields", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fields: [
+            {
+              id: "field-1",
+              cycle_id: "cycle-1",
+              stage_code: "documents",
+              field_key: "fullName",
+              field_label: "Nombre completo",
+              field_type: "short_text",
+              is_required: true,
+              placeholder: null,
+              help_text: null,
+              group_name: "Identidad",
+              sort_order: 1,
+              is_active: true,
+              section_id: "section-other",
+              created_at: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          sections: [makeOtherSection()],
+          automations: [],
+          ocrPromptTemplate: null,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-1",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "fullName",
+            field_label: "Nombre completo",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            group_name: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: "section-other",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Nombre completo"));
+    const groupNameInput = screen.getByLabelText(/Nombre de grupo \(opcional\)/i);
+    fireEvent.change(groupNameInput, { target: { value: "Identidad" } });
+    fireEvent.blur(groupNameInput);
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+
+    const request = fetchMock.mock.calls.at(-1)?.[1];
+    const payload =
+      request && typeof request === "object" && "body" in request
+        ? JSON.parse(String(request.body))
+        : null;
+
+    expect(payload?.fields?.[0]?.groupName).toBe("Identidad");
+  });
+
+  it("opens the communications center inside the same stage shell from Automatizaciones", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          logs: [],
+          campaigns: [],
+          summary: {
+            queued: 0,
+            processing: 0,
+            sent: 0,
+            failed: 0,
+            total: 0,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Automatizaciones$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Abrir centro de comunicaciones/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: /Centro de comunicaciones/i })).toBeInTheDocument();
+    });
   });
 
   it("persists custom sections and field-section assignments in the global save payload", async () => {
@@ -650,5 +996,150 @@ describe("StageConfigEditor", () => {
     // Verify the new field has a sectionKey matching the new section
     const newField = payload?.fields?.find((f: { fieldKey: string }) => f.fieldKey?.startsWith("custom"));
     expect(newField).toBeTruthy();
+  });
+
+  it("persists per-file AI parser config and clears it when field type changes", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            fields: [
+              {
+                id: "field-file",
+                cycle_id: "cycle-1",
+                stage_code: "documents",
+                field_key: "identificationDocument",
+                field_label: "Documento de identidad",
+                field_type: "file",
+                is_required: true,
+                placeholder: null,
+                help_text: null,
+                sort_order: 1,
+                is_active: true,
+                section_id: null,
+                created_at: "2026-01-01T00:00:00.000Z",
+              },
+            ],
+            sections: [makeOtherSection()],
+            automations: [],
+            ocrPromptTemplate: "Prompt OCR",
+          }),
+          { status: 200 },
+        ),
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-file",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "identificationDocument",
+            field_label: "Documento de identidad",
+            field_type: "file",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: null,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Documento de identidad"));
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Habilitar parsing IA para Documento de identidad/i }),
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: /Instrucciones de extracción/i }), {
+      target: { value: "Extrae solo número de documento y nombre completo." },
+    });
+    fireEvent.change(screen.getByRole("textbox", { name: /Esquema JSON esperado/i }), {
+      target: { value: "{\"document_number\":\"string\",\"full_name\":\"string\"}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+
+    const firstRequest = fetchMock.mock.calls.at(-1)?.[1];
+    const firstPayload =
+      firstRequest && typeof firstRequest === "object" && "body" in firstRequest
+        ? JSON.parse(String(firstRequest.body))
+        : null;
+
+    expect(firstPayload?.fields?.[0]?.aiParser).toMatchObject({
+      enabled: true,
+      extractionInstructions: "Extrae solo número de documento y nombre completo.",
+      expectedSchemaTemplate: "{\"document_number\":\"string\",\"full_name\":\"string\"}",
+      strictSchema: true,
+    });
+
+    fireEvent.change(screen.getByLabelText(/Tipo de campo/i), {
+      target: { value: "short_text" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const secondRequest = fetchMock.mock.calls.at(-1)?.[1];
+    const secondPayload =
+      secondRequest && typeof secondRequest === "object" && "body" in secondRequest
+        ? JSON.parse(String(secondRequest.body))
+        : null;
+    expect(secondPayload?.fields?.[0]?.aiParser).toBeNull();
+  });
+
+  it("does not show AI parser controls for non-file fields", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-1",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "fullName",
+            field_label: "Nombre completo",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: null,
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Nombre completo"));
+    expect(
+      screen.queryByRole("checkbox", { name: /Habilitar parsing IA para Nombre completo/i }),
+    ).not.toBeInTheDocument();
   });
 });
