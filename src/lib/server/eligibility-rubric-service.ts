@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
 import {
+  type EligibilityAnyOfCondition,
   type EligibilityOutcome,
   type EligibilityRubricConfig,
   type EligibilityRubricCriterion,
@@ -99,6 +100,21 @@ function normalizeToNumber(value: unknown): number | null {
   return null;
 }
 
+function normalizeComparisonString({
+  value,
+  caseSensitive,
+  normalizeWhitespace,
+}: {
+  value: string;
+  caseSensitive: boolean;
+  normalizeWhitespace: boolean;
+}) {
+  const compactWhitespace = normalizeWhitespace
+    ? value.replace(/\s+/g, " ").trim()
+    : value.trim();
+  return caseSensitive ? compactWhitespace : compactWhitespace.toLowerCase();
+}
+
 function resolveFilePath(value: unknown) {
   if (typeof value === "string") {
     return value.trim();
@@ -115,12 +131,213 @@ function resolveFilePath(value: unknown) {
   return "";
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function parseJsonPath(path: string) {
+  return path
+    .replace(/^\$\.?/, "")
+    .match(/[^.[\]]+/g)
+    ?.map((segment) => segment.trim())
+    .filter(Boolean) ?? [];
+}
+
+function resolveJsonPathValue(root: unknown, path: string): unknown {
+  const segments = parseJsonPath(path);
+  if (segments.length === 0) {
+    return root;
+  }
+
+  let cursor: unknown = root;
+  for (const segment of segments) {
+    if (cursor === null || cursor === undefined) {
+      return null;
+    }
+
+    if (Array.isArray(cursor)) {
+      const index = Number(segment);
+      if (!Number.isInteger(index) || index < 0 || index >= cursor.length) {
+        return null;
+      }
+      cursor = cursor[index];
+      continue;
+    }
+
+    if (typeof cursor === "object") {
+      cursor = (cursor as Record<string, unknown>)[segment];
+      continue;
+    }
+
+    return null;
+  }
+
+  return cursor;
+}
+
+function getOcrParsedPayload(ocrCheck: OcrCheckRow): Record<string, unknown> | null {
+  const raw = asRecord(ocrCheck.raw_response);
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = asRecord(raw.parsed);
+  if (parsed) {
+    return parsed;
+  }
+
+  return raw;
+}
+
+function getOcrValueByPath({
+  ocrCheck,
+  jsonPath,
+}: {
+  ocrCheck: OcrCheckRow | undefined;
+  jsonPath: string;
+}): unknown {
+  if (!ocrCheck) {
+    return null;
+  }
+
+  const parsedPayload = getOcrParsedPayload(ocrCheck);
+  if (!parsedPayload) {
+    return null;
+  }
+
+  return resolveJsonPathValue(parsedPayload, jsonPath);
+}
+
 function isRecommendationComplete(recommendation: RecommendationRow) {
   return (
     recommendation.status === "submitted" ||
     Boolean(recommendation.submitted_at) ||
     Boolean(recommendation.admin_received_at)
   );
+}
+
+type AnyOfConditionResult = {
+  status: CriterionResultStatus;
+  message: string;
+};
+
+function evaluateAnyOfCondition({
+  condition,
+  payload,
+  files,
+  latestOcrByFile,
+}: {
+  condition: EligibilityAnyOfCondition;
+  payload: Record<string, unknown>;
+  files: Record<string, unknown>;
+  latestOcrByFile: Map<string, OcrCheckRow>;
+}): AnyOfConditionResult {
+  switch (condition.kind) {
+    case "field_present": {
+      const value = payload[condition.fieldKey];
+      if (isMissing(value)) {
+        return {
+          status: "missing_data",
+          message: `Campo "${condition.fieldKey}" ausente.`,
+        };
+      }
+      return {
+        status: "pass",
+        message: `Campo "${condition.fieldKey}" presente.`,
+      };
+    }
+    case "file_uploaded": {
+      const filePath = resolveFilePath(files[condition.fileKey]);
+      if (!filePath) {
+        return {
+          status: "missing_data",
+          message: `Archivo "${condition.fileKey}" ausente.`,
+        };
+      }
+      return {
+        status: "pass",
+        message: `Archivo "${condition.fileKey}" cargado.`,
+      };
+    }
+    case "number_between": {
+      const numericValue = normalizeToNumber(payload[condition.fieldKey]);
+      if (numericValue === null) {
+        return {
+          status: "missing_data",
+          message: `Valor numérico "${condition.fieldKey}" ausente.`,
+        };
+      }
+
+      if (typeof condition.min === "number" && numericValue < condition.min) {
+        return {
+          status: "fail",
+          message: `"${condition.fieldKey}" (${numericValue}) está bajo el mínimo (${condition.min}).`,
+        };
+      }
+
+      if (typeof condition.max === "number" && numericValue > condition.max) {
+        return {
+          status: "fail",
+          message: `"${condition.fieldKey}" (${numericValue}) supera el máximo (${condition.max}).`,
+        };
+      }
+
+      return {
+        status: "pass",
+        message: `"${condition.fieldKey}" (${numericValue}) dentro del rango.`,
+      };
+    }
+    case "ocr_field_in": {
+      const ocrCheck = latestOcrByFile.get(condition.fileKey);
+      if (!ocrCheck) {
+        return {
+          status: "missing_data",
+          message: `OCR ausente para "${condition.fileKey}".`,
+        };
+      }
+
+      const ocrValue = normalizeToString(
+        getOcrValueByPath({
+          ocrCheck,
+          jsonPath: condition.jsonPath,
+        }),
+      );
+
+      if (!ocrValue) {
+        return {
+          status: "missing_data",
+          message: `OCR sin valor en "${condition.jsonPath}".`,
+        };
+      }
+
+      const compareValue = condition.caseSensitive ? ocrValue : ocrValue.toLowerCase();
+      const allowed = condition.allowedValues.map((value) =>
+        condition.caseSensitive ? value : value.toLowerCase(),
+      );
+
+      if (!allowed.includes(compareValue)) {
+        return {
+          status: "fail",
+          message: `OCR "${condition.jsonPath}" fuera de lista permitida.`,
+        };
+      }
+
+      return {
+        status: "pass",
+        message: `OCR "${condition.jsonPath}" dentro de lista permitida.`,
+      };
+    }
+    default: {
+      return {
+        status: "missing_data",
+        message: "Condición any_of no soportada.",
+      };
+    }
+  }
 }
 
 function evaluateCriterion({
@@ -232,7 +449,21 @@ function evaluateCriterion({
         const roleRows = recommendations.filter((recommendation) => recommendation.role === role);
         const requested = roleRows.length > 0;
         const completed = roleRows.some(isRecommendationComplete);
-        return { role, requested, completed };
+        const withContent = roleRows.some((recommendation) => {
+          if (!isRecommendationComplete(recommendation)) {
+            return false;
+          }
+
+          const responses = asRecord(recommendation.responses);
+          if (!responses) {
+            return false;
+          }
+
+          const filledCount = Object.values(responses).filter((value) => !isMissing(value)).length;
+          return filledCount >= (criterion.minFilledResponses ?? 0);
+        });
+
+        return { role, requested, completed, withContent };
       });
 
       const missingRequested = roleStatuses
@@ -247,6 +478,17 @@ function evaluateCriterion({
         .map((entry) => entry.role);
       if (pending.length > 0) {
         return fail(`Aún faltan recomendaciones de: ${pending.join(", ")}.`);
+      }
+
+      const incompleteContent = roleStatuses
+        .filter((entry) => !entry.withContent)
+        .map((entry) => entry.role);
+      if (incompleteContent.length > 0) {
+        return fail(
+          `Recomendaciones incompletas para: ${incompleteContent.join(", ")} (mínimo ${
+            criterion.minFilledResponses ?? 0
+          } respuesta(s) no vacía(s)).`,
+        );
       }
 
       return pass("Se recibieron todas las recomendaciones requeridas.");
@@ -265,6 +507,168 @@ function evaluateCriterion({
 
       return pass(
         `Confianza OCR (${ocrCheck.confidence.toFixed(2)}) cumple el mínimo (${criterion.minConfidence.toFixed(2)}).`,
+      );
+    }
+    case "ocr_field_in": {
+      const ocrCheck = latestOcrByFile.get(criterion.fileKey);
+      if (!ocrCheck) {
+        return missing(`No existe resultado OCR para "${criterion.fileKey}".`);
+      }
+
+      const rawValue = normalizeToString(
+        getOcrValueByPath({
+          ocrCheck,
+          jsonPath: criterion.jsonPath,
+        }),
+      );
+
+      if (!rawValue) {
+        return missing(`No hay valor OCR para "${criterion.jsonPath}" en "${criterion.fileKey}".`);
+      }
+
+      const compareValue = criterion.caseSensitive ? rawValue : rawValue.toLowerCase();
+      const allowed = criterion.allowedValues.map((value) =>
+        criterion.caseSensitive ? value : value.toLowerCase(),
+      );
+
+      if (!allowed.includes(compareValue)) {
+        return fail(
+          `El valor OCR "${rawValue}" no coincide con los permitidos: ${criterion.allowedValues.join(", ")}.`,
+        );
+      }
+
+      return pass(`El valor OCR en "${criterion.jsonPath}" cumple los permitidos.`);
+    }
+    case "ocr_field_not_in": {
+      const ocrCheck = latestOcrByFile.get(criterion.fileKey);
+      if (!ocrCheck) {
+        return missing(`No existe resultado OCR para "${criterion.fileKey}".`);
+      }
+
+      const rawValue = normalizeToString(
+        getOcrValueByPath({
+          ocrCheck,
+          jsonPath: criterion.jsonPath,
+        }),
+      );
+
+      if (!rawValue) {
+        return missing(`No hay valor OCR para "${criterion.jsonPath}" en "${criterion.fileKey}".`);
+      }
+
+      const compareValue = criterion.caseSensitive ? rawValue : rawValue.toLowerCase();
+      const disallowed = criterion.disallowedValues.map((value) =>
+        criterion.caseSensitive ? value : value.toLowerCase(),
+      );
+
+      if (disallowed.includes(compareValue)) {
+        return fail(
+          `El valor OCR "${rawValue}" está marcado para revisión: ${criterion.disallowedValues.join(", ")}.`,
+        );
+      }
+
+      return pass(`El valor OCR en "${criterion.jsonPath}" no cae en estados observados.`);
+    }
+    case "field_matches_ocr": {
+      const payloadValueRaw = normalizeToString(payload[criterion.fieldKey]);
+      if (!payloadValueRaw) {
+        return missing(`No hay valor para "${criterion.fieldKey}".`);
+      }
+
+      const ocrCheck = latestOcrByFile.get(criterion.fileKey);
+      if (!ocrCheck) {
+        return missing(`No existe resultado OCR para "${criterion.fileKey}".`);
+      }
+
+      const ocrValueRaw = normalizeToString(
+        getOcrValueByPath({
+          ocrCheck,
+          jsonPath: criterion.jsonPath,
+        }),
+      );
+
+      if (!ocrValueRaw) {
+        return missing(`No hay valor OCR para "${criterion.jsonPath}" en "${criterion.fileKey}".`);
+      }
+
+      const payloadValue = normalizeComparisonString({
+        value: payloadValueRaw,
+        caseSensitive: criterion.caseSensitive,
+        normalizeWhitespace: criterion.normalizeWhitespace ?? true,
+      });
+      const ocrValue = normalizeComparisonString({
+        value: ocrValueRaw,
+        caseSensitive: criterion.caseSensitive,
+        normalizeWhitespace: criterion.normalizeWhitespace ?? true,
+      });
+
+      if (payloadValue !== ocrValue) {
+        return fail(
+          `El campo "${criterion.fieldKey}" no coincide con OCR "${criterion.jsonPath}".`,
+        );
+      }
+
+      return pass(`El campo "${criterion.fieldKey}" coincide con el valor OCR.`);
+    }
+    case "file_upload_count_between": {
+      const uploadedCount = criterion.fileKeys.reduce((count, fileKey) => {
+        return resolveFilePath(files[fileKey]) ? count + 1 : count;
+      }, 0);
+
+      if (uploadedCount === 0) {
+        return missing(
+          `No se encontró ningún archivo en las claves: ${criterion.fileKeys.join(", ")}.`,
+        );
+      }
+
+      if (
+        typeof criterion.minCount === "number" &&
+        uploadedCount < criterion.minCount
+      ) {
+        return fail(
+          `Se cargaron ${uploadedCount} archivo(s), por debajo del mínimo (${criterion.minCount}).`,
+        );
+      }
+
+      if (
+        typeof criterion.maxCount === "number" &&
+        uploadedCount > criterion.maxCount
+      ) {
+        return fail(
+          `Se cargaron ${uploadedCount} archivo(s), por encima del máximo (${criterion.maxCount}).`,
+        );
+      }
+
+      return pass(`Cantidad de archivos cargados (${uploadedCount}) dentro de rango.`);
+    }
+    case "any_of": {
+      const conditionResults = criterion.conditions.map((condition) =>
+        evaluateAnyOfCondition({
+          condition,
+          payload,
+          files,
+          latestOcrByFile,
+        }),
+      );
+
+      const passing = conditionResults.find((result) => result.status === "pass");
+      if (passing) {
+        return pass(`Cumple al menos una condición: ${passing.message}`);
+      }
+
+      const hasFail = conditionResults.some((result) => result.status === "fail");
+      if (hasFail) {
+        return fail(
+          `No cumplió ninguna condición de alternativa. ${conditionResults
+            .map((result) => result.message)
+            .join(" | ")}`,
+        );
+      }
+
+      return missing(
+        `No hubo evidencia suficiente para validar alternativas. ${conditionResults
+          .map((result) => result.message)
+          .join(" | ")}`,
       );
     }
     default: {
@@ -442,7 +846,7 @@ export async function runEligibilityRubricEvaluation({
     await Promise.all([
       supabase
         .from("recommendation_requests")
-        .select("application_id, role, status, submitted_at, admin_received_at")
+        .select("application_id, role, status, submitted_at, admin_received_at, responses")
         .in("application_id", applicationIds),
       supabase
         .from("application_ocr_checks")

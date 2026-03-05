@@ -163,7 +163,29 @@ export type EligibilityRubricCriterionKind =
   | "number_between"
   | "file_uploaded"
   | "recommendations_complete"
-  | "ocr_confidence";
+  | "ocr_confidence"
+  | "ocr_field_in"
+  | "ocr_field_not_in"
+  | "field_matches_ocr"
+  | "file_upload_count_between"
+  | "any_of";
+
+export type EligibilityAnyOfConditionKind =
+  | "field_present"
+  | "file_uploaded"
+  | "number_between"
+  | "ocr_field_in";
+
+export interface EligibilityAnyOfCondition {
+  kind: EligibilityAnyOfConditionKind;
+  fieldKey?: string;
+  fileKey?: string;
+  min?: number;
+  max?: number;
+  jsonPath?: string;
+  allowedValues?: string[];
+  caseSensitive?: boolean;
+}
 
 export interface EligibilityRubricCriterion {
   id: string;
@@ -174,6 +196,7 @@ export interface EligibilityRubricCriterion {
   onMissingData: EligibilityOutcome;
   fieldKey?: string;
   fieldKeys?: string[];
+  fileKeys?: string[];
   allowedValues?: string[];
   caseSensitive?: boolean;
   min?: number;
@@ -181,7 +204,14 @@ export interface EligibilityRubricCriterion {
   fileKey?: string;
   roles?: RecommenderRole[];
   requireRequested?: boolean;
+  minFilledResponses?: number;
   minConfidence?: number;
+  jsonPath?: string;
+  normalizeWhitespace?: boolean;
+  disallowedValues?: string[];
+  minCount?: number;
+  maxCount?: number;
+  conditions?: EligibilityAnyOfCondition[];
 }
 
 export interface EligibilityRubricConfig {

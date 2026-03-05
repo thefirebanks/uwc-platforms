@@ -33,7 +33,11 @@ function buildApplication(overrides?: Partial<ApplicationRow>): ApplicationRow {
   };
 }
 
-function buildRecommendation(role: "mentor" | "friend", submitted = true): RecommendationRow {
+function buildRecommendation(
+  role: "mentor" | "friend",
+  submitted = true,
+  responses: Record<string, unknown> = {},
+): RecommendationRow {
   return {
     id: `rec-${role}`,
     application_id: "app-1",
@@ -58,7 +62,7 @@ function buildRecommendation(role: "mentor" | "friend", submitted = true): Recom
     access_expires_at: "2026-12-31T00:00:00Z",
     session_token_hash: null,
     session_expires_at: null,
-    responses: {},
+    responses: responses as Database["public"]["Tables"]["recommendation_requests"]["Row"]["responses"],
     admin_received_at: null,
     admin_received_by: null,
     admin_received_reason: null,
@@ -68,7 +72,10 @@ function buildRecommendation(role: "mentor" | "friend", submitted = true): Recom
   };
 }
 
-function buildOcrCheck(confidence: number): OcrCheckRow {
+function buildOcrCheck(
+  confidence: number,
+  parsed: Record<string, unknown> = {},
+): OcrCheckRow {
   return {
     id: "ocr-1",
     application_id: "app-1",
@@ -76,7 +83,9 @@ function buildOcrCheck(confidence: number): OcrCheckRow {
     file_key: "idDocument",
     summary: "ok",
     confidence,
-    raw_response: {},
+    raw_response: {
+      parsed,
+    } as OcrCheckRow["raw_response"],
     created_at: "2026-03-03T00:00:00Z",
   };
 }
@@ -110,6 +119,7 @@ describe("evaluateApplicationWithRubric", () => {
           kind: "recommendations_complete",
           roles: ["mentor", "friend"],
           requireRequested: true,
+          minFilledResponses: 0,
           onFail: "not_eligible",
           onMissingData: "needs_review",
         },
@@ -258,5 +268,129 @@ describe("evaluateApplicationWithRubric", () => {
 
     expect(result.outcome).toBe("eligible");
     expect(result.criteria[0]?.status).toBe("pass");
+  });
+
+  it("supports OCR value checks and field matching", () => {
+    const rubric: EligibilityRubricConfig = {
+      enabled: true,
+      criteria: [
+        {
+          id: "doc_type",
+          label: "Doc type allowed",
+          kind: "ocr_field_in",
+          fileKey: "idDocument",
+          jsonPath: "documentType",
+          allowedValues: ["dni", "pasaporte"],
+          caseSensitive: false,
+          onFail: "needs_review",
+          onMissingData: "needs_review",
+        },
+        {
+          id: "name_match",
+          label: "Name matches",
+          kind: "field_matches_ocr",
+          fieldKey: "fullName",
+          fileKey: "idDocument",
+          jsonPath: "fullName",
+          caseSensitive: false,
+          normalizeWhitespace: true,
+          onFail: "needs_review",
+          onMissingData: "needs_review",
+        },
+      ],
+    };
+
+    const result = evaluateApplicationWithRubric({
+      application: buildApplication({
+        payload: {
+          fullName: "Ada Lovelace",
+        },
+      }),
+      rubric,
+      recommendations: [],
+      latestOcrByFile: new Map([
+        [
+          "idDocument",
+          buildOcrCheck(0.9, {
+            documentType: "DNI",
+            fullName: "Ada   Lovelace",
+          }),
+        ],
+      ]),
+    });
+
+    expect(result.outcome).toBe("eligible");
+    expect(result.failedCount).toBe(0);
+  });
+
+  it("supports any_of for top-third or average alternatives", () => {
+    const rubric: EligibilityRubricConfig = {
+      enabled: true,
+      criteria: [
+        {
+          id: "alt",
+          label: "Top third or average",
+          kind: "any_of",
+          conditions: [
+            {
+              kind: "file_uploaded",
+              fileKey: "topThirdProof",
+            },
+            {
+              kind: "number_between",
+              fieldKey: "gradeAverage",
+              min: 14,
+            },
+          ],
+          onFail: "not_eligible",
+          onMissingData: "needs_review",
+        },
+      ],
+    };
+
+    const result = evaluateApplicationWithRubric({
+      application: buildApplication({
+        payload: {
+          gradeAverage: 14.2,
+        },
+      }),
+      rubric,
+      recommendations: [],
+      latestOcrByFile: new Map(),
+    });
+
+    expect(result.outcome).toBe("eligible");
+    expect(result.criteria[0]?.status).toBe("pass");
+  });
+
+  it("fails recommendations when minimum filled responses are not met", () => {
+    const rubric: EligibilityRubricConfig = {
+      enabled: true,
+      criteria: [
+        {
+          id: "recs",
+          label: "Recommendations complete",
+          kind: "recommendations_complete",
+          roles: ["mentor", "friend"],
+          requireRequested: true,
+          minFilledResponses: 2,
+          onFail: "not_eligible",
+          onMissingData: "needs_review",
+        },
+      ],
+    };
+
+    const result = evaluateApplicationWithRubric({
+      application: buildApplication(),
+      rubric,
+      recommendations: [
+        buildRecommendation("mentor", true, { q1: "ok", q2: "" }),
+        buildRecommendation("friend", true, { q1: "ok" }),
+      ],
+      latestOcrByFile: new Map(),
+    });
+
+    expect(result.outcome).toBe("not_eligible");
+    expect(result.criteria[0]?.status).toBe("fail");
   });
 });

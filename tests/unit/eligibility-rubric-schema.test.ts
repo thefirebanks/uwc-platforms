@@ -107,4 +107,52 @@ describe("validateEligibilityRubricConfig", () => {
       });
     }
   });
+
+  it("accepts advanced OCR + any_of criteria", () => {
+    const result = validateEligibilityRubricConfig({
+      enabled: true,
+      criteria: [
+        {
+          id: "name_match",
+          label: "Name matches OCR",
+          kind: "field_matches_ocr",
+          fieldKey: "fullName",
+          fileKey: "idDocument",
+          jsonPath: "fullName",
+        },
+        {
+          id: "alt_rule",
+          label: "Top third OR average",
+          kind: "any_of",
+          conditions: [
+            { kind: "file_uploaded", fileKey: "topThirdProof" },
+            { kind: "number_between", fieldKey: "gradeAverage", min: 14 },
+          ],
+        },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects file_upload_count_between when minCount exceeds maxCount", () => {
+    const result = validateEligibilityRubricConfig({
+      enabled: true,
+      criteria: [
+        {
+          id: "grades_count",
+          label: "Grades count range",
+          kind: "file_upload_count_between",
+          fileKeys: ["a", "b"],
+          minCount: 2,
+          maxCount: 1,
+        },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.errors.join("\n")).toContain("file_upload_count_between criterion requires minCount <= maxCount");
+    }
+  });
 });
