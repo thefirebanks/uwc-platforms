@@ -30,6 +30,15 @@ import { EmailTemplateVariableHintContent } from "@/components/email-template-va
 import { FieldHint } from "@/components/field-hint";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
 import {
+  OCR_EXPECTED_OUTPUT_TYPES,
+  buildSchemaTemplateFromExpectedOutputFields,
+  normalizeExpectedOutputFields,
+  normalizeOcrOutputKey,
+  parseExpectedOutputFieldsFromSchemaTemplate,
+  type OcrExpectedOutputField,
+  type OcrExpectedOutputFieldType,
+} from "@/lib/ocr/expected-output-schema";
+import {
   DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
   DEFAULT_OCR_PROMPT,
   DEFAULT_OCR_SCHEMA_TEMPLATE,
@@ -103,6 +112,7 @@ type FieldAiParserDraft = StageFieldAiParserConfig & {
   modelId: string | null;
   promptTemplate: string | null;
   systemPrompt: string | null;
+  expectedOutputFields: OcrExpectedOutputField[];
 };
 
 type EditorSection = {
@@ -144,6 +154,48 @@ const RUBRIC_KIND_OPTIONS: Array<{
   { value: "any_of", label: "Cumple al menos una condición" },
 ];
 
+const RECOMMENDATION_POLICY_OPTIONS: Array<{
+  value: UwcStageOnePresetDraft["recommendationCompleteness"];
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "strict_form_valid",
+    label: "Formulario completo validado",
+    description: "Solo cuenta si la recomendación fue enviada por el flujo oficial y validó todos los campos.",
+  },
+  {
+    value: "minimum_answers",
+    label: "Mínimo de respuestas",
+    description: "Cuenta cuando se cumple un mínimo de respuestas no vacías por recomendación.",
+  },
+];
+
+const GRADES_COMBINATION_POLICY_OPTIONS: Array<{
+  value: UwcStageOnePresetDraft["gradesCombinationRule"];
+  label: string;
+}> = [
+  { value: "single_or_review", label: "Si hay varios certificados -> needs_review" },
+  { value: "single_or_not_eligible", label: "Si hay varios certificados -> not_eligible" },
+  { value: "allow_multiple", label: "Permitir varios certificados" },
+];
+
+const ID_EXCEPTION_POLICY_OPTIONS: Array<{
+  value: UwcStageOnePresetDraft["idExceptionRule"];
+  label: string;
+}> = [
+  { value: "review", label: "Si hay excepción -> needs_review" },
+  { value: "not_eligible", label: "Si hay excepción -> not_eligible" },
+];
+
+const OCR_OUTPUT_FIELD_TYPE_LABELS: Record<OcrExpectedOutputFieldType, string> = {
+  text: "Texto",
+  number: "Número entero",
+  decimal: "Número decimal",
+  date: "Fecha",
+  boolean: "Sí/No",
+};
+
 function parseCommaSeparatedList(raw: string) {
   const seen = new Set<string>();
   const values: string[] = [];
@@ -166,7 +218,7 @@ function parseCommaSeparatedNumbers(raw: string) {
   const seen = new Set<number>();
   const values: number[] = [];
 
-  for (const candidate of raw.split(",")) {
+  for (const candidate of raw.split(/[,\s;]+/)) {
     const trimmed = candidate.trim();
     if (!trimmed) {
       continue;
@@ -206,9 +258,12 @@ function presetDraftFromBlueprint(blueprint: RubricBlueprintV1): UwcStageOnePres
     ocrDocumentIssuePath: blueprint.mappings.ocrPaths.documentIssue,
     allowedBirthYears: blueprint.policy.allowedBirthYears,
     minAverageGrade: blueprint.policy.minAverageGrade,
+    recommendationCompleteness: blueprint.policy.recommendationCompleteness,
     recommendationRoles: ["mentor", "friend"],
-    minRecommendationResponses: 0,
-    limitGradesDocumentToSingleUpload: blueprint.policy.gradesCombinationRule === "single_or_review",
+    minRecommendationResponses: blueprint.policy.recommendationMinAnswers ?? 0,
+    gradesCombinationRule: blueprint.policy.gradesCombinationRule,
+    idExceptionRule: blueprint.policy.idExceptionRule,
+    limitGradesDocumentToSingleUpload: blueprint.policy.gradesCombinationRule !== "allow_multiple",
   };
 }
 
@@ -400,6 +455,10 @@ function createDefaultRubricCriterion({
 }
 
 function createDefaultFieldAiParserConfig(): FieldAiParserDraft {
+  const expectedOutputFields = parseExpectedOutputFieldsFromSchemaTemplate(
+    DEFAULT_OCR_SCHEMA_TEMPLATE,
+  );
+
   return {
     enabled: true,
     modelId: null,
@@ -407,6 +466,7 @@ function createDefaultFieldAiParserConfig(): FieldAiParserDraft {
     systemPrompt: null,
     extractionInstructions: DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
     expectedSchemaTemplate: DEFAULT_OCR_SCHEMA_TEMPLATE,
+    expectedOutputFields,
     strictSchema: true,
   };
 }
@@ -428,6 +488,18 @@ function normalizeFieldAiParserConfig(value: unknown): FieldAiParserDraft | null
     typeof value.expectedSchemaTemplate === "string" && value.expectedSchemaTemplate.trim().length > 0
       ? value.expectedSchemaTemplate
       : DEFAULT_OCR_SCHEMA_TEMPLATE;
+  const expectedOutputFields =
+    Array.isArray(value.expectedOutputFields) && value.expectedOutputFields.length > 0
+      ? normalizeExpectedOutputFields(
+          value.expectedOutputFields.filter(
+            (item) =>
+              item &&
+              typeof item === "object" &&
+              typeof (item as { key?: unknown }).key === "string" &&
+              typeof (item as { type?: unknown }).type === "string",
+          ) as Array<{ key: string; type: string }>,
+        )
+      : parseExpectedOutputFieldsFromSchemaTemplate(expectedSchemaTemplate);
 
   return {
     enabled: true,
@@ -436,6 +508,7 @@ function normalizeFieldAiParserConfig(value: unknown): FieldAiParserDraft | null
     systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : null,
     extractionInstructions,
     expectedSchemaTemplate,
+    expectedOutputFields,
     strictSchema: typeof value.strictSchema === "boolean" ? value.strictSchema : true,
   };
 }
@@ -922,6 +995,55 @@ export function StageConfigEditor({
     });
   }
 
+  function addExpectedOutputField(localId: string) {
+    updateFieldAiParserConfig(localId, (currentConfig) => {
+      const currentFields = normalizeExpectedOutputFields(currentConfig.expectedOutputFields);
+      const nextIndex = currentFields.length + 1;
+      const fallbackKey = normalizeOcrOutputKey(`campo_${nextIndex}`) || `campo_${nextIndex}`;
+      const nextFields = [...currentFields, { key: fallbackKey, type: "text" as const }];
+      return {
+        ...currentConfig,
+        expectedOutputFields: nextFields,
+        expectedSchemaTemplate: buildSchemaTemplateFromExpectedOutputFields(nextFields),
+      };
+    });
+  }
+
+  function updateExpectedOutputField(
+    localId: string,
+    index: number,
+    patch: Partial<OcrExpectedOutputField>,
+  ) {
+    updateFieldAiParserConfig(localId, (currentConfig) => {
+      const currentFields = normalizeExpectedOutputFields(currentConfig.expectedOutputFields);
+      const nextFields = currentFields.map((field, fieldIndex) =>
+        fieldIndex === index ? { ...field, ...patch } : field,
+      );
+      const normalizedFields = normalizeExpectedOutputFields(nextFields);
+      return {
+        ...currentConfig,
+        expectedOutputFields: normalizedFields,
+        expectedSchemaTemplate:
+          normalizedFields.length > 0
+            ? buildSchemaTemplateFromExpectedOutputFields(normalizedFields)
+            : "{}",
+      };
+    });
+  }
+
+  function removeExpectedOutputField(localId: string, index: number) {
+    updateFieldAiParserConfig(localId, (currentConfig) => {
+      const currentFields = normalizeExpectedOutputFields(currentConfig.expectedOutputFields);
+      const nextFields = currentFields.filter((_, fieldIndex) => fieldIndex !== index);
+      return {
+        ...currentConfig,
+        expectedOutputFields: nextFields,
+        expectedSchemaTemplate:
+          nextFields.length > 0 ? buildSchemaTemplateFromExpectedOutputFields(nextFields) : "{}",
+      };
+    });
+  }
+
   function insertFieldAt(
     position: number,
     seed?:
@@ -1257,9 +1379,7 @@ export function StageConfigEditor({
 
     const shouldCompileWizardRubric =
       rubricAuthoringTab === "wizard" &&
-      (settingsEligibilityRubricDraft.enabled ||
-        settingsRubricMeta?.source === "wizard" ||
-        settingsRubricBlueprint !== null);
+      (settingsRubricMeta?.source === "wizard" || settingsRubricBlueprint !== null);
 
     if (shouldCompileWizardRubric) {
       const compiled = compileRubricFromWizard({ silent: true });
@@ -1411,7 +1531,7 @@ export function StageConfigEditor({
       setSettingsEligibilityRubricJson(nextSavedSettings.eligibilityRubricJson);
       setSettingsRubricBlueprint(nextSavedBlueprint);
       setSettingsRubricMeta(nextSavedMeta);
-      setRubricAuthoringTab(nextSavedMeta?.source === "advanced" ? "advanced" : "wizard");
+      setRubricAuthoringTab("wizard");
       setSettingsEligibilityRubricErrors([]);
       savedSectionsSnapshotRef.current = serializeSections(nextSavedSections);
       savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
@@ -1469,7 +1589,7 @@ export function StageConfigEditor({
     parsedStageAdminConfig.blockIfPreviousNotMet ?? documentsRouteRepresentsMainForm,
   );
   const [rubricAuthoringTab, setRubricAuthoringTab] = useState<RubricAuthoringTab>(
-    parsedStageAdminConfig.eligibilityRubric && !initialRubricBlueprint ? "advanced" : "wizard",
+    "wizard",
   );
   const [rubricWizardStep, setRubricWizardStep] = useState<RubricWizardStep>(1);
   const [rubricWizardBlockingErrors, setRubricWizardBlockingErrors] = useState<string[]>([]);
@@ -1497,6 +1617,9 @@ export function StageConfigEditor({
   );
   const [uwcPresetDraft, setUwcPresetDraft] = useState<UwcStageOnePresetDraft>(
     initialWizardDraft,
+  );
+  const [wizardBirthYearsInput, setWizardBirthYearsInput] = useState(
+    initialWizardDraft.allowedBirthYears.join(", "),
   );
   const rubricFieldOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -1530,6 +1653,47 @@ export function StageConfigEditor({
     ),
     [orderedFields, rubricFieldOptions],
   );
+  const rubricFieldLabelByKey = useMemo(
+    () => new Map(rubricFieldOptions.map((option) => [option.value, option.label] as const)),
+    [rubricFieldOptions],
+  );
+  const rubricFileLabelByKey = useMemo(
+    () => new Map(rubricFileFieldOptions.map((option) => [option.value, option.label] as const)),
+    [rubricFileFieldOptions],
+  );
+  const selectedIdDocumentOcrPathOptions = useMemo(() => {
+    const selectedIdKeys = new Set(uwcPresetDraft.idDocumentFileKeys);
+    const seen = new Set<string>();
+    const options: Array<{ value: string; label: string }> = [];
+
+    if (selectedIdKeys.size === 0) {
+      return options;
+    }
+
+    for (const field of orderedFields) {
+      if (!selectedIdKeys.has(field.field_key)) {
+        continue;
+      }
+
+      const parserConfig = normalizeFieldAiParserConfig(field.ai_parser_config);
+      if (!parserConfig?.enabled) {
+        continue;
+      }
+
+      for (const expectedField of parserConfig.expectedOutputFields ?? []) {
+        if (!expectedField.key || seen.has(expectedField.key)) {
+          continue;
+        }
+        seen.add(expectedField.key);
+        options.push({
+          value: expectedField.key,
+          label: `${expectedField.key} · ${field.field_label}`,
+        });
+      }
+    }
+
+    return options.sort((left, right) => left.value.localeCompare(right.value));
+  }, [orderedFields, uwcPresetDraft.idDocumentFileKeys]);
 
   const defaultRubricFieldKey = rubricFieldOptions[0]?.value ?? "field_key";
   const defaultRubricFileKey = rubricFileFieldOptions[0]?.value ?? "file_key";
@@ -1551,6 +1715,9 @@ export function StageConfigEditor({
   const rubricWizardValidation = useMemo<RubricWizardValidation>(() => {
     const step1Errors: string[] = [];
     const step2Errors: string[] = [];
+    const availableOcrPaths = new Set(
+      selectedIdDocumentOcrPathOptions.map((option) => option.value),
+    );
 
     if (uwcPresetDraft.idDocumentFileKeys.length === 0) {
       step1Errors.push("Selecciona al menos un campo de archivo para identidad.");
@@ -1609,6 +1776,35 @@ export function StageConfigEditor({
     if (!uwcPresetDraft.ocrDocumentIssuePath.trim()) {
       step1Errors.push("Define el path OCR para observaciones del documento.");
     }
+    if (availableOcrPaths.size === 0) {
+      step1Errors.push(
+        "No hay campos OCR disponibles. Activa Parsing con IA en un documento de identidad y define campos esperados.",
+      );
+    }
+    if (
+      availableOcrPaths.size > 0 &&
+      !availableOcrPaths.has(uwcPresetDraft.ocrNamePath.trim())
+    ) {
+      step1Errors.push("El path OCR de nombre debe venir de los campos esperados en Parsing con IA.");
+    }
+    if (
+      availableOcrPaths.size > 0 &&
+      !availableOcrPaths.has(uwcPresetDraft.ocrBirthYearPath.trim())
+    ) {
+      step1Errors.push("El path OCR de año de nacimiento debe venir de los campos esperados en Parsing con IA.");
+    }
+    if (
+      availableOcrPaths.size > 0 &&
+      !availableOcrPaths.has(uwcPresetDraft.ocrDocumentTypePath.trim())
+    ) {
+      step1Errors.push("El path OCR de tipo de documento debe venir de los campos esperados en Parsing con IA.");
+    }
+    if (
+      availableOcrPaths.size > 0 &&
+      !availableOcrPaths.has(uwcPresetDraft.ocrDocumentIssuePath.trim())
+    ) {
+      step1Errors.push("El path OCR de excepción de documento debe venir de los campos esperados en Parsing con IA.");
+    }
 
     if (uwcPresetDraft.allowedBirthYears.length === 0) {
       step2Errors.push("Ingresa al menos un año de nacimiento permitido.");
@@ -1619,6 +1815,14 @@ export function StageConfigEditor({
       uwcPresetDraft.minAverageGrade > 20
     ) {
       step2Errors.push("El promedio mínimo debe estar entre 0 y 20.");
+    }
+    if (
+      uwcPresetDraft.recommendationCompleteness === "minimum_answers" &&
+      (!Number.isInteger(uwcPresetDraft.minRecommendationResponses) ||
+        uwcPresetDraft.minRecommendationResponses < 1 ||
+        uwcPresetDraft.minRecommendationResponses > 20)
+    ) {
+      step2Errors.push("Si eliges mínimo de respuestas, configura entre 1 y 20.");
     }
 
     const parsedBlueprint = validateUwcBlueprintDraft(uwcPresetDraft);
@@ -1646,11 +1850,64 @@ export function StageConfigEditor({
     rubricFieldKeySet,
     rubricFileFieldKeySet,
     rubricNumberFieldKeySet,
+    selectedIdDocumentOcrPathOptions,
     uwcPresetDraft,
   ]);
   const wizardProgressPercent = rubricWizardStep === 1 ? 34 : rubricWizardStep === 2 ? 67 : 100;
   const wizardBlockingCount =
     rubricWizardValidation.step1Errors.length + rubricWizardValidation.step2Errors.length;
+
+  const wizardSummaryItems = useMemo(() => {
+    const formatFileKeys = (keys: string[]) =>
+      keys.map((key) => rubricFileLabelByKey.get(key) ?? key).join(", ");
+    const gradePolicyLabel =
+      GRADES_COMBINATION_POLICY_OPTIONS.find(
+        (option) => option.value === uwcPresetDraft.gradesCombinationRule,
+      )?.label ?? uwcPresetDraft.gradesCombinationRule;
+    const idExceptionPolicyLabel =
+      ID_EXCEPTION_POLICY_OPTIONS.find((option) => option.value === uwcPresetDraft.idExceptionRule)
+        ?.label ?? uwcPresetDraft.idExceptionRule;
+    const recommendationPolicyLabel =
+      RECOMMENDATION_POLICY_OPTIONS.find(
+        (option) => option.value === uwcPresetDraft.recommendationCompleteness,
+      )?.label ?? uwcPresetDraft.recommendationCompleteness;
+
+    return [
+      `Identidad: ${formatFileKeys(uwcPresetDraft.idDocumentFileKeys) || "Sin selección"}.`,
+      `Nombre postulante: ${
+        (uwcPresetDraft.applicantNameFieldKey &&
+          (rubricFieldLabelByKey.get(uwcPresetDraft.applicantNameFieldKey) ??
+            uwcPresetDraft.applicantNameFieldKey)) ||
+        "Sin selección"
+      }.`,
+      `Nacimiento OCR (${uwcPresetDraft.ocrBirthYearPath || "sin path"}) en años permitidos: ${
+        uwcPresetDraft.allowedBirthYears.length > 0
+          ? uwcPresetDraft.allowedBirthYears.join(", ")
+          : "sin años configurados"
+      }.`,
+      `Notas: ${formatFileKeys(uwcPresetDraft.gradesDocumentFileKeys) || "Sin selección"} (${gradePolicyLabel}).`,
+      `Tercio superior o promedio >= ${uwcPresetDraft.minAverageGrade.toFixed(1).replace(/\.0$/, "")}.`,
+      `Recomendaciones: ${recommendationPolicyLabel}${
+        uwcPresetDraft.recommendationCompleteness === "minimum_answers"
+          ? ` (mínimo ${Math.max(0, Math.trunc(uwcPresetDraft.minRecommendationResponses))} respuesta(s))`
+          : ""
+      }.`,
+      `Excepciones de documento de identidad: ${idExceptionPolicyLabel}.`,
+      `Autorización: ${
+        (uwcPresetDraft.signedAuthorizationFileKey &&
+          (rubricFileLabelByKey.get(uwcPresetDraft.signedAuthorizationFileKey) ??
+            uwcPresetDraft.signedAuthorizationFileKey)) ||
+        "Sin selección"
+      }. Foto: ${
+        (uwcPresetDraft.applicantPhotoFileKey &&
+          (rubricFileLabelByKey.get(uwcPresetDraft.applicantPhotoFileKey) ??
+            uwcPresetDraft.applicantPhotoFileKey)) ||
+        "Sin selección"
+      }.`,
+      "Resultado: incumplimiento crítico -> not_eligible. Duda/falta de evidencia -> needs_review. Todo en orden -> eligible.",
+      "Ejecución: manual desde dashboard de candidatos.",
+    ];
+  }, [rubricFieldLabelByKey, rubricFileLabelByKey, uwcPresetDraft]);
 
   function compileRubricFromWizard(options?: { silent?: boolean }) {
     const blockingErrors = [
@@ -1874,6 +2131,42 @@ export function StageConfigEditor({
     });
   }
 
+  function updateWizardBirthYearsInput(rawValue: string) {
+    setWizardBirthYearsInput(rawValue);
+    setUwcPresetDraft((current) => ({
+      ...current,
+      allowedBirthYears: parseCommaSeparatedNumbers(rawValue),
+    }));
+  }
+
+  function adjustWizardMinimumAverage(delta: number) {
+    setUwcPresetDraft((current) => {
+      const nextValue = Math.min(20, Math.max(0, Number((current.minAverageGrade + delta).toFixed(1))));
+      return {
+        ...current,
+        minAverageGrade: nextValue,
+      };
+    });
+  }
+
+  function buildWizardOcrPathOptions(currentPath: string) {
+    if (!currentPath.trim()) {
+      return selectedIdDocumentOcrPathOptions;
+    }
+
+    if (selectedIdDocumentOcrPathOptions.some((option) => option.value === currentPath.trim())) {
+      return selectedIdDocumentOcrPathOptions;
+    }
+
+    return [
+      {
+        value: currentPath.trim(),
+        label: `${currentPath.trim()} (actual)`,
+      },
+      ...selectedIdDocumentOcrPathOptions,
+    ];
+  }
+
   function applyUwcPresetRubric() {
     compileRubricFromWizard();
   }
@@ -1950,6 +2243,17 @@ export function StageConfigEditor({
     rubricWizardValidation.step1Errors,
     rubricWizardValidation.step2Errors,
   ]);
+
+  useEffect(() => {
+    setWizardBirthYearsInput((currentInput) => {
+      const parsedFromInput = parseCommaSeparatedNumbers(currentInput);
+      const hasSameValues =
+        parsedFromInput.length === uwcPresetDraft.allowedBirthYears.length &&
+        parsedFromInput.every((value, index) => value === uwcPresetDraft.allowedBirthYears[index]);
+
+      return hasSameValues ? currentInput : uwcPresetDraft.allowedBirthYears.join(", ");
+    });
+  }, [uwcPresetDraft.allowedBirthYears]);
   const settingsDraftSnapshot = useMemo(
     () =>
       serializeSettingsDraft({
@@ -2956,27 +3260,95 @@ export function StageConfigEditor({
                                           />
                                         </div>
                                         <div className="form-field full">
-                                          <label htmlFor={`ai-parser-schema-${field.localId}`}>
-                                            Esquema JSON esperado{" "}
-                                            <FieldHint label="Formato del esquema">
-                                              Debe ser JSON válido y reflejar la estructura exacta esperada en la respuesta.
+                                          <label>
+                                            Campos esperados del documento{" "}
+                                            <FieldHint label="Definir campos esperados">
+                                              Define las salidas esperadas de OCR en lenguaje simple. Se convierten automáticamente a un esquema JSON.
                                             </FieldHint>
                                           </label>
-                                          <textarea
-                                            id={`ai-parser-schema-${field.localId}`}
-                                            rows={6}
-                                            value={aiParserConfig.expectedSchemaTemplate}
-                                            onChange={(event) =>
-                                              updateFieldAiParserConfig(field.localId, (currentConfig) => ({
-                                                ...currentConfig,
-                                                expectedSchemaTemplate: event.target.value,
-                                              }))
-                                            }
-                                            style={{ fontFamily: "monospace" }}
-                                          />
+                                          <div className="admin-ai-parser-schema-builder">
+                                            {(aiParserConfig.expectedOutputFields ?? []).map((outputField, fieldIndex) => (
+                                              <div
+                                                key={`ai-parser-output-${field.localId}-${fieldIndex}`}
+                                                className="admin-ai-parser-schema-row"
+                                              >
+                                                <input
+                                                  type="text"
+                                                  value={outputField.key}
+                                                  placeholder="fecha_de_nacimiento"
+                                                  onChange={(event) =>
+                                                    updateExpectedOutputField(field.localId, fieldIndex, {
+                                                      key: event.target.value,
+                                                    })
+                                                  }
+                                                  aria-label={`Clave OCR ${fieldIndex + 1}`}
+                                                />
+                                                <select
+                                                  value={outputField.type}
+                                                  onChange={(event) =>
+                                                    updateExpectedOutputField(field.localId, fieldIndex, {
+                                                      type: event.target.value as OcrExpectedOutputFieldType,
+                                                    })
+                                                  }
+                                                  aria-label={`Tipo OCR ${fieldIndex + 1}`}
+                                                >
+                                                  {OCR_EXPECTED_OUTPUT_TYPES.map((typeValue) => (
+                                                    <option key={`ocr-output-type-${typeValue}`} value={typeValue}>
+                                                      {OCR_OUTPUT_FIELD_TYPE_LABELS[typeValue]}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                                <button
+                                                  type="button"
+                                                  className="btn btn-outline"
+                                                  onClick={() => removeExpectedOutputField(field.localId, fieldIndex)}
+                                                  aria-label={`Eliminar campo OCR ${fieldIndex + 1}`}
+                                                >
+                                                  Eliminar
+                                                </button>
+                                                <div className="form-hint admin-ai-parser-schema-preview">
+                                                  {`${field.field_key}_${normalizeOcrOutputKey(outputField.key || "campo")}`}
+                                                </div>
+                                              </div>
+                                            ))}
+                                            <button
+                                              type="button"
+                                              className="btn btn-outline"
+                                              onClick={() => addExpectedOutputField(field.localId)}
+                                            >
+                                              + Añadir campo OCR
+                                            </button>
+                                          </div>
+                                          <div className="form-hint">
+                                            Cada campo se guarda como valor estructurado y también con prefijo{" "}
+                                            <code>{`${field.field_key}_...`}</code> en el resultado OCR.
+                                          </div>
                                         </div>
                                         <details className="admin-ai-parser-advanced">
                                           <summary>Opciones avanzadas</summary>
+                                          <div className="form-field full">
+                                            <label htmlFor={`ai-parser-schema-${field.localId}`}>
+                                              Esquema JSON esperado (avanzado)
+                                            </label>
+                                            <textarea
+                                              id={`ai-parser-schema-${field.localId}`}
+                                              rows={6}
+                                              value={aiParserConfig.expectedSchemaTemplate}
+                                              onChange={(event) =>
+                                                updateFieldAiParserConfig(field.localId, (currentConfig) => {
+                                                  const nextTemplate = event.target.value;
+                                                  return {
+                                                    ...currentConfig,
+                                                    expectedSchemaTemplate: nextTemplate,
+                                                    expectedOutputFields: parseExpectedOutputFieldsFromSchemaTemplate(
+                                                      nextTemplate,
+                                                    ),
+                                                  };
+                                                })
+                                              }
+                                              style={{ fontFamily: "monospace" }}
+                                            />
+                                          </div>
                                           <div className="form-field full">
                                             <label htmlFor={`ai-parser-system-${field.localId}`}>
                                               System prompt adicional
@@ -3277,15 +3649,12 @@ export function StageConfigEditor({
                       </button>
                       <button
                         type="button"
-                        className={`btn ${rubricAuthoringTab === "advanced" ? "btn-primary" : "btn-outline"}`}
-                        onClick={() => setRubricAuthoringTab("advanced")}
+                        className="btn btn-outline"
+                        disabled
+                        title="Próximamente"
                       >
-                        Advanced
+                        Advanced (próximamente)
                       </button>
-                    </div>
-                    <div className="form-hint rubric-authoring-note">
-                      El wizard usa lenguaje de negocio y compila la rúbrica automáticamente. Advanced queda
-                      disponible para casos fuera del preset.
                     </div>
 
                     {rubricAuthoringTab === "wizard" ? (
@@ -3492,10 +3861,11 @@ export function StageConfigEditor({
                                 </select>
                               </div>
                               <div className="form-field">
-                                <label htmlFor={`wizard-ocr-name-${stageCode}`}>OCR path: nombre</label>
-                                <input
+                                <label htmlFor={`wizard-ocr-name-${stageCode}`}>
+                                  OCR path: nombre <span className="rubric-required-badge">Requerido</span>
+                                </label>
+                                <select
                                   id={`wizard-ocr-name-${stageCode}`}
-                                  type="text"
                                   value={uwcPresetDraft.ocrNamePath}
                                   onChange={(event) =>
                                     setUwcPresetDraft((current) => ({
@@ -3503,13 +3873,21 @@ export function StageConfigEditor({
                                       ocrNamePath: event.target.value,
                                     }))
                                   }
-                                />
+                                >
+                                  <option value="">Selecciona un campo OCR</option>
+                                  {buildWizardOcrPathOptions(uwcPresetDraft.ocrNamePath).map((option) => (
+                                    <option key={`wizard-ocr-name-option-${option.value}`} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                               <div className="form-field">
-                                <label htmlFor={`wizard-ocr-birth-${stageCode}`}>OCR path: año nacimiento</label>
-                                <input
+                                <label htmlFor={`wizard-ocr-birth-${stageCode}`}>
+                                  OCR path: año nacimiento <span className="rubric-required-badge">Requerido</span>
+                                </label>
+                                <select
                                   id={`wizard-ocr-birth-${stageCode}`}
-                                  type="text"
                                   value={uwcPresetDraft.ocrBirthYearPath}
                                   onChange={(event) =>
                                     setUwcPresetDraft((current) => ({
@@ -3517,13 +3895,21 @@ export function StageConfigEditor({
                                       ocrBirthYearPath: event.target.value,
                                     }))
                                   }
-                                />
+                                >
+                                  <option value="">Selecciona un campo OCR</option>
+                                  {buildWizardOcrPathOptions(uwcPresetDraft.ocrBirthYearPath).map((option) => (
+                                    <option key={`wizard-ocr-birth-option-${option.value}`} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                               <div className="form-field">
-                                <label htmlFor={`wizard-ocr-type-${stageCode}`}>OCR path: tipo documento</label>
-                                <input
+                                <label htmlFor={`wizard-ocr-type-${stageCode}`}>
+                                  OCR path: tipo documento <span className="rubric-required-badge">Requerido</span>
+                                </label>
+                                <select
                                   id={`wizard-ocr-type-${stageCode}`}
-                                  type="text"
                                   value={uwcPresetDraft.ocrDocumentTypePath}
                                   onChange={(event) =>
                                     setUwcPresetDraft((current) => ({
@@ -3531,13 +3917,21 @@ export function StageConfigEditor({
                                       ocrDocumentTypePath: event.target.value,
                                     }))
                                   }
-                                />
+                                >
+                                  <option value="">Selecciona un campo OCR</option>
+                                  {buildWizardOcrPathOptions(uwcPresetDraft.ocrDocumentTypePath).map((option) => (
+                                    <option key={`wizard-ocr-type-option-${option.value}`} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                               <div className="form-field">
-                                <label htmlFor={`wizard-ocr-issue-${stageCode}`}>OCR path: excepción documento</label>
-                                <input
+                                <label htmlFor={`wizard-ocr-issue-${stageCode}`}>
+                                  OCR path: excepción documento <span className="rubric-required-badge">Requerido</span>
+                                </label>
+                                <select
                                   id={`wizard-ocr-issue-${stageCode}`}
-                                  type="text"
                                   value={uwcPresetDraft.ocrDocumentIssuePath}
                                   onChange={(event) =>
                                     setUwcPresetDraft((current) => ({
@@ -3545,8 +3939,30 @@ export function StageConfigEditor({
                                       ocrDocumentIssuePath: event.target.value,
                                     }))
                                   }
-                                />
+                                >
+                                  <option value="">Selecciona un campo OCR</option>
+                                  {buildWizardOcrPathOptions(uwcPresetDraft.ocrDocumentIssuePath).map((option) => (
+                                    <option key={`wizard-ocr-issue-option-${option.value}`} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
+                              {selectedIdDocumentOcrPathOptions.length === 0 ? (
+                                <div className="form-field full">
+                                  <div className="form-hint">
+                                    Activa Parsing con IA en al menos un documento de identidad y define campos esperados para poblar estas rutas OCR.
+                                  </div>
+                                </div>
+                              ) : null}
+                              {selectedIdDocumentOcrPathOptions.length > 0 ? (
+                                <div className="form-field full">
+                                  <div className="form-hint">
+                                    Campos OCR disponibles:{" "}
+                                    {selectedIdDocumentOcrPathOptions.map((option) => option.value).join(", ")}
+                                  </div>
+                                </div>
+                              ) : null}
                             </div>
                           </div>
                         ) : null}
@@ -3557,48 +3973,153 @@ export function StageConfigEditor({
                               <h3>Paso 2: Definir políticas</h3>
                               <p>Umbrales y manejo de excepciones para la etapa 1.</p>
                             </div>
-                            <div className="editor-grid">
-                              <div className="form-field">
+                            <div className="rubric-policy-grid">
+                              <div className="rubric-policy-card">
                                 <label htmlFor={`wizard-birth-years-${stageCode}`}>
                                   Años de nacimiento permitidos
                                 </label>
                                 <input
                                   id={`wizard-birth-years-${stageCode}`}
                                   type="text"
-                                  value={uwcPresetDraft.allowedBirthYears.join(", ")}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      allowedBirthYears: parseCommaSeparatedNumbers(event.target.value),
-                                    }))
-                                  }
+                                  value={wizardBirthYearsInput}
+                                  onChange={(event) => updateWizardBirthYearsInput(event.target.value)}
                                 />
-                                <div className="form-hint">Ejemplo: 2008, 2009, 2010</div>
+                                <div className="form-hint">Puedes separar con coma o espacio. Ejemplo: 2008, 2009, 2010</div>
                               </div>
-                              <div className="form-field">
+                              <div className="rubric-policy-card">
                                 <label htmlFor={`wizard-min-average-${stageCode}`}>Promedio mínimo (0-20)</label>
-                                <input
-                                  id={`wizard-min-average-${stageCode}`}
-                                  type="number"
-                                  min={0}
-                                  max={20}
-                                  step={0.1}
-                                  value={String(uwcPresetDraft.minAverageGrade)}
+                                <div className="rubric-number-stepper">
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={() => adjustWizardMinimumAverage(-0.1)}
+                                    aria-label="Disminuir promedio mínimo"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    id={`wizard-min-average-${stageCode}`}
+                                    type="number"
+                                    min={0}
+                                    max={20}
+                                    step={0.1}
+                                    value={String(uwcPresetDraft.minAverageGrade)}
+                                    onChange={(event) =>
+                                      setUwcPresetDraft((current) => ({
+                                        ...current,
+                                        minAverageGrade: Number(event.target.value) || 0,
+                                      }))
+                                    }
+                                  />
+                                  <button
+                                    type="button"
+                                    className="btn btn-outline"
+                                    onClick={() => adjustWizardMinimumAverage(0.1)}
+                                    aria-label="Aumentar promedio mínimo"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="rubric-policy-card">
+                                <label htmlFor={`wizard-recommendation-policy-${stageCode}`}>
+                                  Política de recomendaciones
+                                </label>
+                                <select
+                                  id={`wizard-recommendation-policy-${stageCode}`}
+                                  value={uwcPresetDraft.recommendationCompleteness}
                                   onChange={(event) =>
                                     setUwcPresetDraft((current) => ({
                                       ...current,
-                                      minAverageGrade: Number(event.target.value) || 0,
+                                      recommendationCompleteness:
+                                        event.target.value as UwcStageOnePresetDraft["recommendationCompleteness"],
+                                      minRecommendationResponses:
+                                        event.target.value === "minimum_answers"
+                                          ? Math.max(1, current.minRecommendationResponses)
+                                          : current.minRecommendationResponses,
                                     }))
                                   }
-                                />
-                              </div>
-                              <div className="form-field full">
-                                <label>Políticas predeterminadas (esta versión)</label>
+                                >
+                                  {RECOMMENDATION_POLICY_OPTIONS.map((option) => (
+                                    <option key={`recommendation-policy-${option.value}`} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
                                 <div className="form-hint">
-                                  Recomendaciones: <strong>estrict complete</strong>. Combinación de varios
-                                  certificados de notas: <strong>needs_review</strong>. Excepciones de documento
-                                  de identidad: <strong>needs_review</strong>.
+                                  {
+                                    RECOMMENDATION_POLICY_OPTIONS.find(
+                                      (option) => option.value === uwcPresetDraft.recommendationCompleteness,
+                                    )?.description
+                                  }
                                 </div>
+                                {uwcPresetDraft.recommendationCompleteness === "minimum_answers" ? (
+                                  <div className="form-field" style={{ marginTop: "8px" }}>
+                                    <label htmlFor={`wizard-recommendation-min-${stageCode}`}>
+                                      Respuestas mínimas por recomendación
+                                    </label>
+                                    <input
+                                      id={`wizard-recommendation-min-${stageCode}`}
+                                      type="number"
+                                      min={1}
+                                      max={20}
+                                      step={1}
+                                      value={String(uwcPresetDraft.minRecommendationResponses)}
+                                      onChange={(event) =>
+                                        setUwcPresetDraft((current) => ({
+                                          ...current,
+                                          minRecommendationResponses: Math.max(
+                                            0,
+                                            Math.trunc(Number(event.target.value) || 0),
+                                          ),
+                                        }))
+                                      }
+                                    />
+                                  </div>
+                                ) : null}
+                              </div>
+                              <div className="rubric-policy-card">
+                                <label htmlFor={`wizard-grades-policy-${stageCode}`}>
+                                  Múltiples certificados de notas
+                                </label>
+                                <select
+                                  id={`wizard-grades-policy-${stageCode}`}
+                                  value={uwcPresetDraft.gradesCombinationRule}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      gradesCombinationRule: event.target.value as UwcStageOnePresetDraft["gradesCombinationRule"],
+                                      limitGradesDocumentToSingleUpload: event.target.value !== "allow_multiple",
+                                    }))
+                                  }
+                                >
+                                  {GRADES_COMBINATION_POLICY_OPTIONS.map((option) => (
+                                    <option key={`grades-policy-${option.value}`} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="rubric-policy-card">
+                                <label htmlFor={`wizard-id-exception-policy-${stageCode}`}>
+                                  Excepciones de documento de identidad
+                                </label>
+                                <select
+                                  id={`wizard-id-exception-policy-${stageCode}`}
+                                  value={uwcPresetDraft.idExceptionRule}
+                                  onChange={(event) =>
+                                    setUwcPresetDraft((current) => ({
+                                      ...current,
+                                      idExceptionRule: event.target.value as UwcStageOnePresetDraft["idExceptionRule"],
+                                    }))
+                                  }
+                                >
+                                  {ID_EXCEPTION_POLICY_OPTIONS.map((option) => (
+                                    <option key={`id-exception-policy-${option.value}`} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
                               </div>
                             </div>
                           </div>
@@ -3611,14 +4132,11 @@ export function StageConfigEditor({
                               <p>Resumen antes de compilar la rúbrica runtime.</p>
                             </div>
                             <div className="rubric-summary-list">
-                              <div className="form-hint">1) Identidad, nombre, nacimiento y documentos.</div>
-                              <div className="form-hint">2) Tercio superior o promedio mínimo configurado.</div>
-                              <div className="form-hint">3) Recomendaciones completas estrictas + autorización + foto.</div>
-                              <div className="form-hint">
-                                Resultado: falla crítica <strong>not_eligible</strong>, duda o falta de evidencia{" "}
-                                <strong>needs_review</strong>, todo correcto <strong>eligible</strong>.
-                              </div>
-                              <div className="form-hint">Ejecución: manual desde dashboard de candidatos.</div>
+                              {wizardSummaryItems.map((item, index) => (
+                                <div key={`wizard-summary-${index}`} className="form-hint">
+                                  {`${index + 1}) ${item}`}
+                                </div>
+                              ))}
                             </div>
                           </div>
                         ) : null}
@@ -3968,6 +4486,9 @@ export function StageConfigEditor({
                                 setUwcPresetDraft((current) => ({
                                   ...current,
                                   limitGradesDocumentToSingleUpload: event.target.checked,
+                                  gradesCombinationRule: event.target.checked
+                                    ? "single_or_review"
+                                    : "allow_multiple",
                                 }))
                               }
                             />

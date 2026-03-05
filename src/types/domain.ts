@@ -152,6 +152,10 @@ export interface StageFieldAiParserConfig {
   systemPrompt?: string | null;
   extractionInstructions: string;
   expectedSchemaTemplate: string;
+  expectedOutputFields?: Array<{
+    key: string;
+    type: "text" | "number" | "decimal" | "date" | "boolean";
+  }>;
   strictSchema: boolean;
 }
 
@@ -248,9 +252,10 @@ export interface RubricBlueprintV1 {
   policy: {
     allowedBirthYears: number[];
     minAverageGrade: number;
-    recommendationCompleteness: "strict_form_valid";
-    gradesCombinationRule: "single_or_review";
-    idExceptionRule: "review";
+    recommendationCompleteness: "strict_form_valid" | "minimum_answers";
+    recommendationMinAnswers: number;
+    gradesCombinationRule: "single_or_review" | "single_or_not_eligible" | "allow_multiple";
+    idExceptionRule: "review" | "not_eligible";
   };
 }
 

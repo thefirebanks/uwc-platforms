@@ -525,6 +525,7 @@ describe("evaluateApplicationWithRubric", () => {
         allowedBirthYears: [2008, 2009, 2010],
         minAverageGrade: 14,
         recommendationCompleteness: "strict_form_valid",
+        recommendationMinAnswers: 0,
         gradesCombinationRule: "single_or_review",
         idExceptionRule: "review",
       },

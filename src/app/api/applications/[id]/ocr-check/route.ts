@@ -5,6 +5,12 @@ import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import { runOcrCheck } from "@/lib/server/ocr";
+import {
+  buildSchemaTemplateFromExpectedOutputFields,
+  buildStructuredOcrExtraction,
+  normalizeExpectedOutputFields,
+  parseExpectedOutputFieldsFromSchemaTemplate,
+} from "@/lib/ocr/expected-output-schema";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import type { Database, Json } from "@/types/supabase";
 
@@ -24,6 +30,15 @@ const fieldAiParserSchema = z
     systemPrompt: z.string().trim().max(2000).nullable().optional(),
     extractionInstructions: z.string().trim().max(6000).nullable().optional(),
     expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
+    expectedOutputFields: z
+      .array(
+        z.object({
+          key: z.string().trim().min(1).max(120),
+          type: z.enum(["text", "number", "decimal", "date", "boolean"]),
+        }),
+      )
+      .max(40)
+      .optional(),
     strictSchema: z.boolean().optional().default(true),
   })
   .strict();
@@ -32,6 +47,7 @@ type FieldAiParserConfig = z.infer<typeof fieldAiParserSchema>;
 type ResolvedFieldAiParserConfig = FieldAiParserConfig & {
   extractionInstructions: string;
   expectedSchemaTemplate: string;
+  expectedOutputFields: Array<{ key: string; type: "text" | "number" | "decimal" | "date" | "boolean" }>;
 };
 
 function resolveFilePath(value: unknown) {
@@ -79,9 +95,19 @@ function parseFieldAiParserConfigOrNull(value: unknown): ResolvedFieldAiParserCo
   }
 
   const extractionInstructions = parsed.data.extractionInstructions?.trim();
-  const expectedSchemaTemplate = parsed.data.expectedSchemaTemplate?.trim();
+  const expectedSchemaTemplate = parsed.data.expectedSchemaTemplate?.trim() ?? "";
+  const expectedOutputFields = normalizeExpectedOutputFields(parsed.data.expectedOutputFields ?? []);
+  const resolvedExpectedOutputFields =
+    expectedOutputFields.length > 0
+      ? expectedOutputFields
+      : parseExpectedOutputFieldsFromSchemaTemplate(expectedSchemaTemplate);
+  const resolvedExpectedSchemaTemplate =
+    expectedSchemaTemplate ||
+    (resolvedExpectedOutputFields.length > 0
+      ? buildSchemaTemplateFromExpectedOutputFields(resolvedExpectedOutputFields)
+      : "");
 
-  if (!extractionInstructions || !expectedSchemaTemplate) {
+  if (!extractionInstructions || !resolvedExpectedSchemaTemplate) {
     throw new AppError({
       message: "Incomplete ai_parser_config in stage field",
       userMessage: "La configuración de parsing IA del campo está incompleta.",
@@ -92,7 +118,8 @@ function parseFieldAiParserConfigOrNull(value: unknown): ResolvedFieldAiParserCo
   return {
     ...parsed.data,
     extractionInstructions,
-    expectedSchemaTemplate,
+    expectedSchemaTemplate: resolvedExpectedSchemaTemplate,
+    expectedOutputFields: resolvedExpectedOutputFields,
   };
 }
 
@@ -287,6 +314,19 @@ export async function POST(
       failOnInjectionSignals: true,
     });
 
+    const parsedPayload =
+      result.rawResponse &&
+      typeof result.rawResponse === "object" &&
+      result.rawResponse.parsed &&
+      typeof result.rawResponse.parsed === "object"
+        ? (result.rawResponse.parsed as Record<string, unknown>)
+        : null;
+    const structuredExtraction = buildStructuredOcrExtraction({
+      formFieldKey: parsed.data.fileKey,
+      parsedPayload,
+      expectedOutputFields: parserConfig.expectedOutputFields,
+    });
+
     const { data: insertedData, error: insertError } = await supabase
       .from("application_ocr_checks")
       .insert({
@@ -295,7 +335,12 @@ export async function POST(
         file_key: parsed.data.fileKey,
         summary: result.summary,
         confidence: result.confidence,
-        raw_response: result.rawResponse as Json,
+        raw_response: {
+          ...(result.rawResponse as Record<string, unknown>),
+          trigger: "manual_admin",
+          expectedOutputFields: parserConfig.expectedOutputFields,
+          structuredExtraction,
+        } as Json,
       })
       .select("*")
       .single();

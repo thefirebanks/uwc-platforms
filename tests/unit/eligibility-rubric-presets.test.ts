@@ -62,8 +62,11 @@ describe("default rubric presets", () => {
       ocrDocumentIssuePath: "documentIssue",
       allowedBirthYears: [2008, 2009, 2010],
       minAverageGrade: 14,
+      recommendationCompleteness: "strict_form_valid",
       recommendationRoles: ["mentor", "friend"],
       minRecommendationResponses: 2,
+      gradesCombinationRule: "single_or_review",
+      idExceptionRule: "review",
       limitGradesDocumentToSingleUpload: true,
     });
 
@@ -91,8 +94,11 @@ describe("default rubric presets", () => {
       ocrDocumentIssuePath: "",
       allowedBirthYears: [],
       minAverageGrade: 14,
+      recommendationCompleteness: "strict_form_valid",
       recommendationRoles: ["mentor", "friend"],
       minRecommendationResponses: 0,
+      gradesCombinationRule: "single_or_review",
+      idExceptionRule: "review",
       limitGradesDocumentToSingleUpload: true,
     });
 
@@ -124,6 +130,7 @@ describe("default rubric presets", () => {
         allowedBirthYears: [2008, 2009, 2010],
         minAverageGrade: 14,
         recommendationCompleteness: "strict_form_valid",
+        recommendationMinAnswers: 0,
         gradesCombinationRule: "single_or_review",
         idExceptionRule: "review",
       },
@@ -168,8 +175,11 @@ describe("default rubric presets", () => {
       ocrDocumentIssuePath: "documentIssue",
       allowedBirthYears: [2008, 2009, 2010],
       minAverageGrade: 14,
+      recommendationCompleteness: "strict_form_valid",
       recommendationRoles: ["mentor", "friend"],
       minRecommendationResponses: 0,
+      gradesCombinationRule: "single_or_review",
+      idExceptionRule: "review",
       limitGradesDocumentToSingleUpload: true,
     });
 
@@ -177,5 +187,59 @@ describe("default rubric presets", () => {
     expect(hydrated).not.toBeNull();
     expect(hydrated?.policy.recommendationCompleteness).toBe("strict_form_valid");
     expect(hydrated?.execution.mode).toBe("manual");
+  });
+
+  it("applies configurable policy outcomes for ID exceptions and grades combinations", () => {
+    const blueprint = parseRubricBlueprintV1({
+      version: 1,
+      presetId: "uwc_stage1",
+      execution: { mode: "manual" },
+      mappings: {
+        idDocumentFileKeys: ["dniFile", "passportFile"],
+        gradesDocumentFileKeys: ["gradesA", "gradesB"],
+        topThirdProofFileKey: null,
+        applicantNameFieldKey: "fullName",
+        averageGradeFieldKey: "gradeAverage",
+        signedAuthorizationFileKey: "signedAuthorization",
+        applicantPhotoFileKey: "applicantPhoto",
+        ocrPaths: {
+          idName: "fullName",
+          birthYear: "birthYear",
+          documentType: "documentType",
+          documentIssue: "documentIssue",
+        },
+      },
+      policy: {
+        allowedBirthYears: [2008, 2009, 2010],
+        minAverageGrade: 14,
+        recommendationCompleteness: "minimum_answers",
+        recommendationMinAnswers: 3,
+        gradesCombinationRule: "single_or_not_eligible",
+        idExceptionRule: "not_eligible",
+      },
+    });
+
+    expect(blueprint).not.toBeNull();
+    if (!blueprint) {
+      return;
+    }
+
+    const rubric = buildUwcStageOneRubricFromBlueprint(blueprint);
+    const idExceptionCriterion = rubric.criteria.find(
+      (criterion) => criterion.id === "id_document_issue_exceptions",
+    );
+    const gradesCombinationCriterion = rubric.criteria.find(
+      (criterion) => criterion.id === "grades_document_combination_review",
+    );
+    const recommendationsCriterion = rubric.criteria.find(
+      (criterion) => criterion.id === "recommendations_completed",
+    );
+
+    expect(idExceptionCriterion?.onFail).toBe("not_eligible");
+    expect(gradesCombinationCriterion?.onFail).toBe("not_eligible");
+    if (recommendationsCriterion?.kind === "recommendations_complete") {
+      expect(recommendationsCriterion.completenessMode).toBe("minimum_answers");
+      expect(recommendationsCriterion.minFilledResponses).toBe(3);
+    }
   });
 });

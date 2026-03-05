@@ -14,6 +14,11 @@ import {
   parseRubricBlueprintV1,
   rubricBlueprintV1Schema,
 } from "@/lib/rubric/default-rubric-presets";
+import {
+  buildSchemaTemplateFromExpectedOutputFields,
+  normalizeExpectedOutputFields,
+  parseExpectedOutputFieldsFromSchemaTemplate,
+} from "@/lib/ocr/expected-output-schema";
 import type { Database, Json } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
@@ -28,6 +33,15 @@ const aiParserSchema = z
     systemPrompt: z.string().trim().max(2000).nullable().optional(),
     extractionInstructions: z.string().trim().max(6000).nullable().optional(),
     expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
+    expectedOutputFields: z
+      .array(
+        z.object({
+          key: z.string().trim().min(1).max(120),
+          type: z.enum(["text", "number", "decimal", "date", "boolean"]),
+        }),
+      )
+      .max(40)
+      .optional(),
     strictSchema: z.boolean().optional().default(true),
   })
   .strict();
@@ -211,6 +225,16 @@ function normalizeAiParserConfig({
 
   const extractionInstructions = aiParser.extractionInstructions?.trim() ?? "";
   const expectedSchemaTemplate = aiParser.expectedSchemaTemplate?.trim() ?? "";
+  const expectedOutputFields = normalizeExpectedOutputFields(aiParser.expectedOutputFields ?? []);
+  const inferredFieldsFromSchema =
+    expectedOutputFields.length > 0
+      ? expectedOutputFields
+      : parseExpectedOutputFieldsFromSchemaTemplate(expectedSchemaTemplate);
+  const resolvedSchemaTemplate =
+    expectedSchemaTemplate ||
+    (inferredFieldsFromSchema.length > 0
+      ? buildSchemaTemplateFromExpectedOutputFields(inferredFieldsFromSchema)
+      : "");
 
   if (!extractionInstructions) {
     throw new AppError({
@@ -220,7 +244,7 @@ function normalizeAiParserConfig({
     });
   }
 
-  if (!expectedSchemaTemplate) {
+  if (!resolvedSchemaTemplate) {
     throw new AppError({
       message: "Missing expected schema template in AI parser config",
       userMessage: `Debes definir un esquema JSON esperado para "${fieldLabel}" antes de guardar.`,
@@ -229,7 +253,7 @@ function normalizeAiParserConfig({
   }
 
   try {
-    JSON.parse(expectedSchemaTemplate);
+    JSON.parse(resolvedSchemaTemplate);
   } catch (error) {
     throw new AppError({
       message: "Invalid expected schema template in AI parser config",
@@ -245,7 +269,11 @@ function normalizeAiParserConfig({
     promptTemplate: aiParser.promptTemplate?.trim() || null,
     systemPrompt: aiParser.systemPrompt?.trim() || null,
     extractionInstructions,
-    expectedSchemaTemplate,
+    expectedSchemaTemplate: resolvedSchemaTemplate,
+    expectedOutputFields:
+      inferredFieldsFromSchema.length > 0
+        ? inferredFieldsFromSchema
+        : parseExpectedOutputFieldsFromSchemaTemplate(resolvedSchemaTemplate),
     strictSchema: aiParser.strictSchema ?? true,
   } satisfies Record<string, Json>;
 }

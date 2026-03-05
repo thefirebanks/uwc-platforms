@@ -23,8 +23,11 @@ export type UwcStageOnePresetDraft = {
   ocrDocumentIssuePath: string;
   allowedBirthYears: number[];
   minAverageGrade: number;
+  recommendationCompleteness: "strict_form_valid" | "minimum_answers";
   recommendationRoles: RecommenderRole[];
   minRecommendationResponses: number;
+  gradesCombinationRule: "single_or_review" | "single_or_not_eligible" | "allow_multiple";
+  idExceptionRule: "review" | "not_eligible";
   limitGradesDocumentToSingleUpload: boolean;
 };
 
@@ -54,9 +57,12 @@ export const rubricBlueprintV1Schema = z.object({
   policy: z.object({
     allowedBirthYears: z.array(z.number().int().min(1900).max(2100)).min(1).max(10),
     minAverageGrade: z.number().min(0).max(20),
-    recommendationCompleteness: z.literal("strict_form_valid"),
-    gradesCombinationRule: z.literal("single_or_review"),
-    idExceptionRule: z.literal("review"),
+    recommendationCompleteness: z.enum(["strict_form_valid", "minimum_answers"]).default("strict_form_valid"),
+    recommendationMinAnswers: z.number().int().min(0).max(20).default(0),
+    gradesCombinationRule: z
+      .enum(["single_or_review", "single_or_not_eligible", "allow_multiple"])
+      .default("single_or_review"),
+    idExceptionRule: z.enum(["review", "not_eligible"]).default("review"),
   }),
 });
 
@@ -175,8 +181,11 @@ export function guessUwcStageOnePresetDraft(
     ocrDocumentIssuePath: "documentIssue",
     allowedBirthYears: [2008, 2009, 2010],
     minAverageGrade: 14,
+    recommendationCompleteness: "strict_form_valid",
     recommendationRoles: ["mentor", "friend"],
     minRecommendationResponses: 0,
+    gradesCombinationRule: "single_or_review",
+    idExceptionRule: "review",
     limitGradesDocumentToSingleUpload: true,
   };
 }
@@ -204,9 +213,13 @@ export function validateUwcBlueprintDraft(draft: UwcStageOnePresetDraft) {
     policy: {
       allowedBirthYears: Array.from(new Set(draft.allowedBirthYears)).sort((a, b) => a - b),
       minAverageGrade: draft.minAverageGrade,
-      recommendationCompleteness: "strict_form_valid",
-      gradesCombinationRule: "single_or_review",
-      idExceptionRule: "review",
+      recommendationCompleteness: draft.recommendationCompleteness,
+      recommendationMinAnswers:
+        draft.recommendationCompleteness === "minimum_answers"
+          ? Math.max(0, Math.trunc(draft.minRecommendationResponses))
+          : 0,
+      gradesCombinationRule: draft.gradesCombinationRule,
+      idExceptionRule: draft.idExceptionRule,
     },
   } satisfies RubricBlueprintV1;
 
@@ -244,6 +257,12 @@ export function buildUwcStageOneRubricFromBlueprint(
   const allowedYears = uniqueStrings(
     blueprint.policy.allowedBirthYears.map((year) => String(year)),
   );
+  const recommendationMinAnswers =
+    blueprint.policy.recommendationCompleteness === "minimum_answers"
+      ? Math.max(0, Math.trunc(blueprint.policy.recommendationMinAnswers ?? 0))
+      : 0;
+  const idExceptionOnFail =
+    blueprint.policy.idExceptionRule === "not_eligible" ? "not_eligible" : "needs_review";
   const idDocOcrInConditions = ({
     jsonPath,
     allowedValues,
@@ -325,7 +344,7 @@ export function buildUwcStageOneRubricFromBlueprint(
           "birth_certificate_instead_of_dni",
         ],
       }),
-      onFail: "needs_review",
+      onFail: idExceptionOnFail,
       onMissingData: "needs_review",
     },
     {
@@ -389,7 +408,7 @@ export function buildUwcStageOneRubricFromBlueprint(
       kind: "recommendations_complete",
       roles: ["mentor", "friend"],
       requireRequested: true,
-      minFilledResponses: 0,
+      minFilledResponses: recommendationMinAnswers,
       completenessMode: blueprint.policy.recommendationCompleteness,
       onFail: "not_eligible",
       onMissingData: "needs_review",
@@ -412,7 +431,7 @@ export function buildUwcStageOneRubricFromBlueprint(
     },
   ];
 
-  if (blueprint.policy.gradesCombinationRule === "single_or_review" && gradesDocKeys.length > 1) {
+  if (blueprint.policy.gradesCombinationRule !== "allow_multiple" && gradesDocKeys.length > 1) {
     criteria.splice(6, 0, {
       id: "grades_document_combination_review",
       label: "Combinación de documentos de notas requiere revisión",
@@ -420,7 +439,10 @@ export function buildUwcStageOneRubricFromBlueprint(
       fileKeys: gradesDocKeys,
       minCount: 1,
       maxCount: 1,
-      onFail: "needs_review",
+      onFail:
+        blueprint.policy.gradesCombinationRule === "single_or_not_eligible"
+          ? "not_eligible"
+          : "needs_review",
       onMissingData: "not_eligible",
     });
   }
@@ -546,6 +568,7 @@ export function tryHydrateBlueprintFromRubric(
   const authorization = byId.get("signed_authorization_uploaded");
   const photo = byId.get("applicant_photo_uploaded");
   const recommendations = byId.get("recommendations_completed");
+  const gradesCombination = byId.get("grades_document_combination_review");
 
   if (
     !idUpload ||
@@ -679,9 +702,21 @@ export function tryHydrateBlueprintFromRubric(
       allowedBirthYears: parsedBirthYears,
       minAverageGrade:
         typeof minAverageGrade === "number" ? minAverageGrade : 14,
-      recommendationCompleteness: "strict_form_valid",
-      gradesCombinationRule: "single_or_review",
-      idExceptionRule: "review",
+      recommendationCompleteness:
+        recommendations.completenessMode === "minimum_answers"
+          ? "minimum_answers"
+          : "strict_form_valid",
+      recommendationMinAnswers:
+        recommendations.completenessMode === "minimum_answers"
+          ? Math.max(0, Math.trunc(recommendations.minFilledResponses ?? 0))
+          : 0,
+      gradesCombinationRule:
+        gradesCombination?.kind === "file_upload_count_between"
+          ? gradesCombination.onFail === "not_eligible"
+            ? "single_or_not_eligible"
+            : "single_or_review"
+          : "allow_multiple",
+      idExceptionRule: docIssue.onFail === "not_eligible" ? "not_eligible" : "review",
     },
   };
 

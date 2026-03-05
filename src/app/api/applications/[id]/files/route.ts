@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { Buffer } from "node:buffer";
 import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
@@ -8,6 +9,13 @@ import {
   listApplicationFilesForAdmin,
   updateApplicationFileMetadata,
 } from "@/lib/server/admin-edit-service";
+import { runOcrCheck } from "@/lib/server/ocr";
+import {
+  buildSchemaTemplateFromExpectedOutputFields,
+  buildStructuredOcrExtraction,
+  normalizeExpectedOutputFields,
+  parseExpectedOutputFieldsFromSchemaTemplate,
+} from "@/lib/ocr/expected-output-schema";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/supabase";
@@ -30,12 +38,83 @@ const adminSchema = z.object({
   reason: z.string().min(4).max(300),
 });
 
+const fieldAiParserSchema = z
+  .object({
+    enabled: z.boolean().optional().default(false),
+    modelId: z.string().trim().min(1).max(120).nullable().optional(),
+    promptTemplate: z.string().trim().max(5000).nullable().optional(),
+    systemPrompt: z.string().trim().max(2000).nullable().optional(),
+    extractionInstructions: z.string().trim().max(6000).nullable().optional(),
+    expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
+    expectedOutputFields: z
+      .array(
+        z.object({
+          key: z.string().trim().min(1).max(120),
+          type: z.enum(["text", "number", "decimal", "date", "boolean"]),
+        }),
+      )
+      .max(40)
+      .optional(),
+    strictSchema: z.boolean().optional().default(true),
+  })
+  .strict();
+
+type ResolvedFieldAiParserConfig = z.infer<typeof fieldAiParserSchema> & {
+  extractionInstructions: string;
+  expectedSchemaTemplate: string;
+  expectedOutputFields: Array<{ key: string; type: "text" | "number" | "decimal" | "date" | "boolean" }>;
+};
+
 function isAiParserEnabled(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
 
   return (value as { enabled?: unknown }).enabled === true;
+}
+
+function parseFieldAiParserConfigOrNull(value: unknown): ResolvedFieldAiParserConfig | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const parsed = fieldAiParserSchema.safeParse(value);
+  if (!parsed.success || !parsed.data.enabled) {
+    return null;
+  }
+
+  const extractionInstructions = parsed.data.extractionInstructions?.trim() ?? "";
+  const expectedSchemaTemplate = parsed.data.expectedSchemaTemplate?.trim() ?? "";
+  const expectedOutputFields = normalizeExpectedOutputFields(parsed.data.expectedOutputFields ?? []);
+  const resolvedExpectedOutputFields =
+    expectedOutputFields.length > 0
+      ? expectedOutputFields
+      : parseExpectedOutputFieldsFromSchemaTemplate(expectedSchemaTemplate);
+  const resolvedExpectedSchemaTemplate =
+    expectedSchemaTemplate ||
+    (resolvedExpectedOutputFields.length > 0
+      ? buildSchemaTemplateFromExpectedOutputFields(resolvedExpectedOutputFields)
+      : "");
+
+  if (!extractionInstructions || !resolvedExpectedSchemaTemplate) {
+    return null;
+  }
+
+  return {
+    ...parsed.data,
+    extractionInstructions,
+    expectedSchemaTemplate: resolvedExpectedSchemaTemplate,
+    expectedOutputFields: resolvedExpectedOutputFields,
+  };
+}
+
+function inferMimeTypeFromPath(path: string) {
+  const normalized = path.toLowerCase();
+  if (normalized.endsWith(".pdf")) return "application/pdf";
+  if (normalized.endsWith(".png")) return "image/png";
+  if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) return "image/jpeg";
+  if (normalized.endsWith(".webp")) return "image/webp";
+  return "application/octet-stream";
 }
 
 async function buildSignedDownloadUrl(path: string) {
@@ -135,7 +214,7 @@ export async function POST(
 
     const { data: app } = await supabase
       .from("applications")
-      .select("id, applicant_id, cycle_id, files")
+      .select("id, applicant_id, cycle_id, stage_code, files")
       .eq("id", id)
       .maybeSingle();
 
@@ -188,7 +267,89 @@ export async function POST(
       });
     }
 
-    return NextResponse.json({ application: data });
+    let autoOcrTriggered = false;
+
+    try {
+      const { data: fieldData, error: fieldError } = await supabase
+        .from("cycle_stage_fields")
+        .select("field_type, ai_parser_config")
+        .eq("cycle_id", app.cycle_id)
+        .eq("stage_code", app.stage_code)
+        .eq("field_key", parsed.data.key)
+        .maybeSingle();
+
+      if (!fieldError && fieldData?.field_type === "file") {
+        const parserConfig = parseFieldAiParserConfigOrNull(
+          (fieldData as { ai_parser_config: unknown }).ai_parser_config,
+        );
+
+        if (parserConfig) {
+          const { data: fileBlob, error: downloadError } = await supabase.storage
+            .from("application-documents")
+            .download(parsed.data.path);
+
+          if (!downloadError && fileBlob) {
+            const fileBuffer = Buffer.from(await fileBlob.arrayBuffer());
+            const { data: templateData } = await supabase
+              .from("cycle_stage_templates")
+              .select("ocr_prompt_template")
+              .eq("cycle_id", app.cycle_id)
+              .eq("stage_code", app.stage_code)
+              .maybeSingle();
+
+            const result = await runOcrCheck({
+              document: {
+                fileName: parsed.data.key,
+                mimeType: fileBlob.type || inferMimeTypeFromPath(parsed.data.path),
+                dataBase64: fileBuffer.toString("base64"),
+              },
+              modelId: parserConfig.modelId ?? null,
+              promptTemplate:
+                parserConfig.promptTemplate ??
+                (templateData as { ocr_prompt_template: string | null } | null)?.ocr_prompt_template ??
+                null,
+              systemPrompt: parserConfig.systemPrompt ?? null,
+              extractionInstructions: parserConfig.extractionInstructions,
+              expectedSchemaTemplate: parserConfig.expectedSchemaTemplate,
+              strictSchema: parserConfig.strictSchema ?? true,
+              failOnInjectionSignals: false,
+            });
+
+            const parsedPayload =
+              result.rawResponse &&
+              typeof result.rawResponse === "object" &&
+              result.rawResponse.parsed &&
+              typeof result.rawResponse.parsed === "object"
+                ? (result.rawResponse.parsed as Record<string, unknown>)
+                : null;
+            const structuredExtraction = buildStructuredOcrExtraction({
+              formFieldKey: parsed.data.key,
+              parsedPayload,
+              expectedOutputFields: parserConfig.expectedOutputFields,
+            });
+
+            await supabase.from("application_ocr_checks").insert({
+              application_id: id,
+              actor_id: profile.id,
+              file_key: parsed.data.key,
+              summary: result.summary,
+              confidence: result.confidence,
+              raw_response: {
+                ...(result.rawResponse as Record<string, unknown>),
+                trigger: "upload_auto",
+                expectedOutputFields: parserConfig.expectedOutputFields,
+                structuredExtraction,
+              } as Json,
+            });
+            autoOcrTriggered = true;
+          }
+        }
+      }
+    } catch {
+      // Upload should succeed even if OCR auto-processing fails.
+    }
+
+    return NextResponse.json({ application: data, autoOcrTriggered });
   }, { operation: "applications.files.save" });
 }
 

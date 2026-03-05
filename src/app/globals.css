@@ -2494,6 +2494,29 @@ input:checked + .slider:before { transform: translateX(18px); }
   background: color-mix(in oklab, var(--surface) 85%, var(--paper) 15%);
 }
 
+.admin-ai-parser-schema-builder {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--sand-light);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.admin-ai-parser-schema-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-ai-parser-schema-preview {
+  grid-column: 1 / -1;
+  margin-top: -2px;
+  font-size: 0.74rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
 .admin-ai-parser-advanced {
   border: 1px dashed var(--sand);
   border-radius: var(--radius);
@@ -2618,6 +2641,38 @@ input:checked + .slider:before { transform: translateX(18px); }
 .rubric-wizard-card {
   border: 1px solid var(--maroon-soft);
   animation: rubricCardIn 180ms ease-out;
+}
+
+.rubric-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.rubric-policy-card {
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, var(--paper));
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.rubric-number-stepper {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.rubric-number-stepper .btn {
+  min-width: 36px;
+  padding-inline: 0;
+  justify-content: center;
+}
+
+.rubric-number-stepper input[type="number"] {
+  text-align: center;
 }
 
 .rubric-required-badge {
@@ -2976,6 +3031,16 @@ input:checked + .slider:before { transform: translateX(18px); }
 @media (min-width: 980px) {
   .ocr-testbed__result-grid--comparison {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 840px) {
+  .admin-ai-parser-schema-row {
+    grid-template-columns: 1fr;
+  }
+
+  .rubric-number-stepper {
+    grid-template-columns: 1fr;
   }
 }
 
