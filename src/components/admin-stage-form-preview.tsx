@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { groupFieldsBySections } from "@/lib/stages/applicant-sections";
+import { getSubGroupsForSection } from "@/lib/stages/field-sub-groups";
 import type { CycleStageField, StageCode, StageSection } from "@/types/domain";
 
 function getDisplayStageLabel(stageCode: StageCode, stageLabel: string) {
@@ -117,6 +118,33 @@ export function AdminStageFormPreview({
             <section key={section.id} className="settings-card">
               <div className="settings-card-header">
                 <h3>{`Secci\u00f3n ${index + 1}: ${section.title}`}</h3>
+                {(() => {
+                  const sectionEmojis = Array.from(
+                    new Set(
+                      getSubGroupsForSection(section.sectionKey)
+                        .map((group) => group.icon)
+                        .filter((icon): icon is string => typeof icon === "string" && icon.trim().length > 0),
+                    ),
+                  );
+
+                  if (sectionEmojis.length === 0) {
+                    return null;
+                  }
+
+                  return (
+                    <div className="admin-stage-preview-section-emojis" aria-label="Iconos visibles en la vista de postulante">
+                      {sectionEmojis.map((emoji) => (
+                        <span
+                          key={`${section.id}-${emoji}`}
+                          className="admin-stage-preview-section-emoji"
+                          aria-hidden="true"
+                        >
+                          {emoji}
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
                 <p>{section.description}</p>
               </div>
               <div className="editor-grid">

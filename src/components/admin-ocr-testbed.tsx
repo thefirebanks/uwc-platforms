@@ -212,8 +212,53 @@ export function AdminOcrTestbed({
     }
   }, [expectedSchemaTemplate]);
 
+  const runValidationErrors = useMemo(() => {
+    const errors: string[] = [];
+
+    if (!file) {
+      errors.push("Adjunta un archivo antes de ejecutar la prueba.");
+    }
+    if (!modelId.trim()) {
+      errors.push("Selecciona un modelo antes de ejecutar la prueba.");
+    }
+    if (!stageName.trim()) {
+      errors.push("Completa el contexto/etapa antes de ejecutar la prueba.");
+    }
+    if (!prompt.trim()) {
+      errors.push("Completa las instrucciones base antes de ejecutar la prueba.");
+    }
+    if (!extractionInstructions.trim()) {
+      errors.push("Completa las instrucciones de extracción antes de ejecutar la prueba.");
+    }
+    if (!expectedSchemaTemplate.trim()) {
+      errors.push("Define un esquema JSON esperado antes de ejecutar la prueba.");
+    } else if (schemaTemplateError) {
+      errors.push("Corrige el esquema JSON esperado antes de ejecutar la prueba.");
+    }
+
+    return errors;
+  }, [
+    expectedSchemaTemplate,
+    extractionInstructions,
+    file,
+    modelId,
+    prompt,
+    schemaTemplateError,
+    stageName,
+  ]);
+
   async function handleRun() {
-    if (!file) return;
+    if (runValidationErrors.length > 0) {
+      setRunError({ message: runValidationErrors[0] });
+      return;
+    }
+
+    const selectedFile = file;
+    if (!selectedFile) {
+      setRunError({ message: "Adjunta un archivo antes de ejecutar la prueba." });
+      return;
+    }
+
     setIsRunning(true);
     setRunError(null);
     setResult(null);
@@ -221,7 +266,7 @@ export function AdminOcrTestbed({
 
     try {
       const formData = new FormData();
-      formData.append("file", file);
+      formData.append("file", selectedFile);
       formData.append("stageCode", stageName);
       formData.append("modelId", modelId);
       formData.append("promptTemplate", prompt);
@@ -601,14 +646,7 @@ export function AdminOcrTestbed({
           <button
             className="btn btn-primary"
             onClick={handleRun}
-            disabled={
-              isRunning ||
-              !file ||
-              !prompt.trim() ||
-              !extractionInstructions.trim() ||
-              !expectedSchemaTemplate.trim() ||
-              Boolean(schemaTemplateError)
-            }
+            disabled={isRunning || runValidationErrors.length > 0}
           >
             {isRunning ? "Ejecutando…" : "Ejecutar prueba"}
           </button>

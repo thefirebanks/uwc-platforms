@@ -25,6 +25,7 @@ import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
 import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
 import { FieldHint } from "@/components/field-hint";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
+import { getSubGroupsForSection } from "@/lib/stages/field-sub-groups";
 import {
   DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
   DEFAULT_OCR_PROMPT,
@@ -1311,6 +1312,15 @@ export function StageConfigEditor({
     options?: { canCollapse?: boolean },
   ) {
     const section = sections.find((s) => s.id === sectionId);
+    const sectionEmojis = section
+      ? Array.from(
+          new Set(
+            getSubGroupsForSection(section.section_key)
+              .map((group) => group.icon)
+              .filter((icon): icon is string => typeof icon === "string" && icon.trim().length > 0),
+          ),
+        )
+      : [];
     const position = sectionPositionById.get(sectionId);
     const isCollapsed = collapsedSectionIdSet.has(sectionId);
     const canCollapse = options?.canCollapse ?? true;
@@ -1320,7 +1330,18 @@ export function StageConfigEditor({
 
     return (
       <div className="admin-stage-section-heading-row">
-        <div className="builder-section-title">{heading}</div>
+        <div className="admin-stage-section-heading-copy">
+          <div className="builder-section-title">{heading}</div>
+          {sectionEmojis.length > 0 ? (
+            <div className="admin-stage-section-heading-emojis" aria-label="Iconos visibles en la vista de postulante">
+              {sectionEmojis.map((emoji) => (
+                <span key={`${sectionId}-${emoji}`} className="admin-stage-section-heading-emoji" aria-hidden="true">
+                  {emoji}
+                </span>
+              ))}
+            </div>
+          ) : null}
+        </div>
         <div className="admin-stage-section-header-actions" role="group" aria-label="Acciones de sección">
           <button
             type="button"
@@ -2237,39 +2258,6 @@ export function StageConfigEditor({
                 </div>
               </div>
 
-              <div className="settings-card">
-                <div className="settings-card-header">
-                  <h3>OCR productivo de la etapa</h3>
-                  <p>
-                    Define el prompt base que usará la validación OCR de esta etapa. Usa Prompt
-                    Studio para experimentar sin tocar la versión productiva.
-                  </p>
-                </div>
-                <div className="editor-grid">
-                  <div className="form-field full">
-                    <label htmlFor="ocr-prompt-settings">Prompt OCR de la etapa</label>
-                    <textarea
-                      id="ocr-prompt-settings"
-                      rows={6}
-                      value={ocrPromptTemplate}
-                      onChange={(event) => setOcrPromptTemplate(event.target.value)}
-                    />
-                    <div className="form-hint">
-                      El sistema sigue forzando salida JSON con <code>summary</code> y{" "}
-                      <code>confidence</code>.
-                    </div>
-                  </div>
-                  <div className="form-field full">
-                    <button
-                      type="button"
-                      className="btn btn-outline"
-                      onClick={() => switchToTab("prompt_studio")}
-                    >
-                      Abrir Prompt Studio
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
           )}
 

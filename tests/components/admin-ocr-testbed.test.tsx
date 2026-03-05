@@ -55,6 +55,27 @@ afterEach(() => {
 });
 
 describe("AdminOcrTestbed", () => {
+  it("keeps execute button disabled until a file is attached", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),
+    );
+
+    render(
+      <AdminOcrTestbed
+        cycleId="cycle-1"
+        stageCode="documents"
+        modelOptions={modelOptions}
+        defaultPrompt="Prompt base"
+        defaultSystemPrompt="System prompt"
+        defaultExtractionInstructions="Extraer hallazgos"
+        defaultSchemaTemplate='{"summary":"string"}'
+      />,
+    );
+
+    await screen.findByText("history.pdf");
+    expect(screen.getByRole("button", { name: "Ejecutar prueba" })).toBeDisabled();
+  });
+
   it("loads history without rendering bulky instruction cards", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
       new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),

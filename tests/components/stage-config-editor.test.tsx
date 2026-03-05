@@ -22,6 +22,21 @@ function makeOtherSection(overrides?: Partial<StageSection>): StageSection {
   };
 }
 
+function makeIdentitySection(overrides?: Partial<StageSection>): StageSection {
+  return {
+    id: "section-identity",
+    cycle_id: "cycle-1",
+    stage_code: "documents",
+    section_key: "identity",
+    title: "Datos personales",
+    description: "Datos base del postulante",
+    sort_order: 1,
+    is_visible: true,
+    created_at: "2026-01-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 describe("StageConfigEditor", () => {
   const stageTemplates = [
     {
@@ -461,7 +476,7 @@ describe("StageConfigEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
     expect(screen.getByLabelText(/Instrucciones de la etapa \(Markdown\)/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Prompt OCR de la etapa/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Prompt OCR de la etapa/i)).not.toBeInTheDocument();
   });
 
   it("labels the automation tab clearly instead of generic communications", () => {
@@ -519,13 +534,51 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Abrir Prompt Studio/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Prompt Studio$/i }));
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: /^Prompt Studio$/i })).toBeInTheDocument();
       expect(screen.getByText(/Sin pruebas anteriores\./i)).toBeInTheDocument();
     });
+  });
+
+  it("shows applicant sub-group emoji cues for known section keys", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-identity-1",
+            cycle_id: "cycle-1",
+            stage_code: "documents",
+            field_key: "fullName",
+            field_label: "Nombre completo",
+            field_type: "short_text",
+            is_required: true,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: "section-identity",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[makeIdentitySection(), makeOtherSection({ sort_order: 2 })]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    const emojiHint = screen.getByLabelText("Iconos visibles en la vista de postulante");
+    expect(emojiHint).toHaveTextContent("👤");
+    expect(emojiHint).toHaveTextContent("📍");
   });
 
   it("opens the communications center inside the same stage shell from Automatizaciones", async () => {
