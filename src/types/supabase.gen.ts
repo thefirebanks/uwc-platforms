@@ -138,6 +138,73 @@ export type Database = {
           },
         ]
       }
+      application_stage_evaluations: {
+        Row: {
+          application_id: string
+          criteria_results: Json
+          cycle_id: string
+          evaluated_at: string
+          evaluated_by: string | null
+          failed_count: number
+          id: string
+          needs_review_count: number
+          outcome: string
+          passed_count: number
+          stage_code: string
+          trigger_event: string
+        }
+        Insert: {
+          application_id: string
+          criteria_results?: Json
+          cycle_id: string
+          evaluated_at?: string
+          evaluated_by?: string | null
+          failed_count?: number
+          id?: string
+          needs_review_count?: number
+          outcome: string
+          passed_count?: number
+          stage_code: string
+          trigger_event?: string
+        }
+        Update: {
+          application_id?: string
+          criteria_results?: Json
+          cycle_id?: string
+          evaluated_at?: string
+          evaluated_by?: string | null
+          failed_count?: number
+          id?: string
+          needs_review_count?: number
+          outcome?: string
+          passed_count?: number
+          stage_code?: string
+          trigger_event?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "application_stage_evaluations_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_stage_evaluations_cycle_id_fkey"
+            columns: ["cycle_id"]
+            isOneToOne: false
+            referencedRelation: "cycles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "application_stage_evaluations_evaluated_by_fkey"
+            columns: ["evaluated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       applications: {
         Row: {
           applicant_id: string

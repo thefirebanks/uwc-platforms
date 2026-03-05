@@ -52,6 +52,8 @@ export type ApplicationStatus =
   | "ineligible"
   | "advanced";
 
+export type EligibilityOutcome = "eligible" | "not_eligible" | "needs_review";
+
 export type SupportTicketStatus = "open" | "replied" | "closed";
 
 export interface Profile {
@@ -151,6 +153,40 @@ export interface StageFieldAiParserConfig {
   extractionInstructions: string;
   expectedSchemaTemplate: string;
   strictSchema: boolean;
+}
+
+export type EligibilityRubricCriterionKind =
+  | "field_present"
+  | "all_present"
+  | "any_present"
+  | "field_in"
+  | "number_between"
+  | "file_uploaded"
+  | "recommendations_complete"
+  | "ocr_confidence";
+
+export interface EligibilityRubricCriterion {
+  id: string;
+  label: string;
+  description?: string;
+  kind: EligibilityRubricCriterionKind;
+  onFail: EligibilityOutcome;
+  onMissingData: EligibilityOutcome;
+  fieldKey?: string;
+  fieldKeys?: string[];
+  allowedValues?: string[];
+  caseSensitive?: boolean;
+  min?: number;
+  max?: number;
+  fileKey?: string;
+  roles?: RecommenderRole[];
+  requireRequested?: boolean;
+  minConfidence?: number;
+}
+
+export interface EligibilityRubricConfig {
+  enabled: boolean;
+  criteria: EligibilityRubricCriterion[];
 }
 
 export interface CycleStageField {
@@ -254,6 +290,21 @@ export interface ApplicationOcrCheck {
   confidence: number;
   raw_response: Record<string, unknown>;
   created_at: string;
+}
+
+export interface ApplicationStageEvaluation {
+  id: string;
+  application_id: string;
+  cycle_id: string;
+  stage_code: string;
+  outcome: EligibilityOutcome;
+  criteria_results: Record<string, unknown>[];
+  passed_count: number;
+  failed_count: number;
+  needs_review_count: number;
+  evaluated_at: string;
+  evaluated_by: string | null;
+  trigger_event: "manual" | "deadline";
 }
 
 export interface OcrTestRun {
