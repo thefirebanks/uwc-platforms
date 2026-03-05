@@ -1742,6 +1742,11 @@ export function StageConfigEditor({
                             </div>
                             <div className="field-type">
                               {getFieldTypeLabel(field.field_type)} • id: <code>{field.field_key}</code>
+                              {field.group_name?.trim() ? (
+                                <>
+                                  {" "}• grupo: <span>{field.group_name}</span>
+                                </>
+                              ) : null}
                             </div>
                           </div>
                           <div className="field-actions">

@@ -31,7 +31,7 @@ import {
   groupFieldsBySections,
   type ResolvedSection,
 } from "@/lib/stages/applicant-sections";
-import { getSubGroupsForSection, isBooleanField, getBooleanFieldLabels, type SubGroupDef } from "@/lib/stages/field-sub-groups";
+import { isBooleanField, getBooleanFieldLabels } from "@/lib/stages/field-sub-groups";
 
 interface ApiError {
   message: string;
@@ -1619,124 +1619,6 @@ export function ApplicantApplicationForm({
     );
   }
 
-  function renderSubGroupCard(subGroup: SubGroupDef, fields: CycleStageField[], sectionId: string) {
-    const sgLabel = isEnglish ? subGroup.labelEn : subGroup.label;
-
-    if (subGroup.variant === "guardian") {
-      return (
-        <Box
-          key={subGroup.key}
-          sx={{
-            background: "var(--surface, #fff)",
-            border: "1px solid var(--sand-light, #F3EFEB)",
-            borderRadius: "var(--radius-lg, 12px)",
-            p: "20px",
-            mb: 2,
-          }}
-        >
-          {/* Guardian header */}
-          <Box sx={{ display: "flex", alignItems: "center", gap: "10px", mb: 2 }}>
-            <Box
-              sx={{
-                width: 32,
-                height: 32,
-                borderRadius: "50%",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: "0.85rem",
-                background: subGroup.iconBg,
-                color: subGroup.iconColor,
-              }}
-            >
-              {subGroup.guardianNumber}
-            </Box>
-            <Box>
-              <Typography sx={{ fontWeight: 500, fontSize: "0.9rem", color: "var(--ink)" }}>
-                {sgLabel}
-              </Typography>
-              {(isEnglish ? subGroup.subtitleEn : subGroup.subtitle) ? (
-                <Typography sx={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                  {isEnglish ? subGroup.subtitleEn : subGroup.subtitle}
-                </Typography>
-              ) : null}
-            </Box>
-          </Box>
-          {renderFieldGrid(fields, sectionId)}
-        </Box>
-      );
-    }
-
-    if (subGroup.variant === "card") {
-      return (
-        <Box
-          key={subGroup.key}
-          sx={{
-            background: "var(--surface, #fff)",
-            border: "1px solid var(--sand-light, #F3EFEB)",
-            borderRadius: "var(--radius-lg, 12px)",
-            p: "20px",
-            mb: 2,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: "14px" }}>
-            {subGroup.iconBg ? (
-              <Box
-                sx={{
-                  width: 28,
-                  height: 28,
-                  borderRadius: "8px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: "0.85rem",
-                  lineHeight: 1,
-                  background: subGroup.iconBg,
-                  color: subGroup.iconColor,
-                }}
-                aria-hidden="true"
-              >
-                {subGroup.icon ?? null}
-              </Box>
-            ) : null}
-            <Typography
-              sx={{
-                fontFamily: "var(--font-display)",
-                fontSize: "1rem",
-                fontWeight: 500,
-                color: "var(--ink)",
-              }}
-            >
-              {sgLabel}
-            </Typography>
-          </Box>
-          {renderFieldGrid(fields, sectionId)}
-        </Box>
-      );
-    }
-
-    // Default: form-group with label divider
-    return (
-      <Box key={subGroup.key} sx={{ mb: "28px" }}>
-        <Typography
-          sx={{
-            fontSize: "0.68rem",
-            fontWeight: 600,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: "var(--muted)",
-            mb: "14px",
-            pb: 1,
-            borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-          }}
-        >
-          {sgLabel}
-        </Typography>
-        {renderFieldGrid(fields, sectionId)}
-      </Box>
-    );
-  }
-
   function renderEditableFields({
     fields,
     sectionId,
@@ -1744,8 +1626,6 @@ export function ApplicantApplicationForm({
     fields: CycleStageField[];
     sectionId: string;
   }) {
-    const subGroups = getSubGroupsForSection(sectionId);
-
     // Separate grade fields for the school section
     const gradeFields = sectionId === "school" ? fields.filter((f) => isGradeField(f.field_key)) : [];
     const allNonGradeFields = sectionId === "school" ? fields.filter((f) => !isGradeField(f.field_key)) : fields;
@@ -1890,87 +1770,9 @@ export function ApplicantApplicationForm({
       );
     }
 
-    // If no sub-groups, render flat
-    if (subGroups.length === 0) {
-      return (
-        <Box>
-          {renderFieldGrid(topNonGradeFields, sectionId)}
-          {gradeFields.length > 0 ? (
-            <Box sx={{ mt: 3 }}>
-              <Typography
-                sx={{
-                  fontSize: "0.68rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                  mb: "14px",
-                  pb: 1,
-                  borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-                }}
-              >
-                {isEnglish ? "Official grades by year" : "Notas oficiales por a\u00f1o"}
-              </Typography>
-              <GradesTable
-                fields={gradeFields}
-                formValues={formValues}
-                onFieldChange={(key, value) => {
-                  setFormValues((current) => ({ ...current, [key]: value }));
-                  markFieldDirty();
-                }}
-                onFieldBlur={() => {}}
-                disabled={!isEditingEnabled}
-                language={language}
-              />
-            </Box>
-          ) : null}
-          {deferredSchoolFields.length > 0 ? (
-            <Box sx={{ mt: gradeFields.length > 0 ? 3 : 0 }}>
-              {renderFieldGrid(deferredSchoolFields, sectionId)}
-            </Box>
-          ) : null}
-        </Box>
-      );
-    }
-
-    // Collect all sub-grouped field keys
-    const subGroupedKeys = new Set<string>();
-    for (const sg of subGroups) {
-      for (const k of sg.fieldKeys) subGroupedKeys.add(k);
-    }
-
-    // Fields not in any sub-group (rendered first, ungrouped)
-    const ungroupedFields = topNonGradeFields.filter((f) => !subGroupedKeys.has(f.field_key));
-
     return (
       <Box>
-        {/* Ungrouped fields first */}
-        {ungroupedFields.length > 0 ? (
-          <Box sx={{ mb: "28px", animation: "fadeUp 0.35s ease", animationFillMode: "backwards" }}>
-            {renderFieldGrid(ungroupedFields, sectionId)}
-          </Box>
-        ) : null}
-
-        {/* Sub-groups */}
-        {subGroups.map((sg, idx) => {
-          const subGroupOrder = new Map(Array.from(sg.fieldKeys).map((key, orderIdx) => [key, orderIdx]));
-          const sgFields = topNonGradeFields
-            .filter((f) => sg.fieldKeys.has(f.field_key))
-            .sort((a, b) => (subGroupOrder.get(a.field_key) ?? 999) - (subGroupOrder.get(b.field_key) ?? 999));
-          if (sgFields.length === 0) return null;
-          return (
-            <Box
-              key={sg.key}
-              sx={{
-                animation: "fadeUp 0.35s ease",
-                animationFillMode: "backwards",
-                animationDelay: `${(idx + 1) * 0.05}s`,
-              }}
-            >
-              {renderSubGroupCard(sg, sgFields, sectionId)}
-            </Box>
-          );
-        })}
+        {renderFieldGrid(topNonGradeFields, sectionId)}
 
         {/* Grades table for school section */}
         {gradeFields.length > 0 ? (
@@ -1986,8 +1788,8 @@ export function ApplicantApplicationForm({
                 pb: 1,
                 borderBottom: "1px solid var(--sand-light, #F3EFEB)",
               }}
-            >
-              {isEnglish ? "Official grades by year" : "Notas oficiales por a\u00f1o"}
+              >
+              {isEnglish ? "Official grades by year" : "Notas oficiales por año"}
             </Typography>
             <GradesTable
               fields={gradeFields}
@@ -2004,7 +1806,7 @@ export function ApplicantApplicationForm({
         ) : null}
 
         {deferredSchoolFields.length > 0 ? (
-          <Box sx={{ mt: 3 }}>
+          <Box sx={{ mt: gradeFields.length > 0 ? 3 : 0 }}>
             {renderFieldGrid(deferredSchoolFields, sectionId)}
           </Box>
         ) : null}
