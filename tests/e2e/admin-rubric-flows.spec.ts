@@ -56,8 +56,14 @@ async function ensureAtLeastOneChecked(groupField: Locator) {
 }
 
 async function completeWizardStep1(page: Page) {
-  const identityField = page.locator(".form-field").filter({ hasText: /Documento de identidad \(requerido\)/i }).first();
-  const gradesField = page.locator(".form-field").filter({ hasText: /Documentos de notas \(requerido\)/i }).first();
+  const identityField = page
+    .locator(".form-field")
+    .filter({ hasText: /Documento de identidad/i })
+    .first();
+  const gradesField = page
+    .locator(".form-field")
+    .filter({ hasText: /Documentos de notas/i })
+    .first();
 
   const hasIdentityCheckboxes = await ensureAtLeastOneChecked(identityField);
   const hasGradesCheckboxes = await ensureAtLeastOneChecked(gradesField);
@@ -102,7 +108,7 @@ test.describe("Admin rubric wizard flows", () => {
 
     await expect(page.getByText(/Paso 3: Revisar y activar/i)).toBeVisible();
     await page.getByRole("button", { name: /Activar rúbrica de esta etapa/i }).click();
-    await expect(page.locator(".admin-feedback.success")).toContainText(/Rúbrica del wizard activada/i);
+    await expect(page.getByText(/Rúbrica del wizard activada/i)).toBeVisible();
 
     await page.getByRole("button", { name: /Advanced/i }).click();
     await page.getByRole("button", { name: /JSON avanzado/i }).click();
@@ -156,6 +162,6 @@ test.describe("Admin rubric wizard flows", () => {
     await expect(page.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).toHaveClass(
       /btn-primary/,
     );
-    await expect(page.locator(".admin-feedback.success")).toContainText(/restableció/i);
+    await expect(page.getByText(/Se restableció la configuración avanzada/i)).toBeVisible();
   });
 });

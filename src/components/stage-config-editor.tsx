@@ -1624,6 +1624,9 @@ export function StageConfigEditor({
     rubricNumberFieldKeySet,
     uwcPresetDraft,
   ]);
+  const wizardProgressPercent = rubricWizardStep === 1 ? 34 : rubricWizardStep === 2 ? 67 : 100;
+  const wizardBlockingCount =
+    rubricWizardValidation.step1Errors.length + rubricWizardValidation.step2Errors.length;
 
   function compileRubricFromWizard(options?: { silent?: boolean }) {
     const blockingErrors = [
@@ -3220,7 +3223,7 @@ export function StageConfigEditor({
                 </div>
                 <div className="editor-grid">
                   <div className="form-field full">
-                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
+                    <div className="rubric-authoring-toggle">
                       <button
                         type="button"
                         className={`btn ${rubricAuthoringTab === "wizard" ? "btn-primary" : "btn-outline"}`}
@@ -3239,46 +3242,60 @@ export function StageConfigEditor({
                         Advanced
                       </button>
                     </div>
-                    <div className="form-hint" style={{ marginBottom: "12px" }}>
+                    <div className="form-hint rubric-authoring-note">
                       El wizard usa lenguaje de negocio y compila la rúbrica automáticamente. Advanced queda
                       disponible para casos fuera del preset.
                     </div>
 
                     {rubricAuthoringTab === "wizard" ? (
-                      <div className="admin-stage-settings-stack">
+                      <div className="admin-stage-settings-stack rubric-wizard-shell">
                         {rubricAdvancedCustomized ? (
                           <div className="admin-feedback warning" style={{ marginBottom: "10px" }}>
                             Esta etapa fue personalizada en Advanced. Puedes volver al wizard y restablecer
                             el preset cuando quieras.
                           </div>
                         ) : null}
-                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "8px" }}>
-                          <span className={`btn btn-outline ${rubricWizardStep === 1 ? "btn-primary" : ""}`}>
-                            Paso 1: Evidencia
-                          </span>
-                          <span className={`btn btn-outline ${rubricWizardStep === 2 ? "btn-primary" : ""}`}>
-                            Paso 2: Políticas
-                          </span>
-                          <span className={`btn btn-outline ${rubricWizardStep === 3 ? "btn-primary" : ""}`}>
-                            Paso 3: Resumen
-                          </span>
+                        <div className="rubric-wizard-progress-shell">
+                          <div className="rubric-wizard-progress-meta">
+                            <span>{`Paso ${rubricWizardStep} de 3`}</span>
+                            <span>{`${wizardProgressPercent}% completado`}</span>
+                          </div>
+                          <div className="rubric-wizard-progress-track" aria-hidden="true">
+                            <span style={{ width: `${wizardProgressPercent}%` }} />
+                          </div>
+                          <div className="rubric-wizard-steps">
+                            <span className={`rubric-wizard-step ${rubricWizardStep === 1 ? "is-active" : ""}`}>
+                              <strong>1</strong>
+                              Evidencia
+                            </span>
+                            <span className={`rubric-wizard-step ${rubricWizardStep === 2 ? "is-active" : ""}`}>
+                              <strong>2</strong>
+                              Políticas
+                            </span>
+                            <span className={`rubric-wizard-step ${rubricWizardStep === 3 ? "is-active" : ""}`}>
+                              <strong>3</strong>
+                              Resumen
+                            </span>
+                          </div>
                         </div>
 
                         {rubricWizardStep === 1 ? (
-                          <div className="settings-card" style={{ border: "1px solid var(--maroon-soft)" }}>
+                          <div className="settings-card rubric-wizard-card">
                             <div className="settings-card-header">
                               <h3>Paso 1: Mapear evidencia</h3>
-                              <p>Configura campos de formulario y rutas OCR.</p>
+                              <p>Configura campos de formulario y rutas OCR. Solo los campos con etiqueta requerida bloquean avance.</p>
                             </div>
                             <div className="editor-grid">
                               <div className="form-field full">
-                                <label>Documento de identidad (requerido)</label>
-                                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                                <label>
+                                  Documento de identidad <span className="rubric-required-badge">Requerido</span>
+                                </label>
+                                <div className="rubric-choice-grid">
                                   {rubricFileFieldOptions.length > 0 ? (
                                     rubricFileFieldOptions.map((option) => (
                                       <label
                                         key={`wizard-id-${option.value}`}
-                                        style={{ display: "flex", gap: "6px", alignItems: "center" }}
+                                        className="rubric-choice-pill"
                                       >
                                         <input
                                           type="checkbox"
@@ -3298,13 +3315,15 @@ export function StageConfigEditor({
                                 </div>
                               </div>
                               <div className="form-field full">
-                                <label>Documentos de notas (requerido)</label>
-                                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                                <label>
+                                  Documentos de notas <span className="rubric-required-badge">Requerido</span>
+                                </label>
+                                <div className="rubric-choice-grid">
                                   {rubricFileFieldOptions.length > 0 ? (
                                     rubricFileFieldOptions.map((option) => (
                                       <label
                                         key={`wizard-grades-${option.value}`}
-                                        style={{ display: "flex", gap: "6px", alignItems: "center" }}
+                                        className="rubric-choice-pill"
                                       >
                                         <input
                                           type="checkbox"
@@ -3324,7 +3343,9 @@ export function StageConfigEditor({
                                 </div>
                               </div>
                               <div className="form-field">
-                                <label htmlFor={`wizard-name-${stageCode}`}>Nombre postulante (requerido)</label>
+                                <label htmlFor={`wizard-name-${stageCode}`}>
+                                  Nombre postulante <span className="rubric-required-badge">Requerido</span>
+                                </label>
                                 <select
                                   id={`wizard-name-${stageCode}`}
                                   value={uwcPresetDraft.applicantNameFieldKey ?? ""}
@@ -3344,7 +3365,9 @@ export function StageConfigEditor({
                                 </select>
                               </div>
                               <div className="form-field">
-                                <label htmlFor={`wizard-average-${stageCode}`}>Promedio manual (requerido)</label>
+                                <label htmlFor={`wizard-average-${stageCode}`}>
+                                  Promedio manual <span className="rubric-required-badge">Requerido</span>
+                                </label>
                                 <select
                                   id={`wizard-average-${stageCode}`}
                                   value={uwcPresetDraft.averageGradeFieldKey ?? ""}
@@ -3385,7 +3408,7 @@ export function StageConfigEditor({
                               </div>
                               <div className="form-field">
                                 <label htmlFor={`wizard-authorization-${stageCode}`}>
-                                  Autorización firmada (requerido)
+                                  Autorización firmada <span className="rubric-required-badge">Requerido</span>
                                 </label>
                                 <select
                                   id={`wizard-authorization-${stageCode}`}
@@ -3406,7 +3429,9 @@ export function StageConfigEditor({
                                 </select>
                               </div>
                               <div className="form-field">
-                                <label htmlFor={`wizard-photo-${stageCode}`}>Foto del postulante (requerido)</label>
+                                <label htmlFor={`wizard-photo-${stageCode}`}>
+                                  Foto del postulante <span className="rubric-required-badge">Requerido</span>
+                                </label>
                                 <select
                                   id={`wizard-photo-${stageCode}`}
                                   value={uwcPresetDraft.applicantPhotoFileKey ?? ""}
@@ -3486,7 +3511,7 @@ export function StageConfigEditor({
                         ) : null}
 
                         {rubricWizardStep === 2 ? (
-                          <div className="settings-card" style={{ border: "1px solid var(--maroon-soft)" }}>
+                          <div className="settings-card rubric-wizard-card">
                             <div className="settings-card-header">
                               <h3>Paso 2: Definir políticas</h3>
                               <p>Umbrales y manejo de excepciones para la etapa 1.</p>
@@ -3539,25 +3564,20 @@ export function StageConfigEditor({
                         ) : null}
 
                         {rubricWizardStep === 3 ? (
-                          <div className="settings-card" style={{ border: "1px solid var(--maroon-soft)" }}>
+                          <div className="settings-card rubric-wizard-card">
                             <div className="settings-card-header">
                               <h3>Paso 3: Revisar y activar</h3>
                               <p>Resumen antes de compilar la rúbrica runtime.</p>
                             </div>
-                            <div className="admin-stage-settings-stack">
+                            <div className="rubric-summary-list">
+                              <div className="form-hint">1) Identidad, nombre, nacimiento y documentos.</div>
+                              <div className="form-hint">2) Tercio superior o promedio mínimo configurado.</div>
+                              <div className="form-hint">3) Recomendaciones completas estrictas + autorización + foto.</div>
                               <div className="form-hint">
-                                Criterios compilados: documento de identidad, coincidencia de nombre, año de
-                                nacimiento, documentos de notas, tercio superior o promedio, recomendaciones
-                                completas, autorización firmada y foto.
+                                Resultado: falla crítica <strong>not_eligible</strong>, duda o falta de evidencia{" "}
+                                <strong>needs_review</strong>, todo correcto <strong>eligible</strong>.
                               </div>
-                              <div className="form-hint">
-                                Resultado final: falla crítica a <strong>not_eligible</strong>, evidencia dudosa
-                                o incompleta a <strong>needs_review</strong>, todo correcto a{" "}
-                                <strong>eligible</strong>.
-                              </div>
-                              <div className="form-hint">
-                                Ejecución: <strong>manual</strong> desde el dashboard de candidatos.
-                              </div>
+                              <div className="form-hint">Ejecución: manual desde dashboard de candidatos.</div>
                             </div>
                           </div>
                         ) : null}
@@ -3569,8 +3589,13 @@ export function StageConfigEditor({
                               .join(" | ")}`}
                           </div>
                         ) : null}
+                        {wizardBlockingCount === 0 ? (
+                          <div className="admin-feedback success">
+                            El wizard no tiene bloqueos. Puedes continuar y guardar.
+                          </div>
+                        ) : null}
 
-                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                        <div className="rubric-wizard-actions">
                           <button
                             type="button"
                             className="btn btn-outline"
@@ -3614,7 +3639,9 @@ export function StageConfigEditor({
                             </div>
                           </div>
                         ) : null}
-                    <div className="settings-card" style={{ border: "1px solid var(--maroon-soft)", marginBottom: "14px" }}>
+                    <details className="rubric-advanced-assistant">
+                      <summary>Asistente rápido de mapeo (opcional)</summary>
+                    <div className="settings-card rubric-advanced-assistant-card">
                       <div className="settings-card-header">
                         <h3>Asistente rápido: Rúbrica UWC Perú</h3>
                         <p>
@@ -3924,8 +3951,9 @@ export function StageConfigEditor({
                         </div>
                       </div>
                     </div>
+                    </details>
 
-                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
+                    <div className="rubric-advanced-toolbar">
                       <button
                         type="button"
                         className={`btn ${rubricEditorMode === "guided" ? "btn-primary" : "btn-outline"}`}
@@ -3944,7 +3972,7 @@ export function StageConfigEditor({
                     <div className="form-hint" style={{ marginBottom: "10px" }}>
                       Modo guiado para equipos no técnicos. JSON avanzado para reglas complejas.
                     </div>
-                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "12px" }}>
+                    <div className="rubric-advanced-toolbar rubric-advanced-toolbar-compact">
                       <button
                         type="button"
                         className="btn btn-outline"

@@ -52,8 +52,14 @@ async function ensureAtLeastOneChecked(groupField: Locator) {
 }
 
 async function completeWizardStep1(page: Page) {
-  const identityField = page.locator(".form-field").filter({ hasText: /Documento de identidad \(requerido\)/i }).first();
-  const gradesField = page.locator(".form-field").filter({ hasText: /Documentos de notas \(requerido\)/i }).first();
+  const identityField = page
+    .locator(".form-field")
+    .filter({ hasText: /Documento de identidad/i })
+    .first();
+  const gradesField = page
+    .locator(".form-field")
+    .filter({ hasText: /Documentos de notas/i })
+    .first();
 
   const hasIdentityCheckboxes = await ensureAtLeastOneChecked(identityField);
   const hasGradesCheckboxes = await ensureAtLeastOneChecked(gradesField);

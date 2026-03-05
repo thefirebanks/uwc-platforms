@@ -1504,6 +1504,17 @@ input:checked + .slider:before { transform: translateX(18px); }
   100% { box-shadow: inset 0 0 0 0 rgba(154, 37, 69, 0); }
 }
 
+@keyframes rubricCardIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .view.active,
   .tab-content.active,
@@ -1516,7 +1527,8 @@ input:checked + .slider:before { transform: translateX(18px); }
   .communications-preview-card,
   .ocr-testbed__form,
   .ocr-testbed__history,
-  .ocr-testbed__result {
+  .ocr-testbed__result,
+  .rubric-wizard-card {
     animation: none !important;
   }
 
@@ -1526,7 +1538,8 @@ input:checked + .slider:before { transform: translateX(18px); }
   .field-card,
   .admin-candidate-row td,
   .sidebar,
-  .main {
+  .main,
+  .rubric-wizard-progress-track > span {
     transition: none !important;
   }
 
@@ -1828,6 +1841,12 @@ input:checked + .slider:before { transform: translateX(18px); }
   background: #fde8e8;
   border-color: rgba(185, 28, 28, 0.28);
   color: #b91c1c;
+}
+
+.admin-feedback.warning {
+  background: color-mix(in srgb, #f59e0b 12%, #fff);
+  border-color: color-mix(in srgb, #f59e0b 38%, var(--sand));
+  color: color-mix(in srgb, #7c2d12 90%, var(--ink));
 }
 
 .admin-feedback-wrap {
@@ -2466,6 +2485,192 @@ input:checked + .slider:before { transform: translateX(18px); }
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.rubric-authoring-toggle {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.rubric-authoring-note {
+  margin-bottom: 12px;
+}
+
+.rubric-wizard-shell {
+  gap: 14px;
+}
+
+.rubric-wizard-progress-shell {
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 88%, var(--paper));
+  padding: 12px;
+}
+
+.rubric-wizard-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.rubric-wizard-progress-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sand-light) 60%, var(--paper));
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.rubric-wizard-progress-track > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--maroon) 0%, var(--maroon-dark) 100%);
+  transition: width 220ms ease;
+}
+
+.rubric-wizard-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rubric-wizard-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  color: var(--muted);
+  border: 1px solid var(--sand-light);
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 10px;
+  background: var(--surface);
+}
+
+.rubric-wizard-step strong {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--sand);
+}
+
+.rubric-wizard-step.is-active {
+  color: var(--maroon);
+  border-color: color-mix(in srgb, var(--maroon) 35%, var(--sand));
+  background: color-mix(in srgb, var(--maroon-soft) 60%, var(--surface));
+}
+
+.rubric-wizard-step.is-active strong {
+  color: #fff;
+  border-color: var(--maroon);
+  background: var(--maroon);
+}
+
+.rubric-wizard-card {
+  border: 1px solid var(--maroon-soft);
+  animation: rubricCardIn 180ms ease-out;
+}
+
+.rubric-required-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  color: var(--maroon);
+  border: 1px solid color-mix(in srgb, var(--maroon) 28%, var(--sand));
+  background: color-mix(in srgb, var(--maroon-soft) 68%, var(--surface));
+}
+
+.rubric-choice-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rubric-choice-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--sand);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.8rem;
+}
+
+.rubric-choice-pill:has(input:checked) {
+  border-color: color-mix(in srgb, var(--maroon) 35%, var(--sand));
+  background: color-mix(in srgb, var(--maroon-soft) 62%, var(--surface));
+}
+
+.rubric-summary-list {
+  display: grid;
+  gap: 6px;
+}
+
+.rubric-wizard-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid var(--sand-light);
+}
+
+.rubric-advanced-assistant {
+  margin-bottom: 14px;
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 90%, var(--paper));
+}
+
+.rubric-advanced-assistant > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rubric-advanced-assistant > summary::-webkit-details-marker {
+  display: none;
+}
+
+.rubric-advanced-assistant-card {
+  border: none;
+  border-top: 1px solid var(--sand-light);
+  margin: 0;
+}
+
+.rubric-advanced-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.rubric-advanced-toolbar-compact {
+  margin-bottom: 12px;
 }
 
 .admin-stage-comms-toolbar {
