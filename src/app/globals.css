@@ -2652,39 +2652,60 @@ input:checked + .slider:before { transform: translateX(18px); }
   animation: rubricCardIn 180ms ease-out;
 }
 
-.rubric-policy-grid {
+.rubric-policy-flow {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 12px;
 }
 
-.rubric-policy-card {
+.rubric-policy-section {
   border: 1px solid var(--sand);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--surface) 92%, var(--paper));
   padding: 12px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
+}
+
+.rubric-policy-section-header h4 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.rubric-policy-section-header .form-hint {
+  margin-top: 2px;
+}
+
+.rubric-policy-control {
+  display: grid;
+  gap: 6px;
+}
+
+.rubric-policy-control--boxed {
+  border: 1px solid var(--sand-light);
+  border-radius: 10px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--paper) 55%, var(--surface));
 }
 
 .rubric-number-stepper {
-  display: inline-grid;
-  grid-template-columns: auto auto auto;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  width: max-content;
+  justify-content: flex-start;
+  gap: 6px;
 }
 
 .rubric-number-stepper .btn {
-  min-width: 40px;
-  min-height: 40px;
-  padding-inline: 0;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
   justify-content: center;
 }
 
 .rubric-number-stepper-input {
-  width: 82px;
-  min-width: 82px;
+  width: 78px;
+  min-width: 78px;
   text-align: center;
 }
 
@@ -2739,7 +2760,7 @@ input:checked + .slider:before { transform: translateX(18px); }
   border-radius: var(--radius);
   padding: 12px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
   background: color-mix(in srgb, var(--surface) 92%, var(--paper));
 }
 
@@ -2759,8 +2780,82 @@ input:checked + .slider:before { transform: translateX(18px); }
   margin-top: 2px;
 }
 
-.rubric-ocr-grid {
-  margin-top: 2px;
+.rubric-ocr-source-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px dashed var(--sand);
+  color: var(--ink-light);
+  font-size: 0.85rem;
+}
+
+.rubric-ocr-source-strip strong {
+  color: var(--ink);
+}
+
+.rubric-ocr-mapping-table {
+  display: grid;
+  gap: 10px;
+}
+
+.rubric-ocr-mapping-row {
+  border: 1px solid var(--sand-light);
+  border-radius: 10px;
+  padding: 10px;
+  display: grid;
+  gap: 6px;
+  background: color-mix(in srgb, var(--paper) 60%, var(--surface));
+}
+
+.rubric-ocr-mapping-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.rubric-ocr-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  letter-spacing: 0.01em;
+  border: 1px solid var(--sand);
+  color: var(--ink-light);
+  background: color-mix(in srgb, var(--paper) 78%, var(--surface));
+}
+
+.rubric-ocr-kind-chip.is-business {
+  border-color: color-mix(in srgb, var(--success) 28%, var(--sand));
+  color: color-mix(in srgb, var(--success) 75%, var(--ink-light));
+  background: color-mix(in srgb, var(--success-soft) 72%, var(--surface));
+}
+
+.rubric-ocr-kind-chip.is-technical {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
+  color: color-mix(in srgb, var(--warning) 85%, var(--ink-light));
+  background: color-mix(in srgb, var(--warning-soft) 74%, var(--surface));
+}
+
+.rubric-ocr-mapping-row-meta {
+  display: grid;
+  gap: 4px;
+}
+
+.rubric-inline-warning {
+  font-size: 0.76rem;
+  color: color-mix(in srgb, var(--warning) 86%, var(--ink-light));
+}
+
+.rubric-ocr-available-pill.is-business {
+  border-color: color-mix(in srgb, var(--success) 28%, var(--sand));
+}
+
+.rubric-ocr-available-pill.is-technical {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
 }
 
 .rubric-ocr-available-list {
@@ -2769,48 +2864,141 @@ input:checked + .slider:before { transform: translateX(18px); }
   gap: 8px;
 }
 
-.rubric-review-grid {
+.rubric-checklist-shell {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 12px;
+  gap: 10px;
 }
 
-.rubric-review-card {
-  border: 1px solid var(--sand);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 94%, var(--paper));
-  padding: 12px;
-  display: grid;
-  gap: 8px;
-}
-
-.rubric-review-card h4 {
+.rubric-checklist-shell h4 {
   margin: 0;
   font-size: 1rem;
 }
 
-.rubric-review-card-head {
+.rubric-checklist-list {
+  display: grid;
+  gap: 10px;
+}
+
+.rubric-checklist-item {
+  border: 1px solid var(--sand);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 95%, var(--paper));
+  overflow: hidden;
+}
+
+.rubric-checklist-item.is-missing {
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--sand));
+}
+
+.rubric-checklist-item.is-review {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
+}
+
+.rubric-checklist-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+}
+
+.rubric-checklist-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rubric-checklist-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rubric-checklist-label {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.rubric-checklist-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  border: 1px solid var(--sand);
+  color: var(--ink-light);
+  background: color-mix(in srgb, var(--paper) 78%, var(--surface));
+}
+
+.rubric-checklist-status.is-ok {
+  border-color: color-mix(in srgb, var(--success) 32%, var(--sand));
+  color: color-mix(in srgb, var(--success) 75%, var(--ink-light));
+  background: color-mix(in srgb, var(--success-soft) 75%, var(--surface));
+}
+
+.rubric-checklist-status.is-missing {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--sand));
+  color: color-mix(in srgb, var(--danger) 84%, var(--ink-light));
+  background: color-mix(in srgb, var(--danger-soft) 80%, var(--surface));
+}
+
+.rubric-checklist-status.is-review {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
+  color: color-mix(in srgb, var(--warning) 84%, var(--ink-light));
+  background: color-mix(in srgb, var(--warning-soft) 80%, var(--surface));
+}
+
+.rubric-checklist-copy p {
+  margin: 0;
+  color: var(--ink-light);
+  font-size: 0.84rem;
+}
+
+.rubric-checklist-detail {
+  border-top: 1px dashed var(--sand-light);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.rubric-detail-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 8px;
 }
 
-.rubric-review-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--sand-light);
-  font-size: 0.9rem;
+.rubric-detail-table {
+  display: grid;
+  gap: 0;
 }
 
-.rubric-review-row span {
+.rubric-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px dashed var(--sand-light);
+}
+
+.rubric-detail-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.rubric-detail-row span {
   color: var(--ink-light);
 }
 
-.rubric-review-row strong {
+.rubric-detail-row strong {
   text-align: right;
+  max-width: 58%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rubric-review-outcomes {
@@ -2850,10 +3038,18 @@ input:checked + .slider:before { transform: translateX(18px); }
 
 .rubric-wizard-actions {
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
   padding-top: 8px;
   border-top: 1px solid var(--sand-light);
+}
+
+.rubric-wizard-actions-secondary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .rubric-advanced-assistant {
@@ -3170,24 +3366,41 @@ input:checked + .slider:before { transform: translateX(18px); }
     grid-template-columns: 1fr;
   }
 
-  .rubric-number-stepper,
+  .rubric-number-stepper {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
   .rubric-number-stepper-input {
+    min-width: 0;
     width: 100%;
   }
 
-  .rubric-number-stepper {
-    grid-template-columns: 44px minmax(0, 1fr) 44px;
-  }
-
   .rubric-ocr-mapping-header,
-  .rubric-review-card-head,
-  .rubric-review-row {
+  .rubric-ocr-mapping-row-head,
+  .rubric-checklist-row,
+  .rubric-detail-head,
+  .rubric-detail-row {
     flex-direction: column;
     align-items: flex-start;
   }
 
-  .rubric-review-row strong {
+  .rubric-detail-row strong {
+    max-width: 100%;
     text-align: left;
+  }
+
+  .rubric-policy-control--boxed {
+    padding: 8px;
+  }
+
+  .rubric-wizard-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rubric-wizard-actions-secondary {
+    width: 100%;
   }
 }
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StageConfigEditor } from "@/components/stage-config-editor";
 import type { CycleStageField, StageSection } from "@/types/domain";
@@ -132,6 +132,35 @@ function makeWizardReadyFields(): CycleStageField[] {
       ai_parser_config: null,
       created_at: "2026-01-01T00:00:00.000Z",
     },
+  ];
+}
+
+function makeWizardReadyFieldsWithTechnicalOcr(): CycleStageField[] {
+  const fields = makeWizardReadyFields();
+  const identityField = fields[0];
+  const parserConfig = identityField.ai_parser_config;
+  if (!parserConfig) {
+    return fields;
+  }
+
+  return [
+    {
+      ...identityField,
+      ai_parser_config: {
+        ...parserConfig,
+        expectedSchemaTemplate:
+          "{\"fullName\":\"string\",\"birthYear\":\"int\",\"documentType\":\"string\",\"documentIssue\":\"string\",\"confidence\":\"float\",\"summary\":\"string\"}",
+        expectedOutputFields: [
+          { key: "fullName", type: "text" },
+          { key: "birthYear", type: "number" },
+          { key: "documentType", type: "text" },
+          { key: "documentIssue", type: "text" },
+          { key: "confidence", type: "decimal" },
+          { key: "summary", type: "text" },
+        ],
+      },
+    },
+    ...fields.slice(1),
   ];
 }
 
@@ -1421,6 +1450,60 @@ describe("StageConfigEditor", () => {
     expect(screen.getByRole("button", { name: /Advanced \(próximamente\)/i })).toBeDisabled();
   });
 
+  it("switches to form editor from wizard OCR mapping via Editar campos OCR", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={makeWizardReadyFields()}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Editar campos OCR/i }));
+
+    expect(screen.getByRole("button", { name: /^Editor de Formulario$/i })).toHaveClass("active");
+  });
+
+  it("marks technical OCR options and shows a warning when selected for business slots", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={makeWizardReadyFieldsWithTechnicalOcr()}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    fireEvent.change(screen.getByLabelText(/Campo OCR: Nombre en documento/i), {
+      target: { value: "confidence" },
+    });
+
+    expect(screen.getByText(/Documentos de identidad seleccionados:/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/confidence \[Técnico\]/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Este campo es técnico; confirma que realmente representa nombre en documento/i),
+    ).toBeInTheDocument();
+  });
+
   it("supports multi-year birth input and persists editable wizard policy values", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
@@ -1516,6 +1599,19 @@ describe("StageConfigEditor", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: /^Continuar$/i }));
 
+    expect(screen.getByText(/Checklist de activación/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Mapeos OCR activos/i)).not.toBeInTheDocument();
+    const policiesChecklistLabel = screen
+      .getAllByText(/^Políticas$/i)
+      .find((node) => node.classList.contains("rubric-checklist-label"));
+    const policiesChecklistItem = policiesChecklistLabel?.closest(".rubric-checklist-item") ?? null;
+    expect(policiesChecklistItem).not.toBeNull();
+    if (!policiesChecklistItem) {
+      throw new Error("No se encontró la fila de checklist para Políticas.");
+    }
+    fireEvent.click(
+      within(policiesChecklistItem as HTMLElement).getByRole("button", { name: /Ver detalle/i }),
+    );
     expect(screen.getByText(/m[ií]nimo 2 respuesta/i)).toBeInTheDocument();
     expect(screen.getByText(/Múltiples certificados de notas/i)).toBeInTheDocument();
     expect(screen.getByText(/Excepciones de documento de identidad/i)).toBeInTheDocument();
