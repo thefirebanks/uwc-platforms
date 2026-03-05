@@ -7,6 +7,7 @@ import { Divider, Popover } from "@mui/material";
 import { LanguageToggle } from "@/components/language-toggle";
 import { useAppLanguage } from "@/components/language-provider";
 import type { AppRole } from "@/types/domain";
+import { ProfileSettingsDialog } from "@/components/profile-settings-dialog";
 import {
   clearSupabaseBrowserSessionCache,
   getSupabaseBrowserClient,
@@ -14,11 +15,22 @@ import {
 } from "@/lib/supabase/browser";
 import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 
-export function TopNav({ role }: { role: AppRole }) {
+export function TopNav({
+  role,
+  accountDisplayName,
+  accountEmail,
+}: {
+  role: AppRole;
+  accountDisplayName?: string | null;
+  accountEmail?: string | null;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const { t, language } = useAppLanguage();
   const isAdmin = role === "admin";
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [editedProfileName, setEditedProfileName] = useState<string | null>(null);
+  const profileName = editedProfileName ?? accountDisplayName?.trim() ?? "";
   const [pendingNav, setPendingNav] = useState<{
     href: string;
     sourcePath: string | null;
@@ -31,8 +43,17 @@ export function TopNav({ role }: { role: AppRole }) {
   const settingsPopoverId = settingsOpen
     ? "admin-topbar-settings-popover"
     : undefined;
+  const signedInLabel = language === "en" ? "Signed in" : "Sesión actual";
+  const primaryAccountLabel = profileName || accountEmail?.trim() || "";
+  const showSecondaryEmail =
+    accountEmail?.trim() &&
+    primaryAccountLabel &&
+    accountEmail.trim().toLowerCase() !== primaryAccountLabel.toLowerCase()
+      ? accountEmail.trim()
+      : null;
   const settingsLabel = language === "en" ? "Settings" : "Configuración";
   const themeLabel = language === "en" ? "Theme" : "Tema";
+  const profileLabel = language === "en" ? "Profile" : "Perfil";
 
   async function logout() {
     setSettingsAnchorEl(null);
@@ -50,6 +71,15 @@ export function TopNav({ role }: { role: AppRole }) {
 
   function closeSettingsMenu() {
     setSettingsAnchorEl(null);
+  }
+
+  function openProfileDialog() {
+    closeSettingsMenu();
+    setProfileDialogOpen(true);
+  }
+
+  function closeProfileDialog() {
+    setProfileDialogOpen(false);
   }
 
   useEffect(() => {
@@ -199,6 +229,25 @@ export function TopNav({ role }: { role: AppRole }) {
                 <div className="admin-topbar-settings-heading">
                   {settingsLabel}
                 </div>
+                {primaryAccountLabel ? (
+                  <>
+                    <div className="admin-topbar-settings-account">
+                      <p className="admin-topbar-settings-account-label">{signedInLabel}</p>
+                      <p className="admin-topbar-settings-account-name">{primaryAccountLabel}</p>
+                      {showSecondaryEmail ? (
+                        <p className="admin-topbar-settings-account-email">{showSecondaryEmail}</p>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-ghost admin-topbar-settings-profile-btn"
+                      onClick={openProfileDialog}
+                    >
+                      {profileLabel}
+                    </button>
+                    <Divider />
+                  </>
+                ) : null}
                 <div className="admin-topbar-settings-block">
                   <LanguageToggle />
                 </div>
@@ -219,6 +268,14 @@ export function TopNav({ role }: { role: AppRole }) {
                 </button>
               </div>
             </Popover>
+            <ProfileSettingsDialog
+              open={profileDialogOpen}
+              language={language}
+              initialName={profileName}
+              email={accountEmail}
+              onClose={closeProfileDialog}
+              onProfileUpdated={setEditedProfileName}
+            />
           </>
         ) : (
           <>

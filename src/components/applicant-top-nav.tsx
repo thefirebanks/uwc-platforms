@@ -19,8 +19,10 @@ import DarkModeOutlinedIcon from "@mui/icons-material/DarkModeOutlined";
 import LightModeOutlinedIcon from "@mui/icons-material/LightModeOutlined";
 import LogoutIcon from "@mui/icons-material/Logout";
 import LanguageIcon from "@mui/icons-material/Language";
+import PersonOutlineIcon from "@mui/icons-material/PersonOutline";
 import { useAppLanguage } from "@/components/language-provider";
 import { useThemeMode } from "@/components/app-theme-provider";
+import { ProfileSettingsDialog } from "@/components/profile-settings-dialog";
 import {
   clearSupabaseBrowserSessionCache,
   getSupabaseBrowserClient,
@@ -46,6 +48,9 @@ export function ApplicantTopNav({
   const { t, language, setLanguage, canUseEnglish } = useAppLanguage();
   const { mode, toggleMode } = useThemeMode();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [editedProfileName, setEditedProfileName] = useState<string | null>(null);
+  const profileName = editedProfileName ?? accountDisplayName?.trim() ?? "";
   const isMenuOpen = Boolean(anchorEl);
 
   const isDark = mode === "dark";
@@ -61,7 +66,7 @@ export function ApplicantTopNav({
   const draftDotColor = getDotColor(draftStatusDot);
   const modeDotColor = getDotColor(modeStatusDot);
   const fallbackEmail = accountEmail?.trim() || null;
-  const primaryAccountLabel = accountDisplayName?.trim() || fallbackEmail || null;
+  const primaryAccountLabel = profileName || fallbackEmail || null;
   const showSecondaryEmail =
     fallbackEmail && primaryAccountLabel && primaryAccountLabel.toLowerCase() !== fallbackEmail.toLowerCase()
       ? fallbackEmail
@@ -113,6 +118,15 @@ export function ApplicantTopNav({
   function handleThemeToggle() {
     toggleMode();
     handleMenuClose();
+  }
+
+  function handleProfileOpen() {
+    handleMenuClose();
+    setProfileDialogOpen(true);
+  }
+
+  function handleProfileClose() {
+    setProfileDialogOpen(false);
   }
 
   function handleLogout() {
@@ -310,6 +324,15 @@ export function ApplicantTopNav({
         >
           {accountMenuHeader}
 
+          <MenuItem onClick={handleProfileOpen}>
+            <PersonOutlineIcon sx={{ mr: 1.5, fontSize: 20, color: "var(--muted)" }} />
+            <Typography sx={{ flex: 1 }}>
+              {language === "es" ? "Perfil" : "Profile"}
+            </Typography>
+          </MenuItem>
+
+          <Divider sx={{ my: 0.5 }} />
+
           {/* Language toggle */}
           {canUseEnglish ? (
             <MenuItem onClick={handleLanguageToggle}>
@@ -346,6 +369,15 @@ export function ApplicantTopNav({
             <Typography>{t("nav.logout")}</Typography>
           </MenuItem>
         </Menu>
+
+        <ProfileSettingsDialog
+          open={profileDialogOpen}
+          language={language}
+          initialName={profileName}
+          email={accountEmail}
+          onClose={handleProfileClose}
+          onProfileUpdated={setEditedProfileName}
+        />
       </Toolbar>
     </AppBar>
   );

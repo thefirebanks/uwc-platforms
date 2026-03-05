@@ -106,6 +106,18 @@ describe("groupFieldsBySections", () => {
     expect(result[1].fields.map((f) => f.field_key)).toEqual(["secretField"]);
   });
 
+  it("uses the first visible section as fallback when 'other' does not exist", () => {
+    const fields = [
+      makeField("fullName", "sec-identity"),
+      makeField("customField", null),
+    ];
+    const sections = [identitySection, familySection];
+
+    const result = groupFieldsBySections(fields, sections);
+    expect(result.map((s) => s.sectionKey)).toEqual(["identity"]);
+    expect(result[0].fields.map((f) => f.field_key)).toEqual(["fullName", "customField"]);
+  });
+
   it("'other' section always appears last", () => {
     // Give 'other' a low sort_order to prove it still ends up last
     const earlyOther = makeSection({

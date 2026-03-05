@@ -273,6 +273,144 @@ describe("StageConfigEditor", () => {
     expect(screen.getByRole("button", { name: /\+ Añadir nueva sección/i })).toBeInTheDocument();
   });
 
+  it("allows deleting the fallback section and persists an empty sections list", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fields: [],
+          sections: [],
+          automations: [],
+          settings: {
+            stageName: "Stage 5",
+            description: "",
+            openDate: null,
+            closeDate: null,
+            previousStageRequirement: "none",
+            blockIfPreviousNotMet: false,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-stage-5"
+        stageCode="custom_stage_5"
+        stageLabel="Stage 5"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection({ title: "" })]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    const deleteButtons = screen.getAllByRole("button", { name: "Eliminar sección" });
+    expect(deleteButtons[0]).not.toBeDisabled();
+    fireEvent.click(deleteButtons[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const request = fetchMock.mock.calls.at(-1)?.[1];
+    const payload = request && typeof request === "object" && "body" in request
+      ? JSON.parse(String(request.body))
+      : null;
+
+    expect(payload?.sections).toEqual([]);
+  });
+
+  it("sends a fallback section title when a section name is blank", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fields: [],
+          sections: [
+            {
+              id: "section-custom",
+              cycle_id: "cycle-1",
+              stage_code: "custom_stage_5",
+              section_key: "custom",
+              title: "Sección 1",
+              description: "",
+              sort_order: 1,
+              is_visible: true,
+              created_at: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          automations: [],
+          settings: {
+            stageName: "Stage 5",
+            description: "",
+            openDate: null,
+            closeDate: null,
+            previousStageRequirement: "none",
+            blockIfPreviousNotMet: false,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-stage-5"
+        stageCode="custom_stage_5"
+        stageLabel="Stage 5"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-1",
+            cycle_id: "cycle-1",
+            stage_code: "custom_stage_5",
+            field_key: "customField",
+            field_label: "Campo",
+            field_type: "short_text",
+            is_required: false,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: "section-custom",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[
+          {
+            ...makeOtherSection(),
+            id: "section-custom",
+            stage_code: "custom_stage_5",
+            section_key: "custom",
+            title: "",
+            sort_order: 1,
+          },
+        ]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Añadir nuevo campo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const request = fetchMock.mock.calls.at(-1)?.[1];
+    const payload = request && typeof request === "object" && "body" in request
+      ? JSON.parse(String(request.body))
+      : null;
+
+    expect(payload?.sections?.[0]?.title).toBe("Sección 1");
+  });
+
   it("starts with all field editors collapsed", () => {
     render(
       <StageConfigEditor

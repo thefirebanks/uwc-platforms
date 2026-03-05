@@ -489,6 +489,7 @@ function deriveEditorSections(
     .sort((a, b) => a.sort_order - b.sort_order);
 
   const otherSection = sortedSections.find((s) => s.section_key === "other");
+  const fallbackSection = otherSection ?? sortedSections[0] ?? null;
   const buckets = new Map<string, EditableField[]>();
   for (const s of sortedSections) {
     buckets.set(s.id, []);
@@ -497,8 +498,8 @@ function deriveEditorSections(
   for (const field of fields) {
     if (field.section_id && buckets.has(field.section_id)) {
       buckets.get(field.section_id)!.push(field);
-    } else if (otherSection) {
-      buckets.get(otherSection.id)?.push(field);
+    } else if (fallbackSection) {
+      buckets.get(fallbackSection.id)?.push(field);
     }
   }
 
@@ -626,6 +627,27 @@ function getNewFieldSeedForSection({
         field_label: "Nuevo campo adicional",
         field_type: "short_text" as const,
       };
+  }
+}
+
+function getDefaultSectionTitle(sectionKey: string, sectionNumber: number) {
+  switch (sectionKey) {
+    case "other":
+      return "Otros campos";
+    case "identity":
+      return "Datos personales";
+    case "family":
+      return "Familia";
+    case "school":
+      return "Información académica";
+    case "motivation":
+      return "Motivación";
+    case "documents":
+      return "Documentos";
+    case "recommenders":
+      return "Recomendaciones";
+    default:
+      return `Sección ${sectionNumber}`;
   }
 }
 
@@ -1296,7 +1318,9 @@ export function StageConfigEditor({
           })),
           sections: sections.map((s, index) => ({
             sectionKey: s.section_key,
-            title: s.title.trim(),
+            title:
+              s.title.trim() ||
+              getDefaultSectionTitle(s.section_key, index + 1),
             description: s.description.trim(),
             sortOrder: index + 1,
             isVisible: s.is_visible,
@@ -2087,7 +2111,9 @@ export function StageConfigEditor({
 
     editorSections.forEach((section, index) => {
       const sectionFields = section.fields as EditableField[];
-      const heading = `Sección ${index + 1}: ${section.title}`;
+      const heading = `Sección ${index + 1}: ${
+        section.title.trim() || getDefaultSectionTitle(section.sectionKey, index + 1)
+      }`;
       const firstField = sectionFields[0];
       const lastField = sectionFields.at(-1);
       const isSectionCollapsed = collapsedSet.has(String(section.id));
@@ -2215,31 +2241,45 @@ export function StageConfigEditor({
 
   function removeSection(sectionId: string) {
     const section = sections.find((s) => s.id === sectionId);
-    if (!section || section.section_key === "other") return;
+    if (!section) return;
+    const sectionOrder = Math.max(
+      1,
+      sections
+        .filter((candidate) => candidate.is_visible)
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .findIndex((candidate) => candidate.id === section.id) + 1,
+    );
+    const sectionDisplayTitle =
+      section.title.trim() || getDefaultSectionTitle(section.section_key, sectionOrder);
 
     const fieldCount = fields.filter((f) => f.section_id === sectionId).length;
-    const otherSection = sections.find((s) => s.section_key === "other");
+    const fallbackSection =
+      sections.find((s) => s.section_key === "other" && s.id !== sectionId) ??
+      sections.find((s) => s.id !== sectionId) ??
+      null;
 
     const confirmed = confirmAction(
       fieldCount > 0
-        ? `¿Eliminar la sección "${section.title}"?\n\n${fieldCount} campo(s) se moverán a "Otros campos".`
-        : `¿Eliminar la sección "${section.title}"?`,
+        ? `¿Eliminar la sección "${sectionDisplayTitle}"?\n\n${fieldCount} campo(s) se reasignarán automáticamente.`
+        : `¿Eliminar la sección "${sectionDisplayTitle}"?`,
     );
     if (!confirmed) return;
 
     setSections((current) => current.filter((s) => s.id !== sectionId));
 
-    if (otherSection && fieldCount > 0) {
+    if (fieldCount > 0) {
       setFields((current) =>
         current.map((f) =>
-          f.section_id === sectionId ? { ...f, section_id: otherSection.id } : f,
+          f.section_id === sectionId
+            ? { ...f, section_id: fallbackSection?.id ?? null }
+            : f,
         ),
       );
     }
 
     setStatusMessage(
       fieldCount > 0
-        ? `Sección eliminada. ${fieldCount} campo(s) movidos a "Otros campos". Guarda para persistir.`
+        ? `Sección eliminada. ${fieldCount} campo(s) reasignados localmente. Guarda para persistir.`
         : "Sección eliminada. Guarda configuración para persistir.",
     );
   }
@@ -2255,7 +2295,7 @@ export function StageConfigEditor({
     const canCollapse = options?.canCollapse ?? true;
     const canMoveUp = Boolean(position && position.index > 0);
     const canMoveDown = Boolean(position && position.index < position.total - 1);
-    const canDelete = section?.section_key !== "other";
+    const canDelete = Boolean(section);
 
     return (
       <div className="admin-stage-section-heading-row">
@@ -2331,7 +2371,7 @@ export function StageConfigEditor({
             title={
               canDelete
                 ? "Eliminar sección"
-                : "La sección Otros campos no se elimina desde aquí"
+                : "No se pudo identificar la sección"
             }
             aria-label="Eliminar sección"
           >
@@ -2385,10 +2425,11 @@ export function StageConfigEditor({
 
   function renderEmptySection(section: EditorSection) {
     const sectionNumber = editorSections.findIndex((candidate) => candidate.id === section.id) + 1;
+    const sectionTitle = section.title.trim() || getDefaultSectionTitle(section.sectionKey, sectionNumber);
 
     return (
       <div key={section.id} className="admin-stage-section-placeholder">
-        {renderSectionHeading(`Sección ${sectionNumber}: ${section.title}`, section.id, {
+        {renderSectionHeading(`Sección ${sectionNumber}: ${sectionTitle}`, section.id, {
           canCollapse: false,
         })}
         <div className="settings-card admin-stage-empty-section-card">

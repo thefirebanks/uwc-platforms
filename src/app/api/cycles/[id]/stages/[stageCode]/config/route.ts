@@ -79,7 +79,7 @@ const settingsSchema = z.object({
 
 const sectionSchema = z.object({
   sectionKey: z.string().trim().min(1).max(120),
-  title: z.string().trim().min(1).max(120),
+  title: z.string().trim().max(120).optional().default(""),
   description: z.string().trim().max(500).optional().default(""),
   sortOrder: z.number().int().min(0).max(500),
   isVisible: z.boolean().optional().default(true),
@@ -102,6 +102,55 @@ function toIsoDateBoundary(value: string | null | undefined) {
   }
 
   return new Date(`${value}T00:00:00.000Z`).toISOString();
+}
+
+function defaultSectionTitle(sectionKey: string, fallbackOrder: number) {
+  const normalized = sectionKey.trim();
+  if (normalized === "other") {
+    return "Otros campos";
+  }
+  if (normalized === "identity") {
+    return "Datos personales";
+  }
+  if (normalized === "family") {
+    return "Familia";
+  }
+  if (normalized === "school") {
+    return "Información académica";
+  }
+  if (normalized === "motivation") {
+    return "Motivación";
+  }
+  if (normalized === "documents") {
+    return "Documentos";
+  }
+  if (normalized === "recommenders") {
+    return "Recomendaciones";
+  }
+  return `Sección ${fallbackOrder}`;
+}
+
+function describePatchValidationError(error: z.ZodError<z.infer<typeof patchSchema>>) {
+  const issue = error.issues[0];
+  if (!issue) {
+    return "No se pudo guardar la configuración de etapa.";
+  }
+
+  const [head, second] = issue.path;
+  if (head === "sections" && typeof second === "number") {
+    return `La sección ${second + 1} tiene datos inválidos.`;
+  }
+  if (head === "settings") {
+    return "Revisa los ajustes de la etapa antes de guardar.";
+  }
+  if (head === "fields" && typeof second === "number") {
+    return `El campo ${second + 1} tiene configuración inválida.`;
+  }
+  if (head === "automations" && typeof second === "number") {
+    return `La automatización ${second + 1} tiene datos inválidos.`;
+  }
+
+  return "No se pudo guardar la configuración de etapa.";
 }
 
 function parseStageAdminConfig(value: Json | null | undefined) {
@@ -442,7 +491,7 @@ export async function PATCH(
     if (!parsed.success) {
       throw new AppError({
         message: "Invalid stage config payload",
-        userMessage: "No se pudo guardar la configuración de etapa.",
+        userMessage: describePatchValidationError(parsed.error),
         status: 400,
         details: parsed.error.flatten(),
       });
@@ -526,9 +575,9 @@ export async function PATCH(
     if (parsed.data.sections) {
       const incomingSectionKeys = new Set(parsed.data.sections.map((s) => s.sectionKey.trim()));
 
-      // Delete sections no longer in the incoming list (but never delete 'other')
+      // Delete sections no longer in the incoming list
       const sectionKeysToDelete = existingSections
-        .filter((s) => !incomingSectionKeys.has(s.section_key) && s.section_key !== "other")
+        .filter((s) => !incomingSectionKeys.has(s.section_key))
         .map((s) => s.id);
 
       if (sectionKeysToDelete.length > 0) {
@@ -548,15 +597,22 @@ export async function PATCH(
       }
 
       // Upsert remaining sections
-      const sectionRows = parsed.data.sections.map((section) => ({
-        cycle_id: cycleId,
-        stage_code: stageCode,
-        section_key: section.sectionKey.trim(),
-        title: section.title.trim(),
-        description: (section.description ?? "").trim(),
-        sort_order: section.sortOrder,
-        is_visible: section.isVisible ?? true,
-      }));
+      const sectionRows = parsed.data.sections.map((section) => {
+        const normalizedKey = section.sectionKey.trim();
+        const normalizedTitle = section.title.trim();
+
+        return {
+          cycle_id: cycleId,
+          stage_code: stageCode,
+          section_key: normalizedKey,
+          title:
+            normalizedTitle ||
+            defaultSectionTitle(normalizedKey, Math.max(1, section.sortOrder)),
+          description: (section.description ?? "").trim(),
+          sort_order: section.sortOrder,
+          is_visible: section.isVisible ?? true,
+        };
+      });
 
       if (sectionRows.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stage_sections table exists via migration but Supabase types not yet regenerated
