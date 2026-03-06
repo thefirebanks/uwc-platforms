@@ -11,6 +11,7 @@ export type ParsedStageAdminConfig = {
   closeDate?: string | null;
   previousStageRequirement?: string | null;
   blockIfPreviousNotMet?: boolean | null;
+  eligibilityRubric?: unknown | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -33,5 +34,9 @@ export function parseStageAdminConfig(value: unknown): ParsedStageAdminConfig {
         : null,
     blockIfPreviousNotMet:
       typeof value.blockIfPreviousNotMet === "boolean" ? value.blockIfPreviousNotMet : null,
+    eligibilityRubric:
+      typeof value.eligibilityRubric === "object" && value.eligibilityRubric !== null
+        ? value.eligibilityRubric
+        : null,
   };
 }

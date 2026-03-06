@@ -23,7 +23,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   if (profile.role === "reviewer") {
     return (
       <LanguageProvider canUseEnglish={canUseEnglish}>
-        <TopNav role={profile.role} />
+        <TopNav
+          role={profile.role}
+          accountDisplayName={profile.full_name ?? null}
+          accountEmail={profile.email}
+        />
         {children}
       </LanguageProvider>
     );
@@ -32,7 +36,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // For admin, use the standard TopNav and container layout
   return (
     <LanguageProvider canUseEnglish={canUseEnglish}>
-      <TopNav role={profile.role} />
+      <TopNav
+        role={profile.role}
+        accountDisplayName={profile.full_name ?? null}
+        accountEmail={profile.email}
+      />
       {children}
     </LanguageProvider>
   );

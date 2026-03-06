@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
+import { logger } from "@/lib/logging/logger";
 import type { Database } from "@/types/supabase";
-import type { ApplicationStatus, StageCode } from "@/types/domain";
+import type { ApplicationStatus, EligibilityOutcome, StageCode } from "@/types/domain";
 import { getApplicationName } from "@/lib/server/application-service";
+import { getLatestStageEvaluationsByApplicationId } from "@/lib/server/eligibility-rubric-service";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -32,6 +34,8 @@ export type AdminCandidateRow = {
   region: string;
   stageCode: string;
   status: ApplicationStatus;
+  reviewOutcome: EligibilityOutcome | null;
+  reviewEvaluatedAt: string | null;
   updatedAt: string;
 };
 
@@ -259,10 +263,26 @@ export async function searchApplications({
     cycleMap.set(c.id, c.name);
   }
 
+  let evaluationMap = new Map<string, Database["public"]["Tables"]["application_stage_evaluations"]["Row"]>();
+  try {
+    evaluationMap = await getLatestStageEvaluationsByApplicationId({
+      supabase,
+      applicationIds: appRows.map((row) => row.id),
+    });
+  } catch (error) {
+    logger.warn(
+      {
+        error,
+      },
+      "Failed loading stage evaluations for search; continuing without review outcomes",
+    );
+  }
+
   /* ---- Step 5: map to AdminCandidateRow ---- */
   const rows: AdminCandidateRow[] = appRows.map((app) => {
     const profile = profileMap.get(app.applicant_id);
     const payload = (app.payload ?? {}) as Record<string, unknown>;
+    const evaluation = evaluationMap.get(`${app.id}:${app.stage_code}`);
 
     return {
       id: app.id,
@@ -274,6 +294,8 @@ export async function searchApplications({
       region: pickString(payload.region),
       stageCode: app.stage_code,
       status: app.status as ApplicationStatus,
+      reviewOutcome: (evaluation?.outcome as EligibilityOutcome | undefined) ?? null,
+      reviewEvaluatedAt: evaluation?.evaluated_at ?? null,
       updatedAt: app.updated_at,
     };
   });

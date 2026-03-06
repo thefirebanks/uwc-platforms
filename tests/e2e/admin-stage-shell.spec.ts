@@ -12,6 +12,7 @@ test.describe("Admin stage shell integration", () => {
     await page.goto("/login");
     await expect(page.getByRole("button", { name: /Entrar como postulante demo 1/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /Entrar como postulante demo 2/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Entrar como postulante demo 3/i })).toBeVisible();
 
     await loginAsAdmin(page);
     await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents`);

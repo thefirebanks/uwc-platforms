@@ -20,16 +20,22 @@ import {
 } from "@/lib/supabase/browser";
 import { ThemeModeToggle } from "@/components/theme-mode-toggle";
 
-const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
+const deploymentEnvironment = (process.env.NEXT_PUBLIC_VERCEL_ENV ?? "").toLowerCase();
+const isProductionDeployment = deploymentEnvironment === "production";
+const devBypassEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true" && !isProductionDeployment;
 const demoAdminEmail = process.env.NEXT_PUBLIC_DEMO_ADMIN_EMAIL;
 const demoApplicantEmail = process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL;
 const demoApplicant2Email =
   process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL ?? "applicant.demo2@uwcperu.org";
+const demoApplicant3Email =
+  process.env.NEXT_PUBLIC_DEMO_APPLICANT_3_EMAIL ?? "applicant.demo3@uwcperu.org";
 const demoPassword = process.env.NEXT_PUBLIC_DEMO_PASSWORD;
 
 const demoApplicantAccounts = [
   { key: "applicant_1", email: demoApplicantEmail, label: "Entrar como postulante demo 1" },
   { key: "applicant_2", email: demoApplicant2Email, label: "Entrar como postulante demo 2" },
+  { key: "applicant_3", email: demoApplicant3Email, label: "Entrar como postulante demo 3" },
 ].filter((account): account is { key: string; email: string; label: string } => Boolean(account.email));
 
 export default function LoginPage() {

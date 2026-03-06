@@ -31,8 +31,8 @@ export type RecentTransition = {
 const APP_STATUS_LABEL: Record<ApplicationStatus, string> = {
   draft: "Borrador",
   submitted: "Enviado",
-  eligible: "Elegible",
-  ineligible: "No elegible",
+  eligible: "En revisión",
+  ineligible: "En revisión",
   advanced: "Avanzado",
 };
 
@@ -47,12 +47,18 @@ const APP_STATUS_COLOR: Record<ApplicationStatus, string> = {
 const APP_STATUS_BG: Record<ApplicationStatus, string> = {
   draft: "var(--sand-light)",
   submitted: "var(--uwc-blue-soft)",
-  eligible: "var(--success-soft)",
-  ineligible: "var(--danger-soft)",
+  eligible: "var(--warning-soft)",
+  ineligible: "var(--warning-soft)",
   advanced: "var(--uwc-maroon-soft)",
 };
 
+const HIDDEN_APPLICANT_OUTCOMES: ApplicationStatus[] = ["eligible", "ineligible"];
+
 function AppStatusBadge({ status }: { status: ApplicationStatus }) {
+  if (HIDDEN_APPLICANT_OUTCOMES.includes(status)) {
+    return null;
+  }
+
   return (
     <span
       style={{
@@ -80,20 +86,31 @@ function formatDate(value: string | null) {
   });
 }
 
+function getPreferredApplicantName(fullName: string | null | undefined) {
+  const normalized = fullName?.trim() ?? "";
+  if (!normalized) {
+    return null;
+  }
+
+  return normalized.split(/\s+/)[0] ?? null;
+}
+
 export function ApplicantProcessesDashboard({
   processes,
   applications,
   maxApplications = 3,
   stageTemplates = [],
   recentTransitions = [],
+  applicantName = null,
 }: {
   processes: SelectionProcess[];
   applications: ApplicantApplicationSummary[];
   maxApplications?: number;
   stageTemplates?: StageTemplateSummary[];
   recentTransitions?: RecentTransition[];
+  applicantName?: string | null;
 }) {
-  const { t } = useAppLanguage();
+  const { t, language } = useAppLanguage();
   const applicationMap = new Map(applications.map((a) => [a.cycle_id, a]));
   const reachedLimit = applications.length >= maxApplications;
 
@@ -132,9 +149,28 @@ export function ApplicantProcessesDashboard({
     (p) => p.id !== activeCycle?.id && (!p.is_active || !applicationMap.has(p.id)),
   );
   const [showOldProcesses, setShowOldProcesses] = useState(false);
+  const preferredName = getPreferredApplicantName(applicantName);
+  const greetingName = preferredName ?? (language === "en" ? "Applicant" : "Postulante");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <div
+        style={{
+          border: "1px solid var(--sand)",
+          borderRadius: "var(--radius-lg)",
+          background:
+            "linear-gradient(135deg, color-mix(in srgb, var(--uwc-maroon-soft) 65%, transparent), color-mix(in srgb, var(--uwc-blue-soft) 62%, transparent))",
+          padding: "16px 20px",
+        }}
+      >
+        <p style={{ margin: 0, fontSize: "1.2rem", fontWeight: 700, color: "var(--ink)" }}>
+          {t("dashboard.applicantGreeting", { name: greetingName })}
+        </p>
+        <p style={{ margin: "4px 0 0", fontSize: "0.86rem", color: "var(--ink-light)" }}>
+          {t("dashboard.applicantGreetingSubtitle")}
+        </p>
+      </div>
+
       {/* Congratulations banner */}
       {recentAdvancement && advancedToLabel && (
         <div

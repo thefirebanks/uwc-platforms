@@ -5,10 +5,19 @@ import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/supabase";
 
-const devBypassEnabled = process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true";
+const deploymentEnvironment = (
+  process.env.VERCEL_ENV ??
+  process.env.NEXT_PUBLIC_VERCEL_ENV ??
+  ""
+).toLowerCase();
+const isProductionDeployment = deploymentEnvironment === "production";
+const devBypassEnabled =
+  process.env.NEXT_PUBLIC_ENABLE_DEV_BYPASS === "true" && !isProductionDeployment;
 const demoApplicantEmail = process.env.NEXT_PUBLIC_DEMO_APPLICANT_EMAIL;
 const demoApplicant2Email =
   process.env.NEXT_PUBLIC_DEMO_APPLICANT_2_EMAIL ?? "applicant.demo2@uwcperu.org";
+const demoApplicant3Email =
+  process.env.NEXT_PUBLIC_DEMO_APPLICANT_3_EMAIL ?? "applicant.demo3@uwcperu.org";
 
 const requestSchema = z.object({
   email: z.string().email().optional(),
@@ -46,7 +55,7 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as unknown;
     const parsed = requestSchema.parse(body);
-    const allowedDemoEmails = [demoApplicantEmail, demoApplicant2Email]
+    const allowedDemoEmails = [demoApplicantEmail, demoApplicant2Email, demoApplicant3Email]
       .filter((email): email is string => Boolean(email))
       .map((email) => email.trim().toLowerCase());
 

@@ -73,9 +73,16 @@ export async function loginAsAdmin(page: Page): Promise<void> {
  * then navigate to the first available process form.
  */
 export async function loginAndOpenForm(page: Page): Promise<void> {
+  await loginAndOpenFormAsApplicant(page, /Entrar como postulante demo 1/i);
+}
+
+export async function loginAndOpenFormAsApplicant(
+  page: Page,
+  applicantBypassButton: string | RegExp,
+): Promise<void> {
   await loginWithBypass({
     page,
-    buttonName: /Entrar como postulante demo 1/i,
+    buttonName: applicantBypassButton,
     expectedUrl: /\/applicant/,
   });
 
@@ -153,17 +160,25 @@ export async function hasSectionWithTitle(page: Page, title: string): Promise<bo
  * Requires an active admin session. Signs out when done.
  */
 export async function resetDemoApplicant(page: Page): Promise<void> {
+  await resetDemoApplicantByEmail(page, "applicant.demo@uwcperu.org");
+}
+
+/**
+ * Reset a specific demo applicant's application via API endpoint.
+ * Requires an active admin session. Signs out when done.
+ */
+export async function resetDemoApplicantByEmail(page: Page, email: string): Promise<void> {
   await loginAsAdmin(page);
-  const status = await page.evaluate(async () => {
+  const status = await page.evaluate(async (targetEmail) => {
     const r = await fetch("/api/dev/reset-demo-applicant", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: "applicant.demo@uwcperu.org" }),
+      body: JSON.stringify({ email: targetEmail }),
     });
     return r.status;
-  });
+  }, email);
   if (status !== 200) {
-    throw new Error(`reset-demo-applicant returned HTTP ${status}`);
+    throw new Error(`reset-demo-applicant returned HTTP ${status} for ${email}`);
   }
   // The admin logout button is inside a Popover — open the settings menu first.
   // For non-admin (applicant) the button is directly visible.

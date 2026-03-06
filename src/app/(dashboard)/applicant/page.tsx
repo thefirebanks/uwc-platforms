@@ -86,6 +86,7 @@ export default async function ApplicantPage() {
             maxApplications={3}
             stageTemplates={(stageTemplates as StageTemplateSummary[] | null) ?? []}
             recentTransitions={(recentTransitions as RecentTransition[] | null) ?? []}
+            applicantName={profile.full_name ?? null}
           />
         </Container>
       </Box>

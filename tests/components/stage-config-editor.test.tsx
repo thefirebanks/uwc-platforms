@@ -1,7 +1,7 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StageConfigEditor } from "@/components/stage-config-editor";
-import type { StageSection } from "@/types/domain";
+import type { CycleStageField, StageSection } from "@/types/domain";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -20,6 +20,148 @@ function makeOtherSection(overrides?: Partial<StageSection>): StageSection {
     created_at: "2026-01-01T00:00:00.000Z",
     ...overrides,
   };
+}
+
+function makeWizardReadyFields(): CycleStageField[] {
+  return [
+    {
+      id: "field-id-doc",
+      cycle_id: "cycle-1",
+      stage_code: "documents",
+      field_key: "dniUpload",
+      field_label: "Documento DNI",
+      field_type: "file",
+      is_required: true,
+      placeholder: null,
+      help_text: null,
+      sort_order: 1,
+      is_active: true,
+      section_id: null,
+      ai_parser_config: {
+        enabled: true,
+        extractionInstructions: "Extrae datos de identidad.",
+        expectedSchemaTemplate:
+          "{\"fullName\":\"string\",\"birthYear\":\"int\",\"documentType\":\"string\",\"documentIssue\":\"string\"}",
+        expectedOutputFields: [
+          { key: "fullName", type: "text" },
+          { key: "birthYear", type: "number" },
+          { key: "documentType", type: "text" },
+          { key: "documentIssue", type: "text" },
+        ],
+        strictSchema: true,
+      },
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "field-grades",
+      cycle_id: "cycle-1",
+      stage_code: "documents",
+      field_key: "gradesOfficialDocument",
+      field_label: "Certificado de notas",
+      field_type: "file",
+      is_required: true,
+      placeholder: null,
+      help_text: null,
+      sort_order: 2,
+      is_active: true,
+      section_id: null,
+      ai_parser_config: null,
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "field-name",
+      cycle_id: "cycle-1",
+      stage_code: "documents",
+      field_key: "fullName",
+      field_label: "Nombre completo",
+      field_type: "short_text",
+      is_required: true,
+      placeholder: null,
+      help_text: null,
+      sort_order: 3,
+      is_active: true,
+      section_id: null,
+      ai_parser_config: null,
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "field-average",
+      cycle_id: "cycle-1",
+      stage_code: "documents",
+      field_key: "gradeAverage",
+      field_label: "Promedio",
+      field_type: "number",
+      is_required: true,
+      placeholder: null,
+      help_text: null,
+      sort_order: 4,
+      is_active: true,
+      section_id: null,
+      ai_parser_config: null,
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "field-auth",
+      cycle_id: "cycle-1",
+      stage_code: "documents",
+      field_key: "signedAuthorization",
+      field_label: "Autorización firmada",
+      field_type: "file",
+      is_required: true,
+      placeholder: null,
+      help_text: null,
+      sort_order: 5,
+      is_active: true,
+      section_id: null,
+      ai_parser_config: null,
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+    {
+      id: "field-photo",
+      cycle_id: "cycle-1",
+      stage_code: "documents",
+      field_key: "applicantPhoto",
+      field_label: "Foto del postulante",
+      field_type: "file",
+      is_required: true,
+      placeholder: null,
+      help_text: null,
+      sort_order: 6,
+      is_active: true,
+      section_id: null,
+      ai_parser_config: null,
+      created_at: "2026-01-01T00:00:00.000Z",
+    },
+  ];
+}
+
+function makeWizardReadyFieldsWithTechnicalOcr(): CycleStageField[] {
+  const fields = makeWizardReadyFields();
+  const identityField = fields[0];
+  const parserConfig = identityField.ai_parser_config;
+  if (!parserConfig) {
+    return fields;
+  }
+
+  return [
+    {
+      ...identityField,
+      ai_parser_config: {
+        ...parserConfig,
+        expectedSchemaTemplate:
+          "{\"fullName\":\"string\",\"birthYear\":\"int\",\"documentType\":\"string\",\"documentIssue\":\"string\",\"confidence\":\"float\",\"summary\":\"string\"}",
+        expectedOutputFields: [
+          { key: "fullName", type: "text" },
+          { key: "birthYear", type: "number" },
+          { key: "documentType", type: "text" },
+          { key: "documentIssue", type: "text" },
+          { key: "confidence", type: "decimal" },
+          { key: "summary", type: "text" },
+        ],
+      },
+    },
+    ...fields.slice(1),
+  ];
 }
 
 describe("StageConfigEditor", () => {
@@ -271,6 +413,144 @@ describe("StageConfigEditor", () => {
 
     expect(screen.getAllByRole("button", { name: "Añadir nuevo campo" }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /\+ Añadir nueva sección/i })).toBeInTheDocument();
+  });
+
+  it("allows deleting the fallback section and persists an empty sections list", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fields: [],
+          sections: [],
+          automations: [],
+          settings: {
+            stageName: "Stage 5",
+            description: "",
+            openDate: null,
+            closeDate: null,
+            previousStageRequirement: "none",
+            blockIfPreviousNotMet: false,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-stage-5"
+        stageCode="custom_stage_5"
+        stageLabel="Stage 5"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[]}
+        initialSections={[makeOtherSection({ title: "" })]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    const deleteButtons = screen.getAllByRole("button", { name: "Eliminar sección" });
+    expect(deleteButtons[0]).not.toBeDisabled();
+    fireEvent.click(deleteButtons[0]!);
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const request = fetchMock.mock.calls.at(-1)?.[1];
+    const payload = request && typeof request === "object" && "body" in request
+      ? JSON.parse(String(request.body))
+      : null;
+
+    expect(payload?.sections).toEqual([]);
+  });
+
+  it("sends a fallback section title when a section name is blank", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fields: [],
+          sections: [
+            {
+              id: "section-custom",
+              cycle_id: "cycle-1",
+              stage_code: "custom_stage_5",
+              section_key: "custom",
+              title: "Sección 1",
+              description: "",
+              sort_order: 1,
+              is_visible: true,
+              created_at: "2026-01-01T00:00:00.000Z",
+            },
+          ],
+          automations: [],
+          settings: {
+            stageName: "Stage 5",
+            description: "",
+            openDate: null,
+            closeDate: null,
+            previousStageRequirement: "none",
+            blockIfPreviousNotMet: false,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-stage-5"
+        stageCode="custom_stage_5"
+        stageLabel="Stage 5"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={[
+          {
+            id: "field-1",
+            cycle_id: "cycle-1",
+            stage_code: "custom_stage_5",
+            field_key: "customField",
+            field_label: "Campo",
+            field_type: "short_text",
+            is_required: false,
+            placeholder: null,
+            help_text: null,
+            sort_order: 1,
+            is_active: true,
+            section_id: "section-custom",
+            created_at: "2026-01-01T00:00:00.000Z",
+          },
+        ]}
+        initialSections={[
+          {
+            ...makeOtherSection(),
+            id: "section-custom",
+            stage_code: "custom_stage_5",
+            section_key: "custom",
+            title: "",
+            sort_order: 1,
+          },
+        ]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate=""
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Añadir nuevo campo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const request = fetchMock.mock.calls.at(-1)?.[1];
+    const payload = request && typeof request === "object" && "body" in request
+      ? JSON.parse(String(request.body))
+      : null;
+
+    expect(payload?.sections?.[0]?.title).toBe("Sección 1");
   });
 
   it("starts with all field editors collapsed", () => {
@@ -1069,8 +1349,9 @@ describe("StageConfigEditor", () => {
     fireEvent.change(screen.getByRole("textbox", { name: /Instrucciones de extracción/i }), {
       target: { value: "Extrae solo número de documento y nombre completo." },
     });
-    fireEvent.change(screen.getByRole("textbox", { name: /Esquema JSON esperado/i }), {
-      target: { value: "{\"document_number\":\"string\",\"full_name\":\"string\"}" },
+    fireEvent.click(screen.getByText(/Opciones avanzadas/i));
+    fireEvent.change(screen.getByRole("textbox", { name: /Esquema JSON esperado \(avanzado\)/i }), {
+      target: { value: "{\"document_number\":\"string\",\"birth-year\":\"int\"}" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
 
@@ -1085,7 +1366,11 @@ describe("StageConfigEditor", () => {
     expect(firstPayload?.fields?.[0]?.aiParser).toMatchObject({
       enabled: true,
       extractionInstructions: "Extrae solo número de documento y nombre completo.",
-      expectedSchemaTemplate: "{\"document_number\":\"string\",\"full_name\":\"string\"}",
+      expectedSchemaTemplate: "{\"document_number\":\"string\",\"birth-year\":\"int\"}",
+      expectedOutputFields: [
+        { key: "document_number", type: "text" },
+        { key: "birth-year", type: "number" },
+      ],
       strictSchema: true,
     });
 
@@ -1141,5 +1426,225 @@ describe("StageConfigEditor", () => {
     expect(
       screen.queryByRole("checkbox", { name: /Habilitar parsing IA para Nombre completo/i }),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows wizard and advanced rubric authoring tabs", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={makeWizardReadyFields()}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    expect(screen.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /Modo avanzado/i })).not.toBeDisabled();
+  });
+
+  it("switches to form editor from wizard OCR mapping via Editar campos OCR", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={makeWizardReadyFields()}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    // Expand the collapsible OCR section first
+    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Editar campos OCR/i }));
+
+    expect(screen.getByRole("button", { name: /^Editor de Formulario$/i })).toHaveClass("active");
+  });
+
+  it("marks technical OCR options and shows a warning when selected for business slots", () => {
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={makeWizardReadyFieldsWithTechnicalOcr()}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    // Expand the collapsible OCR section first
+    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
+    fireEvent.change(screen.getByLabelText(/Nombre en documento/i), {
+      target: { value: "confidence" },
+    });
+
+    expect(screen.getAllByText(/Documentos de identidad/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Técnico/i).length).toBeGreaterThan(0);
+    expect(
+      screen.getByText(/Confirma que este campo técnico representa nombre en documento/i),
+    ).toBeInTheDocument();
+  });
+
+  it("supports multi-year birth input and persists editable wizard policy values", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          fields: makeWizardReadyFields(),
+          sections: [makeOtherSection()],
+          automations: [],
+          settings: {
+            stageName: "Formulario Principal",
+            description: "",
+            openDate: null,
+            closeDate: null,
+            previousStageRequirement: "none",
+            blockIfPreviousNotMet: true,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    render(
+      <StageConfigEditor
+        cycleId="cycle-1"
+        cycleName="Proceso 2026"
+        stageId="template-docs"
+        stageCode="documents"
+        stageLabel="Formulario Principal"
+        stageOpenAt={null}
+        stageCloseAt={null}
+        stageTemplates={[...stageTemplates]}
+        initialFields={makeWizardReadyFields()}
+        initialSections={[makeOtherSection()]}
+        initialAutomations={[]}
+        initialOcrPromptTemplate="Prompt OCR"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    for (const checkbox of screen.getAllByRole("checkbox", { name: /Documento DNI/i })) {
+      if (!(checkbox as HTMLInputElement).checked) {
+        fireEvent.click(checkbox);
+      }
+    }
+    for (const checkbox of screen.getAllByRole("checkbox", { name: /Certificado de notas/i })) {
+      if (!(checkbox as HTMLInputElement).checked) {
+        fireEvent.click(checkbox);
+      }
+    }
+    fireEvent.change(screen.getByLabelText(/Nombre del postulante/i), {
+      target: { value: "fullName" },
+    });
+    fireEvent.change(screen.getByLabelText(/Promedio de notas/i), {
+      target: { value: "gradeAverage" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: /Autorización firmada/i }), {
+      target: { value: "signedAuthorization" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: /Foto del postulante/i }), {
+      target: { value: "applicantPhoto" },
+    });
+    // Expand the collapsible OCR section to access OCR fields
+    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
+    fireEvent.change(screen.getByLabelText(/Nombre en documento/i), {
+      target: { value: "fullName" },
+    });
+    fireEvent.change(screen.getByLabelText(/Año de nacimiento/i), {
+      target: { value: "birthYear" },
+    });
+    fireEvent.change(screen.getByLabelText(/Tipo de documento/i), {
+      target: { value: "documentType" },
+    });
+    fireEvent.change(screen.getByLabelText(/Excepción de documento/i), {
+      target: { value: "documentIssue" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Continuar$/i }));
+
+    const birthYearsInput = screen.getByLabelText(/Años de nacimiento permitidos/i);
+    fireEvent.change(birthYearsInput, {
+      target: { value: "2008, 2009 2010" },
+    });
+    expect(birthYearsInput).toHaveValue("2008, 2009 2010");
+
+    fireEvent.change(screen.getByLabelText(/Política de completitud/i), {
+      target: { value: "minimum_answers" },
+    });
+    fireEvent.change(screen.getByLabelText(/Respuestas mínimas por recomendación/i), {
+      target: { value: "2" },
+    });
+    fireEvent.change(screen.getByLabelText(/Múltiples certificados de notas/i), {
+      target: { value: "single_or_not_eligible" },
+    });
+    fireEvent.change(screen.getByLabelText(/Excepciones de identidad/i), {
+      target: { value: "not_eligible" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Continuar$/i }));
+
+    expect(screen.getByText(/Revisar y activar/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Mapeos OCR activos/i)).not.toBeInTheDocument();
+    const policiesChecklistLabel = screen
+      .getAllByText(/^Políticas$/i)
+      .find((node) => node.classList.contains("rw-check-label"));
+    const policiesChecklistItem = policiesChecklistLabel?.closest(".rw-check-item") ?? null;
+    expect(policiesChecklistItem).not.toBeNull();
+    if (!policiesChecklistItem) {
+      throw new Error("No se encontró la fila de checklist para Políticas.");
+    }
+    fireEvent.click(
+      within(policiesChecklistItem as HTMLElement).getByRole("button", { name: /Detalle/i }),
+    );
+    expect(screen.getByText(/mín\. 2/i)).toBeInTheDocument();
+    expect(screen.getByText(/Múltiples certificados/i)).toBeInTheDocument();
+    expect(screen.getByText(/Excepciones de identidad/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Activar rúbrica de esta etapa/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Guardar configuración/i }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/cycles/cycle-1/stages/template-docs/config",
+        expect.objectContaining({ method: "PATCH" }),
+      );
+    });
+
+    const request = fetchMock.mock.calls.at(-1)?.[1];
+    const payload =
+      request && typeof request === "object" && "body" in request
+        ? JSON.parse(String(request.body))
+        : null;
+
+    expect(payload?.settings?.rubricBlueprintV1?.policy).toMatchObject({
+      allowedBirthYears: [2008, 2009, 2010],
+      recommendationCompleteness: "minimum_answers",
+      recommendationMinAnswers: 2,
+      gradesCombinationRule: "single_or_not_eligible",
+      idExceptionRule: "not_eligible",
+    });
   });
 });

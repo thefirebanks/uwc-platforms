@@ -545,6 +545,46 @@ export interface Database {
         },
         never
       >;
+      application_stage_evaluations: TableDef<
+        {
+          id: string;
+          application_id: string;
+          cycle_id: string;
+          stage_code: string;
+          outcome: "eligible" | "not_eligible" | "needs_review";
+          criteria_results: Json;
+          passed_count: number;
+          failed_count: number;
+          needs_review_count: number;
+          evaluated_at: string;
+          evaluated_by: string | null;
+          trigger_event: "manual" | "deadline";
+        },
+        {
+          id?: string;
+          application_id: string;
+          cycle_id: string;
+          stage_code: string;
+          outcome: "eligible" | "not_eligible" | "needs_review";
+          criteria_results?: Json;
+          passed_count?: number;
+          failed_count?: number;
+          needs_review_count?: number;
+          evaluated_at?: string;
+          evaluated_by?: string | null;
+          trigger_event?: "manual" | "deadline";
+        },
+        {
+          outcome?: "eligible" | "not_eligible" | "needs_review";
+          criteria_results?: Json;
+          passed_count?: number;
+          failed_count?: number;
+          needs_review_count?: number;
+          evaluated_at?: string;
+          evaluated_by?: string | null;
+          trigger_event?: "manual" | "deadline";
+        }
+      >;
       audit_events: TableDef<
         {
           id: string;

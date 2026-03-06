@@ -6,6 +6,19 @@ import { requireAuth } from "@/lib/server/auth";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { resolveDocumentStageFields } from "@/lib/stages/stage-field-fallback";
 import { partitionConfigRowsById } from "@/lib/server/stage-config-persistence";
+import {
+  eligibilityRubricConfigSchema,
+  parseEligibilityRubricConfig,
+} from "@/lib/rubric/eligibility-rubric";
+import {
+  parseRubricBlueprintV1,
+  rubricBlueprintV1Schema,
+} from "@/lib/rubric/default-rubric-presets";
+import {
+  buildSchemaTemplateFromExpectedOutputFields,
+  normalizeExpectedOutputFields,
+  parseExpectedOutputFieldsFromSchemaTemplate,
+} from "@/lib/ocr/expected-output-schema";
 import type { Database, Json } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
@@ -20,6 +33,15 @@ const aiParserSchema = z
     systemPrompt: z.string().trim().max(2000).nullable().optional(),
     extractionInstructions: z.string().trim().max(6000).nullable().optional(),
     expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
+    expectedOutputFields: z
+      .array(
+        z.object({
+          key: z.string().trim().min(1).max(120),
+          type: z.enum(["text", "number", "decimal", "date", "boolean"]),
+        }),
+      )
+      .max(40)
+      .optional(),
     strictSchema: z.boolean().optional().default(true),
   })
   .strict();
@@ -55,11 +77,23 @@ const settingsSchema = z.object({
   closeDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   previousStageRequirement: z.string().min(1).max(160),
   blockIfPreviousNotMet: z.boolean(),
+  eligibilityRubric: eligibilityRubricConfigSchema.optional(),
+  rubricBlueprintV1: rubricBlueprintV1Schema.nullable().optional(),
+  rubricMeta: z
+    .object({
+      presetId: z.literal("uwc_stage1"),
+      compiledAt: z.string().datetime(),
+      compiledBy: z.string().uuid().nullable().optional(),
+      source: z.enum(["wizard", "advanced"]),
+      version: z.literal(1),
+    })
+    .nullable()
+    .optional(),
 });
 
 const sectionSchema = z.object({
   sectionKey: z.string().trim().min(1).max(120),
-  title: z.string().trim().min(1).max(120),
+  title: z.string().trim().max(120).optional().default(""),
   description: z.string().trim().max(500).optional().default(""),
   sortOrder: z.number().int().min(0).max(500),
   isVisible: z.boolean().optional().default(true),
@@ -82,6 +116,55 @@ function toIsoDateBoundary(value: string | null | undefined) {
   }
 
   return new Date(`${value}T00:00:00.000Z`).toISOString();
+}
+
+function defaultSectionTitle(sectionKey: string, fallbackOrder: number) {
+  const normalized = sectionKey.trim();
+  if (normalized === "other") {
+    return "Otros campos";
+  }
+  if (normalized === "identity") {
+    return "Datos personales";
+  }
+  if (normalized === "family") {
+    return "Familia";
+  }
+  if (normalized === "school") {
+    return "Información académica";
+  }
+  if (normalized === "motivation") {
+    return "Motivación";
+  }
+  if (normalized === "documents") {
+    return "Documentos";
+  }
+  if (normalized === "recommenders") {
+    return "Recomendaciones";
+  }
+  return `Sección ${fallbackOrder}`;
+}
+
+function describePatchValidationError(error: z.ZodError<z.infer<typeof patchSchema>>) {
+  const issue = error.issues[0];
+  if (!issue) {
+    return "No se pudo guardar la configuración de etapa.";
+  }
+
+  const [head, second] = issue.path;
+  if (head === "sections" && typeof second === "number") {
+    return `La sección ${second + 1} tiene datos inválidos.`;
+  }
+  if (head === "settings") {
+    return "Revisa los ajustes de la etapa antes de guardar.";
+  }
+  if (head === "fields" && typeof second === "number") {
+    return `El campo ${second + 1} tiene configuración inválida.`;
+  }
+  if (head === "automations" && typeof second === "number") {
+    return `La automatización ${second + 1} tiene datos inválidos.`;
+  }
+
+  return "No se pudo guardar la configuración de etapa.";
 }
 
 function parseStageAdminConfig(value: Json | null | undefined) {
@@ -107,6 +190,14 @@ function parseStageAdminConfig(value: Json | null | undefined) {
     blockIfPreviousNotMet:
       typeof record.blockIfPreviousNotMet === "boolean"
         ? record.blockIfPreviousNotMet
+        : null,
+    eligibilityRubric: parseEligibilityRubricConfig(record.eligibilityRubric),
+    rubricBlueprintV1: parseRubricBlueprintV1(record.rubricBlueprintV1),
+    rubricMeta:
+      record.rubricMeta &&
+      typeof record.rubricMeta === "object" &&
+      !Array.isArray(record.rubricMeta)
+        ? (record.rubricMeta as Record<string, Json>)
         : null,
   };
 }
@@ -134,6 +225,16 @@ function normalizeAiParserConfig({
 
   const extractionInstructions = aiParser.extractionInstructions?.trim() ?? "";
   const expectedSchemaTemplate = aiParser.expectedSchemaTemplate?.trim() ?? "";
+  const expectedOutputFields = normalizeExpectedOutputFields(aiParser.expectedOutputFields ?? []);
+  const inferredFieldsFromSchema =
+    expectedOutputFields.length > 0
+      ? expectedOutputFields
+      : parseExpectedOutputFieldsFromSchemaTemplate(expectedSchemaTemplate);
+  const resolvedSchemaTemplate =
+    expectedSchemaTemplate ||
+    (inferredFieldsFromSchema.length > 0
+      ? buildSchemaTemplateFromExpectedOutputFields(inferredFieldsFromSchema)
+      : "");
 
   if (!extractionInstructions) {
     throw new AppError({
@@ -143,7 +244,7 @@ function normalizeAiParserConfig({
     });
   }
 
-  if (!expectedSchemaTemplate) {
+  if (!resolvedSchemaTemplate) {
     throw new AppError({
       message: "Missing expected schema template in AI parser config",
       userMessage: `Debes definir un esquema JSON esperado para "${fieldLabel}" antes de guardar.`,
@@ -152,7 +253,7 @@ function normalizeAiParserConfig({
   }
 
   try {
-    JSON.parse(expectedSchemaTemplate);
+    JSON.parse(resolvedSchemaTemplate);
   } catch (error) {
     throw new AppError({
       message: "Invalid expected schema template in AI parser config",
@@ -168,7 +269,11 @@ function normalizeAiParserConfig({
     promptTemplate: aiParser.promptTemplate?.trim() || null,
     systemPrompt: aiParser.systemPrompt?.trim() || null,
     extractionInstructions,
-    expectedSchemaTemplate,
+    expectedSchemaTemplate: resolvedSchemaTemplate,
+    expectedOutputFields:
+      inferredFieldsFromSchema.length > 0
+        ? inferredFieldsFromSchema
+        : parseExpectedOutputFieldsFromSchemaTemplate(resolvedSchemaTemplate),
     strictSchema: aiParser.strictSchema ?? true,
   } satisfies Record<string, Json>;
 }
@@ -380,6 +485,9 @@ export async function GET(
         closeDate: parsedAdminConfig.closeDate ?? null,
         previousStageRequirement: parsedAdminConfig.previousStageRequirement ?? "none",
         blockIfPreviousNotMet: parsedAdminConfig.blockIfPreviousNotMet ?? false,
+        eligibilityRubric: parsedAdminConfig.eligibilityRubric ?? null,
+        rubricBlueprintV1: parsedAdminConfig.rubricBlueprintV1 ?? null,
+        rubricMeta: parsedAdminConfig.rubricMeta ?? null,
       },
     });
   }, { operation: "cycles.stage_config.get" });
@@ -411,7 +519,7 @@ export async function PATCH(
     if (!parsed.success) {
       throw new AppError({
         message: "Invalid stage config payload",
-        userMessage: "No se pudo guardar la configuración de etapa.",
+        userMessage: describePatchValidationError(parsed.error),
         status: 400,
         details: parsed.error.flatten(),
       });
@@ -433,6 +541,9 @@ export async function PATCH(
           closeDate: parsed.data.settings.closeDate ?? null,
           previousStageRequirement: parsed.data.settings.previousStageRequirement,
           blockIfPreviousNotMet: parsed.data.settings.blockIfPreviousNotMet,
+          eligibilityRubric: parsed.data.settings.eligibilityRubric ?? null,
+          rubricBlueprintV1: parsed.data.settings.rubricBlueprintV1 ?? null,
+          rubricMeta: parsed.data.settings.rubricMeta ?? null,
         }
       : {
           stageName: stageTemplate.stage_label,
@@ -443,6 +554,9 @@ export async function PATCH(
             parsedExistingAdminConfig.previousStageRequirement ?? "none",
           blockIfPreviousNotMet:
             parsedExistingAdminConfig.blockIfPreviousNotMet ?? false,
+          eligibilityRubric: parsedExistingAdminConfig.eligibilityRubric ?? null,
+          rubricBlueprintV1: parsedExistingAdminConfig.rubricBlueprintV1 ?? null,
+          rubricMeta: parsedExistingAdminConfig.rubricMeta ?? null,
         };
 
     // ── Validate field keys ────────────────────────────────────
@@ -489,9 +603,9 @@ export async function PATCH(
     if (parsed.data.sections) {
       const incomingSectionKeys = new Set(parsed.data.sections.map((s) => s.sectionKey.trim()));
 
-      // Delete sections no longer in the incoming list (but never delete 'other')
+      // Delete sections no longer in the incoming list
       const sectionKeysToDelete = existingSections
-        .filter((s) => !incomingSectionKeys.has(s.section_key) && s.section_key !== "other")
+        .filter((s) => !incomingSectionKeys.has(s.section_key))
         .map((s) => s.id);
 
       if (sectionKeysToDelete.length > 0) {
@@ -511,15 +625,22 @@ export async function PATCH(
       }
 
       // Upsert remaining sections
-      const sectionRows = parsed.data.sections.map((section) => ({
-        cycle_id: cycleId,
-        stage_code: stageCode,
-        section_key: section.sectionKey.trim(),
-        title: section.title.trim(),
-        description: (section.description ?? "").trim(),
-        sort_order: section.sortOrder,
-        is_visible: section.isVisible ?? true,
-      }));
+      const sectionRows = parsed.data.sections.map((section) => {
+        const normalizedKey = section.sectionKey.trim();
+        const normalizedTitle = section.title.trim();
+
+        return {
+          cycle_id: cycleId,
+          stage_code: stageCode,
+          section_key: normalizedKey,
+          title:
+            normalizedTitle ||
+            defaultSectionTitle(normalizedKey, Math.max(1, section.sortOrder)),
+          description: (section.description ?? "").trim(),
+          sort_order: section.sortOrder,
+          is_visible: section.isVisible ?? true,
+        };
+      });
 
       if (sectionRows.length > 0) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- stage_sections table exists via migration but Supabase types not yet regenerated
@@ -760,6 +881,9 @@ export async function PATCH(
         null,
       previousStageRequirement: incomingSettings.previousStageRequirement,
       blockIfPreviousNotMet: incomingSettings.blockIfPreviousNotMet,
+      eligibilityRubric: (incomingSettings.eligibilityRubric ?? null) as Json,
+      rubricBlueprintV1: (incomingSettings.rubricBlueprintV1 ?? null) as Json,
+      rubricMeta: (incomingSettings.rubricMeta ?? null) as Json,
     };
 
     // ── Read back saved state ──────────────────────────────────
@@ -894,6 +1018,14 @@ export async function PATCH(
           savedAdminConfig.previousStageRequirement ?? incomingSettings.previousStageRequirement,
         blockIfPreviousNotMet:
           savedAdminConfig.blockIfPreviousNotMet ?? incomingSettings.blockIfPreviousNotMet,
+        eligibilityRubric:
+          savedAdminConfig.eligibilityRubric ?? incomingSettings.eligibilityRubric ?? null,
+        rubricBlueprintV1:
+          savedAdminConfig.rubricBlueprintV1 ?? incomingSettings.rubricBlueprintV1 ?? null,
+        rubricMeta:
+          (savedAdminConfig.rubricMeta as Json | null) ??
+          (incomingSettings.rubricMeta as Json | null) ??
+          null,
       },
     });
   }, { operation: "cycles.stage_config.patch" });

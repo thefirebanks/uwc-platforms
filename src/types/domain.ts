@@ -52,6 +52,8 @@ export type ApplicationStatus =
   | "ineligible"
   | "advanced";
 
+export type EligibilityOutcome = "eligible" | "not_eligible" | "needs_review";
+
 export type SupportTicketStatus = "open" | "replied" | "closed";
 
 export interface Profile {
@@ -150,7 +152,119 @@ export interface StageFieldAiParserConfig {
   systemPrompt?: string | null;
   extractionInstructions: string;
   expectedSchemaTemplate: string;
+  expectedOutputFields?: Array<{
+    key: string;
+    type: "text" | "number" | "decimal" | "date" | "boolean";
+  }>;
   strictSchema: boolean;
+}
+
+export type EligibilityRubricCriterionKind =
+  | "field_present"
+  | "all_present"
+  | "any_present"
+  | "field_in"
+  | "number_between"
+  | "file_uploaded"
+  | "recommendations_complete"
+  | "ocr_confidence"
+  | "ocr_field_in"
+  | "ocr_field_not_in"
+  | "field_matches_ocr"
+  | "file_upload_count_between"
+  | "any_of";
+
+export type EligibilityAnyOfConditionKind =
+  | "field_present"
+  | "file_uploaded"
+  | "number_between"
+  | "ocr_field_in"
+  | "ocr_field_not_in"
+  | "field_matches_ocr";
+
+export interface EligibilityAnyOfCondition {
+  kind: EligibilityAnyOfConditionKind;
+  fieldKey?: string;
+  fileKey?: string;
+  min?: number;
+  max?: number;
+  jsonPath?: string;
+  allowedValues?: string[];
+  disallowedValues?: string[];
+  caseSensitive?: boolean;
+  normalizeWhitespace?: boolean;
+}
+
+export interface EligibilityRubricCriterion {
+  id: string;
+  label: string;
+  description?: string;
+  kind: EligibilityRubricCriterionKind;
+  onFail: EligibilityOutcome;
+  onMissingData: EligibilityOutcome;
+  fieldKey?: string;
+  fieldKeys?: string[];
+  fileKeys?: string[];
+  allowedValues?: string[];
+  caseSensitive?: boolean;
+  min?: number;
+  max?: number;
+  fileKey?: string;
+  roles?: RecommenderRole[];
+  requireRequested?: boolean;
+  minFilledResponses?: number;
+  completenessMode?: "minimum_answers" | "strict_form_valid";
+  minConfidence?: number;
+  jsonPath?: string;
+  normalizeWhitespace?: boolean;
+  disallowedValues?: string[];
+  minCount?: number;
+  maxCount?: number;
+  conditions?: EligibilityAnyOfCondition[];
+}
+
+export interface EligibilityRubricConfig {
+  enabled: boolean;
+  criteria: EligibilityRubricCriterion[];
+}
+
+export interface RubricBlueprintV1 {
+  version: 1;
+  presetId: "uwc_stage1";
+  execution: {
+    mode: "manual";
+  };
+  mappings: {
+    idDocumentFileKeys: string[];
+    gradesDocumentFileKeys: string[];
+    topThirdProofFileKey: string | null;
+    applicantNameFieldKey: string;
+    averageGradeFieldKey: string;
+    signedAuthorizationFileKey: string;
+    applicantPhotoFileKey: string;
+    ocrPaths: {
+      idName: string;
+      birthYear: string;
+      documentType: string;
+      documentIssue: string;
+    };
+  };
+  policy: {
+    allowedBirthYears: number[];
+    minAverageGrade: number;
+    recommendationCompleteness: "strict_form_valid" | "minimum_answers";
+    recommendationMinAnswers: number;
+    gradesCombinationRule: "single_or_review" | "single_or_not_eligible" | "allow_multiple";
+    idExceptionRule: "review" | "not_eligible";
+  };
+}
+
+export interface RubricMeta {
+  presetId: "uwc_stage1";
+  compiledAt: string;
+  compiledBy?: string | null;
+  source: "wizard" | "advanced";
+  version: 1;
 }
 
 export interface CycleStageField {
@@ -254,6 +368,21 @@ export interface ApplicationOcrCheck {
   confidence: number;
   raw_response: Record<string, unknown>;
   created_at: string;
+}
+
+export interface ApplicationStageEvaluation {
+  id: string;
+  application_id: string;
+  cycle_id: string;
+  stage_code: string;
+  outcome: EligibilityOutcome;
+  criteria_results: Record<string, unknown>[];
+  passed_count: number;
+  failed_count: number;
+  needs_review_count: number;
+  evaluated_at: string;
+  evaluated_by: string | null;
+  trigger_event: "manual" | "deadline";
 }
 
 export interface OcrTestRun {

@@ -31,6 +31,7 @@ export function groupFieldsBySections(
 
   // Find the "other" section (fallback for unassigned fields + hidden section fields)
   const otherSection = sortedSections.find((s) => s.section_key === "other");
+  const fallbackSection = otherSection ?? sortedSections.find((s) => s.is_visible) ?? null;
 
   // Initialize buckets for each visible section
   const buckets = new Map<string, CycleStageField[]>();
@@ -54,8 +55,8 @@ export function groupFieldsBySections(
     }
 
     // If field's section is hidden, or field has no section_id → "other"
-    if (otherSection && buckets.has(otherSection.id)) {
-      buckets.get(otherSection.id)!.push(field);
+    if (fallbackSection && buckets.has(fallbackSection.id)) {
+      buckets.get(fallbackSection.id)!.push(field);
     }
   }
 
