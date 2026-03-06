@@ -56,10 +56,7 @@ import {
   type UwcStageOnePresetDraft,
 } from "@/lib/rubric/default-rubric-presets";
 import {
-  buildRubricChecklistItems,
   classifyOcrOption,
-  type RubricChecklistItem,
-  type RubricChecklistItemId,
   type RubricOcrOptionKind,
 } from "@/lib/rubric/wizard-review";
 import {
@@ -102,7 +99,6 @@ type StageEditorSettingsDraft = {
 
 type RubricEditorMode = "guided" | "json";
 type RubricAuthoringTab = "wizard" | "advanced";
-type RubricWizardStep = 1 | 2 | 3;
 
 type StageAdminConfigPayload = {
   stageName?: string;
@@ -160,40 +156,6 @@ const RUBRIC_KIND_OPTIONS: Array<{
   { value: "field_matches_ocr", label: "Campo coincide con OCR" },
   { value: "file_upload_count_between", label: "Cantidad de archivos en rango" },
   { value: "any_of", label: "Cumple al menos una condición" },
-];
-
-const RECOMMENDATION_POLICY_OPTIONS: Array<{
-  value: UwcStageOnePresetDraft["recommendationCompleteness"];
-  label: string;
-  description: string;
-}> = [
-  {
-    value: "strict_form_valid",
-    label: "Formulario completo validado",
-    description: "Solo cuenta si la recomendación fue enviada por el flujo oficial y validó todos los campos.",
-  },
-  {
-    value: "minimum_answers",
-    label: "Mínimo de respuestas",
-    description: "Cuenta cuando se cumple un mínimo de respuestas no vacías por recomendación.",
-  },
-];
-
-const GRADES_COMBINATION_POLICY_OPTIONS: Array<{
-  value: UwcStageOnePresetDraft["gradesCombinationRule"];
-  label: string;
-}> = [
-  { value: "single_or_review", label: "Si hay varios certificados -> needs_review" },
-  { value: "single_or_not_eligible", label: "Si hay varios certificados -> not_eligible" },
-  { value: "allow_multiple", label: "Permitir varios certificados" },
-];
-
-const ID_EXCEPTION_POLICY_OPTIONS: Array<{
-  value: UwcStageOnePresetDraft["idExceptionRule"];
-  label: string;
-}> = [
-  { value: "review", label: "Si hay excepción -> needs_review" },
-  { value: "not_eligible", label: "Si hay excepción -> not_eligible" },
 ];
 
 const OCR_OUTPUT_FIELD_TYPE_LABELS: Record<OcrExpectedOutputFieldType, string> = {
@@ -258,45 +220,6 @@ type RubricOcrPathOption = {
   fieldLabel: string;
   fieldKey: string;
   kind: RubricOcrOptionKind;
-};
-
-type RubricOcrSlotKey =
-  | "ocrNamePath"
-  | "ocrBirthYearPath"
-  | "ocrDocumentTypePath"
-  | "ocrDocumentIssuePath";
-
-const RUBRIC_WIZARD_OCR_SLOTS: Array<{
-  key: RubricOcrSlotKey;
-  label: string;
-  warningLabel: string;
-}> = [
-  {
-    key: "ocrNamePath",
-    label: "Nombre en documento",
-    warningLabel: "nombre en documento",
-  },
-  {
-    key: "ocrBirthYearPath",
-    label: "Año de nacimiento",
-    warningLabel: "año de nacimiento",
-  },
-  {
-    key: "ocrDocumentTypePath",
-    label: "Tipo de documento",
-    warningLabel: "tipo de documento",
-  },
-  {
-    key: "ocrDocumentIssuePath",
-    label: "Excepción de documento",
-    warningLabel: "excepción de documento",
-  },
-];
-
-const RUBRIC_CHECKLIST_STATUS_LABEL: Record<RubricChecklistItem["status"], string> = {
-  ok: "OK",
-  missing: "Falta",
-  review: "Revisar",
 };
 
 function presetDraftFromBlueprint(blueprint: RubricBlueprintV1): UwcStageOnePresetDraft {
@@ -1666,11 +1589,6 @@ export function StageConfigEditor({
   const [rubricAuthoringTab, setRubricAuthoringTab] = useState<RubricAuthoringTab>(
     "wizard",
   );
-  const [rubricWizardStep, setRubricWizardStep] = useState<RubricWizardStep>(1);
-  const [rubricWizardBlockingErrors, setRubricWizardBlockingErrors] = useState<string[]>([]);
-  const [reviewDetailOpenById, setReviewDetailOpenById] = useState<
-    Partial<Record<RubricChecklistItemId, boolean>>
-  >({});
   const [rubricAdvancedCustomized, setRubricAdvancedCustomized] = useState(
     Boolean(parsedStageAdminConfig.eligibilityRubric && !initialRubricBlueprint),
   );
@@ -1695,9 +1613,6 @@ export function StageConfigEditor({
   );
   const [uwcPresetDraft, setUwcPresetDraft] = useState<UwcStageOnePresetDraft>(
     initialWizardDraft,
-  );
-  const [wizardBirthYearsInput, setWizardBirthYearsInput] = useState(
-    initialWizardDraft.allowedBirthYears.join(", "),
   );
   const rubricFieldOptions = useMemo(() => {
     const seen = new Set<string>();
@@ -1730,14 +1645,6 @@ export function StageConfigEditor({
       ),
     ),
     [orderedFields, rubricFieldOptions],
-  );
-  const rubricFieldLabelByKey = useMemo(
-    () => new Map(rubricFieldOptions.map((option) => [option.value, option.label] as const)),
-    [rubricFieldOptions],
-  );
-  const rubricFileLabelByKey = useMemo(
-    () => new Map(rubricFileFieldOptions.map((option) => [option.value, option.label] as const)),
-    [rubricFileFieldOptions],
   );
   const selectedIdDocumentOcrPathOptions = useMemo<RubricOcrPathOption[]>(() => {
     const selectedIdKeys = new Set(uwcPresetDraft.idDocumentFileKeys);
@@ -1781,13 +1688,6 @@ export function StageConfigEditor({
       return left.value.localeCompare(right.value);
     });
   }, [orderedFields, uwcPresetDraft.idDocumentFileKeys]);
-  const selectedIdDocumentOcrOptionByValue = useMemo(
-    () =>
-      new Map(
-        selectedIdDocumentOcrPathOptions.map((option) => [option.value, option] as const),
-      ),
-    [selectedIdDocumentOcrPathOptions],
-  );
   const firstIdentityParserSource = useMemo(() => {
     const selectedIdKeys = new Set(uwcPresetDraft.idDocumentFileKeys);
     return orderedFields.find((field) => {
@@ -1977,149 +1877,6 @@ export function StageConfigEditor({
     selectedIdDocumentOcrPathOptions,
     uwcPresetDraft,
   ]);
-  const wizardProgressPercent = rubricWizardStep === 1 ? 34 : rubricWizardStep === 2 ? 67 : 100;
-  const wizardBlockingCount =
-    rubricWizardValidation.step1Errors.length + rubricWizardValidation.step2Errors.length;
-
-  const wizardReviewSummary = useMemo(() => {
-    const formatFileList = (keys: string[]) =>
-      keys.length > 0 ? keys.map((key) => rubricFileLabelByKey.get(key) ?? key).join(", ") : "Sin selección";
-    const formatSingleFile = (key: string | null) =>
-      key ? (rubricFileLabelByKey.get(key) ?? key) : "Sin selección";
-    const formatField = (key: string | null) =>
-      key ? (rubricFieldLabelByKey.get(key) ?? key) : "Sin selección";
-
-    const gradePolicyLabel =
-      GRADES_COMBINATION_POLICY_OPTIONS.find(
-        (option) => option.value === uwcPresetDraft.gradesCombinationRule,
-      )?.label ?? uwcPresetDraft.gradesCombinationRule;
-    const idExceptionPolicyLabel =
-      ID_EXCEPTION_POLICY_OPTIONS.find((option) => option.value === uwcPresetDraft.idExceptionRule)
-        ?.label ?? uwcPresetDraft.idExceptionRule;
-    const recommendationPolicyLabel =
-      RECOMMENDATION_POLICY_OPTIONS.find(
-        (option) => option.value === uwcPresetDraft.recommendationCompleteness,
-      )?.label ?? uwcPresetDraft.recommendationCompleteness;
-
-    const availableOcrFieldSet = new Set(
-      selectedIdDocumentOcrPathOptions.map((option) => option.value),
-    );
-
-    const ocrMappings = [
-      { id: "ocrNamePath", label: "Nombre en documento", path: uwcPresetDraft.ocrNamePath.trim() },
-      { id: "ocrBirthYearPath", label: "Año de nacimiento", path: uwcPresetDraft.ocrBirthYearPath.trim() },
-      { id: "ocrDocumentTypePath", label: "Tipo de documento", path: uwcPresetDraft.ocrDocumentTypePath.trim() },
-      {
-        id: "ocrDocumentIssuePath",
-        label: "Excepción de documento",
-        path: uwcPresetDraft.ocrDocumentIssuePath.trim(),
-      },
-    ].map((item) => {
-      const option = item.path ? selectedIdDocumentOcrOptionByValue.get(item.path) : null;
-      const kind = option?.kind ?? classifyOcrOption(item.path);
-      return {
-        ...item,
-        value: item.path || "Sin selección",
-        kind,
-        source: option?.fieldLabel ?? "Configuración actual",
-        isMissing: !item.path || (availableOcrFieldSet.size > 0 && !availableOcrFieldSet.has(item.path)),
-      };
-    });
-
-    const technicalOcrMappings = ocrMappings.filter(
-      (mapping) => !mapping.isMissing && mapping.kind === "technical",
-    );
-
-    const evidenceMissingCount = [
-      uwcPresetDraft.idDocumentFileKeys.length === 0,
-      uwcPresetDraft.gradesDocumentFileKeys.length === 0,
-      !uwcPresetDraft.applicantNameFieldKey,
-      !uwcPresetDraft.averageGradeFieldKey,
-      !uwcPresetDraft.signedAuthorizationFileKey,
-      !uwcPresetDraft.applicantPhotoFileKey,
-    ].filter(Boolean).length;
-
-    const minAverageValid =
-      Number.isFinite(uwcPresetDraft.minAverageGrade) &&
-      uwcPresetDraft.minAverageGrade >= 0 &&
-      uwcPresetDraft.minAverageGrade <= 20;
-    const minRecommendationValid =
-      uwcPresetDraft.recommendationCompleteness !== "minimum_answers" ||
-      (Number.isInteger(uwcPresetDraft.minRecommendationResponses) &&
-        uwcPresetDraft.minRecommendationResponses >= 1 &&
-        uwcPresetDraft.minRecommendationResponses <= 20);
-
-    const policyMissingCount = [
-      uwcPresetDraft.allowedBirthYears.length === 0,
-      !minAverageValid,
-      !minRecommendationValid,
-    ].filter(Boolean).length;
-    const ocrMissingCount = ocrMappings.filter((mapping) => mapping.isMissing).length;
-
-    const checklistItems = buildRubricChecklistItems({
-      evidenceMissingCount,
-      ocrMissingCount,
-      policyMissingCount,
-      hasTechnicalOcrSelection: technicalOcrMappings.length > 0,
-    });
-
-    return {
-      evidenceRows: [
-        { label: "Documentos de identidad", value: formatFileList(uwcPresetDraft.idDocumentFileKeys) },
-        { label: "Documentos de notas", value: formatFileList(uwcPresetDraft.gradesDocumentFileKeys) },
-        { label: "Nombre del postulante", value: formatField(uwcPresetDraft.applicantNameFieldKey) },
-        { label: "Promedio manual", value: formatField(uwcPresetDraft.averageGradeFieldKey) },
-        { label: "Prueba de tercio superior", value: formatSingleFile(uwcPresetDraft.topThirdProofFileKey) },
-        { label: "Autorización firmada", value: formatSingleFile(uwcPresetDraft.signedAuthorizationFileKey) },
-        { label: "Foto del postulante", value: formatSingleFile(uwcPresetDraft.applicantPhotoFileKey) },
-      ],
-      ocrRows: ocrMappings,
-      policyRows: [
-        {
-          label: "Años de nacimiento permitidos",
-          value:
-            uwcPresetDraft.allowedBirthYears.length > 0
-              ? uwcPresetDraft.allowedBirthYears.join(", ")
-              : "Sin configuración",
-        },
-        {
-          label: "Promedio mínimo",
-          value: uwcPresetDraft.minAverageGrade.toFixed(1).replace(/\.0$/, ""),
-        },
-        {
-          label: "Recomendaciones",
-          value: `${recommendationPolicyLabel}${
-            uwcPresetDraft.recommendationCompleteness === "minimum_answers"
-              ? ` (mínimo ${Math.max(0, Math.trunc(uwcPresetDraft.minRecommendationResponses))} respuesta(s))`
-              : ""
-          }`,
-        },
-        {
-          label: "Múltiples certificados de notas",
-          value: gradePolicyLabel,
-        },
-        {
-          label: "Excepciones de documento de identidad",
-          value: idExceptionPolicyLabel,
-        },
-      ],
-      availableOcrFields: selectedIdDocumentOcrPathOptions,
-      technicalOcrMappings,
-      checklistItems,
-    };
-  }, [
-    rubricFieldLabelByKey,
-    rubricFileLabelByKey,
-    selectedIdDocumentOcrOptionByValue,
-    selectedIdDocumentOcrPathOptions,
-    uwcPresetDraft,
-  ]);
-  const wizardChecklistHasMissing = wizardReviewSummary.checklistItems.some(
-    (item) => item.status === "missing",
-  );
-  const wizardChecklistHasReview = wizardReviewSummary.checklistItems.some(
-    (item) => item.status === "review",
-  );
 
   function compileRubricFromWizard(options?: { silent?: boolean }) {
     const blockingErrors = [
@@ -2133,7 +1890,6 @@ export function StageConfigEditor({
           : rubricWizardValidation.compilerErrors.length > 0
             ? rubricWizardValidation.compilerErrors
             : ["No se pudo compilar la rúbrica desde el wizard."];
-      setRubricWizardBlockingErrors(fallbackErrors);
       if (!options?.silent) {
         setError({
           message: `No se pudo activar la rúbrica del wizard:\n${fallbackErrors
@@ -2149,7 +1905,6 @@ export function StageConfigEditor({
       source: "wizard",
       blueprint: rubricWizardValidation.blueprint,
     });
-    setRubricWizardBlockingErrors([]);
     setRubricAdvancedCustomized(false);
     if (!options?.silent) {
       setError(null);
@@ -2343,85 +2098,8 @@ export function StageConfigEditor({
     });
   }
 
-  function updateWizardBirthYearsInput(rawValue: string) {
-    setWizardBirthYearsInput(rawValue);
-    setUwcPresetDraft((current) => ({
-      ...current,
-      allowedBirthYears: parseCommaSeparatedNumbers(rawValue),
-    }));
-  }
-
-  function adjustWizardMinimumAverage(delta: number) {
-    setUwcPresetDraft((current) => {
-      const nextValue = Math.min(20, Math.max(0, Number((current.minAverageGrade + delta).toFixed(1))));
-      return {
-        ...current,
-        minAverageGrade: nextValue,
-      };
-    });
-  }
-
-  function setPresetOcrPath(slotKey: RubricOcrSlotKey, nextValue: string) {
-    setUwcPresetDraft((current) => ({
-      ...current,
-      [slotKey]: nextValue,
-    }));
-  }
-
-  function buildWizardOcrPathOptions(currentPath: string) {
-    if (!currentPath.trim()) {
-      return selectedIdDocumentOcrPathOptions;
-    }
-
-    if (selectedIdDocumentOcrPathOptions.some((option) => option.value === currentPath.trim())) {
-      return selectedIdDocumentOcrPathOptions;
-    }
-
-    return [
-      {
-        value: currentPath.trim(),
-        label: `${currentPath.trim()} · ${
-          classifyOcrOption(currentPath.trim()) === "technical" ? "Técnico" : "Dato"
-        } (actual)`,
-        fieldLabel: "Configuración actual",
-        fieldKey: "custom",
-        kind: classifyOcrOption(currentPath.trim()),
-      },
-      ...selectedIdDocumentOcrPathOptions,
-    ];
-  }
-
   function applyUwcPresetRubric() {
     compileRubricFromWizard();
-  }
-
-  function moveToNextWizardStep() {
-    const currentStepErrors =
-      rubricWizardStep === 1
-        ? rubricWizardValidation.step1Errors
-        : rubricWizardStep === 2
-          ? rubricWizardValidation.step2Errors
-          : [];
-
-    if (currentStepErrors.length > 0) {
-      setRubricWizardBlockingErrors(currentStepErrors);
-      return;
-    }
-
-    setRubricWizardBlockingErrors([]);
-    setRubricWizardStep((current) => (current === 1 ? 2 : 3));
-  }
-
-  function moveToPreviousWizardStep() {
-    setRubricWizardBlockingErrors([]);
-    setRubricWizardStep((current) => (current === 3 ? 2 : 1));
-  }
-
-  function toggleReviewDetail(itemId: RubricChecklistItemId) {
-    setReviewDetailOpenById((current) => ({
-      ...current,
-      [itemId]: !current[itemId],
-    }));
   }
 
   function resetAdvancedCustomizationToWizard() {
@@ -2475,42 +2153,6 @@ export function StageConfigEditor({
     };
   }, [activeTab, pendingEditorFieldFocusId]);
 
-  useEffect(() => {
-    if (rubricWizardStep !== 3) {
-      setReviewDetailOpenById({});
-    }
-  }, [rubricWizardStep]);
-
-  useEffect(() => {
-    if (rubricAuthoringTab !== "wizard") {
-      return;
-    }
-    if (rubricWizardStep === 1) {
-      setRubricWizardBlockingErrors(rubricWizardValidation.step1Errors);
-      return;
-    }
-    if (rubricWizardStep === 2) {
-      setRubricWizardBlockingErrors(rubricWizardValidation.step2Errors);
-      return;
-    }
-    setRubricWizardBlockingErrors([]);
-  }, [
-    rubricAuthoringTab,
-    rubricWizardStep,
-    rubricWizardValidation.step1Errors,
-    rubricWizardValidation.step2Errors,
-  ]);
-
-  useEffect(() => {
-    setWizardBirthYearsInput((currentInput) => {
-      const parsedFromInput = parseCommaSeparatedNumbers(currentInput);
-      const hasSameValues =
-        parsedFromInput.length === uwcPresetDraft.allowedBirthYears.length &&
-        parsedFromInput.every((value, index) => value === uwcPresetDraft.allowedBirthYears[index]);
-
-      return hasSameValues ? currentInput : uwcPresetDraft.allowedBirthYears.join(", ");
-    });
-  }, [uwcPresetDraft.allowedBirthYears]);
   const settingsDraftSnapshot = useMemo(
     () =>
       serializeSettingsDraft({
@@ -3905,7 +3547,6 @@ export function StageConfigEditor({
                         className={`btn ${rubricAuthoringTab === "wizard" ? "btn-primary" : "btn-outline"}`}
                         onClick={() => {
                           setRubricAuthoringTab("wizard");
-                          setRubricWizardStep(1);
                         }}
                       >
                         Modo guiado (recomendado)

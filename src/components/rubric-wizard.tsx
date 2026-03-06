@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { UwcStageOnePresetDraft } from "@/lib/rubric/default-rubric-presets";
 import {
   buildRubricChecklistItems,
@@ -158,7 +158,6 @@ export function RubricWizard({
   onEditOcrFields,
 }: RubricWizardProps) {
   const [step, setStep] = useState<RubricWizardStep>(1);
-  const [blockingErrors, setBlockingErrors] = useState<string[]>([]);
   const [reviewDetailOpenById, setReviewDetailOpenById] = useState<
     Partial<Record<RubricChecklistItemId, boolean>>
   >({});
@@ -166,6 +165,27 @@ export function RubricWizard({
     draft.allowedBirthYears.join(", "),
   );
   const [ocrExpanded, setOcrExpanded] = useState(false);
+
+  // Derived blocking errors — no effect needed
+  const blockingErrors = useMemo(() => {
+    if (step === 1) return validation.step1Errors;
+    if (step === 2) return validation.step2Errors;
+    return [];
+  }, [step, validation.step1Errors, validation.step2Errors]);
+
+  // Track previously-seen birth years to detect external changes (e.g. reset suggestions).
+  // Uses React's "storing info from previous renders" pattern with state instead of a ref.
+  const [prevBirthYears, setPrevBirthYears] = useState(draft.allowedBirthYears);
+  if (prevBirthYears !== draft.allowedBirthYears) {
+    setPrevBirthYears(draft.allowedBirthYears);
+    const parsed = parseCommaSeparatedNumbers(birthYearsInput);
+    const hasSameValues =
+      parsed.length === draft.allowedBirthYears.length &&
+      parsed.every((v, i) => v === draft.allowedBirthYears[i]);
+    if (!hasSameValues) {
+      setBirthYearsInput(draft.allowedBirthYears.join(", "));
+    }
+  }
 
   // Clean labels (strip field key suffixes)
   const cleanFileOptions = useMemo(
@@ -186,33 +206,6 @@ export function RubricWizard({
     () => new Map(ocrPathOptions.map((o) => [o.value, o] as const)),
     [ocrPathOptions],
   );
-
-  // Sync birth years input with draft
-  useEffect(() => {
-    setBirthYearsInput((currentInput) => {
-      const parsedFromInput = parseCommaSeparatedNumbers(currentInput);
-      const hasSameValues =
-        parsedFromInput.length === draft.allowedBirthYears.length &&
-        parsedFromInput.every((v, i) => v === draft.allowedBirthYears[i]);
-      return hasSameValues ? currentInput : draft.allowedBirthYears.join(", ");
-    });
-  }, [draft.allowedBirthYears]);
-
-  // Update blocking errors when step/validation changes
-  useEffect(() => {
-    if (step === 1) {
-      setBlockingErrors(validation.step1Errors);
-    } else if (step === 2) {
-      setBlockingErrors(validation.step2Errors);
-    } else {
-      setBlockingErrors([]);
-    }
-  }, [step, validation.step1Errors, validation.step2Errors]);
-
-  // Reset review detail when leaving step 3
-  useEffect(() => {
-    if (step !== 3) setReviewDetailOpenById({});
-  }, [step]);
 
   // -- Helpers --
 
@@ -273,16 +266,12 @@ export function RubricWizard({
           ? validation.step2Errors
           : [];
 
-    if (currentStepErrors.length > 0) {
-      setBlockingErrors(currentStepErrors);
-      return;
-    }
-    setBlockingErrors([]);
+    if (currentStepErrors.length > 0) return;
     setStep((s) => (s === 1 ? 2 : 3) as RubricWizardStep);
   }
 
   function moveToPreviousStep() {
-    setBlockingErrors([]);
+    setReviewDetailOpenById({});
     setStep((s) => (s === 3 ? 2 : 1) as RubricWizardStep);
   }
 
@@ -459,7 +448,7 @@ export function RubricWizard({
             }`}
             onClick={() => {
               if (num < step) {
-                setBlockingErrors([]);
+                setReviewDetailOpenById({});
                 setStep(num as RubricWizardStep);
               }
             }}
