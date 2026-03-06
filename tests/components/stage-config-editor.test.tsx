@@ -1428,7 +1428,7 @@ describe("StageConfigEditor", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps advanced rubric mode disabled with a coming soon label", () => {
+  it("shows wizard and advanced rubric authoring tabs", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -1447,7 +1447,8 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    expect(screen.getByRole("button", { name: /Advanced \(próximamente\)/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /Modo avanzado/i })).not.toBeDisabled();
   });
 
   it("switches to form editor from wizard OCR mapping via Editar campos OCR", () => {
@@ -1469,6 +1470,8 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    // Expand the collapsible OCR section first
+    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
     fireEvent.click(screen.getByRole("button", { name: /Editar campos OCR/i }));
 
     expect(screen.getByRole("button", { name: /^Editor de Formulario$/i })).toHaveClass("active");
@@ -1493,14 +1496,16 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    fireEvent.change(screen.getByLabelText(/Campo OCR: Nombre en documento/i), {
+    // Expand the collapsible OCR section first
+    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
+    fireEvent.change(screen.getByLabelText(/Nombre en documento/i), {
       target: { value: "confidence" },
     });
 
-    expect(screen.getByText(/Documentos de identidad seleccionados:/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/confidence \[Técnico\]/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Documentos de identidad/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Técnico/i).length).toBeGreaterThan(0);
     expect(
-      screen.getByText(/Este campo es técnico; confirma que realmente representa nombre en documento/i),
+      screen.getByText(/Confirma que este campo técnico representa nombre en documento/i),
     ).toBeInTheDocument();
   });
 
@@ -1552,10 +1557,10 @@ describe("StageConfigEditor", () => {
         fireEvent.click(checkbox);
       }
     }
-    fireEvent.change(screen.getByLabelText(/Nombre postulante/i), {
+    fireEvent.change(screen.getByLabelText(/Nombre del postulante/i), {
       target: { value: "fullName" },
     });
-    fireEvent.change(screen.getByLabelText(/Promedio manual/i), {
+    fireEvent.change(screen.getByLabelText(/Promedio de notas/i), {
       target: { value: "gradeAverage" },
     });
     fireEvent.change(screen.getByRole("combobox", { name: /Autorización firmada/i }), {
@@ -1564,16 +1569,18 @@ describe("StageConfigEditor", () => {
     fireEvent.change(screen.getByRole("combobox", { name: /Foto del postulante/i }), {
       target: { value: "applicantPhoto" },
     });
-    fireEvent.change(screen.getByLabelText(/Campo OCR: nombre/i), {
+    // Expand the collapsible OCR section to access OCR fields
+    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
+    fireEvent.change(screen.getByLabelText(/Nombre en documento/i), {
       target: { value: "fullName" },
     });
-    fireEvent.change(screen.getByLabelText(/Campo OCR: año de nacimiento/i), {
+    fireEvent.change(screen.getByLabelText(/Año de nacimiento/i), {
       target: { value: "birthYear" },
     });
-    fireEvent.change(screen.getByLabelText(/Campo OCR: tipo de documento/i), {
+    fireEvent.change(screen.getByLabelText(/Tipo de documento/i), {
       target: { value: "documentType" },
     });
-    fireEvent.change(screen.getByLabelText(/Campo OCR: excepción de documento/i), {
+    fireEvent.change(screen.getByLabelText(/Excepción de documento/i), {
       target: { value: "documentIssue" },
     });
 
@@ -1585,7 +1592,7 @@ describe("StageConfigEditor", () => {
     });
     expect(birthYearsInput).toHaveValue("2008, 2009 2010");
 
-    fireEvent.change(screen.getByLabelText(/Política de recomendaciones/i), {
+    fireEvent.change(screen.getByLabelText(/Política de completitud/i), {
       target: { value: "minimum_answers" },
     });
     fireEvent.change(screen.getByLabelText(/Respuestas mínimas por recomendación/i), {
@@ -1594,27 +1601,27 @@ describe("StageConfigEditor", () => {
     fireEvent.change(screen.getByLabelText(/Múltiples certificados de notas/i), {
       target: { value: "single_or_not_eligible" },
     });
-    fireEvent.change(screen.getByLabelText(/Excepciones de documento de identidad/i), {
+    fireEvent.change(screen.getByLabelText(/Excepciones de identidad/i), {
       target: { value: "not_eligible" },
     });
     fireEvent.click(screen.getByRole("button", { name: /^Continuar$/i }));
 
-    expect(screen.getByText(/Checklist de activación/i)).toBeInTheDocument();
+    expect(screen.getByText(/Revisar y activar/i)).toBeInTheDocument();
     expect(screen.queryByText(/Mapeos OCR activos/i)).not.toBeInTheDocument();
     const policiesChecklistLabel = screen
       .getAllByText(/^Políticas$/i)
-      .find((node) => node.classList.contains("rubric-checklist-label"));
-    const policiesChecklistItem = policiesChecklistLabel?.closest(".rubric-checklist-item") ?? null;
+      .find((node) => node.classList.contains("rw-check-label"));
+    const policiesChecklistItem = policiesChecklistLabel?.closest(".rw-check-item") ?? null;
     expect(policiesChecklistItem).not.toBeNull();
     if (!policiesChecklistItem) {
       throw new Error("No se encontró la fila de checklist para Políticas.");
     }
     fireEvent.click(
-      within(policiesChecklistItem as HTMLElement).getByRole("button", { name: /Ver detalle/i }),
+      within(policiesChecklistItem as HTMLElement).getByRole("button", { name: /Detalle/i }),
     );
-    expect(screen.getByText(/m[ií]nimo 2 respuesta/i)).toBeInTheDocument();
-    expect(screen.getByText(/Múltiples certificados de notas/i)).toBeInTheDocument();
-    expect(screen.getByText(/Excepciones de documento de identidad/i)).toBeInTheDocument();
+    expect(screen.getByText(/mín\. 2/i)).toBeInTheDocument();
+    expect(screen.getByText(/Múltiples certificados/i)).toBeInTheDocument();
+    expect(screen.getByText(/Excepciones de identidad/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Activar rúbrica de esta etapa/i }));
     fireEvent.click(screen.getByRole("button", { name: /Guardar configuración/i }));
