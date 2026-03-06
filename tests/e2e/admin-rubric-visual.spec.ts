@@ -52,12 +52,13 @@ async function ensureAtLeastOneChecked(groupField: Locator) {
 }
 
 async function completeWizardStep1(page: Page) {
+  // Use rw-field--full containers for checkbox groups
   const identityField = page
-    .locator(".form-field")
-    .filter({ hasText: /Documento de identidad/i })
+    .locator(".rw-field--full")
+    .filter({ hasText: /Documentos de identidad/i })
     .first();
   const gradesField = page
-    .locator(".form-field")
+    .locator(".rw-field--full")
     .filter({ hasText: /Documentos de notas/i })
     .first();
 
@@ -76,10 +77,26 @@ async function completeWizardStep1(page: Page) {
     test.skip(!filled, "No hay opciones disponibles para mapeos requeridos.");
   }
 
-  await page.locator("input[id^='wizard-ocr-name-']").first().fill("fullName");
-  await page.locator("input[id^='wizard-ocr-birth-']").first().fill("birthYear");
-  await page.locator("input[id^='wizard-ocr-type-']").first().fill("documentType");
-  await page.locator("input[id^='wizard-ocr-issue-']").first().fill("documentIssue");
+  // Expand OCR section if collapsed
+  const ocrToggle = page.locator(".rw-ocr-toggle");
+  const isExpanded = await ocrToggle.getAttribute("aria-expanded");
+  if (isExpanded !== "true") {
+    await ocrToggle.click();
+    await expect(page.locator(".rw-ocr-panel")).toBeVisible();
+  }
+
+  // OCR fields are now <select> elements — pick first available option
+  const ocrSelects = [
+    page.locator("select[id^='wizard-ocr-ocrNamePath-']").first(),
+    page.locator("select[id^='wizard-ocr-ocrBirthYearPath-']").first(),
+    page.locator("select[id^='wizard-ocr-ocrDocumentTypePath-']").first(),
+    page.locator("select[id^='wizard-ocr-ocrDocumentIssuePath-']").first(),
+  ];
+  for (const sel of ocrSelects) {
+    if (await sel.count() > 0) {
+      await pickFirstNonEmptyOption(sel);
+    }
+  }
 }
 
 test.describe("Admin rubric visual checks", () => {
@@ -93,7 +110,8 @@ test.describe("Admin rubric visual checks", () => {
   test("captures wizard step screens and blocking state", async ({ page }) => {
     await openRubricSettings(page);
     await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
-    await expect(page.getByText(/Paso 1: Mapear evidencia/i)).toBeVisible();
+    // New wizard shows "Mapear evidencia" without "Paso 1:" prefix
+    await expect(page.getByText(/Mapear evidencia/i)).toBeVisible();
     await page.screenshot({
       path: screenshotPath("01-wizard-step1-evidence.png"),
       fullPage: true,
@@ -102,7 +120,8 @@ test.describe("Admin rubric visual checks", () => {
     await completeWizardStep1(page);
     await page.getByRole("button", { name: /^Continuar$/i }).click();
 
-    await expect(page.getByText(/Paso 2: Definir políticas/i)).toBeVisible();
+    // New wizard shows "Definir políticas" without "Paso 2:" prefix
+    await expect(page.getByText(/Definir políticas/i)).toBeVisible();
     await page.screenshot({
       path: screenshotPath("02-wizard-step2-policy.png"),
       fullPage: true,
@@ -111,7 +130,8 @@ test.describe("Admin rubric visual checks", () => {
     await page.locator("input[id^='wizard-birth-years-']").first().fill("2008, 2009, 2010");
     await page.locator("input[id^='wizard-min-average-']").first().fill("14");
     await page.getByRole("button", { name: /^Continuar$/i }).click();
-    await expect(page.getByText(/Paso 3: Revisar y activar/i)).toBeVisible();
+    // New wizard shows "Revisar y activar" without "Paso 3:" prefix
+    await expect(page.getByText(/Revisar y activar/i)).toBeVisible();
     await page.screenshot({
       path: screenshotPath("03-wizard-step3-summary.png"),
       fullPage: true,
@@ -121,7 +141,8 @@ test.describe("Admin rubric visual checks", () => {
     await page.getByRole("button", { name: /Volver/i }).click();
     await page.locator("select[id^='wizard-name-']").first().selectOption("");
     await page.getByRole("button", { name: /^Continuar$/i }).click();
-    await expect(page.locator(".admin-feedback.error")).toContainText(/Bloqueos del wizard/i);
+    // Error displays actual validation messages
+    await expect(page.locator(".admin-feedback.error")).toContainText(/nombre del postulante/i);
     await page.screenshot({
       path: screenshotPath("04-wizard-blocking-validation.png"),
       fullPage: true,

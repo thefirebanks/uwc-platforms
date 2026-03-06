@@ -3404,6 +3404,642 @@ input:checked + .slider:before { transform: translateX(18px); }
   }
 }
 
+/* ───────────────────────────────────────────────────────────────────────────
+   Rubric Wizard v2 (rw-* namespace)
+   ─────────────────────────────────────────────────────────────────────────── */
+
+.rw-shell {
+  display: grid;
+  gap: 14px;
+}
+
+/* ── Step indicator bar ── */
+
+.rw-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rw-step-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--muted);
+  border: 1px solid var(--sand-light);
+  border-radius: 999px;
+  min-height: 36px;
+  padding: 0 12px;
+  background: var(--surface);
+  cursor: default;
+  transition: border-color 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.rw-step-btn:not(:disabled) {
+  cursor: pointer;
+}
+
+.rw-step-btn:not(:disabled):hover {
+  border-color: var(--sand);
+  background: var(--cream);
+}
+
+.rw-step-btn.is-active {
+  color: var(--maroon);
+  border-color: color-mix(in srgb, var(--maroon) 35%, var(--sand));
+  background: color-mix(in srgb, var(--maroon-soft) 60%, var(--surface));
+}
+
+.rw-step-btn.is-done {
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 28%, var(--sand));
+}
+
+.rw-step-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--sand);
+  flex-shrink: 0;
+}
+
+.rw-step-btn.is-active .rw-step-num {
+  color: #fff;
+  border-color: var(--maroon);
+  background: var(--maroon);
+}
+
+.rw-step-btn.is-done .rw-step-num {
+  color: #fff;
+  border-color: var(--success);
+  background: var(--success);
+}
+
+/* ── Card (step container) ── */
+
+.rw-card {
+  border: 1px solid var(--maroon-soft);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 95%, var(--paper));
+  padding: 18px;
+  display: grid;
+  gap: 16px;
+  animation: rubricCardIn 180ms ease-out;
+}
+
+.rw-card-header h3 {
+  margin: 0 0 2px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.rw-card-header p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink-light);
+}
+
+/* ── Step 1 field grid ── */
+
+.rw-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.rw-field {
+  display: grid;
+  gap: 4px;
+}
+
+.rw-field > label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rw-field > select,
+.rw-field > input {
+  width: 100%;
+}
+
+.rw-field--full {
+  grid-column: 1 / -1;
+}
+
+/* ── Pill grids (checkbox groups) ── */
+
+.rw-pill-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.rw-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--sand);
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.rw-pill:hover {
+  border-color: color-mix(in srgb, var(--maroon) 22%, var(--sand));
+}
+
+.rw-pill:has(input:checked) {
+  border-color: color-mix(in srgb, var(--maroon) 35%, var(--sand));
+  background: color-mix(in srgb, var(--maroon-soft) 62%, var(--surface));
+}
+
+.rw-pill input[type="checkbox"] {
+  margin: 0;
+  accent-color: var(--maroon);
+}
+
+/* ── Hints ── */
+
+.rw-hint {
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+/* ── Optional tag ── */
+
+.rw-optional {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--muted);
+  border: 1px solid var(--sand);
+  background: var(--paper);
+  vertical-align: middle;
+}
+
+/* ── OCR collapsible section ── */
+
+.rw-ocr-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, var(--paper));
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.rw-ocr-toggle:hover {
+  border-color: color-mix(in srgb, var(--maroon) 20%, var(--sand));
+}
+
+.rw-ocr-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rw-ocr-toggle-count {
+  font-weight: 400;
+  font-size: 0.76rem;
+  color: var(--muted);
+}
+
+.rw-chevron {
+  font-size: 0.9rem;
+  color: var(--muted);
+  transition: transform 180ms ease;
+}
+
+.rw-chevron.is-open {
+  transform: rotate(90deg);
+}
+
+.rw-ocr-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--sand-light);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--paper) 50%, var(--surface));
+}
+
+.rw-ocr-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rw-ocr-slots {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.rw-ocr-slot {
+  display: grid;
+  gap: 4px;
+}
+
+.rw-ocr-slot > label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rw-ocr-slot > select {
+  width: 100%;
+}
+
+/* ── Tags (OCR kind chips) ── */
+
+.rw-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.64rem;
+  font-weight: 500;
+  border: 1px solid var(--sand);
+  color: var(--ink-light);
+  background: color-mix(in srgb, var(--paper) 78%, var(--surface));
+}
+
+.rw-tag--ok {
+  border-color: color-mix(in srgb, var(--success) 28%, var(--sand));
+  color: color-mix(in srgb, var(--success) 75%, var(--ink-light));
+  background: color-mix(in srgb, var(--success-soft) 72%, var(--surface));
+}
+
+.rw-tag--warn {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
+  color: color-mix(in srgb, var(--warning) 85%, var(--ink-light));
+  background: color-mix(in srgb, var(--warning-soft) 74%, var(--surface));
+}
+
+.rw-inline-warn {
+  font-size: 0.76rem;
+  color: color-mix(in srgb, var(--warning) 86%, var(--ink-light));
+}
+
+/* ── Step 2: Policy sections ── */
+
+.rw-policy-sections {
+  display: grid;
+  gap: 12px;
+}
+
+.rw-policy-section {
+  border: 1px solid var(--sand);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, var(--paper));
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.rw-policy-section > h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.rw-policy-row {
+  display: grid;
+  gap: 4px;
+}
+
+.rw-policy-row > label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.rw-policy-row > select,
+.rw-policy-row > input {
+  width: 100%;
+}
+
+/* ── Number stepper ── */
+
+.rw-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rw-stepper .btn {
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  justify-content: center;
+}
+
+.rw-stepper-input {
+  width: 78px;
+  min-width: 78px;
+  text-align: center;
+}
+
+/* ── Step 3: Checklist ── */
+
+.rw-checklist {
+  display: grid;
+  gap: 10px;
+}
+
+.rw-check-item {
+  border: 1px solid var(--sand);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--surface) 95%, var(--paper));
+  overflow: hidden;
+}
+
+.rw-check-item.is-missing {
+  border-color: color-mix(in srgb, var(--danger) 36%, var(--sand));
+}
+
+.rw-check-item.is-review {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
+}
+
+.rw-check-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+}
+
+.rw-check-info {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rw-check-info > p {
+  margin: 0;
+  color: var(--ink-light);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.rw-check-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rw-check-label {
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.rw-check-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 500;
+  border: 1px solid var(--sand);
+  color: var(--ink-light);
+  background: color-mix(in srgb, var(--paper) 78%, var(--surface));
+}
+
+.rw-check-badge.is-ok {
+  border-color: color-mix(in srgb, var(--success) 32%, var(--sand));
+  color: color-mix(in srgb, var(--success) 75%, var(--ink-light));
+  background: color-mix(in srgb, var(--success-soft) 75%, var(--surface));
+}
+
+.rw-check-badge.is-missing {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--sand));
+  color: color-mix(in srgb, var(--danger) 84%, var(--ink-light));
+  background: color-mix(in srgb, var(--danger-soft) 80%, var(--surface));
+}
+
+.rw-check-badge.is-review {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
+  color: color-mix(in srgb, var(--warning) 84%, var(--ink-light));
+  background: color-mix(in srgb, var(--warning-soft) 80%, var(--surface));
+}
+
+/* ── Detail panels (inside checklist items) ── */
+
+.rw-check-detail {
+  border-top: 1px dashed var(--sand-light);
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.rw-detail-table {
+  display: grid;
+  gap: 0;
+}
+
+.rw-detail-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.rw-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 7px 0;
+  border-top: 1px dashed var(--sand-light);
+}
+
+.rw-detail-row:first-child {
+  border-top: none;
+  padding-top: 0;
+}
+
+.rw-detail-row > span {
+  font-size: 0.82rem;
+  color: var(--ink-light);
+  flex-shrink: 0;
+}
+
+.rw-detail-row > strong {
+  font-size: 0.82rem;
+  text-align: right;
+  max-width: 58%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Outcome blocks ── */
+
+.rw-outcomes {
+  display: grid;
+  gap: 8px;
+}
+
+.rw-outcome {
+  border: 1px solid var(--sand);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 0.82rem;
+  color: var(--ink-light);
+  line-height: 1.4;
+}
+
+.rw-outcome > span {
+  display: block;
+  margin-bottom: 2px;
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 0.78rem;
+}
+
+.rw-outcome--ok {
+  border-color: color-mix(in srgb, var(--success) 35%, var(--sand));
+  background: color-mix(in srgb, var(--success-soft) 75%, var(--surface));
+}
+
+.rw-outcome--fail {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--sand));
+  background: color-mix(in srgb, var(--danger-soft) 75%, var(--surface));
+}
+
+.rw-outcome--review {
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--sand));
+  background: color-mix(in srgb, var(--warning-soft) 80%, var(--surface));
+}
+
+/* ── Error lines ── */
+
+.rw-error-line {
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.rw-error-line + .rw-error-line {
+  margin-top: 2px;
+}
+
+.rw-error-more {
+  color: inherit;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* ── Footer actions ── */
+
+.rw-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 8px;
+  border-top: 1px solid var(--sand-light);
+}
+
+.rw-actions-left {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.rw-reset-btn {
+  font-size: 0.78rem;
+  padding: 4px 8px;
+  opacity: 0.7;
+}
+.rw-reset-btn:hover {
+  opacity: 1;
+}
+
+.rw-actions-right {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+/* ── Responsive: Rubric Wizard v2 ── */
+
+@media (max-width: 840px) {
+  .rw-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .rw-ocr-slots {
+    grid-template-columns: 1fr;
+  }
+
+  .rw-steps {
+    grid-template-columns: 1fr;
+  }
+
+  .rw-check-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rw-detail-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rw-detail-row > strong {
+    max-width: 100%;
+    text-align: left;
+  }
+
+  .rw-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .rw-actions-right {
+    margin-left: 0;
+  }
+}
+
 @media (max-width: 720px) {
   .topbar {
     padding: 0 14px;

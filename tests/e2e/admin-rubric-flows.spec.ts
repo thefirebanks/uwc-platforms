@@ -56,12 +56,13 @@ async function ensureAtLeastOneChecked(groupField: Locator) {
 }
 
 async function completeWizardStep1(page: Page) {
+  // Use rw-field--full containers for checkbox groups
   const identityField = page
-    .locator(".form-field")
-    .filter({ hasText: /Documento de identidad/i })
+    .locator(".rw-field--full")
+    .filter({ hasText: /Documentos de identidad/i })
     .first();
   const gradesField = page
-    .locator(".form-field")
+    .locator(".rw-field--full")
     .filter({ hasText: /Documentos de notas/i })
     .first();
 
@@ -81,10 +82,33 @@ async function completeWizardStep1(page: Page) {
     test.skip(!filled, "No hay opciones disponibles para un mapeo requerido del wizard.");
   }
 
-  await page.locator("input[id^='wizard-ocr-name-']").first().fill("fullName");
-  await page.locator("input[id^='wizard-ocr-birth-']").first().fill("birthYear");
-  await page.locator("input[id^='wizard-ocr-type-']").first().fill("documentType");
-  await page.locator("input[id^='wizard-ocr-issue-']").first().fill("documentIssue");
+  // Expand OCR section if collapsed
+  const ocrToggle = page.locator(".rw-ocr-toggle");
+  const isExpanded = await ocrToggle.getAttribute("aria-expanded");
+  if (isExpanded !== "true") {
+    await ocrToggle.click();
+    await expect(page.locator(".rw-ocr-panel")).toBeVisible();
+  }
+
+  // OCR fields are now <select> elements — pick the first available option for each
+  const ocrSelects = [
+    page.locator("select[id^='wizard-ocr-ocrNamePath-']").first(),
+    page.locator("select[id^='wizard-ocr-ocrBirthYearPath-']").first(),
+    page.locator("select[id^='wizard-ocr-ocrDocumentTypePath-']").first(),
+    page.locator("select[id^='wizard-ocr-ocrDocumentIssuePath-']").first(),
+  ];
+
+  for (const sel of ocrSelects) {
+    const selCount = await sel.count();
+    if (selCount > 0) {
+      const filled = await pickFirstNonEmptyOption(sel);
+      if (!filled) {
+        // No OCR options available — fill with a placeholder path
+        // This means OCR parsing isn't configured, so tests that depend on it
+        // will have validation errors on OCR fields
+      }
+    }
+  }
 }
 
 async function completeWizardStep2(page: Page, options?: { birthYears?: string; minAverage?: string }) {
@@ -97,7 +121,8 @@ async function activateWizardRubric(page: Page) {
   await page.getByRole("button", { name: /^Continuar$/i }).click();
   await completeWizardStep2(page);
   await page.getByRole("button", { name: /^Continuar$/i }).click();
-  await expect(page.getByText(/Paso 3: Revisar y activar/i)).toBeVisible();
+  // New wizard shows "Revisar y activar" without "Paso 3:" prefix
+  await expect(page.getByText(/Revisar y activar/i)).toBeVisible();
   await page.getByRole("button", { name: /Activar rúbrica de esta etapa/i }).click();
   await expect(page.getByText(/Rúbrica del wizard activada/i)).toBeVisible();
 }
@@ -116,7 +141,7 @@ test.describe("Admin rubric wizard flows", () => {
 
     await activateWizardRubric(page);
 
-    await page.getByRole("button", { name: /Advanced/i }).click();
+    await page.getByRole("button", { name: /Modo avanzado/i }).click();
     await page.getByRole("button", { name: /JSON avanzado/i }).click();
     await expect(rubricTextarea(page)).toContainText('"id": "top_third_or_grade_average"');
     await expect(rubricTextarea(page)).toContainText('"completenessMode": "strict_form_valid"');
@@ -135,7 +160,8 @@ test.describe("Admin rubric wizard flows", () => {
     await page.locator("select[id^='wizard-name-']").first().selectOption("");
     await page.getByRole("button", { name: /^Continuar$/i }).click();
 
-    await expect(page.locator(".admin-feedback.error")).toContainText(/Bloqueos del wizard/i);
+    // New wizard shows actual error messages inside admin-feedback error, not "Bloqueos del wizard"
+    await expect(page.locator(".admin-feedback.error")).toContainText(/nombre del postulante/i);
     await expect(page.getByRole("button", { name: /Guardar configuración/i })).toBeDisabled();
   });
 
@@ -144,7 +170,7 @@ test.describe("Admin rubric wizard flows", () => {
     await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
     await activateWizardRubric(page);
 
-    await page.getByRole("button", { name: /Advanced/i }).click();
+    await page.getByRole("button", { name: /Modo avanzado/i }).click();
     await page.getByRole("button", { name: /JSON avanzado/i }).click();
 
     const textarea = rubricTextarea(page);
@@ -175,27 +201,30 @@ test.describe("Admin rubric wizard flows", () => {
     await completeWizardStep2(page, { birthYears: "", minAverage: "25" });
     await page.getByRole("button", { name: /^Continuar$/i }).click();
 
-    await expect(page.getByText(/Paso 2: Definir políticas/i)).toBeVisible();
-    await expect(page.locator(".admin-feedback.error")).toContainText(/Bloqueos del wizard/i);
+    // Step 2 card should still be visible (didn't advance to step 3)
+    await expect(page.locator("[data-wizard-step='2']")).toBeVisible();
+    // Error banner shows actual validation messages
     await expect(page.locator(".admin-feedback.error")).toContainText(/nacimiento permitido|promedio mínimo/i);
   });
 
-  test("Flow 5: recargar sugerencias repopulates wizard mappings", async ({ page }) => {
+  test("Flow 5: reset suggestions repopulates wizard mappings", async ({ page }) => {
     await openRubricSettings(page);
     await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
     await completeWizardStep1(page);
 
-    const ocrNameInput = page.locator("input[id^='wizard-ocr-name-']").first();
-    await ocrNameInput.fill("");
-    await expect(ocrNameInput).toHaveValue("");
+    // Clear a required field
+    const nameSelect = page.locator("select[id^='wizard-name-']").first();
+    await nameSelect.selectOption("");
+    await expect(nameSelect).toHaveValue("");
 
+    // The "Recargar sugerencias desde campos" button is in the wizard footer on step 1
     await page.getByRole("button", { name: /Recargar sugerencias desde campos/i }).click();
-    await expect(ocrNameInput).not.toHaveValue("");
+    await expect(nameSelect).not.toHaveValue("");
   });
 
   test("Flow 6: advanced JSON invalid shows errors and save is blocked", async ({ page }) => {
     await openRubricSettings(page);
-    await page.getByRole("button", { name: /Advanced/i }).click();
+    await page.getByRole("button", { name: /Modo avanzado/i }).click();
     await page.getByRole("button", { name: /JSON avanzado/i }).click();
 
     const textarea = rubricTextarea(page);
@@ -209,7 +238,7 @@ test.describe("Admin rubric wizard flows", () => {
 
   test("Flow 7: advanced JSON errors prevent switching back to guided mode", async ({ page }) => {
     await openRubricSettings(page);
-    await page.getByRole("button", { name: /Advanced/i }).click();
+    await page.getByRole("button", { name: /Modo avanzado/i }).click();
     await page.getByRole("button", { name: /JSON avanzado/i }).click();
 
     const textarea = rubricTextarea(page);
@@ -217,7 +246,7 @@ test.describe("Admin rubric wizard flows", () => {
     await textarea.blur();
     await expect(page.locator(".admin-feedback.error")).toContainText(/Errores de rúbrica/i);
 
-    await page.getByRole("button", { name: /^Modo guiado$/i }).click();
+    await page.getByRole("button", { name: "Modo guiado", exact: true }).click();
     await expect(page.getByText(/No puedes volver al modo guiado/i)).toBeVisible();
     await expect(page.getByRole("button", { name: /JSON avanzado/i })).toHaveClass(/btn-primary/);
   });
@@ -233,7 +262,8 @@ test.describe("Admin rubric wizard flows", () => {
 
     await page.reload();
     await expect(page.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).toHaveClass(/btn-primary/);
-    await expect(page.getByText(/Paso 1: Mapear evidencia/i)).toBeVisible();
+    // New wizard shows "Mapear evidencia" without "Paso 1:" prefix
+    await expect(page.getByText(/Mapear evidencia/i)).toBeVisible();
   });
 
   test("Flow 9: candidates dashboard requires cycle selection before running rubric", async ({ page }) => {

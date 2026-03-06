@@ -28,6 +28,7 @@ import { AdminCommunicationsCenter } from "@/components/admin-communications-cen
 import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
 import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
 import { FieldHint } from "@/components/field-hint";
+import { RubricWizard } from "@/components/rubric-wizard";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
 import {
   OCR_EXPECTED_OUTPUT_TYPES,
@@ -245,6 +246,7 @@ function parseCommaSeparatedNumbers(raw: string) {
 
 type RubricWizardValidation = {
   step1Errors: string[];
+  step1Warnings: string[];
   step2Errors: string[];
   blueprint: RubricBlueprintV1 | null;
   compilerErrors: string[];
@@ -1816,6 +1818,7 @@ export function StageConfigEditor({
 
   const rubricWizardValidation = useMemo<RubricWizardValidation>(() => {
     const step1Errors: string[] = [];
+    const step1Warnings: string[] = [];
     const step2Errors: string[] = [];
     const availableOcrPaths = new Set(
       selectedIdDocumentOcrPathOptions.map((option) => option.value),
@@ -1878,41 +1881,50 @@ export function StageConfigEditor({
     if (!uwcPresetDraft.ocrDocumentIssuePath.trim()) {
       step1Errors.push("Define el campo OCR para observaciones del documento.");
     }
-    if (availableOcrPaths.size === 0) {
-      step1Errors.push(
-        "No hay campos OCR disponibles. Activa Parsing con IA en un documento de identidad y define campos esperados.",
+    // OCR path mismatch checks are non-blocking warnings.
+    // The draft may pre-populate OCR paths (e.g. "fullName") that the parser
+    // config doesn't yet list in expectedOutputFields. The compiler still
+    // produces a valid rubric and at runtime the criterion gracefully returns
+    // "missing_data" if the OCR result doesn't contain that path.
+    if (availableOcrPaths.size === 0 && uwcPresetDraft.idDocumentFileKeys.length > 0) {
+      step1Warnings.push(
+        "No hay campos OCR esperados configurados. Activa Parsing con IA en un documento de identidad para mejor validación.",
       );
     }
     if (
       availableOcrPaths.size > 0 &&
+      uwcPresetDraft.ocrNamePath.trim() &&
       !availableOcrPaths.has(uwcPresetDraft.ocrNamePath.trim())
     ) {
-      step1Errors.push(
-        "El campo OCR de nombre debe venir de los campos esperados en Parsing con IA.",
+      step1Warnings.push(
+        "El campo OCR de nombre no coincide con los campos esperados en Parsing con IA.",
       );
     }
     if (
       availableOcrPaths.size > 0 &&
+      uwcPresetDraft.ocrBirthYearPath.trim() &&
       !availableOcrPaths.has(uwcPresetDraft.ocrBirthYearPath.trim())
     ) {
-      step1Errors.push(
-        "El campo OCR de año de nacimiento debe venir de los campos esperados en Parsing con IA.",
+      step1Warnings.push(
+        "El campo OCR de año de nacimiento no coincide con los campos esperados en Parsing con IA.",
       );
     }
     if (
       availableOcrPaths.size > 0 &&
+      uwcPresetDraft.ocrDocumentTypePath.trim() &&
       !availableOcrPaths.has(uwcPresetDraft.ocrDocumentTypePath.trim())
     ) {
-      step1Errors.push(
-        "El campo OCR de tipo de documento debe venir de los campos esperados en Parsing con IA.",
+      step1Warnings.push(
+        "El campo OCR de tipo de documento no coincide con los campos esperados en Parsing con IA.",
       );
     }
     if (
       availableOcrPaths.size > 0 &&
+      uwcPresetDraft.ocrDocumentIssuePath.trim() &&
       !availableOcrPaths.has(uwcPresetDraft.ocrDocumentIssuePath.trim())
     ) {
-      step1Errors.push(
-        "El campo OCR de excepción de documento debe venir de los campos esperados en Parsing con IA.",
+      step1Warnings.push(
+        "El campo OCR de excepción de documento no coincide con los campos esperados en Parsing con IA.",
       );
     }
 
@@ -1939,6 +1951,7 @@ export function StageConfigEditor({
     if (parsedBlueprint.success) {
       return {
         step1Errors,
+        step1Warnings,
         step2Errors,
         blueprint: parsedBlueprint.data,
         compilerErrors: [],
@@ -1952,6 +1965,7 @@ export function StageConfigEditor({
 
     return {
       step1Errors,
+      step1Warnings,
       step2Errors,
       blueprint: null,
       compilerErrors,
@@ -3898,719 +3912,34 @@ export function StageConfigEditor({
                       </button>
                       <button
                         type="button"
-                        className="btn btn-outline"
-                        disabled
-                        title="Próximamente"
+                        className={`btn ${rubricAuthoringTab === "advanced" ? "btn-primary" : "btn-outline"}`}
+                        onClick={() => setRubricAuthoringTab("advanced")}
                       >
-                        Advanced (próximamente)
+                        Modo avanzado
                       </button>
                     </div>
 
                     {rubricAuthoringTab === "wizard" ? (
-                      <div className="admin-stage-settings-stack rubric-wizard-shell">
-                        {rubricAdvancedCustomized ? (
-                          <div className="admin-feedback warning" style={{ marginBottom: "10px" }}>
-                            Esta etapa fue personalizada en Advanced. Puedes volver al wizard y restablecer
-                            el preset cuando quieras.
-                          </div>
-                        ) : null}
-                        <div className="rubric-wizard-progress-shell">
-                          <div className="rubric-wizard-progress-meta">
-                            <span>{`Paso ${rubricWizardStep} de 3`}</span>
-                            <span>{`${wizardProgressPercent}% completado`}</span>
-                          </div>
-                          <div className="rubric-wizard-progress-track" aria-hidden="true">
-                            <span style={{ width: `${wizardProgressPercent}%` }} />
-                          </div>
-                          <div className="rubric-wizard-steps">
-                            <span className={`rubric-wizard-step ${rubricWizardStep === 1 ? "is-active" : ""}`}>
-                              <strong>1</strong>
-                              Evidencia
-                            </span>
-                            <span className={`rubric-wizard-step ${rubricWizardStep === 2 ? "is-active" : ""}`}>
-                              <strong>2</strong>
-                              Políticas
-                            </span>
-                            <span className={`rubric-wizard-step ${rubricWizardStep === 3 ? "is-active" : ""}`}>
-                              <strong>3</strong>
-                              Revisión
-                            </span>
-                          </div>
-                        </div>
-
-                        {rubricWizardStep === 1 ? (
-                          <div className="settings-card rubric-wizard-card">
-                            <div className="settings-card-header">
-                              <h3>Paso 1: Mapear evidencia</h3>
-                              <p>Configura campos de formulario y rutas OCR. Solo los campos con etiqueta requerida bloquean avance.</p>
-                            </div>
-                            <div className="editor-grid">
-                              <div className="form-field full">
-                                <label>
-                                  Documento de identidad <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <div className="rubric-choice-grid">
-                                  {rubricFileFieldOptions.length > 0 ? (
-                                    rubricFileFieldOptions.map((option) => (
-                                      <label
-                                        key={`wizard-id-${option.value}`}
-                                        className="rubric-choice-pill"
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={uwcPresetDraft.idDocumentFileKeys.includes(option.value)}
-                                          onChange={() =>
-                                            togglePresetFileKey("idDocumentFileKeys", option.value)
-                                          }
-                                        />
-                                        {option.label}
-                                      </label>
-                                    ))
-                                  ) : (
-                                    <span className="form-hint">
-                                      Necesitas al menos un campo de tipo archivo para continuar.
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="form-field full">
-                                <label>
-                                  Documentos de notas <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <div className="rubric-choice-grid">
-                                  {rubricFileFieldOptions.length > 0 ? (
-                                    rubricFileFieldOptions.map((option) => (
-                                      <label
-                                        key={`wizard-grades-${option.value}`}
-                                        className="rubric-choice-pill"
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={uwcPresetDraft.gradesDocumentFileKeys.includes(option.value)}
-                                          onChange={() =>
-                                            togglePresetFileKey("gradesDocumentFileKeys", option.value)
-                                          }
-                                        />
-                                        {option.label}
-                                      </label>
-                                    ))
-                                  ) : (
-                                    <span className="form-hint">
-                                      Necesitas al menos un campo de tipo archivo para continuar.
-                                    </span>
-                                  )}
-                                </div>
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-name-${stageCode}`}>
-                                  Nombre postulante <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <select
-                                  id={`wizard-name-${stageCode}`}
-                                  value={uwcPresetDraft.applicantNameFieldKey ?? ""}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      applicantNameFieldKey: event.target.value || null,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecciona un campo</option>
-                                  {rubricFieldOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-average-${stageCode}`}>
-                                  Promedio manual <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <select
-                                  id={`wizard-average-${stageCode}`}
-                                  value={uwcPresetDraft.averageGradeFieldKey ?? ""}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      averageGradeFieldKey: event.target.value || null,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecciona un campo numérico</option>
-                                  {rubricNumberFieldOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-top-third-${stageCode}`}>Prueba tercio superior (opcional)</label>
-                                <select
-                                  id={`wizard-top-third-${stageCode}`}
-                                  value={uwcPresetDraft.topThirdProofFileKey ?? ""}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      topThirdProofFileKey: event.target.value || null,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Sin archivo dedicado</option>
-                                  {rubricFileFieldOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-authorization-${stageCode}`}>
-                                  Autorización firmada <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <select
-                                  id={`wizard-authorization-${stageCode}`}
-                                  value={uwcPresetDraft.signedAuthorizationFileKey ?? ""}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      signedAuthorizationFileKey: event.target.value || null,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecciona un campo</option>
-                                  {rubricFileFieldOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`wizard-photo-${stageCode}`}>
-                                  Foto del postulante <span className="rubric-required-badge">Requerido</span>
-                                </label>
-                                <select
-                                  id={`wizard-photo-${stageCode}`}
-                                  value={uwcPresetDraft.applicantPhotoFileKey ?? ""}
-                                  onChange={(event) =>
-                                    setUwcPresetDraft((current) => ({
-                                      ...current,
-                                      applicantPhotoFileKey: event.target.value || null,
-                                    }))
-                                  }
-                                >
-                                  <option value="">Selecciona un campo</option>
-                                  {rubricFileFieldOptions.map((option) => (
-                                    <option key={option.value} value={option.value}>
-                                      {option.label}
-                                    </option>
-                                  ))}
-                                </select>
-                              </div>
-                              <div className="form-field full rubric-ocr-mapping-shell">
-                                <div className="rubric-ocr-mapping-header">
-                                  <div>
-                                    <h4>Campos OCR para evaluación automática</h4>
-                                    <p className="form-hint">
-                                      La fuente es Parsing con IA en los documentos de identidad seleccionados.
-                                    </p>
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline"
-                                    onClick={openEditorForOcrFields}
-                                  >
-                                    Editar campos OCR
-                                  </button>
-                                </div>
-                                <div className="rubric-ocr-source-strip" aria-live="polite">
-                                  <span>
-                                    Documentos de identidad seleccionados:{" "}
-                                    <strong>{uwcPresetDraft.idDocumentFileKeys.length}</strong>
-                                  </span>
-                                  <span>
-                                    Campos OCR disponibles:{" "}
-                                    <strong>{selectedIdDocumentOcrPathOptions.length}</strong>
-                                  </span>
-                                </div>
-                                <div className="rubric-ocr-mapping-table">
-                                  {RUBRIC_WIZARD_OCR_SLOTS.map((slot) => {
-                                    const currentPath = uwcPresetDraft[slot.key].trim();
-                                    const selectedOption = currentPath
-                                      ? selectedIdDocumentOcrOptionByValue.get(currentPath)
-                                      : null;
-                                    const selectedKind = currentPath
-                                      ? selectedOption?.kind ?? classifyOcrOption(currentPath)
-                                      : null;
-                                    const selectedSource = selectedOption?.fieldLabel ?? null;
-                                    const helperId = `wizard-ocr-hint-${slot.key}-${stageCode}`;
-
-                                    return (
-                                      <div key={`wizard-ocr-slot-${slot.key}`} className="rubric-ocr-mapping-row">
-                                        <div className="rubric-ocr-mapping-row-head">
-                                          <label htmlFor={`wizard-ocr-${slot.key}-${stageCode}`}>
-                                            {`Campo OCR: ${slot.label}`}{" "}
-                                            <span className="rubric-required-badge">Requerido</span>
-                                          </label>
-                                          {selectedKind ? (
-                                            <span
-                                              className={`rubric-ocr-kind-chip ${
-                                                selectedKind === "technical"
-                                                  ? "is-technical"
-                                                  : "is-business"
-                                              }`}
-                                            >
-                                              {selectedKind === "technical" ? "Técnico" : "Dato"}
-                                            </span>
-                                          ) : null}
-                                        </div>
-                                        <select
-                                          id={`wizard-ocr-${slot.key}-${stageCode}`}
-                                          value={uwcPresetDraft[slot.key]}
-                                          aria-describedby={selectedKind === "technical" ? helperId : undefined}
-                                          onChange={(event) =>
-                                            setPresetOcrPath(slot.key, event.target.value)
-                                          }
-                                        >
-                                          <option value="">Selecciona un campo OCR</option>
-                                          {buildWizardOcrPathOptions(currentPath).map((option) => (
-                                            <option
-                                              key={`wizard-ocr-slot-option-${slot.key}-${option.value}`}
-                                              value={option.value}
-                                            >
-                                              {`${option.value} [${
-                                                option.kind === "technical" ? "Técnico" : "Dato"
-                                              }]`}
-                                            </option>
-                                          ))}
-                                        </select>
-                                        <div className="rubric-ocr-mapping-row-meta">
-                                          {selectedSource ? (
-                                            <span className="form-hint">{`Fuente: ${selectedSource}`}</span>
-                                          ) : (
-                                            <span className="form-hint">
-                                              Selecciona un campo esperado definido en Parsing con IA.
-                                            </span>
-                                          )}
-                                          {selectedKind === "technical" ? (
-                                            <span id={helperId} className="rubric-inline-warning">
-                                              {`Este campo es técnico; confirma que realmente representa ${slot.warningLabel}.`}
-                                            </span>
-                                          ) : null}
-                                        </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                                {selectedIdDocumentOcrPathOptions.length === 0 ? (
-                                  <div className="form-hint">
-                                    Activa Parsing con IA en al menos un documento de identidad y define campos
-                                    esperados para poblar estas opciones OCR.
-                                  </div>
-                                ) : (
-                                  <div className="rubric-ocr-available-list">
-                                    {selectedIdDocumentOcrPathOptions.map((option) => (
-                                      <span
-                                        key={`available-ocr-${option.value}`}
-                                        className={`rubric-choice-pill rubric-ocr-available-pill ${
-                                          option.kind === "technical"
-                                            ? "is-technical"
-                                            : "is-business"
-                                        }`}
-                                      >
-                                        {option.value}
-                                      </span>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {rubricWizardStep === 2 ? (
-                          <div className="settings-card rubric-wizard-card">
-                            <div className="settings-card-header">
-                              <h3>Paso 2: Definir políticas</h3>
-                              <p>Configura umbrales y reglas de decisión de arriba hacia abajo.</p>
-                            </div>
-                            <div className="rubric-policy-flow">
-                              <section className="rubric-policy-section">
-                                <div className="rubric-policy-section-header">
-                                  <h4>Umbrales</h4>
-                                  <p className="form-hint">Define primero nacimiento y promedio mínimo.</p>
-                                </div>
-                                <div className="rubric-policy-control">
-                                  <label htmlFor={`wizard-birth-years-${stageCode}`}>
-                                    Años de nacimiento permitidos
-                                  </label>
-                                  <input
-                                    id={`wizard-birth-years-${stageCode}`}
-                                    type="text"
-                                    value={wizardBirthYearsInput}
-                                    onChange={(event) => updateWizardBirthYearsInput(event.target.value)}
-                                  />
-                                  <div className="form-hint">
-                                    Puedes separar con coma o espacio. Ejemplo: 2008, 2009, 2010.
-                                  </div>
-                                </div>
-                                <div className="rubric-policy-control rubric-policy-control--boxed">
-                                  <label htmlFor={`wizard-min-average-${stageCode}`}>Promedio mínimo (0-20)</label>
-                                  <div className="rubric-number-stepper">
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline"
-                                      onClick={() => adjustWizardMinimumAverage(-0.1)}
-                                      aria-label="Disminuir promedio mínimo"
-                                    >
-                                      -
-                                    </button>
-                                    <input
-                                      id={`wizard-min-average-${stageCode}`}
-                                      className="rubric-number-stepper-input"
-                                      type="number"
-                                      min={0}
-                                      max={20}
-                                      step={0.1}
-                                      value={String(uwcPresetDraft.minAverageGrade)}
-                                      onChange={(event) =>
-                                        setUwcPresetDraft((current) => {
-                                          const parsedValue = Number(event.target.value);
-                                          const nextValue = Number.isFinite(parsedValue)
-                                            ? Math.min(20, Math.max(0, parsedValue))
-                                            : 0;
-                                          return {
-                                            ...current,
-                                            minAverageGrade: nextValue,
-                                          };
-                                        })
-                                      }
-                                    />
-                                    <button
-                                      type="button"
-                                      className="btn btn-outline"
-                                      onClick={() => adjustWizardMinimumAverage(0.1)}
-                                      aria-label="Aumentar promedio mínimo"
-                                    >
-                                      +
-                                    </button>
-                                  </div>
-                                </div>
-                              </section>
-                              <section className="rubric-policy-section">
-                                <div className="rubric-policy-section-header">
-                                  <h4>Recomendaciones</h4>
-                                </div>
-                                <div className="rubric-policy-control">
-                                  <label htmlFor={`wizard-recommendation-policy-${stageCode}`}>
-                                    Política de recomendaciones
-                                  </label>
-                                  <select
-                                    id={`wizard-recommendation-policy-${stageCode}`}
-                                    value={uwcPresetDraft.recommendationCompleteness}
-                                    onChange={(event) =>
-                                      setUwcPresetDraft((current) => ({
-                                        ...current,
-                                        recommendationCompleteness:
-                                          event.target
-                                            .value as UwcStageOnePresetDraft["recommendationCompleteness"],
-                                        minRecommendationResponses:
-                                          event.target.value === "minimum_answers"
-                                            ? Math.max(1, current.minRecommendationResponses)
-                                            : current.minRecommendationResponses,
-                                      }))
-                                    }
-                                  >
-                                    {RECOMMENDATION_POLICY_OPTIONS.map((option) => (
-                                      <option key={`recommendation-policy-${option.value}`} value={option.value}>
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <div className="form-hint">
-                                    {
-                                      RECOMMENDATION_POLICY_OPTIONS.find(
-                                        (option) => option.value === uwcPresetDraft.recommendationCompleteness,
-                                      )?.description
-                                    }
-                                  </div>
-                                </div>
-                                {uwcPresetDraft.recommendationCompleteness === "minimum_answers" ? (
-                                  <div className="rubric-policy-control">
-                                    <label htmlFor={`wizard-recommendation-min-${stageCode}`}>
-                                      Respuestas mínimas por recomendación
-                                    </label>
-                                    <input
-                                      id={`wizard-recommendation-min-${stageCode}`}
-                                      type="number"
-                                      min={1}
-                                      max={20}
-                                      step={1}
-                                      value={String(uwcPresetDraft.minRecommendationResponses)}
-                                      onChange={(event) =>
-                                        setUwcPresetDraft((current) => ({
-                                          ...current,
-                                          minRecommendationResponses: Math.max(
-                                            0,
-                                            Math.trunc(Number(event.target.value) || 0),
-                                          ),
-                                        }))
-                                      }
-                                    />
-                                  </div>
-                                ) : null}
-                              </section>
-                              <section className="rubric-policy-section">
-                                <div className="rubric-policy-section-header">
-                                  <h4>Excepciones y documentos</h4>
-                                </div>
-                                <div className="rubric-policy-control">
-                                  <label htmlFor={`wizard-grades-policy-${stageCode}`}>
-                                    Múltiples certificados de notas
-                                  </label>
-                                  <select
-                                    id={`wizard-grades-policy-${stageCode}`}
-                                    value={uwcPresetDraft.gradesCombinationRule}
-                                    onChange={(event) =>
-                                      setUwcPresetDraft((current) => ({
-                                        ...current,
-                                        gradesCombinationRule:
-                                          event.target.value as UwcStageOnePresetDraft["gradesCombinationRule"],
-                                        limitGradesDocumentToSingleUpload:
-                                          event.target.value !== "allow_multiple",
-                                      }))
-                                    }
-                                  >
-                                    {GRADES_COMBINATION_POLICY_OPTIONS.map((option) => (
-                                      <option key={`grades-policy-${option.value}`} value={option.value}>
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <div className="rubric-policy-control">
-                                  <label htmlFor={`wizard-id-exception-policy-${stageCode}`}>
-                                    Excepciones de documento de identidad
-                                  </label>
-                                  <select
-                                    id={`wizard-id-exception-policy-${stageCode}`}
-                                    value={uwcPresetDraft.idExceptionRule}
-                                    onChange={(event) =>
-                                      setUwcPresetDraft((current) => ({
-                                        ...current,
-                                        idExceptionRule:
-                                          event.target.value as UwcStageOnePresetDraft["idExceptionRule"],
-                                      }))
-                                    }
-                                  >
-                                    {ID_EXCEPTION_POLICY_OPTIONS.map((option) => (
-                                      <option key={`id-exception-policy-${option.value}`} value={option.value}>
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                              </section>
-                            </div>
-                          </div>
-                        ) : null}
-
-                        {rubricWizardStep === 3 ? (
-                          <div className="settings-card rubric-wizard-card">
-                            <div className="settings-card-header">
-                              <h3>Paso 3: Revisar y activar</h3>
-                              <p>Confirma rápidamente si esta etapa está lista para activarse.</p>
-                            </div>
-                            <div className="rubric-checklist-shell">
-                              <h4>Checklist de activación</h4>
-                              <div className="rubric-checklist-list">
-                                {wizardReviewSummary.checklistItems.map((item) => {
-                                  const isOpen = Boolean(reviewDetailOpenById[item.id]);
-                                  return (
-                                    <div
-                                      key={`rubric-checklist-item-${item.id}`}
-                                      className={`rubric-checklist-item is-${item.status}`}
-                                    >
-                                      <div className="rubric-checklist-row">
-                                        <div className="rubric-checklist-copy">
-                                          <div className="rubric-checklist-top">
-                                            <span className="rubric-checklist-label">{item.label}</span>
-                                            <span
-                                              className={`rubric-checklist-status is-${item.status}`}
-                                            >
-                                              {RUBRIC_CHECKLIST_STATUS_LABEL[item.status]}
-                                            </span>
-                                          </div>
-                                          <p>{item.reason}</p>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          className="btn btn-outline"
-                                          onClick={() => toggleReviewDetail(item.id)}
-                                        >
-                                          {isOpen ? "Ocultar detalle" : "Ver detalle"}
-                                        </button>
-                                      </div>
-                                      {isOpen ? (
-                                        <div className="rubric-checklist-detail">
-                                          {item.id === "evidence" ? (
-                                            <div className="rubric-detail-table">
-                                              {wizardReviewSummary.evidenceRows.map((row) => (
-                                                <div
-                                                  key={`review-evidence-${row.label}`}
-                                                  className="rubric-detail-row"
-                                                >
-                                                  <span>{row.label}</span>
-                                                  <strong title={row.value}>{row.value}</strong>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          ) : null}
-                                          {item.id === "ocr" ? (
-                                            <div className="admin-stage-settings-stack">
-                                              <div className="rubric-detail-head">
-                                                <span>Mapeos OCR activos</span>
-                                                <button
-                                                  type="button"
-                                                  className="btn btn-outline"
-                                                  onClick={openEditorForOcrFields}
-                                                >
-                                                  Editar en Parsing con IA
-                                                </button>
-                                              </div>
-                                              <div className="rubric-detail-table">
-                                                {wizardReviewSummary.ocrRows.map((row) => (
-                                                  <div
-                                                    key={`review-ocr-${row.id}`}
-                                                    className="rubric-detail-row"
-                                                  >
-                                                    <span>{row.label}</span>
-                                                    <strong title={`${row.value} · ${row.source}`}>
-                                                      {row.value}
-                                                    </strong>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                              {wizardReviewSummary.availableOcrFields.length > 0 ? (
-                                                <div className="rubric-ocr-available-list">
-                                                  {wizardReviewSummary.availableOcrFields.map((field) => (
-                                                    <span
-                                                      key={`review-ocr-option-${field.value}`}
-                                                      className={`rubric-choice-pill rubric-ocr-available-pill ${
-                                                        field.kind === "technical"
-                                                          ? "is-technical"
-                                                          : "is-business"
-                                                      }`}
-                                                    >
-                                                      {field.value}
-                                                    </span>
-                                                  ))}
-                                                </div>
-                                              ) : null}
-                                            </div>
-                                          ) : null}
-                                          {item.id === "policies" ? (
-                                            <div className="rubric-detail-table">
-                                              {wizardReviewSummary.policyRows.map((row) => (
-                                                <div
-                                                  key={`review-policy-${row.label}`}
-                                                  className="rubric-detail-row"
-                                                >
-                                                  <span>{row.label}</span>
-                                                  <strong title={row.value}>{row.value}</strong>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          ) : null}
-                                          {item.id === "result" ? (
-                                            <div className="rubric-review-outcomes">
-                                              <div className="rubric-review-outcome eligible">
-                                                <span>eligible</span>
-                                                Todo correcto, pasa a la siguiente etapa.
-                                              </div>
-                                              <div className="rubric-review-outcome not-eligible">
-                                                <span>not_eligible</span>
-                                                Falla crítica en criterios obligatorios.
-                                              </div>
-                                              <div className="rubric-review-outcome needs-review">
-                                                <span>needs_review</span>
-                                                Falta evidencia o hay ambigüedad para revisión humana.
-                                              </div>
-                                            </div>
-                                          ) : null}
-                                        </div>
-                                      ) : null}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                            {wizardChecklistHasMissing ? (
-                              <div className="admin-feedback error">
-                                Hay bloqueos en el checklist. Completa los elementos marcados como falta antes de
-                                activar.
-                              </div>
-                            ) : wizardChecklistHasReview ? (
-                              <div className="admin-feedback warning">
-                                Puedes activar, pero conviene revisar los elementos marcados como revisar.
-                              </div>
-                            ) : (
-                              <div className="admin-feedback success">
-                                Checklist completo. La rúbrica está lista para activarse.
-                              </div>
-                            )}
-                          </div>
-                        ) : null}
-
-                        {rubricWizardBlockingErrors.length > 0 ? (
-                          <div className="admin-feedback error">
-                            {`Bloqueos del wizard: ${rubricWizardBlockingErrors
-                              .slice(0, 4)
-                              .join(" | ")}`}
-                          </div>
-                        ) : null}
-                        {wizardBlockingCount === 0 && rubricWizardStep !== 3 ? (
-                          <div className="admin-feedback success">
-                            El wizard no tiene bloqueos. Puedes continuar y guardar.
-                          </div>
-                        ) : null}
-
-                        <div className="rubric-wizard-actions">
-                          <div className="rubric-wizard-actions-secondary">
-                            <button
-                              type="button"
-                              className="btn btn-outline"
-                              onClick={() => setUwcPresetDraft(suggestedUwcPresetDraft)}
-                            >
-                              Recargar sugerencias desde campos
-                            </button>
-                            {rubricWizardStep > 1 ? (
-                              <button
-                                type="button"
-                                className="btn btn-outline"
-                                onClick={moveToPreviousWizardStep}
-                              >
-                                Volver
-                              </button>
-                            ) : null}
-                          </div>
-                          {rubricWizardStep < 3 ? (
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={moveToNextWizardStep}
-                            >
-                              Continuar
-                            </button>
-                          ) : (
-                            <button type="button" className="btn btn-primary" onClick={applyUwcPresetRubric}>
-                              Activar rúbrica de esta etapa
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                      <RubricWizard
+                        stageCode={stageCode}
+                        draft={uwcPresetDraft}
+                        onDraftChange={setUwcPresetDraft}
+                        validation={{
+                          step1Errors: rubricWizardValidation.step1Errors,
+                          step1Warnings: rubricWizardValidation.step1Warnings,
+                          step2Errors: rubricWizardValidation.step2Errors,
+                          hasBlueprint: rubricWizardValidation.blueprint !== null,
+                          compilerErrors: rubricWizardValidation.compilerErrors,
+                        }}
+                        fieldOptions={rubricFieldOptions}
+                        fileFieldOptions={rubricFileFieldOptions}
+                        numberFieldOptions={rubricNumberFieldOptions}
+                        ocrPathOptions={selectedIdDocumentOcrPathOptions}
+                        advancedCustomized={rubricAdvancedCustomized}
+                        onActivate={applyUwcPresetRubric}
+                        onResetSuggestions={() => setUwcPresetDraft(suggestedUwcPresetDraft)}
+                        onEditOcrFields={openEditorForOcrFields}
+                      />
                     ) : (
                       <>
                         {settingsRubricBlueprint && rubricAdvancedCustomized ? (
