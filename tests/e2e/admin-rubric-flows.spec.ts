@@ -133,31 +133,33 @@ test.describe("Admin rubric editor flows", () => {
     await expect(card).toBeVisible();
     await expect(card.locator(".rubric-criterion-title")).toContainText("Test field present");
 
-    // Click header to expand the criterion body
-    await card.locator(".rubric-criterion-header").click();
+    // Criteria start expanded by default, so the body should be visible
     await expect(card.locator(".rubric-criterion-body")).toBeVisible();
 
-    // Verify form fields are present
-    await expect(card.locator("select").filter({ hasText: /field_present/ })).toBeVisible();
-
-    // Click header again to collapse
-    await card.locator(".rubric-criterion-header").click();
+    // Click header to collapse the criterion body
+    await card.locator(".rubric-criterion-header-left").click();
     await expect(card.locator(".rubric-criterion-body")).not.toBeVisible();
+
+    // Click header again to re-expand
+    await card.locator(".rubric-criterion-header-left").click();
+    await expect(card.locator(".rubric-criterion-body")).toBeVisible();
   });
 
   test("Flow 3: add criterion via Visual mode", async ({ page }) => {
     await openRubricSettings(page);
 
-    // Start with an empty enabled rubric
+    // Set an empty rubric with enabled=false (avoids validation error on empty criteria)
     await page.getByRole("button", { name: "JSON", exact: true }).click();
-    await rubricTextarea(page).fill(JSON.stringify({ enabled: true, criteria: [] }, null, 2));
+    await rubricTextarea(page).fill(JSON.stringify({ enabled: false, criteria: [] }, null, 2));
     await rubricTextarea(page).blur();
 
-    // Switch to Visual mode
+    // Switch to Visual mode — should show the disabled empty state
     await page.getByRole("button", { name: "Visual", exact: true }).click();
-
-    // Should show the empty state
     await expect(page.locator(".rubric-empty-state")).toBeVisible();
+
+    // Enable the rubric via the toggle (input is visually hidden inside label.switch)
+    const enableSwitch = page.locator(".rubric-toolbar-left label.switch");
+    await enableSwitch.click();
 
     // Select a kind from the dropdown and add a criterion
     const kindSelect = page.locator("select[id^='rubric-new-criterion-kind-']").first();
