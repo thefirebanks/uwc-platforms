@@ -28,7 +28,6 @@ import { AdminCommunicationsCenter } from "@/components/admin-communications-cen
 import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
 import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
 import { FieldHint } from "@/components/field-hint";
-import { RubricWizard } from "@/components/rubric-wizard";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
 import {
   OCR_EXPECTED_OUTPUT_TYPES,
@@ -47,18 +46,13 @@ import {
   MODEL_REGISTRY,
 } from "@/lib/server/ocr";
 import {
-  buildUwcStageOneRubricFromBlueprint,
+  buildUwcStageOneRubricFromDraft,
   createRubricMeta,
   guessUwcStageOnePresetDraft,
   parseRubricBlueprintV1,
   tryHydrateBlueprintFromRubric,
-  validateUwcBlueprintDraft,
   type UwcStageOnePresetDraft,
 } from "@/lib/rubric/default-rubric-presets";
-import {
-  classifyOcrOption,
-  type RubricOcrOptionKind,
-} from "@/lib/rubric/wizard-review";
 import {
   getDefaultEligibilityRubricConfig,
   parseEligibilityRubricConfig,
@@ -98,8 +92,6 @@ type StageEditorSettingsDraft = {
 };
 
 type RubricEditorMode = "guided" | "json";
-type RubricAuthoringTab = "wizard" | "advanced";
-
 type StageAdminConfigPayload = {
   stageName?: string;
   description?: string;
@@ -206,21 +198,6 @@ function parseCommaSeparatedNumbers(raw: string) {
   return values;
 }
 
-type RubricWizardValidation = {
-  step1Errors: string[];
-  step1Warnings: string[];
-  step2Errors: string[];
-  blueprint: RubricBlueprintV1 | null;
-  compilerErrors: string[];
-};
-
-type RubricOcrPathOption = {
-  value: string;
-  label: string;
-  fieldLabel: string;
-  fieldKey: string;
-  kind: RubricOcrOptionKind;
-};
 
 function presetDraftFromBlueprint(blueprint: RubricBlueprintV1): UwcStageOnePresetDraft {
   return {
@@ -259,65 +236,6 @@ function createUniqueCriterionId(
     candidate = `${base}_${counter}`;
   }
   return candidate;
-}
-
-function createBaselineEligibilityRubricTemplate(): EligibilityRubricConfig {
-  return {
-    enabled: true,
-    criteria: [
-      {
-        id: "required_fields",
-        label: "Campos obligatorios base completos",
-        kind: "all_present",
-        fieldKeys: ["dateOfBirth", "nationality"],
-        onFail: "not_eligible",
-        onMissingData: "needs_review",
-      },
-      {
-        id: "grades_uploaded",
-        label: "Certificado de notas cargado",
-        kind: "file_uploaded",
-        fileKey: "grades",
-        onFail: "needs_review",
-        onMissingData: "needs_review",
-      },
-      {
-        id: "id_document_uploaded",
-        label: "Documento de identidad cargado",
-        kind: "file_uploaded",
-        fileKey: "idDocument",
-        onFail: "needs_review",
-        onMissingData: "needs_review",
-      },
-      {
-        id: "recommendations_complete",
-        label: "Recomendaciones requeridas recibidas",
-        kind: "recommendations_complete",
-        roles: ["mentor", "friend"],
-        requireRequested: true,
-        onFail: "not_eligible",
-        onMissingData: "needs_review",
-      },
-    ],
-  };
-}
-
-function createOcrEligibilityRubricTemplate(): EligibilityRubricConfig {
-  return {
-    enabled: true,
-    criteria: [
-      ...createBaselineEligibilityRubricTemplate().criteria,
-      {
-        id: "id_ocr_confidence",
-        label: "OCR de documento de identidad con confianza mínima",
-        kind: "ocr_confidence",
-        fileKey: "idDocument",
-        minConfidence: 0.8,
-        onFail: "needs_review",
-        onMissingData: "needs_review",
-      },
-    ],
-  };
 }
 
 function createDefaultRubricCriterion({
@@ -869,6 +787,10 @@ export function StageConfigEditor({
   );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
+  const [rubricFeedback, setRubricFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedAtIso, setLastSavedAtIso] = useState<string | null>(null);
   const [draggedFieldId, setDraggedFieldId] = useState<string | null>(null);
@@ -906,11 +828,10 @@ export function StageConfigEditor({
   );
   const savedSettingsSnapshotRef = useRef<string | null>(null);
 
-  const orderedFields = fields;
-  const deferredOrderedFields = useDeferredValue(orderedFields);
+  const deferredFields = useDeferredValue(fields);
   const persistedFieldsSnapshot = useMemo(
-    () => serializePersistedFields(orderedFields),
-    [orderedFields],
+    () => serializePersistedFields(fields),
+    [fields],
   );
   const persistedSectionsSnapshot = useMemo(
     () => serializeSections(sections),
@@ -995,11 +916,28 @@ export function StageConfigEditor({
     patch: Partial<OcrExpectedOutputField>,
   ) {
     updateFieldAiParserConfig(localId, (currentConfig) => {
-      const currentFields = normalizeExpectedOutputFields(currentConfig.expectedOutputFields);
+      const currentFields = currentConfig.expectedOutputFields ?? [];
       const nextFields = currentFields.map((field, fieldIndex) =>
         fieldIndex === index ? { ...field, ...patch } : field,
       );
-      const normalizedFields = normalizeExpectedOutputFields(nextFields);
+      // Build schema from normalized keys but keep raw keys for editing
+      const normalizedForSchema = normalizeExpectedOutputFields(nextFields);
+      return {
+        ...currentConfig,
+        expectedOutputFields: nextFields,
+        expectedSchemaTemplate:
+          normalizedForSchema.length > 0
+            ? buildSchemaTemplateFromExpectedOutputFields(normalizedForSchema)
+            : "{}",
+      };
+    });
+  }
+
+  function finalizeExpectedOutputFields(localId: string) {
+    updateFieldAiParserConfig(localId, (currentConfig) => {
+      const normalizedFields = normalizeExpectedOutputFields(
+        currentConfig.expectedOutputFields,
+      );
       return {
         ...currentConfig,
         expectedOutputFields: normalizedFields,
@@ -1038,8 +976,8 @@ export function StageConfigEditor({
       sectionId?: string | null;
     },
   ) {
-    const safePosition = Math.max(0, Math.min(position, orderedFields.length));
-    const nextIndex = orderedFields.length + 1;
+    const safePosition = Math.max(0, Math.min(position, fields.length));
+    const nextIndex = fields.length + 1;
     const baseField = createNewField(nextIndex);
     const insertedField: EditableField = {
       ...baseField,
@@ -1056,9 +994,9 @@ export function StageConfigEditor({
     }
 
     const nextFields = [
-      ...orderedFields.slice(0, safePosition),
+      ...fields.slice(0, safePosition),
       insertedField,
-      ...orderedFields.slice(safePosition),
+      ...fields.slice(safePosition),
     ];
 
     applyOrderedFields(nextFields);
@@ -1162,31 +1100,12 @@ export function StageConfigEditor({
     startTransition(() => setActiveTab(nextTab));
   }
 
-  function openEditorForOcrFields() {
-    if (!firstIdentityParserSource) {
-      setStatusMessage(
-        "No encontramos un documento de identidad con Parsing con IA activo. Actívalo para editar los campos OCR.",
-      );
-      return;
-    }
-
-    if (firstIdentityParserSource.section_id) {
-      setCollapsedSectionIds((current) =>
-        current.filter((sectionId) => sectionId !== firstIdentityParserSource.section_id),
-      );
-    }
-    setActiveFieldId(firstIdentityParserSource.localId);
-    setPendingEditorFieldFocusId(firstIdentityParserSource.localId);
-    switchToTab("editor");
-  }
-
-
   function addFieldToPlaceholder(placeholder: SectionPlaceholderDraft) {
     // Find or create a section matching the placeholder's sectionKey
     const matchingSection = sections.find((s) => s.section_key === placeholder.sectionKey);
-    const suffix = orderedFields.length + 1;
+    const suffix = fields.length + 1;
     const seed = getNewFieldSeedForSection({ sectionKey: placeholder.sectionKey, suffix });
-    insertFieldAt(orderedFields.length, {
+    insertFieldAt(fields.length, {
       field_key: seed.field_key,
       field_label: seed.field_label,
       field_type: seed.field_type,
@@ -1217,7 +1136,7 @@ export function StageConfigEditor({
   function ensureUniqueFieldKey(fieldKey: string, currentLocalId: string) {
     const normalizedBase = normalizeFieldKey(fieldKey);
     const existingKeys = new Set(
-      orderedFields
+      fields
         .filter((candidate) => candidate.localId !== currentLocalId)
         .map((candidate) => candidate.field_key),
     );
@@ -1240,14 +1159,14 @@ export function StageConfigEditor({
       return;
     }
 
-    const draggingIndex = orderedFields.findIndex((field) => field.localId === draggedFieldId);
-    const targetIndex = orderedFields.findIndex((field) => field.localId === targetLocalId);
+    const draggingIndex = fields.findIndex((field) => field.localId === draggedFieldId);
+    const targetIndex = fields.findIndex((field) => field.localId === targetLocalId);
 
     if (draggingIndex < 0 || targetIndex < 0) {
       return;
     }
 
-    const nextFields = [...orderedFields];
+    const nextFields = [...fields];
     const [draggingField] = nextFields.splice(draggingIndex, 1);
     nextFields.splice(targetIndex, 0, draggingField);
     applyOrderedFields(nextFields);
@@ -1283,7 +1202,7 @@ export function StageConfigEditor({
   }
 
   function removeField(localId: string) {
-    const removedField = orderedFields.find((field) => field.localId === localId);
+    const removedField = fields.find((field) => field.localId === localId);
     if (removedField) {
       const confirmed = confirmAction(
         `¿Eliminar el campo \"${removedField.field_label}\"?\n\nDebes usar \"Guardar configuración\" para publicar este cambio.`,
@@ -1293,7 +1212,7 @@ export function StageConfigEditor({
       }
     }
 
-    applyOrderedFields(orderedFields.filter((field) => field.localId !== localId));
+    applyOrderedFields(fields.filter((field) => field.localId !== localId));
     setStatusMessage(
       removedField
         ? `Campo eliminado localmente (${removedField.field_label}). Guarda configuración para persistir.`
@@ -1353,7 +1272,7 @@ export function StageConfigEditor({
     setStatusMessage(null);
     setIsSaving(true);
 
-    const normalizedKeys = orderedFields.map((field) => field.field_key.trim());
+    const normalizedKeys = fields.map((field) => field.field_key.trim());
     if (new Set(normalizedKeys).size !== normalizedKeys.length) {
       const duplicateKeys = Array.from(
         normalizedKeys.reduce((map, key) => {
@@ -1372,31 +1291,10 @@ export function StageConfigEditor({
     }
 
     let parsedEligibilityRubric: EligibilityRubricConfig;
-    let nextRubricBlueprintForSave: RubricBlueprintV1 | null = settingsRubricBlueprint;
+    const nextRubricBlueprintForSave: RubricBlueprintV1 | null = settingsRubricBlueprint;
     let nextRubricMetaForSave: RubricMeta | null = settingsRubricMeta;
 
-    const shouldCompileWizardRubric =
-      rubricAuthoringTab === "wizard" &&
-      (settingsRubricMeta?.source === "wizard" || settingsRubricBlueprint !== null);
-
-    if (shouldCompileWizardRubric) {
-      const compiled = compileRubricFromWizard({ silent: true });
-      if (!compiled) {
-        setError({
-          message: `Completa los datos obligatorios del wizard antes de guardar:\n${rubricWizardValidation.step1Errors
-            .concat(rubricWizardValidation.step2Errors)
-            .concat(rubricWizardValidation.compilerErrors)
-            .slice(0, 6)
-            .join("\n")}`,
-        });
-        setIsSaving(false);
-        return false;
-      }
-      parsedEligibilityRubric = compiled.rubric;
-      nextRubricBlueprintForSave = compiled.blueprint;
-      nextRubricMetaForSave = createRubricMeta({ source: "wizard" });
-      setSettingsEligibilityRubricErrors([]);
-    } else {
+    {
       const rubricValidation = validateRubricJsonText(settingsEligibilityRubricJson);
       if (!rubricValidation.success) {
         setSettingsEligibilityRubricErrors(rubricValidation.errors);
@@ -1409,10 +1307,7 @@ export function StageConfigEditor({
         return false;
       }
       parsedEligibilityRubric = rubricValidation.data;
-      nextRubricMetaForSave =
-        settingsRubricMeta?.source === "wizard" && !rubricAdvancedCustomized
-          ? settingsRubricMeta
-          : createRubricMeta({ source: "advanced" });
+      nextRubricMetaForSave = settingsRubricMeta ?? createRubricMeta({ source: "advanced" });
     }
 
     try {
@@ -1420,7 +1315,7 @@ export function StageConfigEditor({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fields: orderedFields.map((field, index) => ({
+          fields: fields.map((field, index) => ({
             id: isUuid(field.id) ? field.id : undefined,
             fieldKey: field.field_key,
             fieldLabel: field.field_label,
@@ -1529,7 +1424,6 @@ export function StageConfigEditor({
       setSettingsEligibilityRubricJson(nextSavedSettings.eligibilityRubricJson);
       setSettingsRubricBlueprint(nextSavedBlueprint);
       setSettingsRubricMeta(nextSavedMeta);
-      setRubricAuthoringTab("wizard");
       setSettingsEligibilityRubricErrors([]);
       savedSectionsSnapshotRef.current = serializeSections(nextSavedSections);
       savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
@@ -1586,15 +1480,10 @@ export function StageConfigEditor({
   const [blockIfPreviousNotMet, setBlockIfPreviousNotMet] = useState(
     parsedStageAdminConfig.blockIfPreviousNotMet ?? documentsRouteRepresentsMainForm,
   );
-  const [rubricAuthoringTab, setRubricAuthoringTab] = useState<RubricAuthoringTab>(
-    "wizard",
-  );
-  const [rubricAdvancedCustomized, setRubricAdvancedCustomized] = useState(
-    Boolean(parsedStageAdminConfig.eligibilityRubric && !initialRubricBlueprint),
-  );
   const [rubricEditorMode, setRubricEditorMode] = useState<RubricEditorMode>("guided");
   const [newRubricCriterionKind, setNewRubricCriterionKind] =
     useState<EligibilityRubricCriterion["kind"]>("field_present");
+  const [collapsedCriteria, setCollapsedCriteria] = useState<Set<number>>(new Set());
   const [settingsEligibilityRubricDraft, setSettingsEligibilityRubricDraft] =
     useState<EligibilityRubricConfig>(initialEligibilityRubricConfig);
   const [settingsEligibilityRubricJson, setSettingsEligibilityRubricJson] = useState(
@@ -1608,15 +1497,15 @@ export function StageConfigEditor({
   );
   const [settingsRubricMeta, setSettingsRubricMeta] = useState<RubricMeta | null>(initialRubricMeta);
   const suggestedUwcPresetDraft = useMemo(
-    () => guessUwcStageOnePresetDraft(orderedFields),
-    [orderedFields],
+    () => guessUwcStageOnePresetDraft(fields),
+    [fields],
   );
   const [uwcPresetDraft, setUwcPresetDraft] = useState<UwcStageOnePresetDraft>(
     initialWizardDraft,
   );
   const rubricFieldOptions = useMemo(() => {
     const seen = new Set<string>();
-    return orderedFields
+    return fields
       .filter((field) => {
         const key = field.field_key.trim();
         if (!key || seen.has(key)) {
@@ -1629,293 +1518,44 @@ export function StageConfigEditor({
         value: field.field_key,
         label: `${field.field_label} (${field.field_key})`,
       }));
-  }, [orderedFields]);
+  }, [fields]);
   const rubricFileFieldOptions = useMemo(
     () => rubricFieldOptions.filter((option) =>
-      orderedFields.some(
+      fields.some(
         (field) => field.field_key === option.value && field.field_type === "file",
       ),
     ),
-    [orderedFields, rubricFieldOptions],
+    [fields, rubricFieldOptions],
   );
   const rubricNumberFieldOptions = useMemo(
     () => rubricFieldOptions.filter((option) =>
-      orderedFields.some(
+      fields.some(
         (field) => field.field_key === option.value && field.field_type === "number",
       ),
     ),
-    [orderedFields, rubricFieldOptions],
+    [fields, rubricFieldOptions],
   );
-  const selectedIdDocumentOcrPathOptions = useMemo<RubricOcrPathOption[]>(() => {
-    const selectedIdKeys = new Set(uwcPresetDraft.idDocumentFileKeys);
-    const seen = new Set<string>();
-    const options: RubricOcrPathOption[] = [];
-
-    if (selectedIdKeys.size === 0) {
-      return options;
-    }
-
-    for (const field of orderedFields) {
-      if (!selectedIdKeys.has(field.field_key)) {
-        continue;
-      }
-
-      const parserConfig = normalizeFieldAiParserConfig(field.ai_parser_config);
-      if (!parserConfig?.enabled) {
-        continue;
-      }
-
-      for (const expectedField of parserConfig.expectedOutputFields ?? []) {
-        if (!expectedField.key || seen.has(expectedField.key)) {
-          continue;
-        }
-        seen.add(expectedField.key);
-        const kind = classifyOcrOption(expectedField.key);
-        options.push({
-          value: expectedField.key,
-          label: `${expectedField.key} · ${kind === "technical" ? "Técnico" : "Dato"}`,
-          fieldLabel: field.field_label,
-          fieldKey: field.field_key,
-          kind,
-        });
-      }
-    }
-
-    return options.sort((left, right) => {
-      if (left.kind !== right.kind) {
-        return left.kind === "business" ? -1 : 1;
-      }
-      return left.value.localeCompare(right.value);
-    });
-  }, [orderedFields, uwcPresetDraft.idDocumentFileKeys]);
-  const firstIdentityParserSource = useMemo(() => {
-    const selectedIdKeys = new Set(uwcPresetDraft.idDocumentFileKeys);
-    return orderedFields.find((field) => {
-      if (!selectedIdKeys.has(field.field_key)) {
-        return false;
-      }
-      const parserConfig = normalizeFieldAiParserConfig(field.ai_parser_config);
-      return Boolean(parserConfig?.enabled);
-    });
-  }, [orderedFields, uwcPresetDraft.idDocumentFileKeys]);
-
   const defaultRubricFieldKey = rubricFieldOptions[0]?.value ?? "field_key";
   const defaultRubricFileKey = rubricFileFieldOptions[0]?.value ?? "file_key";
   const defaultRubricNumberFieldKey =
     rubricNumberFieldOptions[0]?.value ?? defaultRubricFieldKey;
-  const rubricFieldKeySet = useMemo(
-    () => new Set(rubricFieldOptions.map((option) => option.value)),
-    [rubricFieldOptions],
-  );
-  const rubricFileFieldKeySet = useMemo(
-    () => new Set(rubricFileFieldOptions.map((option) => option.value)),
-    [rubricFileFieldOptions],
-  );
-  const rubricNumberFieldKeySet = useMemo(
-    () => new Set(rubricNumberFieldOptions.map((option) => option.value)),
-    [rubricNumberFieldOptions],
-  );
 
-  const rubricWizardValidation = useMemo<RubricWizardValidation>(() => {
-    const step1Errors: string[] = [];
-    const step1Warnings: string[] = [];
-    const step2Errors: string[] = [];
-    const availableOcrPaths = new Set(
-      selectedIdDocumentOcrPathOptions.map((option) => option.value),
-    );
 
-    if (uwcPresetDraft.idDocumentFileKeys.length === 0) {
-      step1Errors.push("Selecciona al menos un campo de archivo para identidad.");
+  function applyUwcPeruTemplate() {
+    const result = buildUwcStageOneRubricFromDraft(uwcPresetDraft);
+    if (!result || result.criteria.length === 0) {
+      setRubricFeedback({
+        type: "error",
+        message: "No se pudo generar la plantilla. Verifica que los campos de mapeo estén completos.",
+      });
+      return;
     }
-    if (uwcPresetDraft.idDocumentFileKeys.some((key) => !rubricFileFieldKeySet.has(key))) {
-      step1Errors.push("Uno o más campos de identidad ya no existen en el formulario.");
-    }
-
-    if (uwcPresetDraft.gradesDocumentFileKeys.length === 0) {
-      step1Errors.push("Selecciona al menos un campo de archivo para notas.");
-    }
-    if (uwcPresetDraft.gradesDocumentFileKeys.some((key) => !rubricFileFieldKeySet.has(key))) {
-      step1Errors.push("Uno o más campos de notas ya no existen en el formulario.");
-    }
-
-    if (!uwcPresetDraft.applicantNameFieldKey) {
-      step1Errors.push("Selecciona el campo de nombre del postulante.");
-    } else if (!rubricFieldKeySet.has(uwcPresetDraft.applicantNameFieldKey)) {
-      step1Errors.push("El campo de nombre seleccionado ya no existe.");
-    }
-
-    if (!uwcPresetDraft.averageGradeFieldKey) {
-      step1Errors.push("Selecciona el campo de promedio de notas.");
-    } else if (!rubricNumberFieldKeySet.has(uwcPresetDraft.averageGradeFieldKey)) {
-      step1Errors.push("El campo de promedio debe ser numérico y existir en el formulario.");
-    }
-
-    if (!uwcPresetDraft.signedAuthorizationFileKey) {
-      step1Errors.push("Selecciona el campo de autorización firmada.");
-    } else if (!rubricFileFieldKeySet.has(uwcPresetDraft.signedAuthorizationFileKey)) {
-      step1Errors.push("El campo de autorización seleccionado ya no existe.");
-    }
-
-    if (!uwcPresetDraft.applicantPhotoFileKey) {
-      step1Errors.push("Selecciona el campo de foto del postulante.");
-    } else if (!rubricFileFieldKeySet.has(uwcPresetDraft.applicantPhotoFileKey)) {
-      step1Errors.push("El campo de foto seleccionado ya no existe.");
-    }
-
-    if (
-      uwcPresetDraft.topThirdProofFileKey &&
-      !rubricFileFieldKeySet.has(uwcPresetDraft.topThirdProofFileKey)
-    ) {
-      step1Errors.push("El campo opcional de tercio superior ya no existe.");
-    }
-
-    if (!uwcPresetDraft.ocrNamePath.trim()) {
-      step1Errors.push("Define el campo OCR para nombre del documento.");
-    }
-    if (!uwcPresetDraft.ocrBirthYearPath.trim()) {
-      step1Errors.push("Define el campo OCR para año de nacimiento.");
-    }
-    if (!uwcPresetDraft.ocrDocumentTypePath.trim()) {
-      step1Errors.push("Define el campo OCR para tipo de documento.");
-    }
-    if (!uwcPresetDraft.ocrDocumentIssuePath.trim()) {
-      step1Errors.push("Define el campo OCR para observaciones del documento.");
-    }
-    // OCR path mismatch checks are non-blocking warnings.
-    // The draft may pre-populate OCR paths (e.g. "fullName") that the parser
-    // config doesn't yet list in expectedOutputFields. The compiler still
-    // produces a valid rubric and at runtime the criterion gracefully returns
-    // "missing_data" if the OCR result doesn't contain that path.
-    if (availableOcrPaths.size === 0 && uwcPresetDraft.idDocumentFileKeys.length > 0) {
-      step1Warnings.push(
-        "No hay campos OCR esperados configurados. Activa Parsing con IA en un documento de identidad para mejor validación.",
-      );
-    }
-    if (
-      availableOcrPaths.size > 0 &&
-      uwcPresetDraft.ocrNamePath.trim() &&
-      !availableOcrPaths.has(uwcPresetDraft.ocrNamePath.trim())
-    ) {
-      step1Warnings.push(
-        "El campo OCR de nombre no coincide con los campos esperados en Parsing con IA.",
-      );
-    }
-    if (
-      availableOcrPaths.size > 0 &&
-      uwcPresetDraft.ocrBirthYearPath.trim() &&
-      !availableOcrPaths.has(uwcPresetDraft.ocrBirthYearPath.trim())
-    ) {
-      step1Warnings.push(
-        "El campo OCR de año de nacimiento no coincide con los campos esperados en Parsing con IA.",
-      );
-    }
-    if (
-      availableOcrPaths.size > 0 &&
-      uwcPresetDraft.ocrDocumentTypePath.trim() &&
-      !availableOcrPaths.has(uwcPresetDraft.ocrDocumentTypePath.trim())
-    ) {
-      step1Warnings.push(
-        "El campo OCR de tipo de documento no coincide con los campos esperados en Parsing con IA.",
-      );
-    }
-    if (
-      availableOcrPaths.size > 0 &&
-      uwcPresetDraft.ocrDocumentIssuePath.trim() &&
-      !availableOcrPaths.has(uwcPresetDraft.ocrDocumentIssuePath.trim())
-    ) {
-      step1Warnings.push(
-        "El campo OCR de excepción de documento no coincide con los campos esperados en Parsing con IA.",
-      );
-    }
-
-    if (uwcPresetDraft.allowedBirthYears.length === 0) {
-      step2Errors.push("Ingresa al menos un año de nacimiento permitido.");
-    }
-    if (
-      !Number.isFinite(uwcPresetDraft.minAverageGrade) ||
-      uwcPresetDraft.minAverageGrade < 0 ||
-      uwcPresetDraft.minAverageGrade > 20
-    ) {
-      step2Errors.push("El promedio mínimo debe estar entre 0 y 20.");
-    }
-    if (
-      uwcPresetDraft.recommendationCompleteness === "minimum_answers" &&
-      (!Number.isInteger(uwcPresetDraft.minRecommendationResponses) ||
-        uwcPresetDraft.minRecommendationResponses < 1 ||
-        uwcPresetDraft.minRecommendationResponses > 20)
-    ) {
-      step2Errors.push("Si eliges mínimo de respuestas, configura entre 1 y 20.");
-    }
-
-    const parsedBlueprint = validateUwcBlueprintDraft(uwcPresetDraft);
-    if (parsedBlueprint.success) {
-      return {
-        step1Errors,
-        step1Warnings,
-        step2Errors,
-        blueprint: parsedBlueprint.data,
-        compilerErrors: [],
-      };
-    }
-
-    const compilerErrors = parsedBlueprint.errors.slice(0, 6);
-    if (step1Errors.length === 0 && step2Errors.length === 0 && compilerErrors.length > 0) {
-      step2Errors.push("La configuración no se pudo compilar. Revisa los datos del wizard.");
-    }
-
-    return {
-      step1Errors,
-      step1Warnings,
-      step2Errors,
-      blueprint: null,
-      compilerErrors,
-    };
-  }, [
-    rubricFieldKeySet,
-    rubricFileFieldKeySet,
-    rubricNumberFieldKeySet,
-    selectedIdDocumentOcrPathOptions,
-    uwcPresetDraft,
-  ]);
-
-  function compileRubricFromWizard(options?: { silent?: boolean }) {
-    const blockingErrors = [
-      ...rubricWizardValidation.step1Errors,
-      ...rubricWizardValidation.step2Errors,
-    ];
-    if (!rubricWizardValidation.blueprint || blockingErrors.length > 0) {
-      const fallbackErrors =
-        blockingErrors.length > 0
-          ? blockingErrors
-          : rubricWizardValidation.compilerErrors.length > 0
-            ? rubricWizardValidation.compilerErrors
-            : ["No se pudo compilar la rúbrica desde el wizard."];
-      if (!options?.silent) {
-        setError({
-          message: `No se pudo activar la rúbrica del wizard:\n${fallbackErrors
-            .slice(0, 6)
-            .join("\n")}`,
-        });
-      }
-      return null;
-    }
-
-    const compiledRubric = buildUwcStageOneRubricFromBlueprint(rubricWizardValidation.blueprint);
-    syncGuidedRubricDraft(compiledRubric, {
-      source: "wizard",
-      blueprint: rubricWizardValidation.blueprint,
+    setRubricEditorMode("guided");
+    syncGuidedRubricDraft(result, { source: "advanced" });
+    setRubricFeedback({
+      type: "success",
+      message: `Plantilla UWC Perú aplicada: ${result.criteria.length} criterios generados.`,
     });
-    setRubricAdvancedCustomized(false);
-    if (!options?.silent) {
-      setError(null);
-      setStatusMessage(
-        "Rúbrica del wizard activada. Guarda configuración para publicarla en esta etapa.",
-      );
-    }
-    return {
-      blueprint: rubricWizardValidation.blueprint,
-      rubric: compiledRubric,
-    };
   }
 
   function syncGuidedRubricDraft(
@@ -1923,7 +1563,6 @@ export function StageConfigEditor({
     options?: {
       source?: RubricMeta["source"];
       blueprint?: RubricBlueprintV1 | null;
-      markAdvancedCustomized?: boolean;
     },
   ) {
     setSettingsEligibilityRubricDraft(nextDraft);
@@ -1941,9 +1580,6 @@ export function StageConfigEditor({
         }),
       );
     }
-    if (options?.markAdvancedCustomized) {
-      setRubricAdvancedCustomized(true);
-    }
   }
 
   function handleRubricJsonInputChange(nextJson: string) {
@@ -1957,7 +1593,6 @@ export function StageConfigEditor({
           source: "advanced",
         }),
       );
-      setRubricAdvancedCustomized(true);
       return;
     }
     setSettingsEligibilityRubricErrors(validation.errors);
@@ -1979,7 +1614,7 @@ export function StageConfigEditor({
         ...settingsEligibilityRubricDraft,
         criteria: nextCriteria,
       },
-      { source: "advanced", markAdvancedCustomized: true },
+      { source: "advanced" },
     );
   }
 
@@ -1995,7 +1630,7 @@ export function StageConfigEditor({
         ...settingsEligibilityRubricDraft,
         criteria: nextCriteria,
       },
-      { source: "advanced", markAdvancedCustomized: true },
+      { source: "advanced" },
     );
   }
 
@@ -2008,7 +1643,7 @@ export function StageConfigEditor({
         ...settingsEligibilityRubricDraft,
         criteria: nextCriteria,
       },
-      { source: "advanced", markAdvancedCustomized: true },
+      { source: "advanced" },
     );
   }
 
@@ -2029,18 +1664,20 @@ export function StageConfigEditor({
         ...settingsEligibilityRubricDraft,
         criteria: nextCriteria,
       },
-      { source: "advanced", markAdvancedCustomized: true },
+      { source: "advanced" },
     );
   }
 
-  function applyRubricTemplate(template: EligibilityRubricConfig, statusMessage: string) {
-    setRubricEditorMode("guided");
-    syncGuidedRubricDraft(template, {
-      source: "advanced",
-      markAdvancedCustomized: true,
+  function toggleCriterionCollapsed(criterionIndex: number) {
+    setCollapsedCriteria((current) => {
+      const next = new Set(current);
+      if (next.has(criterionIndex)) {
+        next.delete(criterionIndex);
+      } else {
+        next.add(criterionIndex);
+      }
+      return next;
     });
-    setError(null);
-    setStatusMessage(statusMessage);
   }
 
   function handleRubricModeChange(nextMode: RubricEditorMode) {
@@ -2069,7 +1706,6 @@ export function StageConfigEditor({
           source: "advanced",
         }),
       );
-      setRubricAdvancedCustomized(true);
       setError(null);
       setStatusMessage(`Rúbrica válida: ${validation.data.criteria.length} criterio(s).`);
       return;
@@ -2096,24 +1732,6 @@ export function StageConfigEditor({
         [listKey]: nextValues,
       };
     });
-  }
-
-  function applyUwcPresetRubric() {
-    compileRubricFromWizard();
-  }
-
-  function resetAdvancedCustomizationToWizard() {
-    const result = compileRubricFromWizard({ silent: true });
-    if (!result) {
-      setError({
-        message: "No se pudo restablecer desde el wizard. Revisa los mapeos obligatorios.",
-      });
-      return;
-    }
-    setRubricAuthoringTab("wizard");
-    setRubricEditorMode("guided");
-    setError(null);
-    setStatusMessage("Se restableció la configuración avanzada al preset del wizard.");
   }
 
   useEffect(() => {
@@ -2212,7 +1830,7 @@ export function StageConfigEditor({
       : lastSavedAtIso
         ? "Configuración guardada"
         : "Sin cambios";
-  const isLargeFormEditor = orderedFields.length >= 80;
+  const isLargeFormEditor = fields.length >= 80;
   const saveableChangeLabels = [
     hasUnsavedFieldConfigChanges ? "Editor de Formulario" : null,
     hasUnsavedSettingsConfigChanges ? "Ajustes y Reglas" : null,
@@ -2243,9 +1861,9 @@ export function StageConfigEditor({
         return [];
       }
 
-      return deriveEditorSections(deferredOrderedFields, sections, documentsRouteRepresentsMainForm);
+      return deriveEditorSections(deferredFields, sections, documentsRouteRepresentsMainForm);
     },
-    [activeTab, deferredOrderedFields, sections, documentsRouteRepresentsMainForm],
+    [activeTab, deferredFields, sections, documentsRouteRepresentsMainForm],
   );
 
   const displayedEditorFields = useMemo(() => {
@@ -2284,10 +1902,10 @@ export function StageConfigEditor({
       }
 
       return new Map(
-        orderedFields.map((field, index) => [field.localId, index] as const),
+        fields.map((field, index) => [field.localId, index] as const),
       );
     },
-    [activeTab, orderedFields],
+    [activeTab, fields],
   );
 
   const editorFieldSectionMeta = useMemo(() => {
@@ -2331,14 +1949,14 @@ export function StageConfigEditor({
         const lastIndex = orderedFieldIndexByLocalId.get(lastField.localId);
         insertPositionByLastFieldId.set(
           lastField.localId,
-          typeof lastIndex === "number" ? lastIndex + 1 : orderedFields.length,
+          typeof lastIndex === "number" ? lastIndex + 1 : fields.length,
         );
         insertPositionBySectionId.set(
           section.id,
-          typeof lastIndex === "number" ? lastIndex + 1 : orderedFields.length,
+          typeof lastIndex === "number" ? lastIndex + 1 : fields.length,
         );
       } else {
-        insertPositionBySectionId.set(section.id, orderedFields.length);
+        insertPositionBySectionId.set(section.id, fields.length);
       }
 
       if (isSectionCollapsed) {
@@ -2368,7 +1986,7 @@ export function StageConfigEditor({
     editorSections,
     collapsedSectionIds,
     orderedFieldIndexByLocalId,
-    orderedFields.length,
+    fields.length,
   ]);
 
   useLayoutEffect(() => {
@@ -2664,13 +2282,13 @@ export function StageConfigEditor({
             type="button"
             className="add-field-btn"
             onClick={() => {
-              const suffix = orderedFields.length + 1;
+              const suffix = fields.length + 1;
               const seed = getNewFieldSeedForSection({
                 sectionKey: section.sectionKey,
                 suffix,
               });
               insertFieldAt(
-                orderedFields.length,
+                fields.length,
                 {
                   field_key: seed.field_key,
                   field_label: seed.field_label,
@@ -2804,7 +2422,6 @@ export function StageConfigEditor({
               <div className="field-list">
                 {displayedEditorFields.length === 0 ? (
                   <>
-                    <div className="builder-section-title">Sección 1: Datos Personales</div>
                     <button
                       className="add-field-btn admin-stage-empty-add-field"
                       onClick={() => insertFieldAt(0)}
@@ -2828,7 +2445,7 @@ export function StageConfigEditor({
                   const sectionInsertPosition =
                     editorFieldSectionMeta.insertPositionByLastFieldId.get(
                       field.localId,
-                    ) ?? orderedFields.length;
+                    ) ?? fields.length;
                   const sectionIdForInsert =
                     editorFieldSectionMeta.sectionIdByLastFieldId.get(field.localId) ?? null;
                   const sectionId =
@@ -2843,9 +2460,6 @@ export function StageConfigEditor({
                   return (
                     <div key={field.localId}>
                       {isSectionStart && sectionId ? renderSectionHeading(sectionHeading, sectionId) : null}
-                      {isSectionStart && isSectionCollapsed ? (
-                        null
-                      ) : null}
                       {isSectionCollapsed ? null : (
                       <div
                         key={`${field.localId}-${isEditing ? "ed" : "st"}`}
@@ -3185,6 +2799,7 @@ export function StageConfigEditor({
                                                       key: event.target.value,
                                                     })
                                                   }
+                                                  onBlur={() => finalizeExpectedOutputFields(field.localId)}
                                                   aria-label={`Clave OCR ${fieldIndex + 1}`}
                                                 />
                                                 <select
@@ -3222,11 +2837,6 @@ export function StageConfigEditor({
                                             >
                                               + Añadir campo OCR
                                             </button>
-                                          </div>
-                                          <div className="form-hint">
-                                            Cada campo se guarda como valor estructurado y también con prefijo{" "}
-                                            <code>{`${field.field_key}_...`}</code> en el resultado OCR.
-                                            Usa letras, números, guiones medios (`-`) o bajos (`_`).
                                           </div>
                                         </div>
                                         <details className="admin-ai-parser-advanced">
@@ -3344,7 +2954,7 @@ export function StageConfigEditor({
                         <button
                           className="add-field-btn admin-stage-section-add-field"
                           onClick={() => {
-                            const suffix = orderedFields.length + 1;
+                            const suffix = fields.length + 1;
                             const insertSection = sectionIdForInsert
                               ? editorSections.find((s) => s.id === sectionIdForInsert)
                               : null;
@@ -3535,445 +3145,347 @@ export function StageConfigEditor({
                 <div className="settings-card-header">
                   <h3>Rúbrica de Elegibilidad Automática</h3>
                   <p>
-                    Define criterios para clasificar postulaciones como <strong>eligible</strong>,{" "}
-                    <strong>not_eligible</strong> o <strong>needs_review</strong>.
+                    Define criterios para clasificar postulaciones como <strong>elegible</strong>,{" "}
+                    <strong>no elegible</strong> o <strong>revisión manual</strong>.
                   </p>
                 </div>
                 <div className="editor-grid">
                   <div className="form-field full">
-                    <div className="rubric-authoring-toggle">
-                      <button
-                        type="button"
-                        className={`btn ${rubricAuthoringTab === "wizard" ? "btn-primary" : "btn-outline"}`}
-                        onClick={() => {
-                          setRubricAuthoringTab("wizard");
-                        }}
-                      >
-                        Modo guiado (recomendado)
-                      </button>
-                      <button
-                        type="button"
-                        className={`btn ${rubricAuthoringTab === "advanced" ? "btn-primary" : "btn-outline"}`}
-                        onClick={() => setRubricAuthoringTab("advanced")}
-                      >
-                        Modo avanzado
-                      </button>
-                    </div>
-
-                    {rubricAuthoringTab === "wizard" ? (
-                      <RubricWizard
-                        stageCode={stageCode}
-                        draft={uwcPresetDraft}
-                        onDraftChange={setUwcPresetDraft}
-                        validation={{
-                          step1Errors: rubricWizardValidation.step1Errors,
-                          step1Warnings: rubricWizardValidation.step1Warnings,
-                          step2Errors: rubricWizardValidation.step2Errors,
-                          hasBlueprint: rubricWizardValidation.blueprint !== null,
-                          compilerErrors: rubricWizardValidation.compilerErrors,
-                        }}
-                        fieldOptions={rubricFieldOptions}
-                        fileFieldOptions={rubricFileFieldOptions}
-                        numberFieldOptions={rubricNumberFieldOptions}
-                        ocrPathOptions={selectedIdDocumentOcrPathOptions}
-                        advancedCustomized={rubricAdvancedCustomized}
-                        onActivate={applyUwcPresetRubric}
-                        onResetSuggestions={() => setUwcPresetDraft(suggestedUwcPresetDraft)}
-                        onEditOcrFields={openEditorForOcrFields}
-                      />
-                    ) : (
-                      <>
-                        {settingsRubricBlueprint && rubricAdvancedCustomized ? (
-                          <div className="admin-feedback warning" style={{ marginBottom: "10px" }}>
-                            Advanced diverge del wizard. Puedes seguir aquí o restablecer al preset recomendado.
-                            <div style={{ marginTop: "8px" }}>
-                              <button
-                                type="button"
-                                className="btn btn-outline"
-                                onClick={resetAdvancedCustomizationToWizard}
-                              >
-                                Restablecer al wizard
-                              </button>
+                    <details className="rubric-template-details">
+                      <summary className="rubric-template-summary">
+                        Generador de plantilla UWC Perú
+                      </summary>
+                      <div className="rubric-template-body">
+                        <div className="form-hint" style={{ marginBottom: "12px" }}>
+                          Selecciona los campos del formulario que corresponden a cada dato requerido.
+                          Al aplicar, se generará una rúbrica pre-configurada con criterios editables.
+                        </div>
+                        <div className="editor-grid">
+                          <div className="form-field full">
+                            <label>Campos de archivo para identidad (DNI/Pasaporte/Carnet)</label>
+                            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                              {rubricFileFieldOptions.length > 0 ? (
+                                rubricFileFieldOptions.map((option) => (
+                                  <label
+                                    key={`tpl-id-${option.value}`}
+                                    style={{ display: "flex", gap: "6px", alignItems: "center" }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={uwcPresetDraft.idDocumentFileKeys.includes(option.value)}
+                                      onChange={() => togglePresetFileKey("idDocumentFileKeys", option.value)}
+                                    />
+                                    {option.label}
+                                  </label>
+                                ))
+                              ) : (
+                                <span className="form-hint">No hay campos de archivo disponibles.</span>
+                              )}
                             </div>
                           </div>
-                        ) : null}
-                    <details className="rubric-advanced-assistant">
-                      <summary>Asistente rápido de mapeo (opcional)</summary>
-                    <div className="settings-card rubric-advanced-assistant-card">
-                      <div className="settings-card-header">
-                        <h3>Asistente rápido: Rúbrica UWC Perú</h3>
-                        <p>
-                          Usa mapeos desde campos del formulario (fuente: DB) y genera una rúbrica base editable.
-                        </p>
-                      </div>
-                      <div className="editor-grid">
-                        <div className="form-field full">
-                          <label>Campos de archivo para identidad (DNI/Pasaporte/Carnet)</label>
-                          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                            {rubricFileFieldOptions.length > 0 ? (
-                              rubricFileFieldOptions.map((option) => (
-                                <label
-                                  key={`preset-id-${option.value}`}
-                                  style={{ display: "flex", gap: "6px", alignItems: "center" }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={uwcPresetDraft.idDocumentFileKeys.includes(option.value)}
-                                    onChange={() => togglePresetFileKey("idDocumentFileKeys", option.value)}
-                                  />
-                                  {option.label}
-                                </label>
-                              ))
-                            ) : (
-                              <span className="form-hint">No hay campos de archivo disponibles.</span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="form-field full">
-                          <label>Campos de archivo para notas oficiales</label>
-                          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                            {rubricFileFieldOptions.length > 0 ? (
-                              rubricFileFieldOptions.map((option) => (
-                                <label
-                                  key={`preset-grades-${option.value}`}
-                                  style={{ display: "flex", gap: "6px", alignItems: "center" }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={uwcPresetDraft.gradesDocumentFileKeys.includes(option.value)}
-                                    onChange={() =>
-                                      togglePresetFileKey("gradesDocumentFileKeys", option.value)
-                                    }
-                                  />
-                                  {option.label}
-                                </label>
-                              ))
-                            ) : (
-                              <span className="form-hint">No hay campos de archivo disponibles.</span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-name-${stageCode}`}>Campo nombre postulante</label>
-                          <select
-                            id={`uwc-preset-name-${stageCode}`}
-                            value={uwcPresetDraft.applicantNameFieldKey ?? ""}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                applicantNameFieldKey: event.target.value || null,
-                              }))
-                            }
-                          >
-                            <option value="">Selecciona un campo</option>
-                            {rubricFieldOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-average-${stageCode}`}>
-                            Campo promedio de notas (numérico)
-                          </label>
-                          <select
-                            id={`uwc-preset-average-${stageCode}`}
-                            value={uwcPresetDraft.averageGradeFieldKey ?? ""}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                averageGradeFieldKey: event.target.value || null,
-                              }))
-                            }
-                          >
-                            <option value="">Selecciona un campo</option>
-                            {rubricNumberFieldOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-top-third-${stageCode}`}>
-                            Campo archivo de tercio superior (opcional)
-                          </label>
-                          <select
-                            id={`uwc-preset-top-third-${stageCode}`}
-                            value={uwcPresetDraft.topThirdProofFileKey ?? ""}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                topThirdProofFileKey: event.target.value || null,
-                              }))
-                            }
-                          >
-                            <option value="">Sin archivo dedicado</option>
-                            {rubricFileFieldOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-authorization-${stageCode}`}>
-                            Campo autorización firmada
-                          </label>
-                          <select
-                            id={`uwc-preset-authorization-${stageCode}`}
-                            value={uwcPresetDraft.signedAuthorizationFileKey ?? ""}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                signedAuthorizationFileKey: event.target.value || null,
-                              }))
-                            }
-                          >
-                            <option value="">Selecciona un campo</option>
-                            {rubricFileFieldOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-photo-${stageCode}`}>Campo foto postulante</label>
-                          <select
-                            id={`uwc-preset-photo-${stageCode}`}
-                            value={uwcPresetDraft.applicantPhotoFileKey ?? ""}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                applicantPhotoFileKey: event.target.value || null,
-                              }))
-                            }
-                          >
-                            <option value="">Selecciona un campo</option>
-                            {rubricFileFieldOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-birth-years-${stageCode}`}>
-                            Años de nacimiento permitidos (coma)
-                          </label>
-                          <input
-                            id={`uwc-preset-birth-years-${stageCode}`}
-                            type="text"
-                            value={uwcPresetDraft.allowedBirthYears.join(", ")}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                allowedBirthYears: parseCommaSeparatedNumbers(event.target.value),
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-average-min-${stageCode}`}>
-                            Promedio mínimo (0-20)
-                          </label>
-                          <input
-                            id={`uwc-preset-average-min-${stageCode}`}
-                            type="number"
-                            min={0}
-                            max={20}
-                            step={0.1}
-                            value={String(uwcPresetDraft.minAverageGrade)}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                minAverageGrade: Number(event.target.value) || 14,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-min-responses-${stageCode}`}>
-                            Respuestas mínimas por recomendación
-                          </label>
-                          <input
-                            id={`uwc-preset-min-responses-${stageCode}`}
-                            type="number"
-                            min={0}
-                            max={20}
-                            step={1}
-                            value={String(uwcPresetDraft.minRecommendationResponses)}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                minRecommendationResponses: Number(event.target.value) || 0,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-ocr-name-${stageCode}`}>OCR path para nombre</label>
-                          <input
-                            id={`uwc-preset-ocr-name-${stageCode}`}
-                            type="text"
-                            value={uwcPresetDraft.ocrNamePath}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                ocrNamePath: event.target.value,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-ocr-birth-${stageCode}`}>OCR path para año nacimiento</label>
-                          <input
-                            id={`uwc-preset-ocr-birth-${stageCode}`}
-                            type="text"
-                            value={uwcPresetDraft.ocrBirthYearPath}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                ocrBirthYearPath: event.target.value,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-ocr-doc-type-${stageCode}`}>OCR path para tipo documento</label>
-                          <input
-                            id={`uwc-preset-ocr-doc-type-${stageCode}`}
-                            type="text"
-                            value={uwcPresetDraft.ocrDocumentTypePath}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                ocrDocumentTypePath: event.target.value,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`uwc-preset-ocr-doc-issue-${stageCode}`}>
-                            OCR path para observaciones de documento
-                          </label>
-                          <input
-                            id={`uwc-preset-ocr-doc-issue-${stageCode}`}
-                            type="text"
-                            value={uwcPresetDraft.ocrDocumentIssuePath}
-                            onChange={(event) =>
-                              setUwcPresetDraft((current) => ({
-                                ...current,
-                                ocrDocumentIssuePath: event.target.value,
-                              }))
-                            }
-                          />
-                        </div>
-                        <div className="switch-wrapper">
-                          <div>
-                            <div className="admin-switch-label">
-                              Marcar combinación de múltiples certificados como revisión manual
+                          <div className="form-field full">
+                            <label>Campos de archivo para notas oficiales</label>
+                            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                              {rubricFileFieldOptions.length > 0 ? (
+                                rubricFileFieldOptions.map((option) => (
+                                  <label
+                                    key={`tpl-grades-${option.value}`}
+                                    style={{ display: "flex", gap: "6px", alignItems: "center" }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={uwcPresetDraft.gradesDocumentFileKeys.includes(option.value)}
+                                      onChange={() =>
+                                        togglePresetFileKey("gradesDocumentFileKeys", option.value)
+                                      }
+                                    />
+                                    {option.label}
+                                  </label>
+                                ))
+                              ) : (
+                                <span className="form-hint">No hay campos de archivo disponibles.</span>
+                              )}
                             </div>
                           </div>
-                          <label className="switch">
-                            <input
-                              type="checkbox"
-                              checked={uwcPresetDraft.limitGradesDocumentToSingleUpload}
+                          <div className="form-field">
+                            <label htmlFor={`tpl-name-${stageCode}`}>Campo nombre postulante</label>
+                            <select
+                              id={`tpl-name-${stageCode}`}
+                              value={uwcPresetDraft.applicantNameFieldKey ?? ""}
                               onChange={(event) =>
                                 setUwcPresetDraft((current) => ({
                                   ...current,
-                                  limitGradesDocumentToSingleUpload: event.target.checked,
-                                  gradesCombinationRule: event.target.checked
-                                    ? "single_or_review"
-                                    : "allow_multiple",
+                                  applicantNameFieldKey: event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Selecciona un campo</option>
+                              {rubricFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-average-${stageCode}`}>
+                              Campo promedio de notas (numérico)
+                            </label>
+                            <select
+                              id={`tpl-average-${stageCode}`}
+                              value={uwcPresetDraft.averageGradeFieldKey ?? ""}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  averageGradeFieldKey: event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Selecciona un campo</option>
+                              {rubricNumberFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-authorization-${stageCode}`}>
+                              Campo autorización firmada
+                            </label>
+                            <select
+                              id={`tpl-authorization-${stageCode}`}
+                              value={uwcPresetDraft.signedAuthorizationFileKey ?? ""}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  signedAuthorizationFileKey: event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Selecciona un campo</option>
+                              {rubricFileFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-photo-${stageCode}`}>Campo foto postulante</label>
+                            <select
+                              id={`tpl-photo-${stageCode}`}
+                              value={uwcPresetDraft.applicantPhotoFileKey ?? ""}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  applicantPhotoFileKey: event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Selecciona un campo</option>
+                              {rubricFileFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-top-third-${stageCode}`}>
+                              Campo archivo de tercio superior (opcional)
+                            </label>
+                            <select
+                              id={`tpl-top-third-${stageCode}`}
+                              value={uwcPresetDraft.topThirdProofFileKey ?? ""}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  topThirdProofFileKey: event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Sin archivo dedicado</option>
+                              {rubricFileFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-birth-years-${stageCode}`}>
+                              Años de nacimiento permitidos (coma)
+                            </label>
+                            <input
+                              id={`tpl-birth-years-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.allowedBirthYears.join(", ")}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  allowedBirthYears: parseCommaSeparatedNumbers(event.target.value),
                                 }))
                               }
                             />
-                            <span className="slider" />
-                          </label>
-                        </div>
-                        <div className="form-field full" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                          <button
-                            type="button"
-                            className="btn btn-primary"
-                            onClick={applyUwcPresetRubric}
-                          >
-                            Aplicar rúbrica UWC Perú
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-outline"
-                            onClick={() => setUwcPresetDraft(suggestedUwcPresetDraft)}
-                          >
-                            Recargar sugerencias desde campos actuales
-                          </button>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-average-min-${stageCode}`}>
+                              Promedio mínimo (0-20)
+                            </label>
+                            <input
+                              id={`tpl-average-min-${stageCode}`}
+                              type="number"
+                              min={0}
+                              max={20}
+                              step={0.1}
+                              value={String(uwcPresetDraft.minAverageGrade)}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  minAverageGrade: Number(event.target.value) || 14,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-min-responses-${stageCode}`}>
+                              Respuestas mínimas por recomendación
+                            </label>
+                            <input
+                              id={`tpl-min-responses-${stageCode}`}
+                              type="number"
+                              min={0}
+                              max={20}
+                              step={1}
+                              value={String(uwcPresetDraft.minRecommendationResponses)}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  minRecommendationResponses: Number(event.target.value) || 0,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-ocr-name-${stageCode}`}>OCR path para nombre</label>
+                            <input
+                              id={`tpl-ocr-name-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.ocrNamePath}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  ocrNamePath: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-ocr-birth-${stageCode}`}>
+                              OCR path para año nacimiento
+                            </label>
+                            <input
+                              id={`tpl-ocr-birth-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.ocrBirthYearPath}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  ocrBirthYearPath: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-ocr-doc-type-${stageCode}`}>
+                              OCR path para tipo documento
+                            </label>
+                            <input
+                              id={`tpl-ocr-doc-type-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.ocrDocumentTypePath}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  ocrDocumentTypePath: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-ocr-doc-issue-${stageCode}`}>
+                              OCR path para observaciones de documento
+                            </label>
+                            <input
+                              id={`tpl-ocr-doc-issue-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.ocrDocumentIssuePath}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  ocrDocumentIssuePath: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="switch-wrapper">
+                            <div>
+                              <div className="admin-switch-label">
+                                Marcar combinación de múltiples certificados como revisión manual
+                              </div>
+                            </div>
+                            <label className="switch">
+                              <input
+                                type="checkbox"
+                                checked={uwcPresetDraft.limitGradesDocumentToSingleUpload}
+                                onChange={(event) =>
+                                  setUwcPresetDraft((current) => ({
+                                    ...current,
+                                    limitGradesDocumentToSingleUpload: event.target.checked,
+                                    gradesCombinationRule: event.target.checked
+                                      ? "single_or_review"
+                                      : "allow_multiple",
+                                  }))
+                                }
+                              />
+                              <span className="slider" />
+                            </label>
+                          </div>
+                          <div className="form-field full" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={applyUwcPeruTemplate}
+                            >
+                              Generar rúbrica desde plantilla
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline"
+                              onClick={() => setUwcPresetDraft(suggestedUwcPresetDraft)}
+                            >
+                              Recargar sugerencias desde campos actuales
+                            </button>
+                          </div>
                         </div>
                       </div>
-                    </div>
                     </details>
 
-                    <div className="rubric-advanced-toolbar">
-                      <button
-                        type="button"
-                        className={`btn ${rubricEditorMode === "guided" ? "btn-primary" : "btn-outline"}`}
-                        onClick={() => handleRubricModeChange("guided")}
+                    {rubricFeedback && (
+                      <div
+                        className={`admin-feedback ${rubricFeedback.type === "error" ? "error" : "success"}`}
+                        style={{ marginBottom: "10px", whiteSpace: "pre-line" }}
                       >
-                        Modo guiado
-                      </button>
-                      <button
-                        type="button"
-                        className={`btn ${rubricEditorMode === "json" ? "btn-primary" : "btn-outline"}`}
-                        onClick={() => handleRubricModeChange("json")}
-                      >
-                        JSON avanzado
-                      </button>
-                    </div>
-                    <div className="form-hint" style={{ marginBottom: "10px" }}>
-                      Modo guiado para equipos no técnicos. JSON avanzado para reglas complejas.
-                    </div>
-                    <div className="rubric-advanced-toolbar rubric-advanced-toolbar-compact">
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={() =>
-                          applyRubricTemplate(
-                            createBaselineEligibilityRubricTemplate(),
-                            "Plantilla básica aplicada.",
-                          )
-                        }
-                      >
-                        Usar plantilla básica
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={() =>
-                          applyRubricTemplate(
-                            createOcrEligibilityRubricTemplate(),
-                            "Plantilla con OCR aplicada.",
-                          )
-                        }
-                      >
-                        Usar plantilla con OCR
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        onClick={validateRubricFromEditor}
-                      >
-                        Validar rúbrica
-                      </button>
-                    </div>
-                    {rubricEditorMode === "guided" ? (
-                      <div className="admin-stage-settings-stack">
-                        <div className="switch-wrapper">
+                        {rubricFeedback.message}
+                      </div>
+                    )}
+
+                    <div className="rubric-toolbar">
+                      <div className="rubric-toolbar-left">
+                        <div className="switch-wrapper" style={{ margin: 0 }}>
                           <div>
-                            <div className="admin-switch-label">Habilitar rúbrica automática</div>
-                            <div className="admin-switch-help">
-                              Si está desactivada, la etapa no ejecuta evaluación automática.
-                            </div>
+                            <div className="admin-switch-label">Habilitar rúbrica</div>
                           </div>
                           <label className="switch">
                             <input
@@ -3989,10 +3501,43 @@ export function StageConfigEditor({
                             <span className="slider" />
                           </label>
                         </div>
+                      </div>
+                      <div className="rubric-toolbar-right">
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${rubricEditorMode === "guided" ? "btn-primary" : "btn-outline"}`}
+                          onClick={() => handleRubricModeChange("guided")}
+                        >
+                          Visual
+                        </button>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${rubricEditorMode === "json" ? "btn-primary" : "btn-outline"}`}
+                          onClick={() => handleRubricModeChange("json")}
+                        >
+                          JSON
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline"
+                          onClick={validateRubricFromEditor}
+                        >
+                          Validar
+                        </button>
+                      </div>
+                    </div>
 
+                    {rubricEditorMode === "guided" ? (
+                      <div className="rubric-criteria-list">
                         {settingsEligibilityRubricDraft.enabled ? (
                           <>
+                            {settingsEligibilityRubricDraft.criteria.length === 0 ? (
+                              <div className="rubric-empty-state">
+                                No hay criterios configurados. Usa el generador de plantilla o agrega criterios manualmente.
+                              </div>
+                            ) : null}
                             {settingsEligibilityRubricDraft.criteria.map((criterion, criterionIndex) => {
+                              const isCollapsed = collapsedCriteria.has(criterionIndex);
                               const fieldKeyOptions =
                                 criterion.fieldKey &&
                                 !rubricFieldOptions.some((option) => option.value === criterion.fieldKey)
@@ -4029,933 +3574,956 @@ export function StageConfigEditor({
                                     ]
                                   : rubricNumberFieldOptions;
                               const criterionRoles = new Set(criterion.roles ?? []);
+                              const kindOption = RUBRIC_KIND_OPTIONS.find((o) => o.value === criterion.kind);
 
                               return (
                                 <div
                                   key={`${criterion.id}-${criterionIndex}`}
-                                  className="settings-card"
-                                  style={{ border: "1px solid var(--maroon-soft)" }}
+                                  className="rubric-criterion-card"
                                 >
-                                  <div className="settings-card-header" style={{ marginBottom: "12px" }}>
-                                    <h3 style={{ margin: 0 }}>{`Criterio ${criterionIndex + 1}`}</h3>
-                                    <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                                  <div
+                                    className="rubric-criterion-header"
+                                    onClick={() => toggleCriterionCollapsed(criterionIndex)}
+                                  >
+                                    <div className="rubric-criterion-header-left">
+                                      <span className="rubric-criterion-drag">&#x2630;</span>
+                                      <div className="rubric-criterion-title-group">
+                                        <span className="rubric-criterion-title">
+                                          {criterion.label || criterion.id}
+                                        </span>
+                                        <span className="rubric-criterion-kind-badge">
+                                          {kindOption?.label ?? criterion.kind}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div className="rubric-criterion-header-right">
+                                      <span
+                                        className={`rubric-outcome-badge rubric-outcome-badge--${criterion.onFail}`}
+                                      >
+                                        {criterion.onFail === "not_eligible"
+                                          ? "No elegible"
+                                          : criterion.onFail === "needs_review"
+                                            ? "Revisión"
+                                            : "Elegible"}
+                                      </span>
                                       <button
                                         type="button"
-                                        className="btn btn-outline"
-                                        onClick={() => moveGuidedRubricCriterion(criterionIndex, "up")}
+                                        className="btn btn-sm btn-outline"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          moveGuidedRubricCriterion(criterionIndex, "up");
+                                        }}
                                         disabled={criterionIndex === 0}
+                                        title="Subir"
                                       >
-                                        Subir
+                                        &uarr;
                                       </button>
                                       <button
                                         type="button"
-                                        className="btn btn-outline"
-                                        onClick={() => moveGuidedRubricCriterion(criterionIndex, "down")}
+                                        className="btn btn-sm btn-outline"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          moveGuidedRubricCriterion(criterionIndex, "down");
+                                        }}
                                         disabled={
                                           criterionIndex ===
                                           settingsEligibilityRubricDraft.criteria.length - 1
                                         }
+                                        title="Bajar"
                                       >
-                                        Bajar
+                                        &darr;
                                       </button>
                                       <button
                                         type="button"
-                                        className="btn btn-outline"
-                                        onClick={() => removeGuidedRubricCriterion(criterionIndex)}
-                                      >
-                                        Eliminar
-                                      </button>
-                                    </div>
-                                  </div>
-                                  <div className="editor-grid">
-                                    <div className="form-field">
-                                      <label htmlFor={`rubric-criterion-kind-${stageCode}-${criterionIndex}`}>
-                                        Tipo
-                                      </label>
-                                      <select
-                                        id={`rubric-criterion-kind-${stageCode}-${criterionIndex}`}
-                                        value={criterion.kind}
-                                        onChange={(event) => {
-                                          const nextKind = event.target
-                                            .value as EligibilityRubricCriterion["kind"];
-                                          const replacement = createDefaultRubricCriterion({
-                                            kind: nextKind,
-                                            existingCriteria:
-                                              settingsEligibilityRubricDraft.criteria.filter(
-                                                (_, index) => index !== criterionIndex,
-                                              ),
-                                            defaultFieldKey: defaultRubricFieldKey,
-                                            defaultFileKey: defaultRubricFileKey,
-                                            defaultNumberFieldKey: defaultRubricNumberFieldKey,
-                                          });
-                                          updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                            ...replacement,
-                                            id: currentCriterion.id,
-                                            label: currentCriterion.label,
-                                            description: currentCriterion.description,
-                                            onFail: currentCriterion.onFail,
-                                            onMissingData: currentCriterion.onMissingData,
-                                          }));
+                                        className="btn btn-sm btn-outline rubric-btn-delete"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          removeGuidedRubricCriterion(criterionIndex);
                                         }}
+                                        title="Eliminar"
                                       >
-                                        {RUBRIC_KIND_OPTIONS.map((option) => (
-                                          <option key={option.value} value={option.value}>
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </select>
+                                        &times;
+                                      </button>
+                                      <span className={`rubric-chevron ${isCollapsed ? "" : "rubric-chevron--open"}`}>
+                                        &#x25B6;
+                                      </span>
                                     </div>
-                                    <div className="form-field">
-                                      <label htmlFor={`rubric-criterion-id-${stageCode}-${criterionIndex}`}>
-                                        ID técnico
-                                      </label>
-                                      <input
-                                        id={`rubric-criterion-id-${stageCode}-${criterionIndex}`}
-                                        type="text"
-                                        value={criterion.id}
-                                        onChange={(event) =>
-                                          updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                            ...currentCriterion,
-                                            id: event.target.value,
-                                          }))
-                                        }
-                                        style={{ fontFamily: "monospace" }}
-                                      />
-                                    </div>
-                                    <div className="form-field full">
-                                      <label htmlFor={`rubric-criterion-label-${stageCode}-${criterionIndex}`}>
-                                        Etiqueta visible
-                                      </label>
-                                      <input
-                                        id={`rubric-criterion-label-${stageCode}-${criterionIndex}`}
-                                        type="text"
-                                        value={criterion.label}
-                                        onChange={(event) =>
-                                          updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                            ...currentCriterion,
-                                            label: event.target.value,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-                                    <div className="form-field full">
-                                      <label htmlFor={`rubric-criterion-desc-${stageCode}-${criterionIndex}`}>
-                                        Descripción (opcional)
-                                      </label>
-                                      <input
-                                        id={`rubric-criterion-desc-${stageCode}-${criterionIndex}`}
-                                        type="text"
-                                        value={criterion.description ?? ""}
-                                        onChange={(event) =>
-                                          updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                            ...currentCriterion,
-                                            description: event.target.value || undefined,
-                                          }))
-                                        }
-                                      />
-                                    </div>
-                                    <div className="form-field">
-                                      <label htmlFor={`rubric-criterion-onfail-${stageCode}-${criterionIndex}`}>
-                                        Resultado si falla
-                                      </label>
-                                      <select
-                                        id={`rubric-criterion-onfail-${stageCode}-${criterionIndex}`}
-                                        value={criterion.onFail}
-                                        onChange={(event) =>
-                                          updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                            ...currentCriterion,
-                                            onFail:
-                                              event.target
-                                                .value as EligibilityRubricCriterion["onFail"],
-                                          }))
-                                        }
-                                      >
-                                        {RUBRIC_OUTCOME_OPTIONS.map((option) => (
-                                          <option key={option.value} value={option.value}>
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-                                    <div className="form-field">
-                                      <label htmlFor={`rubric-criterion-missing-${stageCode}-${criterionIndex}`}>
-                                        Resultado si falta data
-                                      </label>
-                                      <select
-                                        id={`rubric-criterion-missing-${stageCode}-${criterionIndex}`}
-                                        value={criterion.onMissingData}
-                                        onChange={(event) =>
-                                          updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                            ...currentCriterion,
-                                            onMissingData:
-                                              event.target
-                                                .value as EligibilityRubricCriterion["onMissingData"],
-                                          }))
-                                        }
-                                      >
-                                        {RUBRIC_OUTCOME_OPTIONS.map((option) => (
-                                          <option key={option.value} value={option.value}>
-                                            {option.label}
-                                          </option>
-                                        ))}
-                                      </select>
-                                    </div>
-
-                                    {criterion.kind === "field_present" ? (
-                                      <div className="form-field full">
-                                        <label
-                                          htmlFor={`rubric-criterion-fieldkey-${stageCode}-${criterionIndex}`}
-                                        >
-                                          Campo objetivo
-                                        </label>
-                                        <select
-                                          id={`rubric-criterion-fieldkey-${stageCode}-${criterionIndex}`}
-                                          value={criterion.fieldKey ?? ""}
-                                          onChange={(event) =>
-                                            updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                              ...currentCriterion,
-                                              fieldKey: event.target.value,
-                                            }))
-                                          }
-                                        >
-                                          <option value="">Selecciona un campo</option>
-                                          {fieldKeyOptions.map((option) => (
-                                            <option key={option.value} value={option.value}>
-                                              {option.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    ) : null}
-
-                                    {criterion.kind === "all_present" || criterion.kind === "any_present" ? (
-                                      <div className="form-field full">
-                                        <label
-                                          htmlFor={`rubric-criterion-fieldkeys-${stageCode}-${criterionIndex}`}
-                                        >
-                                          Campos (separados por coma)
-                                        </label>
-                                        <input
-                                          id={`rubric-criterion-fieldkeys-${stageCode}-${criterionIndex}`}
-                                          type="text"
-                                          value={formatCommaSeparatedList(criterion.fieldKeys)}
-                                          onChange={(event) =>
-                                            updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                              ...currentCriterion,
-                                              fieldKeys: parseCommaSeparatedList(event.target.value),
-                                            }))
-                                          }
-                                          placeholder="dateOfBirth, nationality"
-                                        />
-                                      </div>
-                                    ) : null}
-
-                                    {criterion.kind === "field_in" ? (
-                                      <>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-fieldin-key-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Campo objetivo
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-fieldin-key-${stageCode}-${criterionIndex}`}
-                                            value={criterion.fieldKey ?? ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                fieldKey: event.target.value,
-                                              }))
-                                            }
-                                          >
-                                            <option value="">Selecciona un campo</option>
-                                            {fieldKeyOptions.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-fieldin-sensitive-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Coincidencia
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-fieldin-sensitive-${stageCode}-${criterionIndex}`}
-                                            value={criterion.caseSensitive ? "strict" : "ignore_case"}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                caseSensitive: event.target.value === "strict",
-                                              }))
-                                            }
-                                          >
-                                            <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
-                                            <option value="strict">Exacta (case-sensitive)</option>
-                                          </select>
-                                        </div>
-                                        <div className="form-field full">
-                                          <label
-                                            htmlFor={`rubric-criterion-fieldin-values-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Valores permitidos (separados por coma)
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-fieldin-values-${stageCode}-${criterionIndex}`}
-                                            type="text"
-                                            value={formatCommaSeparatedList(criterion.allowedValues)}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                allowedValues: parseCommaSeparatedList(event.target.value),
-                                              }))
-                                            }
-                                            placeholder="peru, chile"
-                                          />
-                                        </div>
-                                      </>
-                                    ) : null}
-
-                                    {criterion.kind === "number_between" ? (
-                                      <>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-number-key-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Campo numérico
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-number-key-${stageCode}-${criterionIndex}`}
-                                            value={criterion.fieldKey ?? ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                fieldKey: event.target.value,
-                                              }))
-                                            }
-                                          >
-                                            <option value="">Selecciona un campo</option>
-                                            {numberFieldOptions.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-number-min-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Mínimo
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-number-min-${stageCode}-${criterionIndex}`}
-                                            type="number"
-                                            value={typeof criterion.min === "number" ? String(criterion.min) : ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                min:
-                                                  event.target.value.trim() === ""
-                                                    ? undefined
-                                                    : Number(event.target.value),
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-number-max-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Máximo
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-number-max-${stageCode}-${criterionIndex}`}
-                                            type="number"
-                                            value={typeof criterion.max === "number" ? String(criterion.max) : ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                max:
-                                                  event.target.value.trim() === ""
-                                                    ? undefined
-                                                    : Number(event.target.value),
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                      </>
-                                    ) : null}
-
-                                    {criterion.kind === "file_uploaded" ? (
-                                      <div className="form-field full">
-                                        <label
-                                          htmlFor={`rubric-criterion-file-key-${stageCode}-${criterionIndex}`}
-                                        >
-                                          Campo de archivo
-                                        </label>
-                                        <select
-                                          id={`rubric-criterion-file-key-${stageCode}-${criterionIndex}`}
-                                          value={criterion.fileKey ?? ""}
-                                          onChange={(event) =>
-                                            updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                              ...currentCriterion,
-                                              fileKey: event.target.value,
-                                            }))
-                                          }
-                                        >
-                                          <option value="">Selecciona un archivo</option>
-                                          {fileKeyOptions.map((option) => (
-                                            <option key={option.value} value={option.value}>
-                                              {option.label}
-                                            </option>
-                                          ))}
-                                        </select>
-                                      </div>
-                                    ) : null}
-
-                                    {criterion.kind === "recommendations_complete" ? (
-                                      <>
-                                        <div className="form-field full">
-                                          <label>Roles requeridos</label>
-                                          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                                            <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                              <input
-                                                type="checkbox"
-                                                checked={criterionRoles.has("mentor")}
-                                                onChange={(event) => {
-                                                  const nextRoles = new Set(criterionRoles);
-                                                  if (event.target.checked) {
-                                                    nextRoles.add("mentor");
-                                                  } else {
-                                                    nextRoles.delete("mentor");
-                                                  }
-                                                  updateGuidedRubricCriterion(
-                                                    criterionIndex,
-                                                    (currentCriterion) => ({
-                                                      ...currentCriterion,
-                                                      roles: Array.from(nextRoles),
-                                                    }),
-                                                  );
-                                                }}
-                                              />
-                                              Mentor
-                                            </label>
-                                            <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                              <input
-                                                type="checkbox"
-                                                checked={criterionRoles.has("friend")}
-                                                onChange={(event) => {
-                                                  const nextRoles = new Set(criterionRoles);
-                                                  if (event.target.checked) {
-                                                    nextRoles.add("friend");
-                                                  } else {
-                                                    nextRoles.delete("friend");
-                                                  }
-                                                  updateGuidedRubricCriterion(
-                                                    criterionIndex,
-                                                    (currentCriterion) => ({
-                                                      ...currentCriterion,
-                                                      roles: Array.from(nextRoles),
-                                                    }),
-                                                  );
-                                                }}
-                                              />
-                                              Friend
-                                            </label>
-                                          </div>
-                                        </div>
-                                        <div className="switch-wrapper">
-                                          <div>
-                                            <div className="admin-switch-label">
-                                              Verificar que fueron solicitadas
-                                            </div>
-                                          </div>
-                                          <label className="switch">
-                                            <input
-                                              type="checkbox"
-                                              checked={criterion.requireRequested !== false}
-                                              onChange={(event) =>
-                                                updateGuidedRubricCriterion(
-                                                  criterionIndex,
-                                                  (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    requireRequested: event.target.checked,
-                                                  }),
-                                                )
-                                              }
-                                            />
-                                            <span className="slider" />
-                                          </label>
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-min-responses-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Respuestas mínimas por carta
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-min-responses-${stageCode}-${criterionIndex}`}
-                                            type="number"
-                                            min={0}
-                                            max={20}
-                                            step={1}
-                                            value={
-                                              typeof criterion.minFilledResponses === "number"
-                                                ? String(criterion.minFilledResponses)
-                                                : "0"
-                                            }
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(
-                                                criterionIndex,
-                                                (currentCriterion) => ({
-                                                  ...currentCriterion,
-                                                  minFilledResponses:
-                                                    Number(event.target.value) || 0,
-                                                }),
-                                              )
-                                            }
-                                          />
-                                        </div>
-                                      </>
-                                    ) : null}
-
-                                    {criterion.kind === "ocr_confidence" ? (
-                                      <>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-ocr-key-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Campo de archivo OCR
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-ocr-key-${stageCode}-${criterionIndex}`}
-                                            value={criterion.fileKey ?? ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                fileKey: event.target.value,
-                                              }))
-                                            }
-                                          >
-                                            <option value="">Selecciona un archivo</option>
-                                            {fileKeyOptions.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-ocr-confidence-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Confianza mínima (0 a 1)
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-ocr-confidence-${stageCode}-${criterionIndex}`}
-                                            type="number"
-                                            min={0}
-                                            max={1}
-                                            step={0.01}
-                                            value={
-                                              typeof criterion.minConfidence === "number"
-                                                ? String(criterion.minConfidence)
-                                                : ""
-                                            }
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                minConfidence:
-                                                  event.target.value.trim() === ""
-                                                    ? undefined
-                                                    : Number(event.target.value),
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                      </>
-                                    ) : null}
-
-                                    {criterion.kind === "ocr_field_in" ||
-                                    criterion.kind === "ocr_field_not_in" ? (
-                                      <>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-ocr-value-key-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Campo de archivo OCR
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-ocr-value-key-${stageCode}-${criterionIndex}`}
-                                            value={criterion.fileKey ?? ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                fileKey: event.target.value,
-                                              }))
-                                            }
-                                          >
-                                            <option value="">Selecciona un archivo</option>
-                                            {fileKeyOptions.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-ocr-value-path-${stageCode}-${criterionIndex}`}
-                                          >
-                                            JSON path OCR
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-ocr-value-path-${stageCode}-${criterionIndex}`}
-                                            type="text"
-                                            value={criterion.jsonPath ?? ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                jsonPath: event.target.value,
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-ocr-value-sensitive-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Coincidencia
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-ocr-value-sensitive-${stageCode}-${criterionIndex}`}
-                                            value={criterion.caseSensitive ? "strict" : "ignore_case"}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                caseSensitive: event.target.value === "strict",
-                                              }))
-                                            }
-                                          >
-                                            <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
-                                            <option value="strict">Exacta (case-sensitive)</option>
-                                          </select>
-                                        </div>
-                                        <div className="form-field full">
-                                          <label
-                                            htmlFor={`rubric-criterion-ocr-values-${stageCode}-${criterionIndex}`}
-                                          >
-                                            {criterion.kind === "ocr_field_in"
-                                              ? "Valores permitidos (coma)"
-                                              : "Valores que disparan revisión (coma)"}
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-ocr-values-${stageCode}-${criterionIndex}`}
-                                            type="text"
-                                            value={
-                                              criterion.kind === "ocr_field_in"
-                                                ? formatCommaSeparatedList(criterion.allowedValues)
-                                                : formatCommaSeparatedList(criterion.disallowedValues)
-                                            }
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => {
-                                                if (currentCriterion.kind === "ocr_field_in") {
-                                                  return {
-                                                    ...currentCriterion,
-                                                    allowedValues: parseCommaSeparatedList(
-                                                      event.target.value,
-                                                    ),
-                                                  };
-                                                }
-                                                return {
-                                                  ...currentCriterion,
-                                                  disallowedValues: parseCommaSeparatedList(
-                                                    event.target.value,
-                                                  ),
-                                                };
-                                              })
-                                            }
-                                          />
-                                        </div>
-                                      </>
-                                    ) : null}
-
-                                    {criterion.kind === "field_matches_ocr" ? (
-                                      <>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-match-field-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Campo de formulario
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-match-field-${stageCode}-${criterionIndex}`}
-                                            value={criterion.fieldKey ?? ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                fieldKey: event.target.value,
-                                              }))
-                                            }
-                                          >
-                                            <option value="">Selecciona un campo</option>
-                                            {fieldKeyOptions.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-match-file-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Archivo OCR
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-match-file-${stageCode}-${criterionIndex}`}
-                                            value={criterion.fileKey ?? ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                fileKey: event.target.value,
-                                              }))
-                                            }
-                                          >
-                                            <option value="">Selecciona un archivo</option>
-                                            {fileKeyOptions.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-match-path-${stageCode}-${criterionIndex}`}
-                                          >
-                                            JSON path OCR
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-match-path-${stageCode}-${criterionIndex}`}
-                                            type="text"
-                                            value={criterion.jsonPath ?? ""}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                jsonPath: event.target.value,
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-match-sensitive-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Coincidencia
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-match-sensitive-${stageCode}-${criterionIndex}`}
-                                            value={criterion.caseSensitive ? "strict" : "ignore_case"}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                caseSensitive: event.target.value === "strict",
-                                              }))
-                                            }
-                                          >
-                                            <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
-                                            <option value="strict">Exacta (case-sensitive)</option>
-                                          </select>
-                                        </div>
-                                        <div className="switch-wrapper">
-                                          <div>
-                                            <div className="admin-switch-label">
-                                              Normalizar espacios antes de comparar
-                                            </div>
-                                          </div>
-                                          <label className="switch">
-                                            <input
-                                              type="checkbox"
-                                              checked={criterion.normalizeWhitespace !== false}
-                                              onChange={(event) =>
-                                                updateGuidedRubricCriterion(
-                                                  criterionIndex,
-                                                  (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    normalizeWhitespace: event.target.checked,
-                                                  }),
-                                                )
-                                              }
-                                            />
-                                            <span className="slider" />
-                                          </label>
-                                        </div>
-                                      </>
-                                    ) : null}
-
-                                    {criterion.kind === "file_upload_count_between" ? (
-                                      <>
-                                        <div className="form-field full">
-                                          <label
-                                            htmlFor={`rubric-criterion-count-filekeys-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Claves de archivo (separadas por coma)
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-count-filekeys-${stageCode}-${criterionIndex}`}
-                                            type="text"
-                                            value={formatCommaSeparatedList(criterion.fileKeys)}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                fileKeys: parseCommaSeparatedList(event.target.value),
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-count-min-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Cantidad mínima
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-count-min-${stageCode}-${criterionIndex}`}
-                                            type="number"
-                                            min={0}
-                                            step={1}
-                                            value={
-                                              typeof criterion.minCount === "number"
-                                                ? String(criterion.minCount)
-                                                : ""
-                                            }
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                minCount:
-                                                  event.target.value.trim() === ""
-                                                    ? undefined
-                                                    : Number(event.target.value),
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                        <div className="form-field">
-                                          <label
-                                            htmlFor={`rubric-criterion-count-max-${stageCode}-${criterionIndex}`}
-                                          >
-                                            Cantidad máxima
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-count-max-${stageCode}-${criterionIndex}`}
-                                            type="number"
-                                            min={0}
-                                            step={1}
-                                            value={
-                                              typeof criterion.maxCount === "number"
-                                                ? String(criterion.maxCount)
-                                                : ""
-                                            }
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                maxCount:
-                                                  event.target.value.trim() === ""
-                                                    ? undefined
-                                                    : Number(event.target.value),
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                      </>
-                                    ) : null}
-
-                                    {criterion.kind === "any_of" ? (
-                                      <div className="form-field full">
-                                        <label
-                                          htmlFor={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
-                                        >
-                                          Condiciones alternativas (JSON)
-                                        </label>
-                                        <textarea
-                                          id={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
-                                          rows={6}
-                                          value={JSON.stringify(criterion.conditions ?? [], null, 2)}
-                                          onChange={(event) => {
-                                            try {
-                                              const parsed = JSON.parse(event.target.value) as unknown;
-                                              if (!Array.isArray(parsed)) {
-                                                return;
-                                              }
-                                              updateGuidedRubricCriterion(
-                                                criterionIndex,
-                                                (currentCriterion) => ({
-                                                  ...currentCriterion,
-                                                  conditions:
-                                                    parsed as EligibilityRubricCriterion["conditions"],
-                                                }),
-                                              );
-                                            } catch {
-                                              // Keep current value until JSON is valid.
-                                            }
-                                          }}
-                                          style={{ fontFamily: "monospace" }}
-                                        />
-                                        <div className="form-hint">
-                                          Usa condiciones <code>field_present</code>, <code>file_uploaded</code>,{" "}
-                                          <code>number_between</code>, <code>ocr_field_in</code>,{" "}
-                                          <code>ocr_field_not_in</code> o <code>field_matches_ocr</code>.
-                                        </div>
-                                      </div>
-                                    ) : null}
                                   </div>
+                                  {!isCollapsed && (
+                                    <div className="rubric-criterion-body">
+                                      <div className="editor-grid">
+                                        <div className="form-field">
+                                          <label htmlFor={`rubric-criterion-kind-${stageCode}-${criterionIndex}`}>
+                                            Tipo
+                                          </label>
+                                          <select
+                                            id={`rubric-criterion-kind-${stageCode}-${criterionIndex}`}
+                                            value={criterion.kind}
+                                            onChange={(event) => {
+                                              const nextKind = event.target
+                                                .value as EligibilityRubricCriterion["kind"];
+                                              const replacement = createDefaultRubricCriterion({
+                                                kind: nextKind,
+                                                existingCriteria:
+                                                  settingsEligibilityRubricDraft.criteria.filter(
+                                                    (_, index) => index !== criterionIndex,
+                                                  ),
+                                                defaultFieldKey: defaultRubricFieldKey,
+                                                defaultFileKey: defaultRubricFileKey,
+                                                defaultNumberFieldKey: defaultRubricNumberFieldKey,
+                                              });
+                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                ...replacement,
+                                                id: currentCriterion.id,
+                                                label: currentCriterion.label,
+                                                description: currentCriterion.description,
+                                                onFail: currentCriterion.onFail,
+                                                onMissingData: currentCriterion.onMissingData,
+                                              }));
+                                            }}
+                                          >
+                                            {RUBRIC_KIND_OPTIONS.map((option) => (
+                                              <option key={option.value} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div className="form-field">
+                                          <label htmlFor={`rubric-criterion-id-${stageCode}-${criterionIndex}`}>
+                                            ID técnico
+                                          </label>
+                                          <input
+                                            id={`rubric-criterion-id-${stageCode}-${criterionIndex}`}
+                                            type="text"
+                                            value={criterion.id}
+                                            onChange={(event) =>
+                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                ...currentCriterion,
+                                                id: event.target.value,
+                                              }))
+                                            }
+                                            style={{ fontFamily: "monospace" }}
+                                          />
+                                        </div>
+                                        <div className="form-field full">
+                                          <label htmlFor={`rubric-criterion-label-${stageCode}-${criterionIndex}`}>
+                                            Etiqueta visible
+                                          </label>
+                                          <input
+                                            id={`rubric-criterion-label-${stageCode}-${criterionIndex}`}
+                                            type="text"
+                                            value={criterion.label}
+                                            onChange={(event) =>
+                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                ...currentCriterion,
+                                                label: event.target.value,
+                                              }))
+                                            }
+                                          />
+                                        </div>
+                                        <div className="form-field">
+                                          <label htmlFor={`rubric-criterion-onfail-${stageCode}-${criterionIndex}`}>
+                                            Resultado si falla
+                                          </label>
+                                          <select
+                                            id={`rubric-criterion-onfail-${stageCode}-${criterionIndex}`}
+                                            value={criterion.onFail}
+                                            onChange={(event) =>
+                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                ...currentCriterion,
+                                                onFail:
+                                                  event.target
+                                                    .value as EligibilityRubricCriterion["onFail"],
+                                              }))
+                                            }
+                                          >
+                                            {RUBRIC_OUTCOME_OPTIONS.map((option) => (
+                                              <option key={option.value} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div className="form-field">
+                                          <label htmlFor={`rubric-criterion-missing-${stageCode}-${criterionIndex}`}>
+                                            Resultado si falta data
+                                          </label>
+                                          <select
+                                            id={`rubric-criterion-missing-${stageCode}-${criterionIndex}`}
+                                            value={criterion.onMissingData}
+                                            onChange={(event) =>
+                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                ...currentCriterion,
+                                                onMissingData:
+                                                  event.target
+                                                    .value as EligibilityRubricCriterion["onMissingData"],
+                                              }))
+                                            }
+                                          >
+                                            {RUBRIC_OUTCOME_OPTIONS.map((option) => (
+                                              <option key={option.value} value={option.value}>
+                                                {option.label}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+
+                                        {/* Kind-specific fields - same as existing guided editor */}
+                                        {criterion.kind === "field_present" ? (
+                                          <div className="form-field full">
+                                            <label
+                                              htmlFor={`rubric-criterion-fieldkey-${stageCode}-${criterionIndex}`}
+                                            >
+                                              Campo objetivo
+                                            </label>
+                                            <select
+                                              id={`rubric-criterion-fieldkey-${stageCode}-${criterionIndex}`}
+                                              value={criterion.fieldKey ?? ""}
+                                              onChange={(event) =>
+                                                updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                  ...currentCriterion,
+                                                  fieldKey: event.target.value,
+                                                }))
+                                              }
+                                            >
+                                              <option value="">Selecciona un campo</option>
+                                              {fieldKeyOptions.map((option) => (
+                                                <option key={option.value} value={option.value}>
+                                                  {option.label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        ) : null}
+
+                                        {criterion.kind === "all_present" || criterion.kind === "any_present" ? (
+                                          <div className="form-field full">
+                                            <label
+                                              htmlFor={`rubric-criterion-fieldkeys-${stageCode}-${criterionIndex}`}
+                                            >
+                                              Campos (separados por coma)
+                                            </label>
+                                            <input
+                                              id={`rubric-criterion-fieldkeys-${stageCode}-${criterionIndex}`}
+                                              type="text"
+                                              value={formatCommaSeparatedList(criterion.fieldKeys)}
+                                              onChange={(event) =>
+                                                updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                  ...currentCriterion,
+                                                  fieldKeys: parseCommaSeparatedList(event.target.value),
+                                                }))
+                                              }
+                                              placeholder="dateOfBirth, nationality"
+                                            />
+                                          </div>
+                                        ) : null}
+
+                                        {criterion.kind === "field_in" ? (
+                                          <>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-fieldin-key-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Campo objetivo
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-fieldin-key-${stageCode}-${criterionIndex}`}
+                                                value={criterion.fieldKey ?? ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    fieldKey: event.target.value,
+                                                  }))
+                                                }
+                                              >
+                                                <option value="">Selecciona un campo</option>
+                                                {fieldKeyOptions.map((option) => (
+                                                  <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-fieldin-sensitive-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Coincidencia
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-fieldin-sensitive-${stageCode}-${criterionIndex}`}
+                                                value={criterion.caseSensitive ? "strict" : "ignore_case"}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    caseSensitive: event.target.value === "strict",
+                                                  }))
+                                                }
+                                              >
+                                                <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
+                                                <option value="strict">Exacta (case-sensitive)</option>
+                                              </select>
+                                            </div>
+                                            <div className="form-field full">
+                                              <label
+                                                htmlFor={`rubric-criterion-fieldin-values-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Valores permitidos (separados por coma)
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-fieldin-values-${stageCode}-${criterionIndex}`}
+                                                type="text"
+                                                value={formatCommaSeparatedList(criterion.allowedValues)}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    allowedValues: parseCommaSeparatedList(event.target.value),
+                                                  }))
+                                                }
+                                                placeholder="peru, chile"
+                                              />
+                                            </div>
+                                          </>
+                                        ) : null}
+
+                                        {criterion.kind === "number_between" ? (
+                                          <>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-number-key-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Campo numérico
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-number-key-${stageCode}-${criterionIndex}`}
+                                                value={criterion.fieldKey ?? ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    fieldKey: event.target.value,
+                                                  }))
+                                                }
+                                              >
+                                                <option value="">Selecciona un campo</option>
+                                                {numberFieldOptions.map((option) => (
+                                                  <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-number-min-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Mínimo
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-number-min-${stageCode}-${criterionIndex}`}
+                                                type="number"
+                                                value={typeof criterion.min === "number" ? String(criterion.min) : ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    min:
+                                                      event.target.value.trim() === ""
+                                                        ? undefined
+                                                        : Number(event.target.value),
+                                                  }))
+                                                }
+                                              />
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-number-max-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Máximo
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-number-max-${stageCode}-${criterionIndex}`}
+                                                type="number"
+                                                value={typeof criterion.max === "number" ? String(criterion.max) : ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    max:
+                                                      event.target.value.trim() === ""
+                                                        ? undefined
+                                                        : Number(event.target.value),
+                                                  }))
+                                                }
+                                              />
+                                            </div>
+                                          </>
+                                        ) : null}
+
+                                        {criterion.kind === "file_uploaded" ? (
+                                          <div className="form-field full">
+                                            <label
+                                              htmlFor={`rubric-criterion-file-key-${stageCode}-${criterionIndex}`}
+                                            >
+                                              Campo de archivo
+                                            </label>
+                                            <select
+                                              id={`rubric-criterion-file-key-${stageCode}-${criterionIndex}`}
+                                              value={criterion.fileKey ?? ""}
+                                              onChange={(event) =>
+                                                updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                  ...currentCriterion,
+                                                  fileKey: event.target.value,
+                                                }))
+                                              }
+                                            >
+                                              <option value="">Selecciona un archivo</option>
+                                              {fileKeyOptions.map((option) => (
+                                                <option key={option.value} value={option.value}>
+                                                  {option.label}
+                                                </option>
+                                              ))}
+                                            </select>
+                                          </div>
+                                        ) : null}
+
+                                        {criterion.kind === "recommendations_complete" ? (
+                                          <>
+                                            <div className="form-field full">
+                                              <label>Roles requeridos</label>
+                                              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                                                <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={criterionRoles.has("mentor")}
+                                                    onChange={(event) => {
+                                                      const nextRoles = new Set(criterionRoles);
+                                                      if (event.target.checked) {
+                                                        nextRoles.add("mentor");
+                                                      } else {
+                                                        nextRoles.delete("mentor");
+                                                      }
+                                                      updateGuidedRubricCriterion(
+                                                        criterionIndex,
+                                                        (currentCriterion) => ({
+                                                          ...currentCriterion,
+                                                          roles: Array.from(nextRoles),
+                                                        }),
+                                                      );
+                                                    }}
+                                                  />
+                                                  Mentor
+                                                </label>
+                                                <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={criterionRoles.has("friend")}
+                                                    onChange={(event) => {
+                                                      const nextRoles = new Set(criterionRoles);
+                                                      if (event.target.checked) {
+                                                        nextRoles.add("friend");
+                                                      } else {
+                                                        nextRoles.delete("friend");
+                                                      }
+                                                      updateGuidedRubricCriterion(
+                                                        criterionIndex,
+                                                        (currentCriterion) => ({
+                                                          ...currentCriterion,
+                                                          roles: Array.from(nextRoles),
+                                                        }),
+                                                      );
+                                                    }}
+                                                  />
+                                                  Friend
+                                                </label>
+                                              </div>
+                                            </div>
+                                            <div className="switch-wrapper">
+                                              <div>
+                                                <div className="admin-switch-label">
+                                                  Verificar que fueron solicitadas
+                                                </div>
+                                              </div>
+                                              <label className="switch">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={criterion.requireRequested !== false}
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        requireRequested: event.target.checked,
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                                <span className="slider" />
+                                              </label>
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-min-responses-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Respuestas mínimas por carta
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-min-responses-${stageCode}-${criterionIndex}`}
+                                                type="number"
+                                                min={0}
+                                                max={20}
+                                                step={1}
+                                                value={
+                                                  typeof criterion.minFilledResponses === "number"
+                                                    ? String(criterion.minFilledResponses)
+                                                    : "0"
+                                                }
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(
+                                                    criterionIndex,
+                                                    (currentCriterion) => ({
+                                                      ...currentCriterion,
+                                                      minFilledResponses:
+                                                        Number(event.target.value) || 0,
+                                                    }),
+                                                  )
+                                                }
+                                              />
+                                            </div>
+                                          </>
+                                        ) : null}
+
+                                        {criterion.kind === "ocr_confidence" ? (
+                                          <>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-ocr-key-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Campo de archivo OCR
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-ocr-key-${stageCode}-${criterionIndex}`}
+                                                value={criterion.fileKey ?? ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    fileKey: event.target.value,
+                                                  }))
+                                                }
+                                              >
+                                                <option value="">Selecciona un archivo</option>
+                                                {fileKeyOptions.map((option) => (
+                                                  <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-ocr-confidence-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Confianza mínima (0 a 1)
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-ocr-confidence-${stageCode}-${criterionIndex}`}
+                                                type="number"
+                                                min={0}
+                                                max={1}
+                                                step={0.01}
+                                                value={
+                                                  typeof criterion.minConfidence === "number"
+                                                    ? String(criterion.minConfidence)
+                                                    : ""
+                                                }
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    minConfidence:
+                                                      event.target.value.trim() === ""
+                                                        ? undefined
+                                                        : Number(event.target.value),
+                                                  }))
+                                                }
+                                              />
+                                            </div>
+                                          </>
+                                        ) : null}
+
+                                        {criterion.kind === "ocr_field_in" ||
+                                        criterion.kind === "ocr_field_not_in" ? (
+                                          <>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-ocr-value-key-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Campo de archivo OCR
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-ocr-value-key-${stageCode}-${criterionIndex}`}
+                                                value={criterion.fileKey ?? ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    fileKey: event.target.value,
+                                                  }))
+                                                }
+                                              >
+                                                <option value="">Selecciona un archivo</option>
+                                                {fileKeyOptions.map((option) => (
+                                                  <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-ocr-value-path-${stageCode}-${criterionIndex}`}
+                                              >
+                                                JSON path OCR
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-ocr-value-path-${stageCode}-${criterionIndex}`}
+                                                type="text"
+                                                value={criterion.jsonPath ?? ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    jsonPath: event.target.value,
+                                                  }))
+                                                }
+                                              />
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-ocr-value-sensitive-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Coincidencia
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-ocr-value-sensitive-${stageCode}-${criterionIndex}`}
+                                                value={criterion.caseSensitive ? "strict" : "ignore_case"}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    caseSensitive: event.target.value === "strict",
+                                                  }))
+                                                }
+                                              >
+                                                <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
+                                                <option value="strict">Exacta (case-sensitive)</option>
+                                              </select>
+                                            </div>
+                                            <div className="form-field full">
+                                              <label
+                                                htmlFor={`rubric-criterion-ocr-values-${stageCode}-${criterionIndex}`}
+                                              >
+                                                {criterion.kind === "ocr_field_in"
+                                                  ? "Valores permitidos (coma)"
+                                                  : "Valores que disparan revisión (coma)"}
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-ocr-values-${stageCode}-${criterionIndex}`}
+                                                type="text"
+                                                value={
+                                                  criterion.kind === "ocr_field_in"
+                                                    ? formatCommaSeparatedList(criterion.allowedValues)
+                                                    : formatCommaSeparatedList(criterion.disallowedValues)
+                                                }
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => {
+                                                    if (currentCriterion.kind === "ocr_field_in") {
+                                                      return {
+                                                        ...currentCriterion,
+                                                        allowedValues: parseCommaSeparatedList(
+                                                          event.target.value,
+                                                        ),
+                                                      };
+                                                    }
+                                                    return {
+                                                      ...currentCriterion,
+                                                      disallowedValues: parseCommaSeparatedList(
+                                                        event.target.value,
+                                                      ),
+                                                    };
+                                                  })
+                                                }
+                                              />
+                                            </div>
+                                          </>
+                                        ) : null}
+
+                                        {criterion.kind === "field_matches_ocr" ? (
+                                          <>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-match-field-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Campo de formulario
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-match-field-${stageCode}-${criterionIndex}`}
+                                                value={criterion.fieldKey ?? ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    fieldKey: event.target.value,
+                                                  }))
+                                                }
+                                              >
+                                                <option value="">Selecciona un campo</option>
+                                                {fieldKeyOptions.map((option) => (
+                                                  <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-match-file-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Archivo OCR
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-match-file-${stageCode}-${criterionIndex}`}
+                                                value={criterion.fileKey ?? ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    fileKey: event.target.value,
+                                                  }))
+                                                }
+                                              >
+                                                <option value="">Selecciona un archivo</option>
+                                                {fileKeyOptions.map((option) => (
+                                                  <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                  </option>
+                                                ))}
+                                              </select>
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-match-path-${stageCode}-${criterionIndex}`}
+                                              >
+                                                JSON path OCR
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-match-path-${stageCode}-${criterionIndex}`}
+                                                type="text"
+                                                value={criterion.jsonPath ?? ""}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    jsonPath: event.target.value,
+                                                  }))
+                                                }
+                                              />
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-match-sensitive-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Coincidencia
+                                              </label>
+                                              <select
+                                                id={`rubric-criterion-match-sensitive-${stageCode}-${criterionIndex}`}
+                                                value={criterion.caseSensitive ? "strict" : "ignore_case"}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    caseSensitive: event.target.value === "strict",
+                                                  }))
+                                                }
+                                              >
+                                                <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
+                                                <option value="strict">Exacta (case-sensitive)</option>
+                                              </select>
+                                            </div>
+                                            <div className="switch-wrapper">
+                                              <div>
+                                                <div className="admin-switch-label">
+                                                  Normalizar espacios antes de comparar
+                                                </div>
+                                              </div>
+                                              <label className="switch">
+                                                <input
+                                                  type="checkbox"
+                                                  checked={criterion.normalizeWhitespace !== false}
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        normalizeWhitespace: event.target.checked,
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                                <span className="slider" />
+                                              </label>
+                                            </div>
+                                          </>
+                                        ) : null}
+
+                                        {criterion.kind === "file_upload_count_between" ? (
+                                          <>
+                                            <div className="form-field full">
+                                              <label
+                                                htmlFor={`rubric-criterion-count-filekeys-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Claves de archivo (separadas por coma)
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-count-filekeys-${stageCode}-${criterionIndex}`}
+                                                type="text"
+                                                value={formatCommaSeparatedList(criterion.fileKeys)}
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    fileKeys: parseCommaSeparatedList(event.target.value),
+                                                  }))
+                                                }
+                                              />
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-count-min-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Cantidad mínima
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-count-min-${stageCode}-${criterionIndex}`}
+                                                type="number"
+                                                min={0}
+                                                step={1}
+                                                value={
+                                                  typeof criterion.minCount === "number"
+                                                    ? String(criterion.minCount)
+                                                    : ""
+                                                }
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    minCount:
+                                                      event.target.value.trim() === ""
+                                                        ? undefined
+                                                        : Number(event.target.value),
+                                                  }))
+                                                }
+                                              />
+                                            </div>
+                                            <div className="form-field">
+                                              <label
+                                                htmlFor={`rubric-criterion-count-max-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Cantidad máxima
+                                              </label>
+                                              <input
+                                                id={`rubric-criterion-count-max-${stageCode}-${criterionIndex}`}
+                                                type="number"
+                                                min={0}
+                                                step={1}
+                                                value={
+                                                  typeof criterion.maxCount === "number"
+                                                    ? String(criterion.maxCount)
+                                                    : ""
+                                                }
+                                                onChange={(event) =>
+                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    maxCount:
+                                                      event.target.value.trim() === ""
+                                                        ? undefined
+                                                        : Number(event.target.value),
+                                                  }))
+                                                }
+                                              />
+                                            </div>
+                                          </>
+                                        ) : null}
+
+                                        {criterion.kind === "any_of" ? (
+                                          <div className="form-field full">
+                                            <label
+                                              htmlFor={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
+                                            >
+                                              Condiciones alternativas (JSON)
+                                            </label>
+                                            <textarea
+                                              id={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
+                                              rows={6}
+                                              value={JSON.stringify(criterion.conditions ?? [], null, 2)}
+                                              onChange={(event) => {
+                                                try {
+                                                  const parsed = JSON.parse(event.target.value) as unknown;
+                                                  if (!Array.isArray(parsed)) {
+                                                    return;
+                                                  }
+                                                  updateGuidedRubricCriterion(
+                                                    criterionIndex,
+                                                    (currentCriterion) => ({
+                                                      ...currentCriterion,
+                                                      conditions:
+                                                        parsed as EligibilityRubricCriterion["conditions"],
+                                                    }),
+                                                  );
+                                                } catch {
+                                                  // Keep current value until JSON is valid.
+                                                }
+                                              }}
+                                              style={{ fontFamily: "monospace" }}
+                                            />
+                                            <div className="form-hint">
+                                              Usa condiciones <code>field_present</code>, <code>file_uploaded</code>,{" "}
+                                              <code>number_between</code>, <code>ocr_field_in</code>,{" "}
+                                              <code>ocr_field_not_in</code> o <code>field_matches_ocr</code>.
+                                            </div>
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })}
 
-                            <div className="settings-card" style={{ border: "1px dashed var(--maroon-soft)" }}>
-                              <div className="editor-grid">
-                                <div className="form-field">
-                                  <label htmlFor={`rubric-new-criterion-kind-${stageCode}`}>
-                                    Tipo de nuevo criterio
-                                  </label>
-                                  <select
-                                    id={`rubric-new-criterion-kind-${stageCode}`}
-                                    value={newRubricCriterionKind}
-                                    onChange={(event) =>
-                                      setNewRubricCriterionKind(
-                                        event.target.value as EligibilityRubricCriterion["kind"],
-                                      )
-                                    }
-                                  >
-                                    {RUBRIC_KIND_OPTIONS.map((option) => (
-                                      <option key={option.value} value={option.value}>
-                                        {option.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-                                <div
-                                  className="form-field"
-                                  style={{ display: "flex", alignItems: "end" }}
+                            <div className="rubric-add-criterion">
+                              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                                <select
+                                  id={`rubric-new-criterion-kind-${stageCode}`}
+                                  value={newRubricCriterionKind}
+                                  onChange={(event) =>
+                                    setNewRubricCriterionKind(
+                                      event.target.value as EligibilityRubricCriterion["kind"],
+                                    )
+                                  }
+                                  style={{ flex: "1 1 200px" }}
                                 >
-                                  <button
-                                    type="button"
-                                    className="btn btn-outline"
-                                    onClick={() => addGuidedRubricCriterion(newRubricCriterionKind)}
-                                  >
-                                    Agregar criterio
-                                  </button>
-                                </div>
+                                  {RUBRIC_KIND_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>
+                                      {option.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  className="btn btn-outline"
+                                  onClick={() => addGuidedRubricCriterion(newRubricCriterionKind)}
+                                >
+                                  + Agregar criterio
+                                </button>
                               </div>
                             </div>
+
+                            {settingsEligibilityRubricDraft.criteria.length > 0 && (
+                              <div className="rubric-summary">
+                                {settingsEligibilityRubricDraft.criteria.length} criterio(s) configurados
+                              </div>
+                            )}
                           </>
                         ) : (
-                          <div className="form-hint">
+                          <div className="rubric-empty-state">
                             Rúbrica desactivada. No se ejecutarán reglas automáticas en esta etapa.
                           </div>
                         )}
@@ -4979,8 +4547,6 @@ export function StageConfigEditor({
                         </div>
                       </>
                     )}
-                      </>
-                    )}
                     {settingsEligibilityRubricErrors.length > 0 ? (
                       <div className="admin-feedback error" style={{ marginTop: "10px" }}>
                         {`Errores de rúbrica: ${settingsEligibilityRubricErrors
@@ -4991,6 +4557,7 @@ export function StageConfigEditor({
                   </div>
                 </div>
               </div>
+
 
             </div>
           )}
@@ -5184,13 +4751,13 @@ export function StageConfigEditor({
               <div className="dashboard-grid admin-stage-stats-grid">
                 <div className="stat-card">
                   <div className="stat-title">Campos totales</div>
-                  <div className="stat-value">{orderedFields.length}</div>
+                  <div className="stat-value">{fields.length}</div>
                   <div className="stat-trend neutral">Definidos para esta etapa</div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-title">Campos obligatorios</div>
                   <div className="stat-value">
-                    {orderedFields.filter((field) => field.is_required).length}
+                    {fields.filter((field) => field.is_required).length}
                   </div>
                   <div className="stat-trend">Afectan validación</div>
                 </div>
@@ -5210,7 +4777,7 @@ export function StageConfigEditor({
                   <div className="funnel-track">
                     <div className="funnel-fill" style={{ width: "100%" }}></div>
                   </div>
-                  <div className="funnel-value">{orderedFields.length}</div>
+                  <div className="funnel-value">{fields.length}</div>
                 </div>
                 <div className="funnel-bar">
                   <div className="funnel-label">Campos activos</div>
@@ -5219,18 +4786,18 @@ export function StageConfigEditor({
                       className="funnel-fill blue"
                       style={{
                         width:
-                          orderedFields.length === 0
+                          fields.length === 0
                             ? "0%"
                             : `${Math.round(
-                                (orderedFields.filter((field) => field.is_active).length /
-                                  orderedFields.length) *
+                                (fields.filter((field) => field.is_active).length /
+                                  fields.length) *
                                   100,
                               )}%`,
                       }}
                     ></div>
                   </div>
                   <div className="funnel-value">
-                    {orderedFields.filter((field) => field.is_active).length}
+                    {fields.filter((field) => field.is_active).length}
                   </div>
                 </div>
                 <div className="funnel-bar">
@@ -5240,18 +4807,18 @@ export function StageConfigEditor({
                       className="funnel-fill success"
                       style={{
                         width:
-                          orderedFields.length === 0
+                          fields.length === 0
                             ? "0%"
                             : `${Math.round(
-                                (orderedFields.filter((field) => field.is_required).length /
-                                  orderedFields.length) *
+                                (fields.filter((field) => field.is_required).length /
+                                  fields.length) *
                                   100,
                               )}%`,
                       }}
                     ></div>
                   </div>
                   <div className="funnel-value">
-                    {orderedFields.filter((field) => field.is_required).length}
+                    {fields.filter((field) => field.is_required).length}
                   </div>
                 </div>
               </div>

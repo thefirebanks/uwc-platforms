@@ -10,7 +10,8 @@ function rubricTextarea(page: Page) {
 async function openRubricSettings(page: Page) {
   await loginAsAdmin(page);
   await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=settings`);
-  await expect(page.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).toBeVisible({
+  // Wait for the rubric toolbar to load — mode buttons are "Visual" and "JSON"
+  await expect(page.getByRole("button", { name: "JSON", exact: true })).toBeVisible({
     timeout: 20_000,
   });
 }
@@ -34,100 +35,25 @@ async function pickFirstNonEmptyOption(selectLocator: Locator) {
   return true;
 }
 
-async function ensureAtLeastOneChecked(groupField: Locator) {
-  const checkboxes = groupField.locator("input[type='checkbox']");
-  const count = await checkboxes.count();
-  if (count === 0) {
-    return false;
-  }
+const VALID_RUBRIC_JSON = JSON.stringify(
+  {
+    enabled: true,
+    criteria: [
+      {
+        id: "test_field_present",
+        label: "Test field present",
+        kind: "field_present",
+        fieldKey: "firstname",
+        onFail: "not_eligible",
+        onMissingData: "needs_review",
+      },
+    ],
+  },
+  null,
+  2,
+);
 
-  let hasChecked = false;
-  for (let i = 0; i < count; i += 1) {
-    if (await checkboxes.nth(i).isChecked()) {
-      hasChecked = true;
-      break;
-    }
-  }
-
-  if (!hasChecked) {
-    await checkboxes.first().check();
-  }
-  return true;
-}
-
-async function completeWizardStep1(page: Page) {
-  // Use rw-field--full containers for checkbox groups
-  const identityField = page
-    .locator(".rw-field--full")
-    .filter({ hasText: /Documentos de identidad/i })
-    .first();
-  const gradesField = page
-    .locator(".rw-field--full")
-    .filter({ hasText: /Documentos de notas/i })
-    .first();
-
-  const hasIdentityCheckboxes = await ensureAtLeastOneChecked(identityField);
-  const hasGradesCheckboxes = await ensureAtLeastOneChecked(gradesField);
-  test.skip(!hasIdentityCheckboxes || !hasGradesCheckboxes, "Se requieren campos de archivo para wizard.");
-
-  const requiredSelects = [
-    page.locator("select[id^='wizard-name-']").first(),
-    page.locator("select[id^='wizard-average-']").first(),
-    page.locator("select[id^='wizard-authorization-']").first(),
-    page.locator("select[id^='wizard-photo-']").first(),
-  ];
-
-  for (const selectLocator of requiredSelects) {
-    const filled = await pickFirstNonEmptyOption(selectLocator);
-    test.skip(!filled, "No hay opciones disponibles para un mapeo requerido del wizard.");
-  }
-
-  // Expand OCR section if collapsed
-  const ocrToggle = page.locator(".rw-ocr-toggle");
-  const isExpanded = await ocrToggle.getAttribute("aria-expanded");
-  if (isExpanded !== "true") {
-    await ocrToggle.click();
-    await expect(page.locator(".rw-ocr-panel")).toBeVisible();
-  }
-
-  // OCR fields are now <select> elements — pick the first available option for each
-  const ocrSelects = [
-    page.locator("select[id^='wizard-ocr-ocrNamePath-']").first(),
-    page.locator("select[id^='wizard-ocr-ocrBirthYearPath-']").first(),
-    page.locator("select[id^='wizard-ocr-ocrDocumentTypePath-']").first(),
-    page.locator("select[id^='wizard-ocr-ocrDocumentIssuePath-']").first(),
-  ];
-
-  for (const sel of ocrSelects) {
-    const selCount = await sel.count();
-    if (selCount > 0) {
-      const filled = await pickFirstNonEmptyOption(sel);
-      if (!filled) {
-        // No OCR options available — fill with a placeholder path
-        // This means OCR parsing isn't configured, so tests that depend on it
-        // will have validation errors on OCR fields
-      }
-    }
-  }
-}
-
-async function completeWizardStep2(page: Page, options?: { birthYears?: string; minAverage?: string }) {
-  await page.locator("input[id^='wizard-birth-years-']").first().fill(options?.birthYears ?? "2008, 2009, 2010");
-  await page.locator("input[id^='wizard-min-average-']").first().fill(options?.minAverage ?? "14");
-}
-
-async function activateWizardRubric(page: Page) {
-  await completeWizardStep1(page);
-  await page.getByRole("button", { name: /^Continuar$/i }).click();
-  await completeWizardStep2(page);
-  await page.getByRole("button", { name: /^Continuar$/i }).click();
-  // New wizard shows "Revisar y activar" without "Paso 3:" prefix
-  await expect(page.getByText(/Revisar y activar/i)).toBeVisible();
-  await page.getByRole("button", { name: /Activar rúbrica de esta etapa/i }).click();
-  await expect(page.getByText(/Rúbrica del wizard activada/i)).toBeVisible();
-}
-
-test.describe("Admin rubric wizard flows", () => {
+test.describe("Admin rubric editor flows", () => {
   test.beforeEach(async () => {
     test.skip(
       !bypassReady,
@@ -135,138 +61,214 @@ test.describe("Admin rubric wizard flows", () => {
     );
   });
 
-  test("Flow 1: wizard happy path compiles rubric and allows save", async ({ page }) => {
+  test("Flow 1: template generator populates rubric and allows save", async ({ page }) => {
     await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
 
-    await activateWizardRubric(page);
+    // Expand the template generator
+    const templateSummary = page.locator(".rubric-template-summary");
+    await expect(templateSummary).toBeVisible();
+    await templateSummary.click();
+    await expect(page.locator(".rubric-template-body")).toBeVisible();
 
-    await page.getByRole("button", { name: /Modo avanzado/i }).click();
-    await page.getByRole("button", { name: /JSON avanzado/i }).click();
-    await expect(rubricTextarea(page)).toContainText('"id": "top_third_or_grade_average"');
-    await expect(rubricTextarea(page)).toContainText('"completenessMode": "strict_form_valid"');
-
-    await saveConfig(page);
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
-      timeout: 12_000,
-    });
-  });
-
-  test("Flow 2: wizard blocks progress and save when required mapping is missing", async ({ page }) => {
-    await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
-
-    await completeWizardStep1(page);
-    await page.locator("select[id^='wizard-name-']").first().selectOption("");
-    await page.getByRole("button", { name: /^Continuar$/i }).click();
-
-    // New wizard shows actual error messages inside admin-feedback error, not "Bloqueos del wizard"
-    await expect(page.locator(".admin-feedback.error")).toContainText(/nombre del postulante/i);
-    await expect(page.getByRole("button", { name: /Guardar configuración/i })).toBeDisabled();
-  });
-
-  test("Flow 3: advanced edits mark divergence and can reset back to wizard", async ({ page }) => {
-    await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
-    await activateWizardRubric(page);
-
-    await page.getByRole("button", { name: /Modo avanzado/i }).click();
-    await page.getByRole("button", { name: /JSON avanzado/i }).click();
-
-    const textarea = rubricTextarea(page);
-    const originalValue = await textarea.inputValue();
-    const parsed = JSON.parse(originalValue) as {
-      criteria?: Array<{ label?: string }>;
-    };
-    if (Array.isArray(parsed.criteria) && parsed.criteria.length > 0) {
-      parsed.criteria[0]!.label = `Custom label ${Date.now()}`;
+    // Fill required template selects
+    const templateSelects = [
+      page.locator("select[id^='tpl-name-']").first(),
+      page.locator("select[id^='tpl-average-']").first(),
+      page.locator("select[id^='tpl-authorization-']").first(),
+      page.locator("select[id^='tpl-photo-']").first(),
+    ];
+    for (const sel of templateSelects) {
+      if ((await sel.count()) > 0) {
+        await pickFirstNonEmptyOption(sel);
+      }
     }
-    await textarea.fill(JSON.stringify(parsed, null, 2));
-    await textarea.blur();
 
-    await expect(page.locator(".admin-feedback.warning")).toContainText(/Advanced diverge del wizard/i);
-    await page.getByRole("button", { name: /Restablecer al wizard/i }).click();
-    await expect(page.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).toHaveClass(
-      /btn-primary/,
-    );
-    await expect(page.getByText(/Se restableció la configuración avanzada/i)).toBeVisible();
-  });
+    // Fill policy inputs
+    const birthYearsInput = page.locator("input[id^='tpl-birth-years-']").first();
+    if ((await birthYearsInput.count()) > 0) {
+      await birthYearsInput.fill("2008, 2009, 2010");
+    }
 
-  test("Flow 4: wizard step 2 blocks invalid thresholds", async ({ page }) => {
-    await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
-    await completeWizardStep1(page);
-    await page.getByRole("button", { name: /^Continuar$/i }).click();
+    const minAvgInput = page.locator("input[id^='tpl-average-min-']").first();
+    if ((await minAvgInput.count()) > 0) {
+      await minAvgInput.fill("14");
+    }
 
-    await completeWizardStep2(page, { birthYears: "", minAverage: "25" });
-    await page.getByRole("button", { name: /^Continuar$/i }).click();
+    // Generate rubric from template
+    await page.getByRole("button", { name: /Generar rúbrica desde plantilla/i }).click();
 
-    // Step 2 card should still be visible (didn't advance to step 3)
-    await expect(page.locator("[data-wizard-step='2']")).toBeVisible();
-    // Error banner shows actual validation messages
-    await expect(page.locator(".admin-feedback.error")).toContainText(/nacimiento permitido|promedio mínimo/i);
-  });
+    // Verify criteria appeared in the visual builder
+    await expect(page.locator(".rubric-criterion-card").first()).toBeVisible({ timeout: 5_000 });
 
-  test("Flow 5: reset suggestions repopulates wizard mappings", async ({ page }) => {
-    await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
-    await completeWizardStep1(page);
-
-    // Clear a required field
-    const nameSelect = page.locator("select[id^='wizard-name-']").first();
-    await nameSelect.selectOption("");
-    await expect(nameSelect).toHaveValue("");
-
-    // The "Recargar sugerencias desde campos" button is in the wizard footer on step 1
-    await page.getByRole("button", { name: /Recargar sugerencias desde campos/i }).click();
-    await expect(nameSelect).not.toHaveValue("");
-  });
-
-  test("Flow 6: advanced JSON invalid shows errors and save is blocked", async ({ page }) => {
-    await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo avanzado/i }).click();
-    await page.getByRole("button", { name: /JSON avanzado/i }).click();
-
+    // Switch to JSON mode to verify the generated JSON
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
     const textarea = rubricTextarea(page);
-    await textarea.fill("{\"enabled\": true");
-    await textarea.blur();
+    await expect(textarea).toBeVisible();
+    const jsonText = await textarea.inputValue();
+    const parsed = JSON.parse(jsonText) as { enabled?: boolean; criteria?: unknown[] };
+    expect(parsed.enabled).toBe(true);
+    expect(Array.isArray(parsed.criteria)).toBe(true);
+    expect(parsed.criteria!.length).toBeGreaterThan(0);
 
-    await expect(page.locator(".admin-feedback.error")).toContainText(/Errores de rúbrica/i);
+    // Save and verify
     await saveConfig(page);
-    await expect(page.locator(".admin-feedback.error")).toContainText(/rúbrica automática no es válida|JSON válido/i);
+    await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
+      timeout: 12_000,
+    });
   });
 
-  test("Flow 7: advanced JSON errors prevent switching back to guided mode", async ({ page }) => {
+  test("Flow 2: Visual mode shows criteria and supports collapse/expand", async ({ page }) => {
     await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo avanzado/i }).click();
-    await page.getByRole("button", { name: /JSON avanzado/i }).click();
+
+    // First set a valid rubric via JSON mode
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await rubricTextarea(page).fill(VALID_RUBRIC_JSON);
+    await rubricTextarea(page).blur();
+
+    // Switch to Visual mode
+    await page.getByRole("button", { name: "Visual", exact: true }).click();
+
+    // Verify the criterion card is visible
+    const card = page.locator(".rubric-criterion-card").first();
+    await expect(card).toBeVisible();
+    await expect(card.locator(".rubric-criterion-title")).toContainText("Test field present");
+
+    // Click header to expand the criterion body
+    await card.locator(".rubric-criterion-header").click();
+    await expect(card.locator(".rubric-criterion-body")).toBeVisible();
+
+    // Verify form fields are present
+    await expect(card.locator("select").filter({ hasText: /field_present/ })).toBeVisible();
+
+    // Click header again to collapse
+    await card.locator(".rubric-criterion-header").click();
+    await expect(card.locator(".rubric-criterion-body")).not.toBeVisible();
+  });
+
+  test("Flow 3: add criterion via Visual mode", async ({ page }) => {
+    await openRubricSettings(page);
+
+    // Start with an empty enabled rubric
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await rubricTextarea(page).fill(JSON.stringify({ enabled: true, criteria: [] }, null, 2));
+    await rubricTextarea(page).blur();
+
+    // Switch to Visual mode
+    await page.getByRole("button", { name: "Visual", exact: true }).click();
+
+    // Should show the empty state
+    await expect(page.locator(".rubric-empty-state")).toBeVisible();
+
+    // Select a kind from the dropdown and add a criterion
+    const kindSelect = page.locator("select[id^='rubric-new-criterion-kind-']").first();
+    await expect(kindSelect).toBeVisible();
+    await kindSelect.selectOption("field_present");
+    await page.getByRole("button", { name: /Agregar criterio/i }).click();
+
+    // Verify a new card appeared
+    await expect(page.locator(".rubric-criterion-card")).toHaveCount(1);
+    await expect(page.locator(".rubric-summary")).toContainText("1 criterio");
+  });
+
+  test("Flow 4: delete criterion via Visual mode", async ({ page }) => {
+    await openRubricSettings(page);
+
+    // Set a rubric with one criterion
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await rubricTextarea(page).fill(VALID_RUBRIC_JSON);
+    await rubricTextarea(page).blur();
+
+    // Switch to Visual mode
+    await page.getByRole("button", { name: "Visual", exact: true }).click();
+    await expect(page.locator(".rubric-criterion-card")).toHaveCount(1);
+
+    // Delete the criterion
+    await page.locator(".rubric-btn-delete").first().click();
+    await expect(page.locator(".rubric-criterion-card")).toHaveCount(0);
+    await expect(page.locator(".rubric-empty-state")).toBeVisible();
+  });
+
+  test("Flow 5: JSON mode shows invalid JSON error and blocks save", async ({ page }) => {
+    await openRubricSettings(page);
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
 
     const textarea = rubricTextarea(page);
-    await textarea.fill("{\"enabled\": true");
+    await textarea.fill('{"enabled": true');
     await textarea.blur();
-    await expect(page.locator(".admin-feedback.error")).toContainText(/Errores de rúbrica/i);
 
-    await page.getByRole("button", { name: "Modo guiado", exact: true }).click();
-    await expect(page.getByText(/No puedes volver al modo guiado/i)).toBeVisible();
-    await expect(page.getByRole("button", { name: /JSON avanzado/i })).toHaveClass(/btn-primary/);
+    await expect(page.locator(".admin-feedback.error")).toBeVisible({ timeout: 5_000 });
+
+    await saveConfig(page);
+    // Error feedback should remain or appear about invalid rubric
+    await expect(page.locator(".admin-feedback.error")).toBeVisible({ timeout: 5_000 });
   });
 
-  test("Flow 8: wizard save survives reload and remains active", async ({ page }) => {
+  test("Flow 6: Validate button checks rubric and shows feedback", async ({ page }) => {
     await openRubricSettings(page);
-    await page.getByRole("button", { name: /Modo guiado \(recomendado\)/i }).click();
-    await activateWizardRubric(page);
+
+    // Set a valid rubric first
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await rubricTextarea(page).fill(VALID_RUBRIC_JSON);
+    await rubricTextarea(page).blur();
+
+    // Switch back to Visual mode and click Validate
+    await page.getByRole("button", { name: "Visual", exact: true }).click();
+    await page.getByRole("button", { name: "Validar", exact: true }).click();
+
+    // Should show success feedback (no errors)
+    await expect(page.locator(".admin-feedback.success")).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("Flow 7: mode toggle preserves rubric content between Visual and JSON", async ({
+    page,
+  }) => {
+    await openRubricSettings(page);
+
+    // Set rubric in JSON mode
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await rubricTextarea(page).fill(VALID_RUBRIC_JSON);
+    await rubricTextarea(page).blur();
+
+    // Switch to Visual — should show the criterion
+    await page.getByRole("button", { name: "Visual", exact: true }).click();
+    await expect(page.locator(".rubric-criterion-card")).toHaveCount(1);
+
+    // Switch back to JSON — content should still be there
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    const jsonText = await rubricTextarea(page).inputValue();
+    const parsed = JSON.parse(jsonText) as { criteria?: unknown[] };
+    expect(parsed.criteria).toHaveLength(1);
+  });
+
+  test("Flow 8: rubric save survives page reload", async ({ page }) => {
+    await openRubricSettings(page);
+
+    // Set and save a rubric
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    await rubricTextarea(page).fill(VALID_RUBRIC_JSON);
+    await rubricTextarea(page).blur();
     await saveConfig(page);
     await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
       timeout: 12_000,
     });
 
+    // Reload
     await page.reload();
-    await expect(page.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).toHaveClass(/btn-primary/);
-    // New wizard shows "Mapear evidencia" without "Paso 1:" prefix
-    await expect(page.getByText(/Mapear evidencia/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "JSON", exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+
+    // Verify rubric content survived
+    await page.getByRole("button", { name: "JSON", exact: true }).click();
+    const jsonText = await rubricTextarea(page).inputValue();
+    const parsed = JSON.parse(jsonText) as { criteria?: Array<{ id?: string }> };
+    expect(parsed.criteria).toHaveLength(1);
+    expect(parsed.criteria![0]!.id).toBe("test_field_present");
   });
 
-  test("Flow 9: candidates dashboard requires cycle selection before running rubric", async ({ page }) => {
+  test("Flow 9: candidates dashboard requires cycle selection before running rubric", async ({
+    page,
+  }) => {
     await loginAsAdmin(page);
     await page.goto("/admin/candidates");
     const runButton = page.getByRole("button", { name: /Ejecutar rúbrica automática/i });

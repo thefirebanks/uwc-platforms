@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rúbrica – Criterio-based Builder (Mockup)</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Newsreader:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --font-display: 'Newsreader', serif;
+    --font-body: 'DM Sans', system-ui, sans-serif;
+    --maroon: #9A2545;
+    --maroon-soft: #FAF0F2;
+    --maroon-dark: #7D1E38;
+    --ink: #2C2825;
+    --ink-light: #5A5450;
+    --paper: #FFFBF8;
+    --cream: #FBF7F4;
+    --sand: #EBE6E0;
+    --sand-light: #F3EFEB;
+    --muted: #9A9590;
+    --surface: #FFFFFF;
+    --success: #2D6A4F;
+    --success-soft: #E8F5EE;
+    --warning: #B45309;
+    --warning-soft: #FEF3C7;
+    --danger: #DC2626;
+    --danger-soft: #FEF2F2;
+    --radius: 8px;
+    --radius-lg: 12px;
+    --shadow-sm: 0 1px 2px rgba(44,40,37,0.04);
+    --shadow-md: 0 8px 24px rgba(44,40,37,0.08), 0 2px 6px rgba(44,40,37,0.04);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html {
+    font-size: 15px;
+    line-height: 1.55;
+  }
+
+  body {
+    font-family: var(--font-body);
+    background: var(--paper);
+    color: var(--ink);
+    padding: 40px 24px;
+  }
+
+  .container {
+    max-width: 780px;
+    margin: 0 auto;
+  }
+
+  /* Settings card */
+  .settings-card {
+    background: var(--surface);
+    border: 1px solid var(--sand);
+    border-radius: var(--radius-lg);
+    padding: 28px;
+    margin-bottom: 24px;
+  }
+
+  .settings-card-header {
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--sand-light);
+  }
+
+  .settings-card-header h3 {
+    font-family: var(--font-display);
+    font-size: 1.2rem;
+    font-weight: 500;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+
+  .settings-card-header p {
+    font-size: 0.8rem;
+    color: var(--muted);
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 8px 16px;
+    font-family: var(--font-body);
+    font-size: 0.82rem;
+    font-weight: 500;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.18s ease;
+    border: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .btn-primary {
+    background: var(--maroon);
+    color: white;
+  }
+  .btn-primary:hover {
+    background: var(--maroon-dark);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-outline {
+    background: var(--surface);
+    border: 1px solid var(--sand);
+    color: var(--ink);
+  }
+  .btn-outline:hover {
+    background: var(--sand-light);
+    transform: translateY(-1px);
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--ink-light);
+    border: none;
+  }
+  .btn-ghost:hover {
+    background: var(--cream);
+    color: var(--ink);
+  }
+
+  .btn-sm {
+    padding: 6px 10px;
+    font-size: 0.75rem;
+  }
+
+  .btn-icon {
+    padding: 6px;
+    color: var(--muted);
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .btn-icon:hover {
+    background: var(--cream);
+    color: var(--ink);
+  }
+  .btn-icon.danger:hover {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+
+  /* Criterion card */
+  .criterion-card {
+    border: 1px solid var(--sand);
+    border-radius: var(--radius-lg);
+    background: color-mix(in srgb, var(--surface) 95%, var(--paper));
+    padding: 20px;
+    margin-bottom: 12px;
+    animation: criterionIn 180ms ease-out;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .criterion-card:hover {
+    border-color: color-mix(in srgb, var(--sand) 70%, var(--maroon));
+  }
+  .criterion-card.is-disabled {
+    opacity: 0.55;
+  }
+
+  @keyframes criterionIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .criterion-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .criterion-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .criterion-drag-handle {
+    color: var(--muted);
+    cursor: grab;
+    flex-shrink: 0;
+    padding: 2px;
+  }
+
+  .criterion-toggle {
+    position: relative;
+    width: 36px;
+    height: 20px;
+    flex-shrink: 0;
+  }
+  .criterion-toggle input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+    position: absolute;
+  }
+  .criterion-toggle .slider {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--sand);
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+  }
+  .criterion-toggle .slider::before {
+    content: '';
+    position: absolute;
+    height: 16px; width: 16px;
+    left: 2px; bottom: 2px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.2s ease;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+  }
+  .criterion-toggle input:checked + .slider {
+    background: var(--maroon);
+  }
+  .criterion-toggle input:checked + .slider::before {
+    transform: translateX(16px);
+  }
+
+  .criterion-title {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--ink);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .criterion-title .criterion-kind {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--muted);
+    background: var(--sand-light);
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  .criterion-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  /* Criterion body (config) */
+  .criterion-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px 20px;
+    padding-top: 12px;
+    border-top: 1px solid var(--sand-light);
+  }
+
+  .criterion-body .full {
+    grid-column: 1 / -1;
+  }
+
+  /* Form fields */
+  .form-field {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .form-field label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ink);
+    margin-bottom: 5px;
+  }
+
+  .form-field select,
+  .form-field input[type="text"],
+  .form-field input[type="number"] {
+    width: 100%;
+    padding: 9px 12px;
+    font-family: var(--font-body);
+    font-size: 0.84rem;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1.5px solid var(--sand);
+    border-radius: var(--radius);
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .form-field select:focus,
+  .form-field input:focus {
+    border-color: var(--maroon);
+    box-shadow: 0 0 0 3px rgba(154,37,69,0.08);
+  }
+
+  .form-hint {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 3px;
+  }
+
+  /* Outcome badge */
+  .outcome-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .outcome-badge.needs-review {
+    background: var(--warning-soft);
+    color: var(--warning);
+  }
+  .outcome-badge.not-eligible {
+    background: var(--danger-soft);
+    color: var(--danger);
+  }
+  .outcome-badge.eligible {
+    background: var(--success-soft);
+    color: var(--success);
+  }
+
+  /* Add criterion */
+  .add-criterion-area {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    border: 1.5px dashed var(--sand);
+    border-radius: var(--radius-lg);
+    margin-top: 8px;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+    cursor: pointer;
+  }
+  .add-criterion-area:hover {
+    border-color: var(--maroon);
+    background: var(--maroon-soft);
+  }
+  .add-criterion-area span {
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--muted);
+    transition: color 0.15s ease;
+  }
+  .add-criterion-area:hover span {
+    color: var(--maroon);
+  }
+
+  /* Inline tag list for allowed values */
+  .tag-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .tag-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    background: var(--cream);
+    border: 1px solid var(--sand);
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--ink-light);
+  }
+  .tag-item .tag-remove {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 0.8rem;
+    line-height: 1;
+  }
+  .tag-item .tag-remove:hover {
+    color: var(--danger);
+  }
+
+  /* Summary / feedback */
+  .admin-feedback {
+    border-radius: var(--radius);
+    border: 1px solid var(--sand);
+    padding: 12px 14px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 16px;
+  }
+  .admin-feedback.success {
+    background: var(--success-soft);
+    border-color: rgba(45, 106, 79, 0.28);
+    color: var(--success);
+  }
+  .admin-feedback.warning {
+    background: color-mix(in srgb, #f59e0b 12%, #fff);
+    border-color: color-mix(in srgb, #f59e0b 38%, var(--sand));
+    color: color-mix(in srgb, #7c2d12 90%, var(--ink));
+  }
+
+  /* Collapsed criterion */
+  .criterion-card.is-collapsed .criterion-body {
+    display: none;
+  }
+  .criterion-card.is-collapsed .criterion-header {
+    margin-bottom: 0;
+  }
+
+  /* Outcome config row */
+  .outcome-config {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .outcome-config label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ink);
+    white-space: nowrap;
+  }
+  .outcome-config select {
+    padding: 6px 10px;
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1.5px solid var(--sand);
+    border-radius: var(--radius);
+    outline: none;
+  }
+
+  /* Chevron for collapse */
+  .chevron {
+    display: inline-block;
+    transition: transform 0.2s ease;
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .chevron.is-open {
+    transform: rotate(90deg);
+  }
+
+  /* Section divider label */
+  .section-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    margin-bottom: 10px;
+    margin-top: 6px;
+  }
+
+  /* Template selector */
+  .template-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding: 10px 14px;
+    background: var(--cream);
+    border-radius: var(--radius);
+    border: 1px solid var(--sand-light);
+  }
+  .template-bar label {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--ink-light);
+    white-space: nowrap;
+  }
+  .template-bar select {
+    flex: 1;
+    padding: 6px 10px;
+    font-family: var(--font-body);
+    font-size: 0.8rem;
+    border: 1px solid var(--sand);
+    border-radius: var(--radius);
+    background: var(--surface);
+    color: var(--ink);
+    outline: none;
+  }
+
+  /* Summary stats */
+  .rubric-summary {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--sand-light);
+  }
+  .rubric-summary-stat {
+    font-size: 0.78rem;
+    color: var(--ink-light);
+  }
+  .rubric-summary-stat strong {
+    color: var(--ink);
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ============================================= -->
+  <!-- SETTINGS CARD: Rubrica de Elegibilidad         -->
+  <!-- ============================================= -->
+  <div class="settings-card">
+
+    <div class="settings-card-header">
+      <h3>Rúbrica de Elegibilidad Automática</h3>
+      <p>Define criterios para clasificar postulaciones como <strong>eligible</strong>,
+         <strong>not_eligible</strong> o <strong>needs_review</strong>.</p>
+    </div>
+
+    <!-- Template selector -->
+    <div class="template-bar">
+      <label>Plantilla:</label>
+      <select>
+        <option>UWC Perú — Etapa 1 (Documentos)</option>
+        <option>Verificación genérica de documentos</option>
+        <option>Personalizada (vacía)</option>
+      </select>
+      <button class="btn btn-outline btn-sm">Aplicar</button>
+    </div>
+
+    <!-- ========== CRITERIA LIST ========== -->
+
+    <div class="section-label">Documentos de identidad</div>
+
+    <!-- Criterion 1: Document uploaded -->
+    <div class="criterion-card">
+      <div class="criterion-header">
+        <div class="criterion-header-left">
+          <svg class="criterion-drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <label class="criterion-toggle">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="criterion-title">
+            Documento de identidad subido
+            <span class="criterion-kind">Archivo requerido</span>
+          </span>
+        </div>
+        <div class="criterion-actions">
+          <span class="outcome-badge not-eligible">not_eligible</span>
+          <button class="btn-icon" title="Expandir"><span class="chevron is-open">&#9658;</span></button>
+          <button class="btn-icon danger" title="Eliminar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="criterion-body">
+        <div class="form-field">
+          <label>Campo de archivo</label>
+          <select>
+            <option>Documento – Copia de DNI</option>
+            <option>Documento – Copia de Pasaporte</option>
+            <option>Documento – Carnet de Extranjería</option>
+          </select>
+          <span class="form-hint">Se acepta cualquiera de los documentos seleccionados</span>
+        </div>
+        <div class="form-field">
+          <label>Si no se sube</label>
+          <select>
+            <option>not_eligible</option>
+            <option>needs_review</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Criterion 2: Name match (OCR) -->
+    <div class="criterion-card">
+      <div class="criterion-header">
+        <div class="criterion-header-left">
+          <svg class="criterion-drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <label class="criterion-toggle">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="criterion-title">
+            Nombre coincide con documento
+            <span class="criterion-kind">Verificación OCR</span>
+          </span>
+        </div>
+        <div class="criterion-actions">
+          <span class="outcome-badge needs-review">needs_review</span>
+          <button class="btn-icon" title="Expandir"><span class="chevron is-open">&#9658;</span></button>
+          <button class="btn-icon danger" title="Eliminar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="criterion-body">
+        <div class="form-field">
+          <label>Campo del formulario (nombre)</label>
+          <select>
+            <option>Información personal – Nombre(s)</option>
+            <option>Información personal – Apellidos</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Campo OCR (nombre extraído)</label>
+          <select>
+            <option>nombres</option>
+            <option>apellidos</option>
+            <option>fechaDeNacimiento</option>
+          </select>
+          <span class="form-hint">El campo que el parsing de IA extrae del documento</span>
+        </div>
+        <div class="form-field">
+          <label>Si no coincide</label>
+          <select>
+            <option>needs_review</option>
+            <option>not_eligible</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Criterion 3: Birth year range (OCR) -->
+    <div class="criterion-card">
+      <div class="criterion-header">
+        <div class="criterion-header-left">
+          <svg class="criterion-drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <label class="criterion-toggle">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="criterion-title">
+            Año de nacimiento en rango
+            <span class="criterion-kind">Verificación OCR</span>
+          </span>
+        </div>
+        <div class="criterion-actions">
+          <span class="outcome-badge not-eligible">not_eligible</span>
+          <button class="btn-icon" title="Expandir"><span class="chevron is-open">&#9658;</span></button>
+          <button class="btn-icon danger" title="Eliminar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="criterion-body">
+        <div class="form-field">
+          <label>Campo OCR (año de nacimiento)</label>
+          <select>
+            <option>fechaDeNacimiento</option>
+            <option>nombres</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Año mínimo</label>
+          <input type="number" value="2007" />
+        </div>
+        <div class="form-field">
+          <label>Año máximo</label>
+          <input type="number" value="2012" />
+        </div>
+        <div class="form-field">
+          <label>Si está fuera del rango</label>
+          <select>
+            <option>not_eligible</option>
+            <option>needs_review</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Criterion 4: Document type (OCR) — collapsed example -->
+    <div class="criterion-card is-collapsed">
+      <div class="criterion-header">
+        <div class="criterion-header-left">
+          <svg class="criterion-drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <label class="criterion-toggle">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="criterion-title">
+            Tipo de documento permitido
+            <span class="criterion-kind">Verificación OCR</span>
+          </span>
+        </div>
+        <div class="criterion-actions">
+          <span class="outcome-badge needs-review">needs_review</span>
+          <button class="btn-icon" title="Expandir"><span class="chevron">&#9658;</span></button>
+          <button class="btn-icon danger" title="Eliminar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="criterion-body">
+        <!-- hidden when collapsed -->
+      </div>
+    </div>
+
+    <div class="section-label" style="margin-top: 20px">Documentos académicos</div>
+
+    <!-- Criterion 5: Grades document uploaded -->
+    <div class="criterion-card">
+      <div class="criterion-header">
+        <div class="criterion-header-left">
+          <svg class="criterion-drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <label class="criterion-toggle">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="criterion-title">
+            Certificado de notas subido
+            <span class="criterion-kind">Archivo requerido</span>
+          </span>
+        </div>
+        <div class="criterion-actions">
+          <span class="outcome-badge not-eligible">not_eligible</span>
+          <button class="btn-icon" title="Expandir"><span class="chevron is-open">&#9658;</span></button>
+          <button class="btn-icon danger" title="Eliminar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="criterion-body">
+        <div class="form-field">
+          <label>Campo de archivo</label>
+          <select>
+            <option>Documento – Certificado Oficial de Estudios</option>
+            <option>Documento – Constancia / Libretas</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Si no se sube</label>
+          <select>
+            <option>not_eligible</option>
+            <option>needs_review</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Criterion 6: GPA threshold -->
+    <div class="criterion-card">
+      <div class="criterion-header">
+        <div class="criterion-header-left">
+          <svg class="criterion-drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <label class="criterion-toggle">
+            <input type="checkbox" checked>
+            <span class="slider"></span>
+          </label>
+          <span class="criterion-title">
+            Promedio mínimo de notas
+            <span class="criterion-kind">Umbral numérico</span>
+          </span>
+        </div>
+        <div class="criterion-actions">
+          <span class="outcome-badge not-eligible">not_eligible</span>
+          <button class="btn-icon" title="Expandir"><span class="chevron is-open">&#9658;</span></button>
+          <button class="btn-icon danger" title="Eliminar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="criterion-body">
+        <div class="form-field">
+          <label>Campo numérico (promedio)</label>
+          <select>
+            <option>Promedio (0-20)</option>
+            <option>Nota final</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label>Promedio mínimo</label>
+          <input type="number" value="14" step="0.5" />
+        </div>
+        <div class="form-field">
+          <label>Si está por debajo</label>
+          <select>
+            <option>not_eligible</option>
+            <option>needs_review</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label" style="margin-top: 20px">Otros requisitos</div>
+
+    <!-- Criterion 7: Authorization uploaded — disabled -->
+    <div class="criterion-card is-disabled is-collapsed">
+      <div class="criterion-header">
+        <div class="criterion-header-left">
+          <svg class="criterion-drag-handle" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <label class="criterion-toggle">
+            <input type="checkbox">
+            <span class="slider"></span>
+          </label>
+          <span class="criterion-title">
+            Autorización firmada subida
+            <span class="criterion-kind">Archivo requerido</span>
+          </span>
+        </div>
+        <div class="criterion-actions">
+          <span class="outcome-badge needs-review" style="opacity: 0.5">needs_review</span>
+          <button class="btn-icon" title="Expandir"><span class="chevron">&#9658;</span></button>
+          <button class="btn-icon danger" title="Eliminar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="criterion-body"></div>
+    </div>
+
+    <!-- Add criterion button -->
+    <div class="add-criterion-area" onclick="this.querySelector('.add-menu').style.display = this.querySelector('.add-menu').style.display === 'block' ? 'none' : 'block'">
+      <span>+ Añadir criterio</span>
+      <div class="add-menu" style="display:none; position:absolute; margin-top: 180px; background: var(--surface); border: 1px solid var(--sand); border-radius: var(--radius); padding: 6px 0; box-shadow: var(--shadow-md); z-index: 10; min-width: 240px;">
+        <div style="padding: 8px 14px; font-size: 0.8rem; cursor: pointer; transition: background 0.1s;" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='transparent'">
+          <strong>Archivo requerido</strong><br>
+          <span style="color: var(--muted); font-size: 0.72rem;">Verificar que se subió un documento</span>
+        </div>
+        <div style="padding: 8px 14px; font-size: 0.8rem; cursor: pointer; transition: background 0.1s;" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='transparent'">
+          <strong>Verificación OCR</strong><br>
+          <span style="color: var(--muted); font-size: 0.72rem;">Comparar datos extraídos del documento</span>
+        </div>
+        <div style="padding: 8px 14px; font-size: 0.8rem; cursor: pointer; transition: background 0.1s;" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='transparent'">
+          <strong>Umbral numérico</strong><br>
+          <span style="color: var(--muted); font-size: 0.72rem;">Verificar que un valor supera un mínimo</span>
+        </div>
+        <div style="padding: 8px 14px; font-size: 0.8rem; cursor: pointer; transition: background 0.1s;" onmouseover="this.style.background='var(--cream)'" onmouseout="this.style.background='transparent'">
+          <strong>Valor permitido</strong><br>
+          <span style="color: var(--muted); font-size: 0.72rem;">Verificar que un campo contiene un valor válido</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="rubric-summary">
+      <span class="rubric-summary-stat"><strong>7</strong> criterios totales</span>
+      <span class="rubric-summary-stat"><strong>6</strong> activos</span>
+      <span class="rubric-summary-stat"><strong>1</strong> desactivado</span>
+    </div>
+
+  </div>
+  <!-- /settings-card -->
+
+</div>
+</body>
+</html>

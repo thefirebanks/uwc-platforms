@@ -16,6 +16,11 @@ import {
   normalizeExpectedOutputFields,
   parseExpectedOutputFieldsFromSchemaTemplate,
 } from "@/lib/ocr/expected-output-schema";
+import {
+  fieldAiParserSchema,
+  inferMimeTypeFromPath,
+  type ResolvedFieldAiParserConfig,
+} from "@/lib/ocr/field-ai-parser";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/supabase";
@@ -38,32 +43,7 @@ const adminSchema = z.object({
   reason: z.string().min(4).max(300),
 });
 
-const fieldAiParserSchema = z
-  .object({
-    enabled: z.boolean().optional().default(false),
-    modelId: z.string().trim().min(1).max(120).nullable().optional(),
-    promptTemplate: z.string().trim().max(5000).nullable().optional(),
-    systemPrompt: z.string().trim().max(2000).nullable().optional(),
-    extractionInstructions: z.string().trim().max(6000).nullable().optional(),
-    expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
-    expectedOutputFields: z
-      .array(
-        z.object({
-          key: z.string().trim().min(1).max(120),
-          type: z.enum(["text", "number", "decimal", "date", "boolean"]),
-        }),
-      )
-      .max(40)
-      .optional(),
-    strictSchema: z.boolean().optional().default(true),
-  })
-  .strict();
 
-type ResolvedFieldAiParserConfig = z.infer<typeof fieldAiParserSchema> & {
-  extractionInstructions: string;
-  expectedSchemaTemplate: string;
-  expectedOutputFields: Array<{ key: string; type: "text" | "number" | "decimal" | "date" | "boolean" }>;
-};
 
 function isAiParserEnabled(value: unknown) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -106,15 +86,6 @@ function parseFieldAiParserConfigOrNull(value: unknown): ResolvedFieldAiParserCo
     expectedSchemaTemplate: resolvedExpectedSchemaTemplate,
     expectedOutputFields: resolvedExpectedOutputFields,
   };
-}
-
-function inferMimeTypeFromPath(path: string) {
-  const normalized = path.toLowerCase();
-  if (normalized.endsWith(".pdf")) return "application/pdf";
-  if (normalized.endsWith(".png")) return "image/png";
-  if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) return "image/jpeg";
-  if (normalized.endsWith(".webp")) return "image/webp";
-  return "application/octet-stream";
 }
 
 async function buildSignedDownloadUrl(path: string) {

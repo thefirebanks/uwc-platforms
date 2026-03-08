@@ -19,32 +19,12 @@ import {
   normalizeExpectedOutputFields,
   parseExpectedOutputFieldsFromSchemaTemplate,
 } from "@/lib/ocr/expected-output-schema";
+import { fieldAiParserSchema } from "@/lib/ocr/field-ai-parser";
 import type { Database, Json } from "@/types/supabase";
 
 type StageFieldRow = Database["public"]["Tables"]["cycle_stage_fields"]["Row"];
 type StageAutomationRow = Database["public"]["Tables"]["stage_automation_templates"]["Row"];
 type StageTemplateRow = Database["public"]["Tables"]["cycle_stage_templates"]["Row"];
-
-const aiParserSchema = z
-  .object({
-    enabled: z.boolean().optional().default(false),
-    modelId: z.string().trim().min(1).max(120).nullable().optional(),
-    promptTemplate: z.string().trim().max(5000).nullable().optional(),
-    systemPrompt: z.string().trim().max(2000).nullable().optional(),
-    extractionInstructions: z.string().trim().max(6000).nullable().optional(),
-    expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
-    expectedOutputFields: z
-      .array(
-        z.object({
-          key: z.string().trim().min(1).max(120),
-          type: z.enum(["text", "number", "decimal", "date", "boolean"]),
-        }),
-      )
-      .max(40)
-      .optional(),
-    strictSchema: z.boolean().optional().default(true),
-  })
-  .strict();
 
 const fieldSchema = z.object({
   id: z.string().uuid().optional(),
@@ -58,7 +38,7 @@ const fieldSchema = z.object({
   sortOrder: z.number().int().min(1).max(200),
   isActive: z.boolean().optional().default(true),
   sectionKey: z.string().min(1).max(120).nullable().optional(),
-  aiParser: aiParserSchema.nullable().optional(),
+  aiParser: fieldAiParserSchema.nullable().optional(),
 });
 
 const automationSchema = z.object({
@@ -208,7 +188,7 @@ function normalizeAiParserConfig({
   fieldLabel,
 }: {
   fieldType: z.infer<typeof fieldSchema>["fieldType"];
-  aiParser: z.infer<typeof aiParserSchema> | null | undefined;
+  aiParser: z.infer<typeof fieldAiParserSchema> | null | undefined;
   fieldLabel: string;
 }): Json | null {
   if (!aiParser || !aiParser.enabled) {

@@ -176,9 +176,9 @@ async function submitApplicationForApplicant({
 async function configureTestRubric(page: Page) {
   await loginAsAdmin(page);
   await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=settings`);
-  await expect(page.getByRole("button", { name: /Modo avanzado/i })).toBeVisible({ timeout: 20000 });
-  await page.getByRole("button", { name: /Modo avanzado/i }).click();
-  await page.getByRole("button", { name: /JSON avanzado/i }).click();
+  // Wait for the rubric toolbar to load — mode buttons are "Visual" and "JSON"
+  await expect(page.getByRole("button", { name: "JSON", exact: true })).toBeVisible({ timeout: 20000 });
+  await page.getByRole("button", { name: "JSON", exact: true }).click();
   const textarea = page.locator("textarea[id^='eligibility-rubric-']").first();
   await expect(textarea).toBeVisible({ timeout: 10000 });
   await textarea.fill(TEST_RUBRIC_JSON);

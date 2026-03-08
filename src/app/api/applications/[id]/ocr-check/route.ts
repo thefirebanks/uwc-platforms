@@ -11,6 +11,11 @@ import {
   normalizeExpectedOutputFields,
   parseExpectedOutputFieldsFromSchemaTemplate,
 } from "@/lib/ocr/expected-output-schema";
+import {
+  fieldAiParserSchema,
+  inferMimeTypeFromPath,
+  type ResolvedFieldAiParserConfig,
+} from "@/lib/ocr/field-ai-parser";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import type { Database, Json } from "@/types/supabase";
 
@@ -21,34 +26,6 @@ const schema = z.object({
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(30).default(10),
 });
-
-const fieldAiParserSchema = z
-  .object({
-    enabled: z.boolean().optional().default(false),
-    modelId: z.string().trim().min(1).max(120).nullable().optional(),
-    promptTemplate: z.string().trim().max(5000).nullable().optional(),
-    systemPrompt: z.string().trim().max(2000).nullable().optional(),
-    extractionInstructions: z.string().trim().max(6000).nullable().optional(),
-    expectedSchemaTemplate: z.string().trim().max(8000).nullable().optional(),
-    expectedOutputFields: z
-      .array(
-        z.object({
-          key: z.string().trim().min(1).max(120),
-          type: z.enum(["text", "number", "decimal", "date", "boolean"]),
-        }),
-      )
-      .max(40)
-      .optional(),
-    strictSchema: z.boolean().optional().default(true),
-  })
-  .strict();
-
-type FieldAiParserConfig = z.infer<typeof fieldAiParserSchema>;
-type ResolvedFieldAiParserConfig = FieldAiParserConfig & {
-  extractionInstructions: string;
-  expectedSchemaTemplate: string;
-  expectedOutputFields: Array<{ key: string; type: "text" | "number" | "decimal" | "date" | "boolean" }>;
-};
 
 function resolveFilePath(value: unknown) {
   if (typeof value === "string") {
@@ -64,15 +41,6 @@ function resolveFilePath(value: unknown) {
   }
 
   return null;
-}
-
-function inferMimeTypeFromPath(path: string) {
-  const normalized = path.toLowerCase();
-  if (normalized.endsWith(".pdf")) return "application/pdf";
-  if (normalized.endsWith(".png")) return "image/png";
-  if (normalized.endsWith(".jpg") || normalized.endsWith(".jpeg")) return "image/jpeg";
-  if (normalized.endsWith(".webp")) return "image/webp";
-  return "application/octet-stream";
 }
 
 function parseFieldAiParserConfigOrNull(value: unknown): ResolvedFieldAiParserConfig | null {
