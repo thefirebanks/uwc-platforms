@@ -122,49 +122,6 @@ a {
   margin-bottom: 4px;
 }
 
-.page-header {
-  margin-bottom: 8px;
-}
-
-.page-header h1,
-.page-header h2,
-.page-header h3 {
-  font-size: clamp(2rem, 4.2vw, 3.1rem);
-  line-height: 1.15;
-  letter-spacing: -0.02em;
-}
-
-.progress-section {
-  padding: clamp(18px, 2.8vw, 28px) clamp(16px, 3.2vw, 32px);
-  background: var(--cream);
-  border-left: 2px solid var(--uwc-maroon);
-  border-radius: var(--radius);
-}
-
-.card-actions {
-  display: flex;
-  gap: 12px;
-  justify-content: flex-end;
-  padding: 22px 28px;
-  background: var(--cream);
-  border-top: 1px solid var(--sand);
-  border-radius: 0 0 var(--radius) var(--radius);
-}
-
-.action-link {
-  color: var(--uwc-maroon);
-  font-weight: 500;
-  text-decoration: underline;
-  text-decoration-color: rgba(154, 37, 69, 0.3);
-  text-underline-offset: 3px;
-  transition: text-decoration-color 0.15s;
-}
-
-.action-link:hover {
-  text-decoration-color: var(--uwc-maroon);
-}
-
-
 /* ─── Mockup Shared Classes ─── */
 /* ─── Topbar ─── */
 .topbar {
@@ -721,12 +678,6 @@ a {
 input:checked + .slider { background-color: var(--maroon); }
 input:checked + .slider:before { transform: translateX(18px); }
 
-/* Options List Editor */
-.options-list { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-.option-item { display: flex; align-items: center; gap: 8px; }
-.option-item input { flex: 1; }
-.add-option { font-size: 0.75rem; color: var(--maroon); background: none; border: none; cursor: pointer; text-align: left; padding: 4px 0; font-weight: 500; display: inline-block; width: fit-content; margin-top: 4px; }
-.add-option:hover { text-decoration: underline; }
 
 .add-field-btn {
   width: 100%; padding: 16px; border: 1.5px dashed var(--sand); border-radius: var(--radius); background: var(--surface);
@@ -1447,9 +1398,7 @@ input:checked + .slider:before { transform: translateX(18px); }
 .comm-card:hover { border-color: var(--maroon); }
 .comm-icon { width: 40px; height: 40px; border-radius: 8px; background: var(--maroon-soft); color: var(--maroon); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .comm-content { flex: 1; }
-.comm-trigger { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 6px; }
-.comm-title { font-size: 1rem; font-weight: 500; color: var(--ink); margin-bottom: 4px; }
-.comm-subject { font-size: 0.85rem; color: var(--ink-light); margin-bottom: 12px; padding: 8px 12px; background: var(--paper); border: 1px solid var(--sand-light); border-radius: 6px; display: inline-block; }
+
 .comm-actions { display: flex; gap: 8px; }
 
 /* ─── Statistics Funnel ─── */
@@ -1528,7 +1477,7 @@ input:checked + .slider:before { transform: translateX(18px); }
   .ocr-testbed__form,
   .ocr-testbed__history,
   .ocr-testbed__result,
-  .rubric-wizard-card {
+  .rubric-criterion-card {
     animation: none !important;
   }
 
@@ -1538,8 +1487,7 @@ input:checked + .slider:before { transform: translateX(18px); }
   .field-card,
   .admin-candidate-row td,
   .sidebar,
-  .main,
-  .rubric-wizard-progress-track > span {
+  .main {
     transition: none !important;
   }
 
@@ -2560,497 +2508,8 @@ input:checked + .slider:before { transform: translateX(18px); }
   margin-bottom: 12px;
 }
 
-.rubric-authoring-note {
-  margin-bottom: 12px;
-}
 
-.rubric-wizard-shell {
-  gap: 14px;
-}
 
-.rubric-wizard-progress-shell {
-  border: 1px solid var(--sand);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 88%, var(--paper));
-  padding: 12px;
-}
-
-.rubric-wizard-progress-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.74rem;
-  color: var(--muted);
-  margin-bottom: 8px;
-}
-
-.rubric-wizard-progress-track {
-  width: 100%;
-  height: 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--sand-light) 60%, var(--paper));
-  overflow: hidden;
-  margin-bottom: 10px;
-}
-
-.rubric-wizard-progress-track > span {
-  display: block;
-  height: 100%;
-  border-radius: 999px;
-  background: linear-gradient(90deg, var(--maroon) 0%, var(--maroon-dark) 100%);
-  transition: width 220ms ease;
-}
-
-.rubric-wizard-steps {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.rubric-wizard-step {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 0.74rem;
-  color: var(--muted);
-  border: 1px solid var(--sand-light);
-  border-radius: 999px;
-  min-height: 34px;
-  padding: 0 10px;
-  background: var(--surface);
-}
-
-.rubric-wizard-step strong {
-  width: 18px;
-  height: 18px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  color: var(--muted);
-  background: var(--paper);
-  border: 1px solid var(--sand);
-}
-
-.rubric-wizard-step.is-active {
-  color: var(--maroon);
-  border-color: color-mix(in srgb, var(--maroon) 35%, var(--sand));
-  background: color-mix(in srgb, var(--maroon-soft) 60%, var(--surface));
-}
-
-.rubric-wizard-step.is-active strong {
-  color: #fff;
-  border-color: var(--maroon);
-  background: var(--maroon);
-}
-
-.rubric-wizard-card {
-  border: 1px solid var(--maroon-soft);
-  animation: rubricCardIn 180ms ease-out;
-}
-
-.rubric-policy-flow {
-  display: grid;
-  gap: 12px;
-}
-
-.rubric-policy-section {
-  border: 1px solid var(--sand);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 92%, var(--paper));
-  padding: 12px;
-  display: grid;
-  gap: 10px;
-}
-
-.rubric-policy-section-header h4 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.rubric-policy-section-header .form-hint {
-  margin-top: 2px;
-}
-
-.rubric-policy-control {
-  display: grid;
-  gap: 6px;
-}
-
-.rubric-policy-control--boxed {
-  border: 1px solid var(--sand-light);
-  border-radius: 10px;
-  padding: 10px;
-  background: color-mix(in srgb, var(--paper) 55%, var(--surface));
-}
-
-.rubric-number-stepper {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 6px;
-}
-
-.rubric-number-stepper .btn {
-  width: 36px;
-  min-width: 36px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0;
-  justify-content: center;
-}
-
-.rubric-number-stepper-input {
-  width: 78px;
-  min-width: 78px;
-  text-align: center;
-}
-
-.rubric-number-stepper input[type="number"] {
-  text-align: center;
-}
-
-.rubric-required-badge {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 6px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.66rem;
-  letter-spacing: 0.02em;
-  color: var(--maroon);
-  border: 1px solid color-mix(in srgb, var(--maroon) 28%, var(--sand));
-  background: color-mix(in srgb, var(--maroon-soft) 68%, var(--surface));
-}
-
-.rubric-choice-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.rubric-choice-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 34px;
-  padding: 0 10px;
-  border-radius: 999px;
-  border: 1px solid var(--sand);
-  background: var(--paper);
-  color: var(--ink);
-  font-size: 0.8rem;
-}
-
-.rubric-choice-pill:has(input:checked) {
-  border-color: color-mix(in srgb, var(--maroon) 35%, var(--sand));
-  background: color-mix(in srgb, var(--maroon-soft) 62%, var(--surface));
-}
-
-.rubric-summary-list {
-  display: grid;
-  gap: 6px;
-}
-
-.rubric-ocr-mapping-shell {
-  border: 1px solid var(--sand);
-  border-radius: var(--radius);
-  padding: 12px;
-  display: grid;
-  gap: 12px;
-  background: color-mix(in srgb, var(--surface) 92%, var(--paper));
-}
-
-.rubric-ocr-mapping-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.rubric-ocr-mapping-header h4 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.rubric-ocr-mapping-header .form-hint {
-  margin-top: 2px;
-}
-
-.rubric-ocr-source-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px dashed var(--sand);
-  color: var(--ink-light);
-  font-size: 0.85rem;
-}
-
-.rubric-ocr-source-strip strong {
-  color: var(--ink);
-}
-
-.rubric-ocr-mapping-table {
-  display: grid;
-  gap: 10px;
-}
-
-.rubric-ocr-mapping-row {
-  border: 1px solid var(--sand-light);
-  border-radius: 10px;
-  padding: 10px;
-  display: grid;
-  gap: 6px;
-  background: color-mix(in srgb, var(--paper) 60%, var(--surface));
-}
-
-.rubric-ocr-mapping-row-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.rubric-ocr-kind-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  letter-spacing: 0.01em;
-  border: 1px solid var(--sand);
-  color: var(--ink-light);
-  background: color-mix(in srgb, var(--paper) 78%, var(--surface));
-}
-
-.rubric-ocr-kind-chip.is-business {
-  border-color: color-mix(in srgb, var(--success) 28%, var(--sand));
-  color: color-mix(in srgb, var(--success) 75%, var(--ink-light));
-  background: color-mix(in srgb, var(--success-soft) 72%, var(--surface));
-}
-
-.rubric-ocr-kind-chip.is-technical {
-  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
-  color: color-mix(in srgb, var(--warning) 85%, var(--ink-light));
-  background: color-mix(in srgb, var(--warning-soft) 74%, var(--surface));
-}
-
-.rubric-ocr-mapping-row-meta {
-  display: grid;
-  gap: 4px;
-}
-
-.rubric-inline-warning {
-  font-size: 0.76rem;
-  color: color-mix(in srgb, var(--warning) 86%, var(--ink-light));
-}
-
-.rubric-ocr-available-pill.is-business {
-  border-color: color-mix(in srgb, var(--success) 28%, var(--sand));
-}
-
-.rubric-ocr-available-pill.is-technical {
-  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
-}
-
-.rubric-ocr-available-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.rubric-checklist-shell {
-  display: grid;
-  gap: 10px;
-}
-
-.rubric-checklist-shell h4 {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.rubric-checklist-list {
-  display: grid;
-  gap: 10px;
-}
-
-.rubric-checklist-item {
-  border: 1px solid var(--sand);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--surface) 95%, var(--paper));
-  overflow: hidden;
-}
-
-.rubric-checklist-item.is-missing {
-  border-color: color-mix(in srgb, var(--danger) 36%, var(--sand));
-}
-
-.rubric-checklist-item.is-review {
-  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
-}
-
-.rubric-checklist-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px;
-}
-
-.rubric-checklist-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.rubric-checklist-top {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.rubric-checklist-label {
-  font-weight: 700;
-  color: var(--ink);
-  white-space: nowrap;
-}
-
-.rubric-checklist-status {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  border: 1px solid var(--sand);
-  color: var(--ink-light);
-  background: color-mix(in srgb, var(--paper) 78%, var(--surface));
-}
-
-.rubric-checklist-status.is-ok {
-  border-color: color-mix(in srgb, var(--success) 32%, var(--sand));
-  color: color-mix(in srgb, var(--success) 75%, var(--ink-light));
-  background: color-mix(in srgb, var(--success-soft) 75%, var(--surface));
-}
-
-.rubric-checklist-status.is-missing {
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--sand));
-  color: color-mix(in srgb, var(--danger) 84%, var(--ink-light));
-  background: color-mix(in srgb, var(--danger-soft) 80%, var(--surface));
-}
-
-.rubric-checklist-status.is-review {
-  border-color: color-mix(in srgb, var(--warning) 34%, var(--sand));
-  color: color-mix(in srgb, var(--warning) 84%, var(--ink-light));
-  background: color-mix(in srgb, var(--warning-soft) 80%, var(--surface));
-}
-
-.rubric-checklist-copy p {
-  margin: 0;
-  color: var(--ink-light);
-  font-size: 0.84rem;
-}
-
-.rubric-checklist-detail {
-  border-top: 1px dashed var(--sand-light);
-  padding: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.rubric-detail-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-.rubric-detail-table {
-  display: grid;
-  gap: 0;
-}
-
-.rubric-detail-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 8px 0;
-  border-top: 1px dashed var(--sand-light);
-}
-
-.rubric-detail-row:first-child {
-  border-top: none;
-  padding-top: 0;
-}
-
-.rubric-detail-row span {
-  color: var(--ink-light);
-}
-
-.rubric-detail-row strong {
-  text-align: right;
-  max-width: 58%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.rubric-review-outcomes {
-  display: grid;
-  gap: 8px;
-}
-
-.rubric-review-outcome {
-  border: 1px solid var(--sand);
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 0.85rem;
-  color: var(--ink-light);
-}
-
-.rubric-review-outcome span {
-  display: block;
-  margin-bottom: 2px;
-  font-weight: 700;
-  color: var(--ink);
-}
-
-.rubric-review-outcome.eligible {
-  border-color: color-mix(in srgb, var(--success) 35%, var(--sand));
-  background: color-mix(in srgb, var(--success-soft) 75%, var(--surface));
-}
-
-.rubric-review-outcome.not-eligible {
-  border-color: color-mix(in srgb, var(--danger) 35%, var(--sand));
-  background: color-mix(in srgb, var(--danger-soft) 75%, var(--surface));
-}
-
-.rubric-review-outcome.needs-review {
-  border-color: color-mix(in srgb, var(--warning) 35%, var(--sand));
-  background: color-mix(in srgb, var(--warning-soft) 80%, var(--surface));
-}
-
-.rubric-wizard-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  padding-top: 8px;
-  border-top: 1px solid var(--sand-light);
-}
-
-.rubric-wizard-actions-secondary {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 
 .rubric-advanced-assistant {
   margin-bottom: 14px;
@@ -3088,6 +2547,253 @@ input:checked + .slider:before { transform: translateX(18px); }
 .rubric-advanced-toolbar-compact {
   margin-bottom: 12px;
 }
+
+/* ─── Rubric Criterion Builder ──────────────────────────────────── */
+
+/* Toolbar: enable toggle + mode buttons */
+.rubric-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: var(--cream);
+  border: 1px solid var(--sand-light);
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+}
+
+.rubric-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.rubric-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rubric-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--sand);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* Inline enable toggle (no bordered box) */
+.rubric-enable-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.rubric-criteria-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Criterion card */
+.rubric-criterion-card {
+  border: 1px solid var(--sand);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface) 95%, var(--paper));
+  padding: 20px;
+  animation: rubricCardIn 180ms ease-out;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.rubric-criterion-card:hover {
+  border-color: color-mix(in srgb, var(--sand) 70%, var(--maroon));
+}
+
+/* Criterion header */
+.rubric-criterion-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.rubric-criterion-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.rubric-criterion-header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* Group the move buttons together, then a gap before delete */
+.rubric-criterion-header-right .btn + .rubric-btn-delete {
+  margin-left: 6px;
+}
+
+/* Ensure delete button SVG is centered */
+.rubric-btn-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+}
+
+/* Drag handle */
+.rubric-criterion-drag {
+  color: var(--muted);
+  cursor: grab;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 2px;
+}
+
+/* Title group: title + kind badge */
+.rubric-criterion-title-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.rubric-criterion-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rubric-criterion-kind-badge {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--sand-light);
+  padding: 2px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* Outcome badges */
+.rubric-outcome-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.rubric-outcome-badge--not_eligible {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.rubric-outcome-badge--needs_review {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.rubric-outcome-badge--eligible {
+  background: var(--success-soft);
+  color: var(--success);
+}
+
+/* Chevron for collapse/expand */
+.rubric-chevron {
+  display: inline-block;
+  font-size: 0.7rem;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.rubric-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* Delete button danger hover */
+.rubric-btn-delete:hover {
+  background: var(--danger-soft) !important;
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
+}
+
+/* Uniform icon button sizing in criterion header */
+.rubric-criterion-header-right .btn-sm {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Criterion body (form fields) */
+.rubric-criterion-body {
+  padding-top: 16px;
+  margin-top: 16px;
+  border-top: 1px solid var(--sand-light);
+}
+
+/* Empty state */
+.rubric-empty-state {
+  padding: 24px 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+  border: 1.5px dashed var(--sand);
+  border-radius: var(--radius-lg);
+  background: var(--cream);
+}
+
+/* Add criterion area */
+.rubric-add-criterion {
+  padding: 16px;
+  border: 1.5px dashed var(--sand);
+  border-radius: var(--radius-lg);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.rubric-add-criterion:hover {
+  border-color: color-mix(in srgb, var(--sand) 60%, var(--maroon));
+  background: var(--maroon-soft);
+}
+.rubric-add-criterion-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.rubric-add-criterion-row select {
+  flex: 1 1 200px;
+}
+
+/* Summary stats */
+.rubric-summary {
+  font-size: 0.78rem;
+  color: var(--ink-light);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.rubric-summary strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+/* ─── End Rubric Criterion Builder ──────────────────────────────── */
 
 .admin-stage-comms-toolbar {
   margin-bottom: 24px;
@@ -3364,43 +3070,6 @@ input:checked + .slider:before { transform: translateX(18px); }
 @media (max-width: 840px) {
   .admin-ai-parser-schema-row {
     grid-template-columns: 1fr;
-  }
-
-  .rubric-number-stepper {
-    width: 100%;
-    justify-content: flex-start;
-  }
-
-  .rubric-number-stepper-input {
-    min-width: 0;
-    width: 100%;
-  }
-
-  .rubric-ocr-mapping-header,
-  .rubric-ocr-mapping-row-head,
-  .rubric-checklist-row,
-  .rubric-detail-head,
-  .rubric-detail-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .rubric-detail-row strong {
-    max-width: 100%;
-    text-align: left;
-  }
-
-  .rubric-policy-control--boxed {
-    padding: 8px;
-  }
-
-  .rubric-wizard-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .rubric-wizard-actions-secondary {
-    width: 100%;
   }
 }
 

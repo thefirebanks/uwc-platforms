@@ -7,6 +7,7 @@ import {
   type EligibilityRubricCriterion,
   parseEligibilityRubricConfig,
 } from "@/lib/rubric/eligibility-rubric";
+import { asRecord, resolveFilePath, resolvePathValue } from "@/lib/utils/resolve-path";
 import type { Database } from "@/types/supabase";
 import type { ApplicationStatus } from "@/types/domain";
 import { validateRecommendationPayload } from "@/lib/server/recommendations-service";
@@ -116,70 +117,6 @@ function normalizeComparisonString({
   return caseSensitive ? compactWhitespace : compactWhitespace.toLowerCase();
 }
 
-function resolveFilePath(value: unknown) {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-
-  if (
-    value &&
-    typeof value === "object" &&
-    typeof (value as Record<string, unknown>).path === "string"
-  ) {
-    return ((value as Record<string, unknown>).path as string).trim();
-  }
-
-  return "";
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return null;
-  }
-
-  return value as Record<string, unknown>;
-}
-
-function parseJsonPath(path: string) {
-  return path
-    .replace(/^\$\.?/, "")
-    .match(/[^.[\]]+/g)
-    ?.map((segment) => segment.trim())
-    .filter(Boolean) ?? [];
-}
-
-function resolveJsonPathValue(root: unknown, path: string): unknown {
-  const segments = parseJsonPath(path);
-  if (segments.length === 0) {
-    return root;
-  }
-
-  let cursor: unknown = root;
-  for (const segment of segments) {
-    if (cursor === null || cursor === undefined) {
-      return null;
-    }
-
-    if (Array.isArray(cursor)) {
-      const index = Number(segment);
-      if (!Number.isInteger(index) || index < 0 || index >= cursor.length) {
-        return null;
-      }
-      cursor = cursor[index];
-      continue;
-    }
-
-    if (typeof cursor === "object") {
-      cursor = (cursor as Record<string, unknown>)[segment];
-      continue;
-    }
-
-    return null;
-  }
-
-  return cursor;
-}
-
 function getOcrParsedPayload(ocrCheck: OcrCheckRow): Record<string, unknown> | null {
   const raw = asRecord(ocrCheck.raw_response);
   if (!raw) {
@@ -210,7 +147,7 @@ function getOcrValueByPath({
     return null;
   }
 
-  return resolveJsonPathValue(parsedPayload, jsonPath);
+  return resolvePathValue(parsedPayload, jsonPath);
 }
 
 function isRecommendationComplete(recommendation: RecommendationRow) {
