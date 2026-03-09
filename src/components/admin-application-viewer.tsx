@@ -1091,7 +1091,8 @@ export function AdminApplicationViewer({
                             fontSize: "0.875rem",
                             border: "1px solid var(--border)",
                             borderRadius: "2px",
-                            background: "white",
+                            background: "var(--surface)",
+                            color: "var(--ink)",
                           }}
                         />
                       ) : (
@@ -1110,7 +1111,7 @@ export function AdminApplicationViewer({
                   style={{
                     marginTop: "1.5rem",
                     padding: "1rem",
-                    background: "white",
+                    background: "var(--surface)",
                     border: "1px solid var(--border)",
                     borderRadius: "4px",
                   }}
@@ -1137,6 +1138,8 @@ export function AdminApplicationViewer({
                         fontSize: "0.875rem",
                         border: "1px solid var(--border)",
                         borderRadius: "2px",
+                        background: "var(--surface)",
+                        color: "var(--ink)",
                       }}
                     />
                   </div>

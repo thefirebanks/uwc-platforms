@@ -3076,10 +3076,8 @@ export function StageConfigEditor({
 
                     <div className="rubric-toolbar">
                       <div className="rubric-toolbar-left">
-                        <div className="switch-wrapper" style={{ margin: 0 }}>
-                          <div>
-                            <div className="admin-switch-label">Habilitar rúbrica</div>
-                          </div>
+                        <div className="rubric-enable-toggle">
+                          <span className="admin-switch-label">Habilitar rúbrica</span>
                           <label className="switch">
                             <input
                               type="checkbox"
@@ -3096,6 +3094,28 @@ export function StageConfigEditor({
                         </div>
                       </div>
                       <div className="rubric-toolbar-right">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline rubric-btn-preset"
+                          title="Carga los criterios Stage 1 de UWC Perú. Reemplaza los criterios actuales."
+                          onClick={() => {
+                            if (
+                              settingsEligibilityRubricDraft.criteria.length > 0 &&
+                              !window.confirm(
+                                "¿Reemplazar los criterios actuales con el preset Stage 1 de UWC Perú?",
+                              )
+                            ) {
+                              return;
+                            }
+                            const preset = buildUwcStageOneRubricFromDraft(
+                              guessUwcStageOnePresetDraft(fields),
+                            );
+                            syncGuidedRubricDraft({ ...preset, enabled: true });
+                          }}
+                        >
+                          Preset Stage 1
+                        </button>
+                        <span className="rubric-toolbar-divider" />
                         <button
                           type="button"
                           className={`btn btn-sm ${rubricEditorMode === "guided" ? "btn-primary" : "btn-outline"}`}
@@ -3126,7 +3146,7 @@ export function StageConfigEditor({
                           <>
                             {settingsEligibilityRubricDraft.criteria.length === 0 ? (
                               <div className="rubric-empty-state">
-                                No hay criterios configurados. Usa el generador de plantilla o agrega criterios manualmente.
+                                No hay criterios configurados. Usa <strong>Preset Stage 1</strong> para cargar los criterios base, o agrega criterios manualmente.
                               </div>
                             ) : null}
                             {settingsEligibilityRubricDraft.criteria.map((criterion, criterionIndex) => {
@@ -3235,7 +3255,12 @@ export function StageConfigEditor({
                                         }}
                                         title="Eliminar"
                                       >
-                                        &times;
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                          <polyline points="3 6 5 6 21 6" />
+                                          <path d="M19 6l-1 14H6L5 6" />
+                                          <path d="M10 11v6M14 11v6" />
+                                          <path d="M9 6V4h6v2" />
+                                        </svg>
                                       </button>
                                       <span className={`rubric-chevron ${isCollapsed ? "" : "rubric-chevron--open"}`}>
                                         &#x25B6;

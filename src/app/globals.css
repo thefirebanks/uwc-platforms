@@ -2567,13 +2567,28 @@ input:checked + .slider:before { transform: translateX(18px); }
 .rubric-toolbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 16px;
 }
 
 .rubric-toolbar-right {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+.rubric-toolbar-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--sand);
+  margin: 0 4px;
+  flex-shrink: 0;
+}
+
+/* Inline enable toggle (no bordered box) */
+.rubric-enable-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .rubric-criteria-list {
@@ -2616,8 +2631,23 @@ input:checked + .slider:before { transform: translateX(18px); }
 .rubric-criterion-header-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-shrink: 0;
+}
+
+/* Group the move buttons together, then a gap before delete */
+.rubric-criterion-header-right .btn + .rubric-btn-delete {
+  margin-left: 6px;
+}
+
+/* Ensure delete button SVG is centered */
+.rubric-btn-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
 }
 
 /* Drag handle */
@@ -2700,6 +2730,16 @@ input:checked + .slider:before { transform: translateX(18px); }
   background: var(--danger-soft) !important;
   border-color: var(--danger) !important;
   color: var(--danger) !important;
+}
+
+/* Uniform icon button sizing in criterion header */
+.rubric-criterion-header-right .btn-sm {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Criterion body (form fields) */
