@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { bypassReady, loginAsAdmin } from "./helpers";
 
 const DEMO_CYCLE_ID = "98b2f8e4-7266-44b0-acb2-566e2fb2d50e";
@@ -20,19 +20,6 @@ async function saveConfig(page: Page) {
   const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
   await expect(saveBtn).toBeEnabled({ timeout: 8_000 });
   await saveBtn.click();
-}
-
-async function pickFirstNonEmptyOption(selectLocator: Locator) {
-  const options = await selectLocator.locator("option").evaluateAll((nodes) =>
-    nodes
-      .map((node) => (node as HTMLOptionElement).value)
-      .filter((value) => value.trim().length > 0),
-  );
-  if (options.length === 0) {
-    return false;
-  }
-  await selectLocator.selectOption(options[0]!);
-  return true;
 }
 
 const VALID_RUBRIC_JSON = JSON.stringify(
@@ -61,46 +48,16 @@ test.describe("Admin rubric editor flows", () => {
     );
   });
 
-  test("Flow 1: template generator populates rubric and allows save", async ({ page }) => {
+  test("Flow 1: auto-populated default criteria appear and allow save", async ({ page }) => {
     await openRubricSettings(page);
 
-    // Expand the template generator
-    const templateSummary = page.locator(".rubric-template-summary");
-    await expect(templateSummary).toBeVisible();
-    await templateSummary.click();
-    await expect(page.locator(".rubric-template-body")).toBeVisible();
-
-    // Fill required template selects
-    const templateSelects = [
-      page.locator("select[id^='tpl-name-']").first(),
-      page.locator("select[id^='tpl-average-']").first(),
-      page.locator("select[id^='tpl-authorization-']").first(),
-      page.locator("select[id^='tpl-photo-']").first(),
-    ];
-    for (const sel of templateSelects) {
-      if ((await sel.count()) > 0) {
-        await pickFirstNonEmptyOption(sel);
-      }
-    }
-
-    // Fill policy inputs
-    const birthYearsInput = page.locator("input[id^='tpl-birth-years-']").first();
-    if ((await birthYearsInput.count()) > 0) {
-      await birthYearsInput.fill("2008, 2009, 2010");
-    }
-
-    const minAvgInput = page.locator("input[id^='tpl-average-min-']").first();
-    if ((await minAvgInput.count()) > 0) {
-      await minAvgInput.fill("14");
-    }
-
-    // Generate rubric from template
-    await page.getByRole("button", { name: /Generar rúbrica desde plantilla/i }).click();
-
-    // Verify criteria appeared in the visual builder
+    // Criteria should be auto-populated in the visual builder (no template generator needed)
     await expect(page.locator(".rubric-criterion-card").first()).toBeVisible({ timeout: 5_000 });
 
-    // Switch to JSON mode to verify the generated JSON
+    // Template generator should NOT be present
+    await expect(page.locator(".rubric-template-summary")).not.toBeVisible();
+
+    // Switch to JSON mode to verify the auto-populated criteria
     await page.getByRole("button", { name: "JSON", exact: true }).click();
     const textarea = rubricTextarea(page);
     await expect(textarea).toBeVisible();
@@ -111,6 +68,7 @@ test.describe("Admin rubric editor flows", () => {
     expect(parsed.criteria!.length).toBeGreaterThan(0);
 
     // Save and verify
+    await page.getByRole("button", { name: "Visual", exact: true }).click();
     await saveConfig(page);
     await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
       timeout: 12_000,

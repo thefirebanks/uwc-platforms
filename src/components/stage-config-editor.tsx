@@ -51,7 +51,6 @@ import {
   guessUwcStageOnePresetDraft,
   parseRubricBlueprintV1,
   tryHydrateBlueprintFromRubric,
-  type UwcStageOnePresetDraft,
 } from "@/lib/rubric/default-rubric-presets";
 import {
   getDefaultEligibilityRubricConfig,
@@ -174,53 +173,6 @@ function parseCommaSeparatedList(raw: string) {
 
 function formatCommaSeparatedList(values: string[] | undefined) {
   return (values ?? []).join(", ");
-}
-
-function parseCommaSeparatedNumbers(raw: string) {
-  const seen = new Set<number>();
-  const values: number[] = [];
-
-  for (const candidate of raw.split(/[,\s;]+/)) {
-    const trimmed = candidate.trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    const parsed = Number(trimmed);
-    if (!Number.isInteger(parsed) || seen.has(parsed)) {
-      continue;
-    }
-
-    seen.add(parsed);
-    values.push(parsed);
-  }
-
-  return values;
-}
-
-
-function presetDraftFromBlueprint(blueprint: RubricBlueprintV1): UwcStageOnePresetDraft {
-  return {
-    idDocumentFileKeys: blueprint.mappings.idDocumentFileKeys,
-    gradesDocumentFileKeys: blueprint.mappings.gradesDocumentFileKeys,
-    topThirdProofFileKey: blueprint.mappings.topThirdProofFileKey,
-    applicantNameFieldKey: blueprint.mappings.applicantNameFieldKey,
-    averageGradeFieldKey: blueprint.mappings.averageGradeFieldKey,
-    signedAuthorizationFileKey: blueprint.mappings.signedAuthorizationFileKey,
-    applicantPhotoFileKey: blueprint.mappings.applicantPhotoFileKey,
-    ocrNamePath: blueprint.mappings.ocrPaths.idName,
-    ocrBirthYearPath: blueprint.mappings.ocrPaths.birthYear,
-    ocrDocumentTypePath: blueprint.mappings.ocrPaths.documentType,
-    ocrDocumentIssuePath: blueprint.mappings.ocrPaths.documentIssue,
-    allowedBirthYears: blueprint.policy.allowedBirthYears,
-    minAverageGrade: blueprint.policy.minAverageGrade,
-    recommendationCompleteness: blueprint.policy.recommendationCompleteness,
-    recommendationRoles: ["mentor", "friend"],
-    minRecommendationResponses: blueprint.policy.recommendationMinAnswers ?? 0,
-    gradesCombinationRule: blueprint.policy.gradesCombinationRule,
-    idExceptionRule: blueprint.policy.idExceptionRule,
-    limitGradesDocumentToSingleUpload: blueprint.policy.gradesCombinationRule !== "allow_multiple",
-  };
 }
 
 function createUniqueCriterionId(
@@ -1446,8 +1398,14 @@ export function StageConfigEditor({
       ? "Examen Académico"
       : stageLabel;
   const parsedStageAdminConfig = parsedStageAdminConfigRef.current;
+  const autoPopulatedRubric = parsedStageAdminConfig.eligibilityRubric
+    ? null
+    : buildUwcStageOneRubricFromDraft(guessUwcStageOnePresetDraft(initialFields));
   const initialEligibilityRubricConfig =
-    parsedStageAdminConfig.eligibilityRubric ?? getDefaultEligibilityRubricConfig();
+    parsedStageAdminConfig.eligibilityRubric ??
+    (autoPopulatedRubric && autoPopulatedRubric.criteria.length > 0
+      ? autoPopulatedRubric
+      : getDefaultEligibilityRubricConfig());
   const hydratedBlueprintFromRubric = parsedStageAdminConfig.eligibilityRubric
     ? tryHydrateBlueprintFromRubric(parsedStageAdminConfig.eligibilityRubric)
     : null;
@@ -1456,9 +1414,6 @@ export function StageConfigEditor({
   const initialRubricMeta =
     parsedStageAdminConfig.rubricMeta ??
     (initialRubricBlueprint ? createRubricMeta({ source: "wizard" }) : null);
-  const initialWizardDraft = initialRubricBlueprint
-    ? presetDraftFromBlueprint(initialRubricBlueprint)
-    : guessUwcStageOnePresetDraft(initialFields);
   const [settingsStageName, setSettingsStageName] = useState(
     parsedStageAdminConfig.stageName ?? displayStageLabel,
   );
@@ -1496,13 +1451,6 @@ export function StageConfigEditor({
     initialRubricBlueprint,
   );
   const [settingsRubricMeta, setSettingsRubricMeta] = useState<RubricMeta | null>(initialRubricMeta);
-  const suggestedUwcPresetDraft = useMemo(
-    () => guessUwcStageOnePresetDraft(fields),
-    [fields],
-  );
-  const [uwcPresetDraft, setUwcPresetDraft] = useState<UwcStageOnePresetDraft>(
-    initialWizardDraft,
-  );
   const rubricFieldOptions = useMemo(() => {
     const seen = new Set<string>();
     return fields
@@ -1540,23 +1488,6 @@ export function StageConfigEditor({
   const defaultRubricNumberFieldKey =
     rubricNumberFieldOptions[0]?.value ?? defaultRubricFieldKey;
 
-
-  function applyUwcPeruTemplate() {
-    const result = buildUwcStageOneRubricFromDraft(uwcPresetDraft);
-    if (!result || result.criteria.length === 0) {
-      setRubricFeedback({
-        type: "error",
-        message: "No se pudo generar la plantilla. Verifica que los campos de mapeo estén completos.",
-      });
-      return;
-    }
-    setRubricEditorMode("guided");
-    syncGuidedRubricDraft(result, { source: "advanced" });
-    setRubricFeedback({
-      type: "success",
-      message: `Plantilla UWC Perú aplicada: ${result.criteria.length} criterios generados.`,
-    });
-  }
 
   function syncGuidedRubricDraft(
     nextDraft: EligibilityRubricConfig,
@@ -1714,23 +1645,6 @@ export function StageConfigEditor({
     setSettingsEligibilityRubricErrors(validation.errors);
     setError({
       message: `La rúbrica automática no es válida:\n${validation.errors.slice(0, 6).join("\n")}`,
-    });
-  }
-
-  function togglePresetFileKey(
-    listKey: "idDocumentFileKeys" | "gradesDocumentFileKeys",
-    fieldKey: string,
-  ) {
-    setUwcPresetDraft((current) => {
-      const currentValues = current[listKey];
-      const exists = currentValues.includes(fieldKey);
-      const nextValues = exists
-        ? currentValues.filter((value) => value !== fieldKey)
-        : [...currentValues, fieldKey];
-      return {
-        ...current,
-        [listKey]: nextValues,
-      };
     });
   }
 
@@ -3151,327 +3065,6 @@ export function StageConfigEditor({
                 </div>
                 <div className="editor-grid">
                   <div className="form-field full">
-                    <details className="rubric-template-details">
-                      <summary className="rubric-template-summary">
-                        Generador de plantilla UWC Perú
-                      </summary>
-                      <div className="rubric-template-body">
-                        <div className="form-hint" style={{ marginBottom: "12px" }}>
-                          Selecciona los campos del formulario que corresponden a cada dato requerido.
-                          Al aplicar, se generará una rúbrica pre-configurada con criterios editables.
-                        </div>
-                        <div className="editor-grid">
-                          <div className="form-field full">
-                            <label>Campos de archivo para identidad (DNI/Pasaporte/Carnet)</label>
-                            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                              {rubricFileFieldOptions.length > 0 ? (
-                                rubricFileFieldOptions.map((option) => (
-                                  <label
-                                    key={`tpl-id-${option.value}`}
-                                    style={{ display: "flex", gap: "6px", alignItems: "center" }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={uwcPresetDraft.idDocumentFileKeys.includes(option.value)}
-                                      onChange={() => togglePresetFileKey("idDocumentFileKeys", option.value)}
-                                    />
-                                    {option.label}
-                                  </label>
-                                ))
-                              ) : (
-                                <span className="form-hint">No hay campos de archivo disponibles.</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="form-field full">
-                            <label>Campos de archivo para notas oficiales</label>
-                            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                              {rubricFileFieldOptions.length > 0 ? (
-                                rubricFileFieldOptions.map((option) => (
-                                  <label
-                                    key={`tpl-grades-${option.value}`}
-                                    style={{ display: "flex", gap: "6px", alignItems: "center" }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={uwcPresetDraft.gradesDocumentFileKeys.includes(option.value)}
-                                      onChange={() =>
-                                        togglePresetFileKey("gradesDocumentFileKeys", option.value)
-                                      }
-                                    />
-                                    {option.label}
-                                  </label>
-                                ))
-                              ) : (
-                                <span className="form-hint">No hay campos de archivo disponibles.</span>
-                              )}
-                            </div>
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-name-${stageCode}`}>Campo nombre postulante</label>
-                            <select
-                              id={`tpl-name-${stageCode}`}
-                              value={uwcPresetDraft.applicantNameFieldKey ?? ""}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  applicantNameFieldKey: event.target.value || null,
-                                }))
-                              }
-                            >
-                              <option value="">Selecciona un campo</option>
-                              {rubricFieldOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-average-${stageCode}`}>
-                              Campo promedio de notas (numérico)
-                            </label>
-                            <select
-                              id={`tpl-average-${stageCode}`}
-                              value={uwcPresetDraft.averageGradeFieldKey ?? ""}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  averageGradeFieldKey: event.target.value || null,
-                                }))
-                              }
-                            >
-                              <option value="">Selecciona un campo</option>
-                              {rubricNumberFieldOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-authorization-${stageCode}`}>
-                              Campo autorización firmada
-                            </label>
-                            <select
-                              id={`tpl-authorization-${stageCode}`}
-                              value={uwcPresetDraft.signedAuthorizationFileKey ?? ""}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  signedAuthorizationFileKey: event.target.value || null,
-                                }))
-                              }
-                            >
-                              <option value="">Selecciona un campo</option>
-                              {rubricFileFieldOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-photo-${stageCode}`}>Campo foto postulante</label>
-                            <select
-                              id={`tpl-photo-${stageCode}`}
-                              value={uwcPresetDraft.applicantPhotoFileKey ?? ""}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  applicantPhotoFileKey: event.target.value || null,
-                                }))
-                              }
-                            >
-                              <option value="">Selecciona un campo</option>
-                              {rubricFileFieldOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-top-third-${stageCode}`}>
-                              Campo archivo de tercio superior (opcional)
-                            </label>
-                            <select
-                              id={`tpl-top-third-${stageCode}`}
-                              value={uwcPresetDraft.topThirdProofFileKey ?? ""}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  topThirdProofFileKey: event.target.value || null,
-                                }))
-                              }
-                            >
-                              <option value="">Sin archivo dedicado</option>
-                              {rubricFileFieldOptions.map((option) => (
-                                <option key={option.value} value={option.value}>
-                                  {option.label}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-birth-years-${stageCode}`}>
-                              Años de nacimiento permitidos (coma)
-                            </label>
-                            <input
-                              id={`tpl-birth-years-${stageCode}`}
-                              type="text"
-                              value={uwcPresetDraft.allowedBirthYears.join(", ")}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  allowedBirthYears: parseCommaSeparatedNumbers(event.target.value),
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-average-min-${stageCode}`}>
-                              Promedio mínimo (0-20)
-                            </label>
-                            <input
-                              id={`tpl-average-min-${stageCode}`}
-                              type="number"
-                              min={0}
-                              max={20}
-                              step={0.1}
-                              value={String(uwcPresetDraft.minAverageGrade)}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  minAverageGrade: Number(event.target.value) || 14,
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-min-responses-${stageCode}`}>
-                              Respuestas mínimas por recomendación
-                            </label>
-                            <input
-                              id={`tpl-min-responses-${stageCode}`}
-                              type="number"
-                              min={0}
-                              max={20}
-                              step={1}
-                              value={String(uwcPresetDraft.minRecommendationResponses)}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  minRecommendationResponses: Number(event.target.value) || 0,
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-ocr-name-${stageCode}`}>OCR path para nombre</label>
-                            <input
-                              id={`tpl-ocr-name-${stageCode}`}
-                              type="text"
-                              value={uwcPresetDraft.ocrNamePath}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  ocrNamePath: event.target.value,
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-ocr-birth-${stageCode}`}>
-                              OCR path para año nacimiento
-                            </label>
-                            <input
-                              id={`tpl-ocr-birth-${stageCode}`}
-                              type="text"
-                              value={uwcPresetDraft.ocrBirthYearPath}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  ocrBirthYearPath: event.target.value,
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-ocr-doc-type-${stageCode}`}>
-                              OCR path para tipo documento
-                            </label>
-                            <input
-                              id={`tpl-ocr-doc-type-${stageCode}`}
-                              type="text"
-                              value={uwcPresetDraft.ocrDocumentTypePath}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  ocrDocumentTypePath: event.target.value,
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="form-field">
-                            <label htmlFor={`tpl-ocr-doc-issue-${stageCode}`}>
-                              OCR path para observaciones de documento
-                            </label>
-                            <input
-                              id={`tpl-ocr-doc-issue-${stageCode}`}
-                              type="text"
-                              value={uwcPresetDraft.ocrDocumentIssuePath}
-                              onChange={(event) =>
-                                setUwcPresetDraft((current) => ({
-                                  ...current,
-                                  ocrDocumentIssuePath: event.target.value,
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="switch-wrapper">
-                            <div>
-                              <div className="admin-switch-label">
-                                Marcar combinación de múltiples certificados como revisión manual
-                              </div>
-                            </div>
-                            <label className="switch">
-                              <input
-                                type="checkbox"
-                                checked={uwcPresetDraft.limitGradesDocumentToSingleUpload}
-                                onChange={(event) =>
-                                  setUwcPresetDraft((current) => ({
-                                    ...current,
-                                    limitGradesDocumentToSingleUpload: event.target.checked,
-                                    gradesCombinationRule: event.target.checked
-                                      ? "single_or_review"
-                                      : "allow_multiple",
-                                  }))
-                                }
-                              />
-                              <span className="slider" />
-                            </label>
-                          </div>
-                          <div className="form-field full" style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                            <button
-                              type="button"
-                              className="btn btn-primary"
-                              onClick={applyUwcPeruTemplate}
-                            >
-                              Generar rúbrica desde plantilla
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-outline"
-                              onClick={() => setUwcPresetDraft(suggestedUwcPresetDraft)}
-                            >
-                              Recargar sugerencias desde campos actuales
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </details>
-
                     {rubricFeedback && (
                       <div
                         className={`admin-feedback ${rubricFeedback.type === "error" ? "error" : "success"}`}

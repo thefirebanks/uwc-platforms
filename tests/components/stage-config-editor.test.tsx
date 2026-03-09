@@ -1488,7 +1488,7 @@ describe("StageConfigEditor", () => {
     expect(textarea).toBeInTheDocument();
   });
 
-  it("shows template generator with UWC Peru preset fields", () => {
+  it("auto-populates default criteria when no saved rubric exists", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -1508,17 +1508,23 @@ describe("StageConfigEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
 
-    // Template generator should be present as a collapsible details element
-    const details = document.querySelector(".rubric-template-details");
-    expect(details).toBeInTheDocument();
+    // Template generator should NOT be present
+    expect(document.querySelector(".rubric-template-details")).not.toBeInTheDocument();
 
-    // Key template fields should be present
-    expect(document.querySelector("#tpl-name-documents")).toBeInTheDocument();
-    expect(document.querySelector("#tpl-average-documents")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Generar rúbrica desde plantilla/i })).toBeInTheDocument();
+    // Criteria should be auto-populated in the visual builder
+    const criterionCards = document.querySelectorAll(".rubric-criterion-card");
+    expect(criterionCards.length).toBeGreaterThan(0);
+
+    // Verify via JSON mode that criteria are pre-populated
+    fireEvent.click(screen.getByRole("button", { name: "JSON" }));
+    const textarea = document.querySelector("textarea[id^='eligibility-rubric-']") as HTMLTextAreaElement | null;
+    expect(textarea).not.toBeNull();
+    const rubricValue = JSON.parse(textarea!.value);
+    expect(rubricValue.enabled).toBe(true);
+    expect(rubricValue.criteria.length).toBeGreaterThan(0);
   });
 
-  it("generates rubric from template and persists it via save", async () => {
+  it("persists auto-populated default criteria via save", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -1557,10 +1563,7 @@ describe("StageConfigEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
 
-    // Click the template generator button to populate rubric from defaults
-    fireEvent.click(screen.getByRole("button", { name: /Generar rúbrica desde plantilla/i }));
-
-    // After generation, the rubric should be enabled — switch to JSON to verify content
+    // Criteria should already be auto-populated — verify via JSON mode
     fireEvent.click(screen.getByRole("button", { name: "JSON" }));
     const textarea = document.querySelector("textarea[id^='eligibility-rubric-']") as HTMLTextAreaElement | null;
     expect(textarea).not.toBeNull();
@@ -1568,8 +1571,12 @@ describe("StageConfigEditor", () => {
     expect(rubricValue.enabled).toBe(true);
     expect(rubricValue.criteria.length).toBeGreaterThan(0);
 
-    // Switch back to Visual and save
+    // Make a small edit to trigger "unsaved changes" (change stage name)
     fireEvent.click(screen.getByRole("button", { name: "Visual" }));
+    const stageNameInput = document.querySelector("#stage-name-documents") as HTMLInputElement;
+    fireEvent.change(stageNameInput, { target: { value: "Formulario Principal Editado" } });
+
+    // Save
     fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
 
     await waitFor(() => {

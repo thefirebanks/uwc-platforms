@@ -32,41 +32,30 @@ test.describe("Rubric UI Audit - Current State Screenshots", () => {
       fullPage: false,
     });
 
-    // Screenshot 2: Template generator expanded
-    const templateSummary = page.locator(".rubric-template-summary");
-    if (await templateSummary.isVisible().catch(() => false)) {
-      await templateSummary.click();
-      await page.waitForTimeout(300);
-      await page.screenshot({
-        path: "tests/e2e/screenshots/rubric-02-template-generator.png",
-        fullPage: true,
-      });
-    }
-
-    // Screenshot 3: JSON mode
+    // Screenshot 2: JSON mode
     await page.getByRole("button", { name: "JSON", exact: true }).click();
     const textarea = page.locator("textarea[id^='eligibility-rubric-']").first();
     await expect(textarea).toBeVisible();
     await page.screenshot({
-      path: "tests/e2e/screenshots/rubric-03-json-mode.png",
+      path: "tests/e2e/screenshots/rubric-02-json-mode.png",
       fullPage: false,
     });
 
-    // Screenshot 4: Visual mode (with criteria if any exist)
+    // Screenshot 3: Visual mode (with auto-populated criteria)
     await page.getByRole("button", { name: "Visual", exact: true }).click();
     await page.waitForTimeout(300);
     await page.screenshot({
-      path: "tests/e2e/screenshots/rubric-04-visual-mode.png",
+      path: "tests/e2e/screenshots/rubric-03-visual-mode.png",
       fullPage: false,
     });
 
-    // Screenshot 5: If criteria cards exist, expand one
+    // Screenshot 4: If criteria cards exist, expand one
     const criterionCards = page.locator(".rubric-criterion-card");
     if ((await criterionCards.count()) > 0) {
       await criterionCards.first().locator(".rubric-criterion-header").click();
       await page.waitForTimeout(300);
       await page.screenshot({
-        path: "tests/e2e/screenshots/rubric-05-criterion-expanded.png",
+        path: "tests/e2e/screenshots/rubric-04-criterion-expanded.png",
         fullPage: true,
       });
     }

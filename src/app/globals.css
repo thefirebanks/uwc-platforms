@@ -2720,44 +2720,6 @@ input:checked + .slider:before { transform: translateX(18px); }
   background: var(--cream);
 }
 
-/* Template generator details/summary */
-.rubric-template-details {
-  border: 1px solid var(--sand);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 90%, var(--paper));
-  overflow: hidden;
-}
-
-.rubric-template-summary {
-  cursor: pointer;
-  list-style: none;
-  padding: 12px 14px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--ink);
-  transition: background-color 0.15s ease;
-}
-.rubric-template-summary::-webkit-details-marker {
-  display: none;
-}
-.rubric-template-summary::before {
-  content: "▸ ";
-  display: inline;
-  font-size: 0.75rem;
-  color: var(--muted);
-}
-.rubric-template-details[open] > .rubric-template-summary::before {
-  content: "▾ ";
-}
-.rubric-template-summary:hover {
-  background: var(--cream);
-}
-
-.rubric-template-body {
-  border-top: 1px solid var(--sand-light);
-  padding: 16px 14px;
-}
-
 /* Add criterion area */
 .rubric-add-criterion {
   padding: 16px;

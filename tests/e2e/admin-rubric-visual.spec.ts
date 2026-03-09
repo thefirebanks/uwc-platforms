@@ -56,10 +56,10 @@ test.describe("Admin rubric visual checks", () => {
     );
   });
 
-  test("captures template generator and visual criterion builder screens", async ({ page }) => {
+  test("captures visual criterion builder screens", async ({ page }) => {
     await openRubricSettings(page);
 
-    // Screenshot 1: Rubric section initial state
+    // Screenshot 1: Rubric section initial state (with auto-populated criteria)
     const rubricHeader = page.getByText("Rúbrica de Elegibilidad Automática");
     await rubricHeader.scrollIntoViewIfNeeded();
     await page.waitForTimeout(500);
@@ -68,39 +68,28 @@ test.describe("Admin rubric visual checks", () => {
       fullPage: false,
     });
 
-    // Screenshot 2: Expand the template generator
-    const templateSummary = page.locator(".rubric-template-summary");
-    if (await templateSummary.isVisible().catch(() => false)) {
-      await templateSummary.click();
-      await page.waitForTimeout(300);
-      await page.screenshot({
-        path: screenshotPath("02-template-generator-expanded.png"),
-        fullPage: true,
-      });
-    }
-
-    // Screenshot 3: Set rubric via JSON and switch to Visual mode
+    // Screenshot 2: Set rubric via JSON and switch to Visual mode
     await page.getByRole("button", { name: "JSON", exact: true }).click();
     await page.locator("textarea[id^='eligibility-rubric-']").first().fill(SAMPLE_RUBRIC_JSON);
     await page.locator("textarea[id^='eligibility-rubric-']").first().blur();
     await page.screenshot({
-      path: screenshotPath("03-json-mode.png"),
+      path: screenshotPath("02-json-mode.png"),
       fullPage: false,
     });
 
-    // Screenshot 4: Visual mode with criteria
+    // Screenshot 3: Visual mode with criteria
     await page.getByRole("button", { name: "Visual", exact: true }).click();
     await expect(page.locator(".rubric-criterion-card").first()).toBeVisible();
     await page.screenshot({
-      path: screenshotPath("04-visual-mode-criteria.png"),
+      path: screenshotPath("03-visual-mode-criteria.png"),
       fullPage: false,
     });
 
-    // Screenshot 5: Expand a criterion card
+    // Screenshot 4: Expand a criterion card
     await page.locator(".rubric-criterion-header").first().click();
     await expect(page.locator(".rubric-criterion-body").first()).toBeVisible();
     await page.screenshot({
-      path: screenshotPath("05-criterion-expanded.png"),
+      path: screenshotPath("04-criterion-expanded.png"),
       fullPage: true,
     });
   });
