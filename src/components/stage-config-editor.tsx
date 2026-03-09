@@ -2973,14 +2973,18 @@ export function StageConfigEditor({
                     />
                   </div>
                   <div className="form-field full">
-                    <label htmlFor={`stage-description-${stageCode}`}>Instrucciones de la etapa (Markdown)</label>
+                    <label htmlFor={`stage-description-${stageCode}`}>
+                      Instrucciones de la etapa
+                      <FieldHint label="Sobre las instrucciones">
+                        Se muestra primero en el paso inicial del postulante. Soporta encabezados, listas, énfasis y enlaces seguros.
+                      </FieldHint>
+                    </label>
                     <textarea
                       id={`stage-description-${stageCode}`}
                       rows={5}
                       value={settingsDescription}
                       onChange={(event) => setSettingsDescription(event.target.value)}
                     />
-                    <div className="form-hint">Se muestra primero en el paso inicial del postulante. Soporta encabezados, listas, enfasis y enlaces seguros.</div>
                   </div>
                   <div className="form-field">
                     <label htmlFor={`stage-open-date-${stageCode}`}>Fecha de apertura</label>
@@ -4066,7 +4070,12 @@ export function StageConfigEditor({
                                             <label
                                               htmlFor={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
                                             >
-                                              Condiciones alternativas (JSON)
+                                              Condiciones alternativas
+                                              <FieldHint label="Tipos de condición disponibles">
+                                                Usa condiciones <code>field_present</code>, <code>file_uploaded</code>,{" "}
+                                                <code>number_between</code>, <code>ocr_field_in</code>,{" "}
+                                                <code>ocr_field_not_in</code> o <code>field_matches_ocr</code>.
+                                              </FieldHint>
                                             </label>
                                             <textarea
                                               id={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
@@ -4092,11 +4101,6 @@ export function StageConfigEditor({
                                               }}
                                               style={{ fontFamily: "monospace" }}
                                             />
-                                            <div className="form-hint">
-                                              Usa condiciones <code>field_present</code>, <code>file_uploaded</code>,{" "}
-                                              <code>number_between</code>, <code>ocr_field_in</code>,{" "}
-                                              <code>ocr_field_not_in</code> o <code>field_matches_ocr</code>.
-                                            </div>
                                           </div>
                                         ) : null}
                                       </div>
