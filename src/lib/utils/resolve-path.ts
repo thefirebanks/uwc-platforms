@@ -19,6 +19,29 @@ export function asRecord(
  * - Bracket notation: `"items[0].name"`
  * - JSONPath `$` prefix: `"$.foo.bar"` (the `$` is stripped)
  */
+/**
+ * Extract a file-path string from a value that may be a plain string or an
+ * object with a `.path` property (the shape stored in application `files`
+ * columns).  Returns the trimmed path, or `null` when no valid path is found.
+ */
+export function resolveFilePath(value: unknown): string | null {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof (value as Record<string, unknown>).path === "string"
+  ) {
+    const trimmed = ((value as Record<string, unknown>).path as string).trim();
+    return trimmed || null;
+  }
+
+  return null;
+}
+
 export function resolvePathValue(
   root: unknown,
   path: string,

@@ -4489,7 +4489,7 @@ export function StageConfigEditor({
                             })}
 
                             <div className="rubric-add-criterion">
-                              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                              <div className="rubric-add-criterion-row">
                                 <select
                                   id={`rubric-new-criterion-kind-${stageCode}`}
                                   value={newRubricCriterionKind}
@@ -4498,7 +4498,6 @@ export function StageConfigEditor({
                                       event.target.value as EligibilityRubricCriterion["kind"],
                                     )
                                   }
-                                  style={{ flex: "1 1 200px" }}
                                 >
                                   {RUBRIC_KIND_OPTIONS.map((option) => (
                                     <option key={option.value} value={option.value}>

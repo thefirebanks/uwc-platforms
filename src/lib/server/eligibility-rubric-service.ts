@@ -7,7 +7,7 @@ import {
   type EligibilityRubricCriterion,
   parseEligibilityRubricConfig,
 } from "@/lib/rubric/eligibility-rubric";
-import { asRecord, resolvePathValue } from "@/lib/utils/resolve-path";
+import { asRecord, resolveFilePath, resolvePathValue } from "@/lib/utils/resolve-path";
 import type { Database } from "@/types/supabase";
 import type { ApplicationStatus } from "@/types/domain";
 import { validateRecommendationPayload } from "@/lib/server/recommendations-service";
@@ -115,22 +115,6 @@ function normalizeComparisonString({
     ? value.replace(/\s+/g, " ").trim()
     : value.trim();
   return caseSensitive ? compactWhitespace : compactWhitespace.toLowerCase();
-}
-
-function resolveFilePath(value: unknown) {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-
-  if (
-    value &&
-    typeof value === "object" &&
-    typeof (value as Record<string, unknown>).path === "string"
-  ) {
-    return ((value as Record<string, unknown>).path as string).trim();
-  }
-
-  return "";
 }
 
 function getOcrParsedPayload(ocrCheck: OcrCheckRow): Record<string, unknown> | null {

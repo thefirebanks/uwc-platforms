@@ -16,6 +16,7 @@ import {
   inferMimeTypeFromPath,
   type ResolvedFieldAiParserConfig,
 } from "@/lib/ocr/field-ai-parser";
+import { resolveFilePath } from "@/lib/utils/resolve-path";
 import { recordAuditEvent } from "@/lib/logging/audit";
 import type { Database, Json } from "@/types/supabase";
 
@@ -26,22 +27,6 @@ const schema = z.object({
 const querySchema = z.object({
   limit: z.coerce.number().int().min(1).max(30).default(10),
 });
-
-function resolveFilePath(value: unknown) {
-  if (typeof value === "string") {
-    return value;
-  }
-
-  if (
-    value &&
-    typeof value === "object" &&
-    typeof (value as Record<string, unknown>).path === "string"
-  ) {
-    return (value as Record<string, unknown>).path as string;
-  }
-
-  return null;
-}
 
 function parseFieldAiParserConfigOrNull(value: unknown): ResolvedFieldAiParserConfig | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
