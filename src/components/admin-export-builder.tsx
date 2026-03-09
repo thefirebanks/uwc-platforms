@@ -38,12 +38,8 @@ function groupFields(fields: ExportCatalogField[]) {
 
   for (const field of fields) {
     if (!groups.has(field.groupKey)) {
-      groups.set(field.groupKey, {
-        label: field.groupLabel,
-        fields: [],
-      });
+      groups.set(field.groupKey, { label: field.groupLabel, fields: [] });
     }
-
     groups.get(field.groupKey)?.fields.push(field);
   }
 
@@ -65,6 +61,7 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<string>(stageCode ?? "all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -83,7 +80,11 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
 
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<PreviewResponse["preview"] | null>(null);
-  const [previewMeta, setPreviewMeta] = useState<{ totalFiltered: number; exportedApplicants: number; sheetCount: number } | null>(null);
+  const [previewMeta, setPreviewMeta] = useState<{
+    totalFiltered: number;
+    exportedApplicants: number;
+    sheetCount: number;
+  } | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -93,6 +94,17 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
   );
 
   const groupedFields = useMemo(() => groupFields(catalogFields), [catalogFields]);
+
+  const filteredGroupedFields = useMemo(() => {
+    if (!catalogSearch.trim()) return groupedFields;
+    const q = catalogSearch.trim().toLowerCase();
+    return groupedFields
+      .map((group) => ({
+        ...group,
+        fields: group.fields.filter((f) => f.label.toLowerCase().includes(q)),
+      }))
+      .filter((group) => group.fields.length > 0);
+  }, [groupedFields, catalogSearch]);
 
   const exportModeUsesGrouping =
     targetMode === "randomSample" || (targetMode === "manual" && manualGroupCount > 1);
@@ -198,12 +210,9 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
         if (!response.ok) {
           throw new Error(body.userMessage ?? "No se pudo cargar la lista de postulantes.");
         }
-
         setManualCandidates(body.rows ?? []);
       } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") {
-          return;
-        }
+        if (error instanceof Error && error.name === "AbortError") return;
         setManualCandidatesError(
           error instanceof Error ? error.message : "Error cargando postulantes.",
         );
@@ -217,28 +226,20 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
 
   function toggleField(fieldKey: string) {
     setActivePresetId(null);
-    setSelectedFields((current) => {
-      if (current.includes(fieldKey)) {
-        return current.filter((entry) => entry !== fieldKey);
-      }
-
-      return [...current, fieldKey];
-    });
+    setSelectedFields((current) =>
+      current.includes(fieldKey)
+        ? current.filter((entry) => entry !== fieldKey)
+        : [...current, fieldKey],
+    );
   }
 
   function moveField(fieldKey: string, direction: "up" | "down") {
     setActivePresetId(null);
     setSelectedFields((current) => {
       const index = current.indexOf(fieldKey);
-      if (index === -1) {
-        return current;
-      }
-
+      if (index === -1) return current;
       const nextIndex = direction === "up" ? index - 1 : index + 1;
-      if (nextIndex < 0 || nextIndex >= current.length) {
-        return current;
-      }
-
+      if (nextIndex < 0 || nextIndex >= current.length) return current;
       const next = [...current];
       const [removed] = next.splice(index, 1);
       next.splice(nextIndex, 0, removed);
@@ -272,16 +273,11 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
   }
 
   function setApplicantGroup(applicationId: string, groupKey: string) {
-    setGroupAssignments((current) => ({
-      ...current,
-      [applicationId]: groupKey,
-    }));
+    setGroupAssignments((current) => ({ ...current, [applicationId]: groupKey }));
   }
 
   async function handleSavePreset() {
-    if (!cycleId || selectedFields.length === 0) {
-      return;
-    }
+    if (!cycleId || selectedFields.length === 0) return;
 
     const presetName = window.prompt(
       "Nombre del preset:",
@@ -290,9 +286,7 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
         : "Exportacion personalizada",
     );
 
-    if (!presetName || presetName.trim().length < 2) {
-      return;
-    }
+    if (!presetName || presetName.trim().length < 2) return;
 
     setIsSavingPreset(true);
     try {
@@ -325,9 +319,7 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
   }
 
   function buildExportPayload(action: "preview" | "download") {
-    if (!cycleId) {
-      throw new Error("Selecciona un proceso para exportar.");
-    }
+    if (!cycleId) throw new Error("Selecciona un proceso para exportar.");
 
     return {
       action,
@@ -350,19 +342,14 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
           : undefined,
       randomSample:
         targetMode === "randomSample"
-          ? {
-            groupCount: randomGroupCount,
-            applicantsPerGroup: randomApplicantsPerGroup,
-          }
+          ? { groupCount: randomGroupCount, applicantsPerGroup: randomApplicantsPerGroup }
           : undefined,
       groupedExportMode: exportModeUsesGrouping ? groupedExportMode : "single-sheet",
     };
   }
 
   async function handlePreview() {
-    if (selectedFields.length === 0) {
-      return;
-    }
+    if (selectedFields.length === 0) return;
 
     setIsPreviewing(true);
     setPreviewError(null);
@@ -392,9 +379,7 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
   }
 
   async function handleDownload() {
-    if (selectedFields.length === 0) {
-      return;
-    }
+    if (selectedFields.length === 0) return;
 
     setIsDownloading(true);
     setDownloadError(null);
@@ -438,398 +423,494 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
 
   return (
     <div className="export-builder">
-      <div className="export-builder__panel card">
-        <div className="export-builder__panel-header">
+
+      {/* ── Top bar: title + presets + Todos/Ninguno ── */}
+      <div className="export-builder__topbar">
+        <div className="export-builder__topbar-left">
           <div>
             <h3 className="export-builder__title">Exportar Postulaciones</h3>
-            <p className="muted-text export-builder__hint">
-              Exporta en plantilla vertical: una fila por campo y una columna por postulante.
+            <p className="export-builder__subtitle">
+              Plantilla vertical: una fila por campo, una columna por postulante.
             </p>
           </div>
-          <div className="export-builder__actions">
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => setSelectedFields(catalogFields.map((field) => field.key))}
-            >
-              Todos
-            </button>
-            <button className="btn btn-ghost btn-sm" onClick={() => setSelectedFields([])}>
-              Ninguno
-            </button>
-          </div>
+
+          {presets.length > 0 && (
+            <>
+              <div className="export-builder__topbar-divider" />
+              <div className="export-builder__topbar-presets">
+                <span className="export-builder__preset-label">Preset:</span>
+                {presets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className={`export-builder__preset-pill${activePresetId === preset.id ? " active" : ""}`}
+                    onClick={() => applyPreset(preset)}
+                  >
+                    {preset.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
-        {!cycleId ? (
-          <p className="muted-text">Selecciona un proceso para habilitar la exportacion.</p>
-        ) : loadingCatalog ? (
-          <p className="muted-text">Cargando catalogo...</p>
-        ) : catalogError ? (
-          <div className="error-callout" role="alert">{catalogError}</div>
-        ) : (
-          <div style={{ display: "grid", gap: "1rem" }}>
-            <div
-              style={{
-                display: "grid",
-                gap: "1rem",
-                gridTemplateColumns: "minmax(0, 1.35fr) minmax(320px, 1fr)",
-              }}
-            >
-              <div style={{ display: "grid", gap: "1rem" }}>
-                {groupedFields.map((group) => (
-                  <div
-                    key={group.key}
-                    style={{ border: "1px solid var(--sand)", borderRadius: "var(--radius)", padding: "0.9rem" }}
-                  >
-                    <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: "0.65rem" }}>{group.label}</div>
+        <div className="export-builder__topbar-right">
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setActivePresetId(null);
+              setSelectedFields(catalogFields.map((f) => f.key));
+            }}
+            disabled={!cycleId || loadingCatalog}
+          >
+            Todos
+          </button>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setActivePresetId(null);
+              setSelectedFields([]);
+            }}
+            disabled={!cycleId || loadingCatalog}
+          >
+            Ninguno
+          </button>
+        </div>
+      </div>
+
+      {/* ── 3-panel grid ── */}
+      <div className="export-builder__panels">
+
+        {/* Panel 1: Field catalog */}
+        <div className="export-builder__catalog-panel">
+          <div className="export-builder__panel-header">
+            <span className="export-builder__panel-title">① Elige campos</span>
+          </div>
+
+          <div className="export-builder__catalog-search">
+            <input
+              type="text"
+              className="search-input"
+              placeholder="Buscar campo…"
+              value={catalogSearch}
+              onChange={(e) => setCatalogSearch(e.target.value)}
+              disabled={!cycleId}
+              aria-label="Buscar campo"
+            />
+          </div>
+
+          <div className="export-builder__catalog-scroll">
+            {!cycleId ? (
+              <p className="muted-text">Selecciona un proceso para habilitar la exportación.</p>
+            ) : loadingCatalog ? (
+              <p className="muted-text">Cargando catálogo…</p>
+            ) : catalogError ? (
+              <div className="error-callout" role="alert">{catalogError}</div>
+            ) : filteredGroupedFields.length === 0 ? (
+              <p className="muted-text">No hay campos que coincidan con la búsqueda.</p>
+            ) : (
+              filteredGroupedFields.map((group) => {
+                const selectedInGroup = group.fields.filter(
+                  (f) => selectedFields.includes(f.key),
+                ).length;
+
+                return (
+                  <div key={group.key} className="export-builder__group">
+                    <div className="export-builder__group-header">
+                      <span className="export-builder__group-label">{group.label}</span>
+                      <span
+                        className={`export-builder__group-count${selectedInGroup > 0 ? " has-selected" : ""}`}
+                      >
+                        {selectedInGroup > 0
+                          ? `${selectedInGroup} de ${group.fields.length}`
+                          : group.fields.length}
+                      </span>
+                    </div>
                     <div className="export-builder__columns">
                       {group.fields.map((field) => (
-                        <label
-                          key={field.key}
-                          className="export-builder__col-label"
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "auto 1fr",
-                            gap: "0.65rem",
-                            alignItems: "start",
-                          }}
-                        >
+                        <label key={field.key} className="export-builder__col-label">
                           <input
                             type="checkbox"
                             checked={selectedFields.includes(field.key)}
                             onChange={() => toggleField(field.key)}
-                            className="export-builder__checkbox"
                           />
-                          <span style={{ display: "block", lineHeight: 1.35 }}>
-                            <strong>{field.label}</strong>
-                            {field.helperText ? (
-                              <span style={{ display: "block", fontSize: "0.72rem", color: "var(--muted)" }}>
-                                {field.helperText}
-                              </span>
-                            ) : null}
-                          </span>
+                          <span className="export-builder__col-label-text">{field.label}</span>
                         </label>
                       ))}
                     </div>
                   </div>
-                ))}
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="export-builder__panel-divider" />
+
+        {/* Panel 2: Selected fields (reorder) */}
+        <div className="export-builder__selected-panel">
+          <div className="export-builder__panel-header">
+            <span className="export-builder__panel-title">② Ordena</span>
+            <button
+              className="btn btn-outline btn-xs"
+              onClick={() => void handleSavePreset()}
+              disabled={isSavingPreset || selectedFields.length === 0 || !cycleId}
+            >
+              {isSavingPreset ? "Guardando…" : "Guardar preset"}
+            </button>
+          </div>
+
+          <div className="export-builder__selected-count">
+            {selectedFields.length === 0
+              ? "Ningún campo seleccionado"
+              : `${selectedFields.length} campo${selectedFields.length !== 1 ? "s" : ""} · usa las flechas para reordenar`}
+          </div>
+
+          <div className="export-builder__selected-scroll">
+            {selectedFields.length === 0 ? (
+              <p className="muted-text">Selecciona campos en el catálogo de la izquierda.</p>
+            ) : (
+              selectedFields.map((fieldKey, index) => {
+                const field = fieldLabelMap.get(fieldKey);
+                return (
+                  <div key={fieldKey} className="export-builder__field-item">
+                    <span className="export-builder__field-drag" aria-hidden="true">⠿</span>
+                    <div className="export-builder__field-info">
+                      <div className="export-builder__field-label">{field?.label ?? fieldKey}</div>
+                      <div className="export-builder__field-group">
+                        {field?.groupLabel ?? "Campo"}
+                      </div>
+                    </div>
+                    <div className="export-builder__field-actions">
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => moveField(fieldKey, "up")}
+                        disabled={index === 0}
+                        aria-label={`Mover ${field?.label ?? fieldKey} arriba`}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        onClick={() => moveField(fieldKey, "down")}
+                        disabled={index === selectedFields.length - 1}
+                        aria-label={`Mover ${field?.label ?? fieldKey} abajo`}
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        <div className="export-builder__panel-divider" />
+
+        {/* Panel 3: Filters + Download */}
+        <div className="export-builder__controls-panel">
+          <div className="export-builder__panel-header">
+            <span className="export-builder__panel-title">③ Filtros y descarga</span>
+          </div>
+
+          <div className="export-builder__controls-scroll">
+
+            {/* Applicant search filters */}
+            <div className="export-builder__controls-section">
+              <div className="export-builder__controls-section-title">Buscar postulantes</div>
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Nombre o email"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              <select
+                className="filter-select"
+                value={stageFilter}
+                onChange={(e) => setStageFilter(e.target.value)}
+              >
+                <option value="all">Todas las etapas</option>
+                <option value="documents">1. Formulario Principal</option>
+                <option value="exam_placeholder">2. Examen Académico</option>
+              </select>
+              <select
+                className="filter-select"
+                value={statusFilter}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setStatusFilter(value);
+                  if (value !== "all") setEligibilityFilter("all");
+                }}
+              >
+                <option value="all">Todos los estados</option>
+                <option value="draft">En progreso</option>
+                <option value="submitted">Submitted</option>
+                <option value="eligible">Completado</option>
+                <option value="ineligible">No elegible</option>
+                <option value="advanced">Avanzado</option>
+              </select>
+              <select
+                className="filter-select"
+                value={eligibilityFilter}
+                onChange={(e) => {
+                  const value = e.target.value as EligibilityFilter;
+                  setEligibilityFilter(value);
+                  if (value !== "all") setStatusFilter("all");
+                }}
+              >
+                <option value="all">Todas las elegibilidades</option>
+                <option value="eligible">Solo elegibles</option>
+                <option value="ineligible">Solo no elegibles</option>
+                <option value="pending">Pendientes</option>
+                <option value="advanced">Avanzados</option>
+              </select>
+            </div>
+
+            {/* Target mode */}
+            <div className="export-builder__controls-section">
+              <div className="export-builder__controls-section-title">Quiénes exportar</div>
+              <div className="export-builder__radio-group">
+                <label className="export-builder__radio-option">
+                  <input
+                    type="radio"
+                    name="target-mode"
+                    checked={targetMode === "filtered"}
+                    onChange={() => setTargetMode("filtered")}
+                  />
+                  <span>Todos los postulantes filtrados</span>
+                </label>
+                <label className="export-builder__radio-option">
+                  <input
+                    type="radio"
+                    name="target-mode"
+                    checked={targetMode === "manual"}
+                    onChange={() => setTargetMode("manual")}
+                  />
+                  <span>Selección manual</span>
+                </label>
+                <label className="export-builder__radio-option">
+                  <input
+                    type="radio"
+                    name="target-mode"
+                    checked={targetMode === "randomSample"}
+                    onChange={() => setTargetMode("randomSample")}
+                  />
+                  <span>Muestra aleatoria por grupos</span>
+                </label>
               </div>
 
-              <div style={{ display: "grid", gap: "1rem" }}>
-                <div className="card" style={{ padding: "1rem", border: "1px solid var(--sand)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontSize: "0.82rem", fontWeight: 700 }}>Campos seleccionados</div>
-                      <div className="muted-text">{selectedFields.length} campo(s)</div>
-                    </div>
-                    <button
-                      className="btn btn-outline btn-sm"
-                      onClick={() => void handleSavePreset()}
-                      disabled={isSavingPreset || selectedFields.length === 0}
-                    >
-                      {isSavingPreset ? "Guardando..." : "Guardar preset"}
-                    </button>
-                  </div>
-
-                  {presets.length > 0 ? (
-                    <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginTop: "0.75rem" }}>
-                      {presets.map((preset) => (
-                        <button
-                          key={preset.id}
-                          type="button"
-                          className={`status-pill ${activePresetId === preset.id ? "complete" : ""}`}
-                          onClick={() => applyPreset(preset)}
-                        >
-                          {preset.name}
-                        </button>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  <div style={{ display: "grid", gap: "0.5rem", marginTop: "1rem" }}>
-                    {selectedFields.length === 0 ? (
-                      <p className="muted-text">Selecciona al menos un campo para exportar.</p>
-                    ) : (
-                      selectedFields.map((fieldKey, index) => {
-                        const field = fieldLabelMap.get(fieldKey);
-                        return (
-                          <div
-                            key={fieldKey}
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr auto",
-                              gap: "0.5rem",
-                              alignItems: "center",
-                              padding: "0.65rem 0.75rem",
-                              border: "1px solid var(--sand)",
-                              borderRadius: "var(--radius)",
-                            }}
-                          >
-                            <div>
-                              <div style={{ fontWeight: 600, fontSize: "0.84rem" }}>{field?.label ?? fieldKey}</div>
-                              <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                                {field?.groupLabel ?? "Campo"}
-                              </div>
-                            </div>
-                            <div style={{ display: "flex", gap: "0.35rem" }}>
-                              <button type="button" className="btn btn-ghost btn-sm" onClick={() => moveField(fieldKey, "up")} disabled={index === 0}>↑</button>
-                              <button type="button" className="btn btn-ghost btn-sm" onClick={() => moveField(fieldKey, "down")} disabled={index === selectedFields.length - 1}>↓</button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </div>
-
-                <div className="card" style={{ padding: "1rem", border: "1px solid var(--sand)" }}>
-                  <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: "0.75rem" }}>Qué exportar</div>
-                  <div style={{ display: "grid", gap: "0.75rem" }}>
+              {targetMode === "manual" ? (
+                <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.2rem" }}>
+                  <label style={{ display: "grid", gap: "0.3rem" }}>
+                    <span className="field-label">Cantidad de grupos</span>
                     <input
-                      type="text"
+                      type="number"
+                      min={1}
+                      max={12}
+                      value={manualGroupCount}
+                      onChange={(e) => setManualGroupCount(Math.max(1, Number(e.target.value) || 1))}
                       className="search-input"
-                      placeholder="Buscar por nombre o email"
-                      value={searchQuery}
-                      onChange={(event) => setSearchQuery(event.target.value)}
                     />
-                    <select className="filter-select" value={stageFilter} onChange={(event) => setStageFilter(event.target.value)}>
-                      <option value="all">Todas las etapas</option>
-                      <option value="documents">1. Formulario Principal</option>
-                      <option value="exam_placeholder">2. Examen Academico</option>
-                    </select>
-                    <select
-                      className="filter-select"
-                      value={statusFilter}
-                      onChange={(event) => {
-                        const value = event.target.value;
-                        setStatusFilter(value);
-                        if (value !== "all") {
-                          setEligibilityFilter("all");
-                        }
-                      }}
-                    >
-                      <option value="all">Todos los estados</option>
-                      <option value="draft">En progreso</option>
-                      <option value="submitted">Submitted</option>
-                      <option value="eligible">Completado</option>
-                      <option value="ineligible">No elegible</option>
-                      <option value="advanced">Avanzado</option>
-                    </select>
-                    <select
-                      className="filter-select"
-                      value={eligibilityFilter}
-                      onChange={(event) => {
-                        const value = event.target.value as EligibilityFilter;
-                        setEligibilityFilter(value);
-                        if (value !== "all") {
-                          setStatusFilter("all");
-                        }
-                      }}
-                    >
-                      <option value="all">Todas las elegibilidades</option>
-                      <option value="eligible">Solo elegibles</option>
-                      <option value="ineligible">Solo no elegibles</option>
-                      <option value="pending">Pendientes</option>
-                      <option value="advanced">Avanzados</option>
-                    </select>
+                  </label>
+                  <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
+                    {selectedCount} postulante(s) seleccionados
                   </div>
-
-                  <div style={{ display: "grid", gap: "0.6rem", marginTop: "1rem" }}>
-                    <label className="export-builder__format-option">
-                      <input type="radio" name="target-mode" checked={targetMode === "filtered"} onChange={() => setTargetMode("filtered")} />
-                      <span>Todos los postulantes filtrados</span>
-                    </label>
-                    <label className="export-builder__format-option">
-                      <input type="radio" name="target-mode" checked={targetMode === "manual"} onChange={() => setTargetMode("manual")} />
-                      <span>Selección manual</span>
-                    </label>
-                    <label className="export-builder__format-option">
-                      <input type="radio" name="target-mode" checked={targetMode === "randomSample"} onChange={() => setTargetMode("randomSample")} />
-                      <span>Muestra aleatoria por grupos</span>
-                    </label>
-                  </div>
-
-                  {targetMode === "manual" ? (
-                    <div style={{ marginTop: "1rem", display: "grid", gap: "0.75rem" }}>
-                      <label style={{ display: "grid", gap: "0.35rem" }}>
-                        <span className="field-label">Cantidad de grupos manuales</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={12}
-                          value={manualGroupCount}
-                          onChange={(event) => setManualGroupCount(Math.max(1, Number(event.target.value) || 1))}
-                          className="search-input"
-                        />
-                      </label>
-
-                      <div style={{ fontSize: "0.76rem", color: "var(--muted)" }}>
-                        {selectedCount} postulante(s) seleccionados
-                      </div>
-
-                      {manualCandidatesLoading ? (
-                        <p className="muted-text">Cargando postulantes…</p>
-                      ) : manualCandidatesError ? (
-                        <div className="error-callout" role="alert">{manualCandidatesError}</div>
-                      ) : (
-                        <div style={{ maxHeight: 320, overflow: "auto", border: "1px solid var(--sand)", borderRadius: "var(--radius)" }}>
-                          {manualCandidates.length === 0 ? (
-                            <div style={{ padding: "0.85rem" }} className="muted-text">No hay postulantes con esos filtros.</div>
-                          ) : (
-                            manualCandidates.map((candidate) => {
-                              const isSelected = selectedApplicationIds.includes(candidate.id);
-                              return (
-                                <div
-                                  key={candidate.id}
-                                  style={{
-                                    display: "grid",
-                                    gridTemplateColumns: manualGroupCount > 1 ? "auto 1fr 120px" : "auto 1fr",
-                                    gap: "0.75rem",
-                                    alignItems: "center",
-                                    padding: "0.75rem",
-                                    borderBottom: "1px solid var(--sand)",
-                                  }}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={isSelected}
-                                    onChange={() => toggleManualApplicant(candidate.id)}
-                                  />
-                                  <div>
-                                    <div style={{ fontWeight: 600, fontSize: "0.84rem" }}>{candidate.candidateName}</div>
-                                    <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                                      {candidate.candidateEmail} · {candidate.stageCode} · {candidate.status}
-                                    </div>
-                                  </div>
-                                  {manualGroupCount > 1 ? (
-                                    <select
-                                      className="filter-select"
-                                      value={groupAssignments[candidate.id] ?? "1"}
-                                      onChange={(event) => setApplicantGroup(candidate.id, event.target.value)}
-                                      disabled={!isSelected}
-                                    >
-                                      {Array.from({ length: manualGroupCount }, (_, index) => (
-                                        <option key={index + 1} value={String(index + 1)}>
-                                          {`Grupo ${index + 1}`}
-                                        </option>
-                                      ))}
-                                    </select>
-                                  ) : null}
-                                </div>
-                              );
-                            })
-                          )}
+                  {manualCandidatesLoading ? (
+                    <p className="muted-text">Cargando postulantes…</p>
+                  ) : manualCandidatesError ? (
+                    <div className="error-callout" role="alert">{manualCandidatesError}</div>
+                  ) : (
+                    <div className="export-builder__candidate-list">
+                      {manualCandidates.length === 0 ? (
+                        <div style={{ padding: "0.75rem" }} className="muted-text">
+                          No hay postulantes con esos filtros.
                         </div>
+                      ) : (
+                        manualCandidates.map((candidate) => {
+                          const isSelected = selectedApplicationIds.includes(candidate.id);
+                          return (
+                            <div
+                              key={candidate.id}
+                              className="export-builder__candidate-row"
+                              style={{
+                                gridTemplateColumns:
+                                  manualGroupCount > 1 ? "auto 1fr 110px" : "auto 1fr",
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleManualApplicant(candidate.id)}
+                              />
+                              <div>
+                                <div className="export-builder__candidate-name">
+                                  {candidate.candidateName}
+                                </div>
+                                <div className="export-builder__candidate-meta">
+                                  {candidate.candidateEmail} · {candidate.stageCode} ·{" "}
+                                  {candidate.status}
+                                </div>
+                              </div>
+                              {manualGroupCount > 1 ? (
+                                <select
+                                  className="filter-select"
+                                  value={groupAssignments[candidate.id] ?? "1"}
+                                  onChange={(e) => setApplicantGroup(candidate.id, e.target.value)}
+                                  disabled={!isSelected}
+                                >
+                                  {Array.from({ length: manualGroupCount }, (_, i) => (
+                                    <option key={i + 1} value={String(i + 1)}>
+                                      Grupo {i + 1}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : null}
+                            </div>
+                          );
+                        })
                       )}
                     </div>
-                  ) : null}
-
-                  {targetMode === "randomSample" ? (
-                    <div style={{ marginTop: "1rem", display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
-                      <label style={{ display: "grid", gap: "0.35rem" }}>
-                        <span className="field-label">Número de grupos</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={25}
-                          value={randomGroupCount}
-                          onChange={(event) => setRandomGroupCount(Math.max(1, Number(event.target.value) || 1))}
-                          className="search-input"
-                        />
-                      </label>
-                      <label style={{ display: "grid", gap: "0.35rem" }}>
-                        <span className="field-label">Postulantes por grupo</span>
-                        <input
-                          type="number"
-                          min={1}
-                          max={100}
-                          value={randomApplicantsPerGroup}
-                          onChange={(event) => setRandomApplicantsPerGroup(Math.max(1, Number(event.target.value) || 1))}
-                          className="search-input"
-                        />
-                      </label>
-                    </div>
-                  ) : null}
+                  )}
                 </div>
+              ) : null}
 
-                <div className="card" style={{ padding: "1rem", border: "1px solid var(--sand)" }}>
-                  <div style={{ fontSize: "0.82rem", fontWeight: 700, marginBottom: "0.75rem" }}>Cómo descargar</div>
-                  <div className="export-builder__format-row">
-                    <span className="field-label">Formato</span>
-                    <label className="export-builder__format-option">
-                      <input type="radio" name="export-format" value="xlsx" checked={format === "xlsx"} onChange={() => setFormat("xlsx")} />
-                      <span>Excel (.xlsx)</span>
-                    </label>
-                    <label className="export-builder__format-option">
-                      <input type="radio" name="export-format" value="csv" checked={format === "csv"} onChange={() => setFormat("csv")} />
-                      <span>CSV</span>
-                    </label>
-                  </div>
-
-                  {exportModeUsesGrouping ? (
-                    <div style={{ display: "grid", gap: "0.6rem", marginTop: "0.85rem" }}>
-                      <label className="export-builder__format-option">
-                        <input
-                          type="radio"
-                          name="grouped-export-mode"
-                          checked={groupedExportMode === "single-sheet"}
-                          onChange={() => setGroupedExportMode("single-sheet")}
-                        />
-                        <span>Una sola hoja con todos los grupos</span>
-                      </label>
-                      <label className="export-builder__format-option">
-                        <input
-                          type="radio"
-                          name="grouped-export-mode"
-                          checked={groupedExportMode === "multi-sheet"}
-                          onChange={() => setGroupedExportMode("multi-sheet")}
-                          disabled={format !== "xlsx"}
-                        />
-                        <span>Un archivo Excel con una hoja por grupo</span>
-                      </label>
-                      <label className="export-builder__format-option">
-                        <input
-                          type="radio"
-                          name="grouped-export-mode"
-                          checked={groupedExportMode === "separate-files"}
-                          onChange={() => setGroupedExportMode("separate-files")}
-                        />
-                        <span>Un archivo por grupo (ZIP si hay varios)</span>
-                      </label>
-                    </div>
-                  ) : null}
-
-                  <div className="export-builder__btn-row" style={{ marginTop: "1rem" }}>
-                    <button className="btn btn-secondary" onClick={() => void handlePreview()} disabled={isPreviewing || selectedFields.length === 0}>
-                      {isPreviewing ? "Cargando..." : "Vista previa"}
-                    </button>
-                    <button className="btn btn-primary" onClick={() => void handleDownload()} disabled={isDownloading || selectedFields.length === 0}>
-                      {isDownloading ? "Descargando..." : `Descargar ${format.toUpperCase()}`}
-                    </button>
-                  </div>
+              {targetMode === "randomSample" ? (
+                <div className="export-builder__random-grid" style={{ marginTop: "0.2rem" }}>
+                  <label style={{ display: "grid", gap: "0.3rem" }}>
+                    <span className="field-label">Nº de grupos</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={25}
+                      value={randomGroupCount}
+                      onChange={(e) =>
+                        setRandomGroupCount(Math.max(1, Number(e.target.value) || 1))
+                      }
+                      className="search-input"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.3rem" }}>
+                    <span className="field-label">Por grupo</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={randomApplicantsPerGroup}
+                      onChange={(e) =>
+                        setRandomApplicantsPerGroup(Math.max(1, Number(e.target.value) || 1))
+                      }
+                      className="search-input"
+                    />
+                  </label>
                 </div>
-              </div>
+              ) : null}
             </div>
-          </div>
-        )}
 
-        {downloadError ? (
-          <div className="error-callout" role="alert" style={{ marginTop: "1rem" }}>
-            {downloadError}
+            {/* File format */}
+            <div className="export-builder__controls-section">
+              <div className="export-builder__controls-section-title">Formato de archivo</div>
+              <div className="export-builder__format-row">
+                <label className="export-builder__radio-option">
+                  <input
+                    type="radio"
+                    name="export-format"
+                    value="xlsx"
+                    checked={format === "xlsx"}
+                    onChange={() => setFormat("xlsx")}
+                  />
+                  <span>Excel (.xlsx)</span>
+                </label>
+                <label className="export-builder__radio-option">
+                  <input
+                    type="radio"
+                    name="export-format"
+                    value="csv"
+                    checked={format === "csv"}
+                    onChange={() => setFormat("csv")}
+                  />
+                  <span>CSV</span>
+                </label>
+              </div>
+
+              {exportModeUsesGrouping ? (
+                <div className="export-builder__radio-group" style={{ marginTop: "0.35rem" }}>
+                  <label className="export-builder__radio-option">
+                    <input
+                      type="radio"
+                      name="grouped-export-mode"
+                      checked={groupedExportMode === "single-sheet"}
+                      onChange={() => setGroupedExportMode("single-sheet")}
+                    />
+                    <span>Una sola hoja con todos los grupos</span>
+                  </label>
+                  <label className="export-builder__radio-option">
+                    <input
+                      type="radio"
+                      name="grouped-export-mode"
+                      checked={groupedExportMode === "multi-sheet"}
+                      onChange={() => setGroupedExportMode("multi-sheet")}
+                      disabled={format !== "xlsx"}
+                    />
+                    <span>Una hoja por grupo (.xlsx)</span>
+                  </label>
+                  <label className="export-builder__radio-option">
+                    <input
+                      type="radio"
+                      name="grouped-export-mode"
+                      checked={groupedExportMode === "separate-files"}
+                      onChange={() => setGroupedExportMode("separate-files")}
+                    />
+                    <span>Un archivo por grupo (ZIP)</span>
+                  </label>
+                </div>
+              ) : null}
+
+              {downloadError ? (
+                <div className="error-callout" role="alert">{downloadError}</div>
+              ) : null}
+            </div>
+
           </div>
-        ) : null}
+
+          {/* Footer: action buttons */}
+          <div className="export-builder__controls-footer">
+            <button
+              className="btn btn-secondary"
+              onClick={() => void handlePreview()}
+              disabled={isPreviewing || selectedFields.length === 0}
+            >
+              {isPreviewing ? "Cargando…" : "Vista previa"}
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => void handleDownload()}
+              disabled={isDownloading || selectedFields.length === 0}
+            >
+              {isDownloading ? "Descargando…" : `Descargar ${format.toUpperCase()}`}
+            </button>
+          </div>
+        </div>
+
       </div>
 
-      {(previewData || previewError) ? (
-        <div className="export-builder__preview card">
-          <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "baseline" }}>
+      {/* ── Preview table ── */}
+      {(previewData ?? previewError) ? (
+        <div className="export-builder__preview">
+          <div className="export-builder__preview-header">
             <h4>Vista previa</h4>
             {previewMeta ? (
-              <div className="muted-text" style={{ fontSize: "0.78rem" }}>
+              <div className="export-builder__preview-meta">
                 {`${previewMeta.exportedApplicants} exportados · ${previewMeta.totalFiltered} filtrados · ${previewMeta.sheetCount} hoja(s)`}
               </div>
             ) : null}
           </div>
-          {previewError ? <div className="error-callout" role="alert">{previewError}</div> : null}
+          {previewError ? (
+            <div className="error-callout" role="alert">{previewError}</div>
+          ) : null}
           {previewData ? (
             <div className="table-wrapper">
               <table className="data-table">
@@ -867,6 +948,7 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
           ) : null}
         </div>
       ) : null}
+
     </div>
   );
 }
