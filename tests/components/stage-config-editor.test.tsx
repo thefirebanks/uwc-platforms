@@ -772,7 +772,7 @@ describe("StageConfigEditor", () => {
       screen.getByRole("button", { name: /^Ajustes y Reglas$/i }),
     );
     expect(
-      screen.getByLabelText(/Instrucciones de la etapa \(Markdown\)/i),
+      screen.getByRole("textbox", { name: /Instrucciones de la etapa/i }),
     ).toBeInTheDocument();
     expect(
       screen.queryByLabelText(/Prompt OCR de la etapa/i),

@@ -3817,7 +3817,11 @@ export function StageConfigEditor({
                   </div>
                   <div className="form-field full">
                     <label htmlFor={`stage-description-${stageCode}`}>
-                      Instrucciones de la etapa (Markdown)
+                      Instrucciones de la etapa
+                      <FieldHint label="Sobre las instrucciones">
+                        Se muestra primero en el paso inicial del postulante.
+                        Soporta encabezados, listas, enfasis y enlaces seguros.
+                      </FieldHint>
                     </label>
                     <textarea
                       id={`stage-description-${stageCode}`}
@@ -3827,10 +3831,6 @@ export function StageConfigEditor({
                         setSettingsDescription(event.target.value)
                       }
                     />
-                    <div className="form-hint">
-                      Se muestra primero en el paso inicial del postulante.
-                      Soporta encabezados, listas, enfasis y enlaces seguros.
-                    </div>
                   </div>
                   <div className="form-field">
                     <label htmlFor={`stage-open-date-${stageCode}`}>
