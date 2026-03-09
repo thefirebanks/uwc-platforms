@@ -43,9 +43,13 @@ describe("listOcrTestRuns", () => {
       },
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await expect(
-      listOcrTestRuns({ supabase: supabase as any, cycleId: "cycle-1" }),
+      listOcrTestRuns({
+        supabase: supabase as unknown as Parameters<
+          typeof listOcrTestRuns
+        >[0]["supabase"],
+        cycleId: "cycle-1",
+      }),
     ).resolves.toEqual([]);
   });
 });
