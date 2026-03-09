@@ -740,7 +740,7 @@ describe("StageConfigEditor", () => {
     expect(screen.queryByText(/Paso inicial: Instrucciones/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    expect(screen.getByLabelText(/Instrucciones de la etapa \(Markdown\)/i)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /Instrucciones de la etapa/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/Prompt OCR de la etapa/i)).not.toBeInTheDocument();
   });
 
