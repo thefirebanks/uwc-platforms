@@ -3338,11 +3338,6 @@ export function StageConfigEditor({
                                                   ? "Subiendo referencias..."
                                                   : "Subir referencias"}
                                               </label>
-                                              <span className="form-hint">
-                                                Opcional. Útil para plantillas
-                                                visuales, formatos o ejemplos de
-                                                documentos.
-                                              </span>
                                             </div>
                                             {aiReferenceUpload.error ? (
                                               <div

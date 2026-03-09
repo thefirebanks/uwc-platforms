@@ -1456,6 +1456,11 @@ describe("StageConfigEditor", () => {
         name: /Habilitar parsing IA para Documento de identidad/i,
       }),
     );
+    expect(
+      screen.queryByText(
+        /Opcional\. Útil para plantillas visuales, formatos o ejemplos de documentos\./i,
+      ),
+    ).not.toBeInTheDocument();
     fireEvent.change(
       screen.getByRole("textbox", { name: /Instrucciones de extracción/i }),
       {

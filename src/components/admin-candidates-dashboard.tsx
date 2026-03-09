@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { AdminExportBuilder } from "./admin-export-builder";
 import { AdminApplicationViewer } from "./admin-application-viewer";
 
 /* -------------------------------------------------------------------------- */
@@ -27,6 +28,8 @@ type CycleOption = {
   name: string;
   isActive: boolean;
 };
+
+type CandidatesView = "list" | "export";
 
 type SearchResult = {
   rows: AdminCandidateRow[];
@@ -120,42 +123,6 @@ function getInitials(name: string) {
   return (parts[0]?.[0] ?? "A") + (parts[1]?.[0] ?? "");
 }
 
-function downloadCsv(rows: AdminCandidateRow[]) {
-  const header = [
-    "candidate_name",
-    "candidate_email",
-    "cycle_name",
-    "region",
-    "stage",
-    "status",
-    "updated_at",
-  ];
-  const csvRows = rows.map((row) => [
-    row.candidateName,
-    row.candidateEmail,
-    row.cycleName,
-    row.region,
-    row.stageCode,
-    row.status,
-    row.updatedAt,
-  ]);
-
-  const escapeCell = (value: string) =>
-    `"${value.replaceAll("\"", "\"\"")}"`;
-
-  const content = [header, ...csvRows]
-    .map((record) => record.map((cell) => escapeCell(String(cell))).join(","))
-    .join("\n");
-
-  const blob = new Blob([content], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = "candidatos.csv";
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Sort icon                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -183,14 +150,17 @@ export function AdminCandidatesDashboard({
   cycleOptions,
   defaultCycleId,
   defaultSearch = "",
+  defaultView = "list",
   focusApplicationId = "",
 }: {
   cycleOptions: CycleOption[];
   defaultCycleId: string | "all";
   defaultSearch?: string;
+  defaultView?: CandidatesView;
   focusApplicationId?: string;
 }) {
   /* ---- State ---- */
+  const [activeView, setActiveView] = useState<CandidatesView>(defaultView);
   const [search, setSearch] = useState(defaultSearch);
   const [cycleFilter, setCycleFilter] = useState<string>(defaultCycleId);
   const [stageFilter, setStageFilter] = useState<string>("all");
@@ -459,6 +429,7 @@ export function AdminCandidatesDashboard({
     cycleFilter === "all"
       ? "Todos los procesos"
       : cycleOptions.find((c) => c.id === cycleFilter)?.name ?? "Proceso";
+  const exportCycleId = cycleFilter !== "all" ? cycleFilter : undefined;
 
   const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const rangeEnd = Math.min(page * pageSize, total);
@@ -471,15 +442,48 @@ export function AdminCandidatesDashboard({
             <h1 className="admin-processes-title">Candidatos</h1>
             <p className="admin-processes-description">
               {visibleCycleName}
-              {total > 0 && (
+              {total > 0 && activeView === "list" ? (
                 <span style={{ marginLeft: "0.5rem", fontWeight: 400 }}>
                   ({total} candidato{total !== 1 ? "s" : ""})
                 </span>
-              )}
+              ) : null}
             </p>
           </div>
-          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            {selectedIds.size > 0 && (
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+            <div
+              role="tablist"
+              aria-label="Vistas de candidatos"
+              style={{
+                display: "inline-flex",
+                gap: "0.35rem",
+                padding: "0.25rem",
+                border: "1px solid var(--sand)",
+                borderRadius: "999px",
+                background: "rgba(255,255,255,0.03)",
+              }}
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeView === "list"}
+                className={`btn ${activeView === "list" ? "btn-primary" : "btn-ghost"}`}
+                style={{ borderRadius: "999px" }}
+                onClick={() => setActiveView("list")}
+              >
+                Listado
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeView === "export"}
+                className={`btn ${activeView === "export" ? "btn-primary" : "btn-ghost"}`}
+                style={{ borderRadius: "999px" }}
+                onClick={() => setActiveView("export")}
+              >
+                Exportar datos
+              </button>
+            </div>
+            {activeView === "list" && selectedIds.size > 0 ? (
               <span
                 style={{
                   fontSize: "0.8125rem",
@@ -489,30 +493,24 @@ export function AdminCandidatesDashboard({
               >
                 {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
               </span>
-            )}
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => downloadCsv(rows)}
-              disabled={rows.length === 0}
-            >
-              Exportar CSV
-            </button>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => void handleRunRubric()}
-              disabled={rubricRunning || cycleFilter === "all"}
-              title={cycleFilter === "all" ? "Selecciona un proceso para ejecutar." : undefined}
-            >
-              {rubricRunning ? "Ejecutando rúbrica..." : "Ejecutar rúbrica automática"}
-            </button>
+            ) : null}
+            {activeView === "list" ? (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleRunRubric()}
+                disabled={rubricRunning || cycleFilter === "all"}
+                title={cycleFilter === "all" ? "Selecciona un proceso para ejecutar." : undefined}
+              >
+                {rubricRunning ? "Ejecutando rúbrica..." : "Ejecutar rúbrica automática"}
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
 
       <div className="canvas-body wide admin-page-stack">
-        {cycleFilter !== "all" && stage1Summary ? (
+        {activeView === "list" && cycleFilter !== "all" && stage1Summary ? (
           <div className="dashboard-grid">
             <div className="stat-card">
               <div className="stat-title">{"Stage 1 total"}</div>
@@ -543,34 +541,28 @@ export function AdminCandidatesDashboard({
           </div>
         ) : null}
         <div className="settings-card">
-          {rubricMessage ? (
-            <div className={`admin-feedback ${rubricMessageTone}`} style={{ marginBottom: "12px" }}>
-              {rubricMessage}
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: "0.75rem",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "1rem",
+            }}
+          >
+            <div>
+              <div style={{ fontSize: "1rem", fontWeight: 700 }}>
+                {activeView === "export" ? "Exportar postulaciones" : "Listado de candidatos"}
+              </div>
+              <div className="muted-text" style={{ marginTop: "0.25rem" }}>
+                {activeView === "export"
+                  ? "Genera exportaciones filtradas, manuales o aleatorias desde la vista de candidatos."
+                  : "Busca, revisa y ejecuta acciones masivas sobre postulantes."}
+              </div>
             </div>
-          ) : null}
-          {cycleFilter !== "all" ? (
-            <div className="admin-chip-row" style={{ marginBottom: "16px" }}>
-              <span className="status-pill admin-chip-neutral">
-                {stage1Loading ? "Actualizando funnel..." : `${stage1Summary?.notSubmitted ?? 0} en borrador`}
-              </span>
-              <span className="status-pill admin-chip-neutral">
-                {`${stage1Summary?.missingRequiredFields ?? 0} con campos faltantes`}
-              </span>
-              <span className="status-pill admin-chip-neutral">
-                {`${stage1Summary?.missingRequiredFiles ?? 0} con archivos faltantes`}
-              </span>
-            </div>
-          ) : null}
-          {/* Toolbar: search + filters */}
-          <div className="candidates-toolbar admin-candidates-toolbar">
-            <input
-              type="text"
-              className="search-input"
-              placeholder="Buscar por nombre, email..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            <div className="filters-group admin-candidates-filters">
+            <label style={{ display: "grid", gap: "0.35rem", minWidth: "min(320px, 100%)" }}>
+              <span className="field-label">Proceso</span>
               <select
                 className="filter-select"
                 value={cycleFilter}
@@ -583,264 +575,302 @@ export function AdminCandidatesDashboard({
                   </option>
                 ))}
               </select>
-              <select
-                className="filter-select"
-                value={stageFilter}
-                onChange={(e) => setStageFilter(e.target.value)}
-              >
-                <option value="all">Todas las etapas</option>
-                <option value="documents">1. Formulario Principal</option>
-                <option value="exam_placeholder">2. Examen Academico</option>
-              </select>
-              <select
-                className="filter-select"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="all">Todos los estados</option>
-                <option value="draft">En progreso</option>
-                <option value="submitted">Submitted</option>
-                <option value="eligible">Completado</option>
-                <option value="ineligible">No elegible</option>
-                <option value="advanced">Avanzado</option>
-              </select>
-            </div>
+            </label>
           </div>
 
-          {/* Bulk actions bar */}
-          {selectedIds.size > 0 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "0.75rem",
-                padding: "0.625rem 1rem",
-                marginBottom: "0.75rem",
-                background: "var(--uwc-maroon-soft, #F5E6E6)",
-                borderRadius: "4px",
-                fontSize: "0.8125rem",
-              }}
-            >
-              <span style={{ fontWeight: 600, color: "var(--uwc-maroon, #800020)" }}>
-                Acciones masivas:
-              </span>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ fontSize: "0.8125rem", padding: "0.25rem 0.75rem" }}
-                disabled={bulkLoading}
-                onClick={() =>
-                  handleBulkTransition("documents", "exam_placeholder")
-                }
-              >
-                Avanzar elegibles (Etapa 1 → 2)
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                style={{ fontSize: "0.8125rem", padding: "0.25rem 0.75rem" }}
-                onClick={() => setSelectedIds(new Set())}
-              >
-                Deseleccionar todo
-              </button>
-              {bulkMessage && (
-                <span style={{ marginLeft: "auto", fontSize: "0.75rem" }}>
-                  {bulkMessage}
-                </span>
-              )}
+          {activeView === "list" && rubricMessage ? (
+            <div className={`admin-feedback ${rubricMessageTone}`} style={{ marginBottom: "12px" }}>
+              {rubricMessage}
             </div>
-          )}
+          ) : null}
 
-          {/* Fetch error */}
-          {fetchError && (
-            <div
-              style={{
-                padding: "0.75rem 1rem",
-                background: "#FEE",
-                color: "#C62828",
-                borderRadius: "4px",
-                marginBottom: "0.75rem",
-                fontSize: "0.875rem",
-              }}
-            >
-              {fetchError}
-            </div>
-          )}
-
-          {/* Table */}
-          <div className="table-container">
-            <table className="candidates-table admin-candidates-table">
-              <thead>
-                <tr>
-                  <th style={{ width: "40px", textAlign: "center" }}>
-                    <input
-                      type="checkbox"
-                      checked={allOnPageSelected}
-                      onChange={toggleSelectAll}
-                      aria-label="Seleccionar todo"
-                      style={{ cursor: "pointer" }}
-                    />
-                  </th>
-                  <th
-                    onClick={() => handleSort("full_name")}
-                    style={{ cursor: "pointer", userSelect: "none" }}
-                  >
-                    Candidato
-                    <SortIcon
-                      active={sortBy === "full_name"}
-                      direction={sortOrder}
-                    />
-                  </th>
-                  <th>Region</th>
-                  <th>Etapa actual</th>
-                  <th>Blockers</th>
-                  <th>Dictamen automático</th>
-                  <th>Estado</th>
-                  <th
-                    onClick={() => handleSort("updated_at")}
-                    style={{ cursor: "pointer", userSelect: "none" }}
-                  >
-                    Ultima actividad
-                    <SortIcon
-                      active={sortBy === "updated_at"}
-                      direction={sortOrder}
-                    />
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={8} className="admin-empty-cell">
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
-                        Buscando candidatos...
-                      </span>
-                    </td>
-                  </tr>
-                ) : rows.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="admin-empty-cell">
-                      No hay candidatos para los filtros seleccionados.
-                    </td>
-                  </tr>
-                ) : (
-                  rows.map((row, index) => {
-                    const isSelected = selectedIds.has(row.id);
-                    const isViewing = viewerApplicationId === row.id;
-                    const funnelEntry = stage1ByApplication[row.id];
-
-                    return (
-                      <tr
-                        key={row.id}
-                        className={`admin-candidate-row${isViewing ? " is-focused" : ""}`}
-                        data-application-id={row.id}
-                        onClick={() => setViewerApplicationId(row.id)}
-                        style={{ cursor: "pointer" }}
-                      >
-                        <td
-                          style={{ textAlign: "center" }}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSelectRow(row.id)}
-                            style={{ cursor: "pointer" }}
-                            aria-label={`Seleccionar ${row.candidateName}`}
-                          />
-                        </td>
-                        <td>
-                          <div className="candidate-name">
-                            <div
-                              className={`candidate-avatar ${getAvatarTone(index)}`}
-                            >
-                              {getInitials(row.candidateName).toUpperCase()}
-                            </div>
-                            <div>
-                              <div>{row.candidateName}</div>
-                              <div className="candidate-email">
-                                {row.candidateEmail}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                        <td>{row.region || "—"}</td>
-                        <td>{getStageLabel(row.stageCode)}</td>
-                        <td>
-                          {funnelEntry?.blockers.length ? (
-                            <span className="status-pill rejected">
-                              {funnelEntry.blockers.length} bloqueo(s)
-                            </span>
-                          ) : row.stageCode === "documents" ? (
-                            <span className="status-pill complete">Lista</span>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                        <td>
-                          <span className={getReviewOutcomeClass(row.reviewOutcome)}>
-                            {getReviewOutcomeLabel(row.reviewOutcome)}
-                          </span>
-                        </td>
-                        <td>
-                          <span className={getStatusClass(row.status)}>
-                            {getStatusLabel(row.status)}
-                          </span>
-                        </td>
-                        <td>{new Date(row.updatedAt).toLocaleString()}</td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "1rem 0.5rem 0.5rem",
-                fontSize: "0.8125rem",
-                color: "var(--muted)",
-              }}
-            >
-              <span>
-                Mostrando {rangeStart}–{rangeEnd} de {total} candidato
-                {total !== 1 ? "s" : ""}
+          {activeView === "list" && cycleFilter !== "all" ? (
+            <div className="admin-chip-row" style={{ marginBottom: "16px" }}>
+              <span className="status-pill admin-chip-neutral">
+                {stage1Loading ? "Actualizando funnel..." : `${stage1Summary?.notSubmitted ?? 0} en borrador`}
               </span>
-              <div style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ fontSize: "0.8125rem", padding: "0.25rem 0.625rem" }}
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  ← Anterior
-                </button>
-                <span style={{ padding: "0 0.5rem", fontWeight: 600 }}>
-                  {page} / {totalPages}
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  style={{ fontSize: "0.8125rem", padding: "0.25rem 0.625rem" }}
-                  disabled={page >= totalPages}
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                >
-                  Siguiente →
-                </button>
+              <span className="status-pill admin-chip-neutral">
+                {`${stage1Summary?.missingRequiredFields ?? 0} con campos faltantes`}
+              </span>
+              <span className="status-pill admin-chip-neutral">
+                {`${stage1Summary?.missingRequiredFiles ?? 0} con archivos faltantes`}
+              </span>
+            </div>
+          ) : null}
+
+          {activeView === "list" ? (
+            <>
+              <div className="candidates-toolbar admin-candidates-toolbar">
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder="Buscar por nombre, email..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                <div className="filters-group admin-candidates-filters">
+                  <select
+                    className="filter-select"
+                    value={stageFilter}
+                    onChange={(e) => setStageFilter(e.target.value)}
+                  >
+                    <option value="all">Todas las etapas</option>
+                    <option value="documents">1. Formulario Principal</option>
+                    <option value="exam_placeholder">2. Examen Academico</option>
+                  </select>
+                  <select
+                    className="filter-select"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                  >
+                    <option value="all">Todos los estados</option>
+                    <option value="draft">En progreso</option>
+                    <option value="submitted">Submitted</option>
+                    <option value="eligible">Completado</option>
+                    <option value="ineligible">No elegible</option>
+                    <option value="advanced">Avanzado</option>
+                  </select>
+                </div>
               </div>
+
+              {selectedIds.size > 0 ? (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.75rem",
+                    padding: "0.625rem 1rem",
+                    marginBottom: "0.75rem",
+                    background: "var(--uwc-maroon-soft, #F5E6E6)",
+                    borderRadius: "4px",
+                    fontSize: "0.8125rem",
+                  }}
+                >
+                  <span style={{ fontWeight: 600, color: "var(--uwc-maroon, #800020)" }}>
+                    Acciones masivas:
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: "0.8125rem", padding: "0.25rem 0.75rem" }}
+                    disabled={bulkLoading}
+                    onClick={() => handleBulkTransition("documents", "exam_placeholder")}
+                  >
+                    Avanzar elegibles (Etapa 1 → 2)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ fontSize: "0.8125rem", padding: "0.25rem 0.75rem" }}
+                    onClick={() => setSelectedIds(new Set())}
+                  >
+                    Deseleccionar todo
+                  </button>
+                  {bulkMessage ? (
+                    <span style={{ marginLeft: "auto", fontSize: "0.75rem" }}>
+                      {bulkMessage}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {fetchError ? (
+                <div
+                  style={{
+                    padding: "0.75rem 1rem",
+                    background: "#FEE",
+                    color: "#C62828",
+                    borderRadius: "4px",
+                    marginBottom: "0.75rem",
+                    fontSize: "0.875rem",
+                  }}
+                >
+                  {fetchError}
+                </div>
+              ) : null}
+
+              <div className="table-container">
+                <table className="candidates-table admin-candidates-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "40px", textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          checked={allOnPageSelected}
+                          onChange={toggleSelectAll}
+                          aria-label="Seleccionar todo"
+                          style={{ cursor: "pointer" }}
+                        />
+                      </th>
+                      <th
+                        onClick={() => handleSort("full_name")}
+                        style={{ cursor: "pointer", userSelect: "none" }}
+                      >
+                        Candidato
+                        <SortIcon
+                          active={sortBy === "full_name"}
+                          direction={sortOrder}
+                        />
+                      </th>
+                      <th>Region</th>
+                      <th>Etapa actual</th>
+                      <th>Blockers</th>
+                      <th>Dictamen automático</th>
+                      <th>Estado</th>
+                      <th
+                        onClick={() => handleSort("updated_at")}
+                        style={{ cursor: "pointer", userSelect: "none" }}
+                      >
+                        Ultima actividad
+                        <SortIcon
+                          active={sortBy === "updated_at"}
+                          direction={sortOrder}
+                        />
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={8} className="admin-empty-cell">
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem" }}>
+                            Buscando candidatos...
+                          </span>
+                        </td>
+                      </tr>
+                    ) : rows.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="admin-empty-cell">
+                          No hay candidatos para los filtros seleccionados.
+                        </td>
+                      </tr>
+                    ) : (
+                      rows.map((row, index) => {
+                        const isSelected = selectedIds.has(row.id);
+                        const isViewing = viewerApplicationId === row.id;
+                        const funnelEntry = stage1ByApplication[row.id];
+
+                        return (
+                          <tr
+                            key={row.id}
+                            className={`admin-candidate-row${isViewing ? " is-focused" : ""}`}
+                            data-application-id={row.id}
+                            onClick={() => setViewerApplicationId(row.id)}
+                            style={{ cursor: "pointer" }}
+                          >
+                            <td
+                              style={{ textAlign: "center" }}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelectRow(row.id)}
+                                style={{ cursor: "pointer" }}
+                                aria-label={`Seleccionar ${row.candidateName}`}
+                              />
+                            </td>
+                            <td>
+                              <div className="candidate-name">
+                                <div
+                                  className={`candidate-avatar ${getAvatarTone(index)}`}
+                                >
+                                  {getInitials(row.candidateName).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div>{row.candidateName}</div>
+                                  <div className="candidate-email">
+                                    {row.candidateEmail}
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td>{row.region || "—"}</td>
+                            <td>{getStageLabel(row.stageCode)}</td>
+                            <td>
+                              {funnelEntry?.blockers.length ? (
+                                <span className="status-pill rejected">
+                                  {funnelEntry.blockers.length} bloqueo(s)
+                                </span>
+                              ) : row.stageCode === "documents" ? (
+                                <span className="status-pill complete">Lista</span>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                            <td>
+                              <span className={getReviewOutcomeClass(row.reviewOutcome)}>
+                                {getReviewOutcomeLabel(row.reviewOutcome)}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={getStatusClass(row.status)}>
+                                {getStatusLabel(row.status)}
+                              </span>
+                            </td>
+                            <td>{new Date(row.updatedAt).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {totalPages > 1 ? (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    padding: "1rem 0.5rem 0.5rem",
+                    fontSize: "0.8125rem",
+                    color: "var(--muted)",
+                  }}
+                >
+                  <span>
+                    Mostrando {rangeStart}–{rangeEnd} de {total} candidato
+                    {total !== 1 ? "s" : ""}
+                  </span>
+                  <div style={{ display: "flex", gap: "0.375rem", alignItems: "center" }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: "0.8125rem", padding: "0.25rem 0.625rem" }}
+                      disabled={page <= 1}
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    >
+                      ← Anterior
+                    </button>
+                    <span style={{ padding: "0 0.5rem", fontWeight: 600 }}>
+                      {page} / {totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ fontSize: "0.8125rem", padding: "0.25rem 0.625rem" }}
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    >
+                      Siguiente →
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : exportCycleId ? (
+            <AdminExportBuilder
+              cycleId={exportCycleId}
+              stageCode={stageFilter !== "all" ? stageFilter : undefined}
+            />
+          ) : (
+            <div className="muted-text">
+              Selecciona un proceso para habilitar la exportación.
             </div>
           )}
         </div>
       </div>
 
-      {/* Application viewer drawer */}
       <AdminApplicationViewer
         applicationId={viewerApplicationId}
         stage1Blockers={viewerApplicationId ? stage1ByApplication[viewerApplicationId]?.blockers ?? [] : []}
