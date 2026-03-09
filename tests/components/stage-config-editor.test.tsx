@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StageConfigEditor } from "@/components/stage-config-editor";
 import type { CycleStageField, StageSection } from "@/types/domain";
@@ -1428,7 +1428,7 @@ describe("StageConfigEditor", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows wizard and advanced rubric authoring tabs", () => {
+  it("shows Visual and JSON rubric mode buttons in Settings tab", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -1447,11 +1447,12 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    expect(screen.getByRole("button", { name: /Modo guiado \(recomendado\)/i })).not.toBeDisabled();
-    expect(screen.getByRole("button", { name: /Modo avanzado/i })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Visual" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "JSON" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "Validar" })).not.toBeDisabled();
   });
 
-  it("switches to form editor from wizard OCR mapping via Editar campos OCR", () => {
+  it("switches between Visual and JSON rubric modes", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -1470,14 +1471,24 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    // Expand the collapsible OCR section first
-    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Editar campos OCR/i }));
 
-    expect(screen.getByRole("button", { name: /^Editor de Formulario$/i })).toHaveClass("active");
+    // Default is Visual mode — Visual button should be primary
+    const visualBtn = screen.getByRole("button", { name: "Visual" });
+    const jsonBtn = screen.getByRole("button", { name: "JSON" });
+    expect(visualBtn.className).toContain("btn-primary");
+    expect(jsonBtn.className).toContain("btn-outline");
+
+    // Switch to JSON mode
+    fireEvent.click(jsonBtn);
+    expect(jsonBtn.className).toContain("btn-primary");
+    expect(visualBtn.className).toContain("btn-outline");
+
+    // JSON textarea should be visible
+    const textarea = document.querySelector("textarea[id^='eligibility-rubric-']");
+    expect(textarea).toBeInTheDocument();
   });
 
-  it("marks technical OCR options and shows a warning when selected for business slots", () => {
+  it("shows template generator with UWC Peru preset fields", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -1496,20 +1507,18 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    // Expand the collapsible OCR section first
-    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
-    fireEvent.change(screen.getByLabelText(/Nombre en documento/i), {
-      target: { value: "confidence" },
-    });
 
-    expect(screen.getAllByText(/Documentos de identidad/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Técnico/i).length).toBeGreaterThan(0);
-    expect(
-      screen.getByText(/Confirma que este campo técnico representa nombre en documento/i),
-    ).toBeInTheDocument();
+    // Template generator should be present as a collapsible details element
+    const details = document.querySelector(".rubric-template-details");
+    expect(details).toBeInTheDocument();
+
+    // Key template fields should be present
+    expect(document.querySelector("#tpl-name-documents")).toBeInTheDocument();
+    expect(document.querySelector("#tpl-average-documents")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Generar rúbrica desde plantilla/i })).toBeInTheDocument();
   });
 
-  it("supports multi-year birth input and persists editable wizard policy values", async () => {
+  it("generates rubric from template and persists it via save", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -1547,84 +1556,21 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    for (const checkbox of screen.getAllByRole("checkbox", { name: /Documento DNI/i })) {
-      if (!(checkbox as HTMLInputElement).checked) {
-        fireEvent.click(checkbox);
-      }
-    }
-    for (const checkbox of screen.getAllByRole("checkbox", { name: /Certificado de notas/i })) {
-      if (!(checkbox as HTMLInputElement).checked) {
-        fireEvent.click(checkbox);
-      }
-    }
-    fireEvent.change(screen.getByLabelText(/Nombre del postulante/i), {
-      target: { value: "fullName" },
-    });
-    fireEvent.change(screen.getByLabelText(/Promedio de notas/i), {
-      target: { value: "gradeAverage" },
-    });
-    fireEvent.change(screen.getByRole("combobox", { name: /Autorización firmada/i }), {
-      target: { value: "signedAuthorization" },
-    });
-    fireEvent.change(screen.getByRole("combobox", { name: /Foto del postulante/i }), {
-      target: { value: "applicantPhoto" },
-    });
-    // Expand the collapsible OCR section to access OCR fields
-    fireEvent.click(screen.getByRole("button", { name: /Verificación OCR/i }));
-    fireEvent.change(screen.getByLabelText(/Nombre en documento/i), {
-      target: { value: "fullName" },
-    });
-    fireEvent.change(screen.getByLabelText(/Año de nacimiento/i), {
-      target: { value: "birthYear" },
-    });
-    fireEvent.change(screen.getByLabelText(/Tipo de documento/i), {
-      target: { value: "documentType" },
-    });
-    fireEvent.change(screen.getByLabelText(/Excepción de documento/i), {
-      target: { value: "documentIssue" },
-    });
 
-    fireEvent.click(screen.getByRole("button", { name: /^Continuar$/i }));
+    // Click the template generator button to populate rubric from defaults
+    fireEvent.click(screen.getByRole("button", { name: /Generar rúbrica desde plantilla/i }));
 
-    const birthYearsInput = screen.getByLabelText(/Años de nacimiento permitidos/i);
-    fireEvent.change(birthYearsInput, {
-      target: { value: "2008, 2009 2010" },
-    });
-    expect(birthYearsInput).toHaveValue("2008, 2009 2010");
+    // After generation, the rubric should be enabled — switch to JSON to verify content
+    fireEvent.click(screen.getByRole("button", { name: "JSON" }));
+    const textarea = document.querySelector("textarea[id^='eligibility-rubric-']") as HTMLTextAreaElement | null;
+    expect(textarea).not.toBeNull();
+    const rubricValue = JSON.parse(textarea!.value);
+    expect(rubricValue.enabled).toBe(true);
+    expect(rubricValue.criteria.length).toBeGreaterThan(0);
 
-    fireEvent.change(screen.getByLabelText(/Política de completitud/i), {
-      target: { value: "minimum_answers" },
-    });
-    fireEvent.change(screen.getByLabelText(/Respuestas mínimas por recomendación/i), {
-      target: { value: "2" },
-    });
-    fireEvent.change(screen.getByLabelText(/Múltiples certificados de notas/i), {
-      target: { value: "single_or_not_eligible" },
-    });
-    fireEvent.change(screen.getByLabelText(/Excepciones de identidad/i), {
-      target: { value: "not_eligible" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: /^Continuar$/i }));
-
-    expect(screen.getByText(/Revisar y activar/i)).toBeInTheDocument();
-    expect(screen.queryByText(/Mapeos OCR activos/i)).not.toBeInTheDocument();
-    const policiesChecklistLabel = screen
-      .getAllByText(/^Políticas$/i)
-      .find((node) => node.classList.contains("rw-check-label"));
-    const policiesChecklistItem = policiesChecklistLabel?.closest(".rw-check-item") ?? null;
-    expect(policiesChecklistItem).not.toBeNull();
-    if (!policiesChecklistItem) {
-      throw new Error("No se encontró la fila de checklist para Políticas.");
-    }
-    fireEvent.click(
-      within(policiesChecklistItem as HTMLElement).getByRole("button", { name: /Detalle/i }),
-    );
-    expect(screen.getByText(/mín\. 2/i)).toBeInTheDocument();
-    expect(screen.getByText(/Múltiples certificados/i)).toBeInTheDocument();
-    expect(screen.getByText(/Excepciones de identidad/i)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Activar rúbrica de esta etapa/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Guardar configuración/i }));
+    // Switch back to Visual and save
+    fireEvent.click(screen.getByRole("button", { name: "Visual" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -1639,12 +1585,8 @@ describe("StageConfigEditor", () => {
         ? JSON.parse(String(request.body))
         : null;
 
-    expect(payload?.settings?.rubricBlueprintV1?.policy).toMatchObject({
-      allowedBirthYears: [2008, 2009, 2010],
-      recommendationCompleteness: "minimum_answers",
-      recommendationMinAnswers: 2,
-      gradesCombinationRule: "single_or_not_eligible",
-      idExceptionRule: "not_eligible",
-    });
+    // The rubric should be persisted in settings
+    expect(payload?.settings?.eligibilityRubric?.enabled).toBe(true);
+    expect(payload?.settings?.eligibilityRubric?.criteria?.length).toBeGreaterThan(0);
   });
 });
