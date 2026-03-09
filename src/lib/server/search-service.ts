@@ -18,6 +18,7 @@ export type SearchApplicationsInput = {
   query?: string;
   stageCode?: StageCode;
   status?: ApplicationStatus;
+  eligibility?: "all" | "eligible" | "ineligible" | "pending" | "advanced";
   page: number;
   pageSize: number;
   sortBy: "updated_at" | "created_at" | "full_name";
@@ -129,6 +130,7 @@ export async function searchApplications({
   const pageSize = Math.max(1, Math.min(input.pageSize, 200));
   const page = Math.max(1, input.page);
   const offset = (page - 1) * pageSize;
+  const eligibility = input.eligibility ?? "all";
 
   /* ---- Step 1: text search → matching profile IDs ---- */
   let matchingProfileIds: string[] | null = null;
@@ -185,6 +187,18 @@ export async function searchApplications({
   }
   if (input.status) {
     query = query.eq("status", input.status);
+  }
+  if (eligibility === "eligible") {
+    query = query.eq("status", "eligible");
+  }
+  if (eligibility === "ineligible") {
+    query = query.eq("status", "ineligible");
+  }
+  if (eligibility === "advanced") {
+    query = query.eq("status", "advanced");
+  }
+  if (eligibility === "pending") {
+    query = query.in("status", ["draft", "submitted"]);
   }
   if (matchingProfileIds) {
     query = query.in("applicant_id", matchingProfileIds);

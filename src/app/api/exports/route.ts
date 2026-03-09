@@ -5,19 +5,21 @@ import { requireAuth } from "@/lib/server/auth";
 import {
   buildApplicationsCsv,
   buildApplicationsXlsx,
-  buildDynamicCsvExport,
-  buildDynamicExportTable,
-  buildDynamicExportXlsx,
   buildExportCatalog,
+  buildGroupedExportZip,
+  buildMatrixCsvExport,
+  buildMatrixExportWorkbook,
+  buildMatrixExportXlsx,
   getApplicationExportPackage,
   getApplicationsForExport,
   parseApplicationExportFilters,
+  prepareMatrixExportGroups,
   saveExportPreset,
   validateSelectedExportFields,
 } from "@/lib/server/exports-service";
 import { AppError } from "@/lib/errors/app-error";
 
-function buildFileName(format: "csv" | "xlsx") {
+function buildFileName(format: "csv" | "xlsx" | "zip") {
   const stamp = new Date().toISOString().replaceAll(":", "-");
   return `applications-export-${stamp}.${format}`;
 }
@@ -39,6 +41,91 @@ function parseSelectedFields(raw: string | null): string[] | undefined {
   return keys.length > 0 ? keys : undefined;
 }
 
+const presetSchema = z.object({
+  cycleId: z.string().uuid(),
+  presetId: z.string().uuid().optional().nullable(),
+  name: z.string().trim().min(2).max(120),
+  selectedFields: z.array(z.string().min(1)).min(1),
+});
+
+const exportRequestSchema = z.object({
+  action: z.enum(["preview", "download"]),
+  cycleId: z.string().uuid(),
+  stageCode: z.string().trim().optional().nullable(),
+  status: z.enum(["draft", "submitted", "eligible", "ineligible", "advanced"]).optional().nullable(),
+  eligibility: z.enum(["all", "eligible", "ineligible", "pending", "advanced"]).default("all"),
+  query: z.string().trim().optional().nullable(),
+  selectedFields: z.array(z.string().min(1)).min(1),
+  format: z.enum(["csv", "xlsx"]).default("xlsx"),
+  targetMode: z.enum(["filtered", "manual", "randomSample"]).default("filtered"),
+  selectedApplicationIds: z.array(z.string().uuid()).optional(),
+  groupAssignments: z.array(
+    z.object({
+      applicationId: z.string().uuid(),
+      groupKey: z.string().trim().min(1).max(64),
+      groupLabel: z.string().trim().min(1).max(120),
+    }),
+  ).optional(),
+  randomSample: z.object({
+    groupCount: z.number().int().min(1).max(25),
+    applicantsPerGroup: z.number().int().min(1).max(100),
+  }).optional(),
+  groupedExportMode: z.enum(["single-sheet", "multi-sheet", "separate-files"]).default("single-sheet"),
+});
+
+async function buildMatrixResponse({
+  supabase,
+  payload,
+}: {
+  supabase: Awaited<ReturnType<typeof requireAuth>>["supabase"];
+  payload: z.infer<typeof exportRequestSchema>;
+}) {
+  const filters = parseApplicationExportFilters(
+    new URLSearchParams(
+      Object.entries({
+        cycleId: payload.cycleId,
+        stageCode: payload.stageCode && payload.stageCode !== "all" ? payload.stageCode : "",
+        status: payload.status ?? "",
+        eligibility: payload.eligibility,
+        q: payload.query ?? "",
+      }).filter(([, value]) => value),
+    ),
+  );
+
+  const catalog = await buildExportCatalog({
+    supabase,
+    cycleId: payload.cycleId,
+  });
+  const selectedFields = validateSelectedExportFields({
+    selectedFields: payload.selectedFields,
+    catalog,
+  });
+  const result = await getApplicationsForExport({
+    supabase,
+    filters,
+  });
+  const prepared = prepareMatrixExportGroups({
+    records: result.records,
+    targetMode: payload.targetMode,
+    selectedApplicationIds: payload.selectedApplicationIds,
+    groupAssignments: payload.groupAssignments,
+    randomSample: payload.randomSample,
+  });
+  const workbook = buildMatrixExportWorkbook({
+    groups: prepared.groups,
+    selectedFields,
+    catalog,
+    groupedExportMode: payload.groupedExportMode,
+    includeGroupRow: prepared.includeGroupRow,
+  });
+
+  return {
+    workbook,
+    totalFiltered: result.total,
+    exportedApplicants: prepared.groups.reduce((sum, group) => sum + group.records.length, 0),
+  };
+}
+
 export async function GET(request: NextRequest) {
   return withErrorHandling(
     async () => {
@@ -47,7 +134,6 @@ export async function GET(request: NextRequest) {
       const applicationId = params.get("applicationId");
       const cycleId = params.get("cycleId");
 
-      /* Single-application JSON package */
       if (applicationId) {
         const exportPackage = await getApplicationExportPackage({
           supabase,
@@ -79,7 +165,6 @@ export async function GET(request: NextRequest) {
         return NextResponse.json(catalog);
       }
 
-      /* Bulk export — CSV or XLSX */
       const format = params.get("format") === "xlsx" ? "xlsx" : "csv";
       const selectedFields = parseSelectedFields(params.get("fields") ?? params.get("columns"));
       const previewLimit = Math.min(Number(params.get("limit") ?? "5000"), 5000);
@@ -92,6 +177,7 @@ export async function GET(request: NextRequest) {
           status: 400,
         });
       }
+
       const catalog = filters.cycleId
         ? await buildExportCatalog({ supabase, cycleId: filters.cycleId })
         : {
@@ -105,14 +191,22 @@ export async function GET(request: NextRequest) {
           selectedFields,
           catalog,
         });
-        const table = buildDynamicExportTable({
+
+        const prepared = prepareMatrixExportGroups({
           records: result.records,
+          targetMode: "filtered",
+        });
+        const workbook = buildMatrixExportWorkbook({
+          groups: prepared.groups,
           selectedFields: validatedFields,
           catalog,
+          groupedExportMode: "single-sheet",
+          includeGroupRow: prepared.includeGroupRow,
         });
+        const sheet = workbook.sheets[0];
 
         if (format === "xlsx") {
-          const buffer = await buildDynamicExportXlsx(table);
+          const buffer = await buildMatrixExportXlsx(workbook);
           return new NextResponse(new Uint8Array(buffer), {
             status: 200,
             headers: {
@@ -125,7 +219,7 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        const csv = buildDynamicCsvExport(table);
+        const csv = buildMatrixCsvExport(sheet);
         return new NextResponse(csv, {
           status: 200,
           headers: {
@@ -151,7 +245,6 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      /* Default: CSV */
       const csv = buildApplicationsCsv(result.rows);
       return new NextResponse(csv, {
         status: 200,
@@ -167,52 +260,109 @@ export async function GET(request: NextRequest) {
   );
 }
 
-const presetSchema = z.object({
-  cycleId: z.string().uuid(),
-  presetId: z.string().uuid().optional().nullable(),
-  name: z.string().trim().min(2).max(120),
-  selectedFields: z.array(z.string().min(1)).min(1),
-});
-
 export async function POST(request: NextRequest) {
   return withErrorHandling(async () => {
     const { profile, supabase } = await requireAuth(["admin"]);
     const body = await request.json();
-    const parsed = presetSchema.safeParse(body);
 
+    const presetPayload = presetSchema.safeParse(body);
+    if (presetPayload.success) {
+      const catalog = await buildExportCatalog({
+        supabase,
+        cycleId: presetPayload.data.cycleId,
+      });
+      const selectedFields = validateSelectedExportFields({
+        selectedFields: presetPayload.data.selectedFields,
+        catalog,
+      });
+
+      const preset = await saveExportPreset({
+        supabase,
+        cycleId: presetPayload.data.cycleId,
+        presetId: presetPayload.data.presetId,
+        createdBy: profile.id,
+        name: presetPayload.data.name,
+        selectedFields,
+      });
+
+      return NextResponse.json({
+        preset: {
+          id: preset.id,
+          name: preset.name,
+          selectedFields,
+          updatedAt: preset.updated_at,
+        },
+      });
+    }
+
+    const parsed = exportRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new AppError({
-        message: "Invalid export preset payload",
-        userMessage: "No se pudo guardar el preset de exportacion.",
+        message: "Invalid export request payload",
+        userMessage: "No se pudo procesar la configuración de exportación.",
         status: 400,
         details: parsed.error.flatten(),
       });
     }
 
-    const catalog = await buildExportCatalog({
+    if (parsed.data.groupedExportMode === "multi-sheet" && parsed.data.format !== "xlsx") {
+      throw new AppError({
+        message: "Multi-sheet export requested for CSV",
+        userMessage: "La opción de múltiples hojas solo está disponible para Excel.",
+        status: 400,
+      });
+    }
+
+    const { workbook, totalFiltered, exportedApplicants } = await buildMatrixResponse({
       supabase,
-      cycleId: parsed.data.cycleId,
-    });
-    const selectedFields = validateSelectedExportFields({
-      selectedFields: parsed.data.selectedFields,
-      catalog,
+      payload: parsed.data,
     });
 
-    const preset = await saveExportPreset({
-      supabase,
-      cycleId: parsed.data.cycleId,
-      presetId: parsed.data.presetId,
-      createdBy: profile.id,
-      name: parsed.data.name,
-      selectedFields,
-    });
+    if (parsed.data.action === "preview") {
+      const firstSheet = workbook.sheets[0];
+      return NextResponse.json({
+        preview: {
+          sheetName: firstSheet?.name ?? "Postulantes",
+          applicantHeaders: firstSheet?.applicantHeaders ?? [],
+          rows: firstSheet?.rows ?? [],
+        },
+        totalFiltered,
+        exportedApplicants,
+        sheetCount: workbook.sheets.length,
+      });
+    }
 
-    return NextResponse.json({
-      preset: {
-        id: preset.id,
-        name: preset.name,
-        selectedFields,
-        updatedAt: preset.updated_at,
+    if (parsed.data.groupedExportMode === "separate-files" && workbook.sheets.length > 1) {
+      const archive = await buildGroupedExportZip({
+        workbookData: workbook,
+        format: parsed.data.format,
+      });
+      return new NextResponse(new Uint8Array(archive), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="${buildFileName("zip")}"`,
+        },
+      });
+    }
+
+    if (parsed.data.format === "xlsx") {
+      const buffer = await buildMatrixExportXlsx(workbook);
+      return new NextResponse(new Uint8Array(buffer), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${buildFileName("xlsx")}"`,
+        },
+      });
+    }
+
+    const csv = buildMatrixCsvExport(workbook.sheets[0]);
+    return new NextResponse(csv, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${buildFileName("csv")}"`,
       },
     });
   }, { operation: "exports.save_preset" });

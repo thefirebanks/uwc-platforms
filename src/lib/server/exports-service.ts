@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
+import { getApplicationName } from "@/lib/server/application-service";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
 import type { Database, Json } from "@/types/supabase";
@@ -24,6 +25,8 @@ export type ApplicationExportFilters = {
   stageCode?: StageCode;
   status?: ApplicationStatus;
   eligibility: "all" | "eligible" | "ineligible" | "pending" | "advanced";
+  query?: string;
+  applicationIds?: string[];
 };
 
 export type ApplicationExportRow = {
@@ -125,6 +128,36 @@ export type ExportPresetSummary = {
 export type ExportCatalog = {
   fields: ExportCatalogField[];
   presets: ExportPresetSummary[];
+};
+
+export type ExportTargetMode = "filtered" | "manual" | "randomSample";
+export type GroupedExportMode = "single-sheet" | "multi-sheet" | "separate-files";
+
+export type GroupAssignment = {
+  applicationId: string;
+  groupKey: string;
+  groupLabel: string;
+};
+
+export type RandomSampleConfig = {
+  groupCount: number;
+  applicantsPerGroup: number;
+};
+
+export type MatrixExportFieldRow = {
+  label: string;
+  values: string[];
+};
+
+export type MatrixExportSheet = {
+  name: string;
+  applicantHeaders: string[];
+  rows: MatrixExportFieldRow[];
+};
+
+export type MatrixExportWorkbook = {
+  sheets: MatrixExportSheet[];
+  grouped: boolean;
 };
 
 export type ApplicationExportContext = {
@@ -231,6 +264,110 @@ function getCoreExportValue(row: ApplicationExportRow, key: keyof ApplicationExp
 function clean(value: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function normalizeSearchInput(raw: string) {
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+function stripDiacritics(value: string) {
+  return value.normalize("NFD").replace(/\p{M}+/gu, "");
+}
+
+function sanitizeSearchQuery(raw: string) {
+  return raw
+    .replace(/[<>:;!@#$%^&*()[\]{}|\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function searchProfilesByFallback({
+  supabase,
+  rawQuery,
+}: {
+  supabase: SupabaseClient<Database>;
+  rawQuery: string;
+}) {
+  const normalized = normalizeSearchInput(rawQuery);
+  if (!normalized) {
+    return [];
+  }
+
+  const queryVariants = Array.from(
+    new Set([
+      normalized,
+      stripDiacritics(normalized),
+      normalized.toLowerCase(),
+      stripDiacritics(normalized.toLowerCase()),
+    ]),
+  ).filter(Boolean);
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, full_name");
+
+  if (error) {
+    throw new AppError({
+      message: "Profile fallback search failed during export",
+      userMessage: "No se pudieron aplicar los filtros de búsqueda para la exportación.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  const matched = (data ?? []).filter((profile) => {
+    const haystack = `${profile.full_name ?? ""} ${profile.email ?? ""}`;
+    const normalizedHaystack = stripDiacritics(haystack.toLowerCase());
+    return queryVariants.some((variant) =>
+      normalizedHaystack.includes(stripDiacritics(variant.toLowerCase())),
+    );
+  });
+
+  return matched.map((profile) => profile.id);
+}
+
+async function resolveMatchingProfileIds({
+  supabase,
+  rawQuery,
+}: {
+  supabase: SupabaseClient<Database>;
+  rawQuery?: string;
+}) {
+  const query = clean(rawQuery ?? null);
+  if (!query) {
+    return null;
+  }
+
+  const normalized = normalizeSearchInput(query);
+  const sanitized = sanitizeSearchQuery(normalized);
+  if (!sanitized) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .textSearch("search_vector", sanitized, {
+      type: "websearch",
+      config: "spanish",
+    });
+
+  if (error) {
+    return searchProfilesByFallback({
+      supabase,
+      rawQuery: normalized,
+    });
+  }
+
+  const ids = (data ?? []).map((profile) => profile.id);
+  if (ids.length > 0) {
+    return ids;
+  }
+
+  return searchProfilesByFallback({
+    supabase,
+    rawQuery: normalized,
+  });
 }
 
 function parseUuid(raw: string | null, fieldName: string) {
@@ -371,6 +508,15 @@ export function parseApplicationExportFilters(
   const stageCode = parseStage(searchParams.get("stageCode"));
   const status = parseStatus(searchParams.get("status"));
   const eligibility = parseEligibility(searchParams.get("eligibility"));
+  const query = clean(searchParams.get("q"));
+  const applicationIds = Array.from(
+    new Set(
+      (searchParams.get("applicationIds") ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
 
   if (status && eligibility !== "all") {
     throw new AppError({
@@ -385,6 +531,8 @@ export function parseApplicationExportFilters(
     stageCode,
     status,
     eligibility,
+    query,
+    applicationIds: applicationIds.length > 0 ? applicationIds : undefined,
   };
 }
 
@@ -562,6 +710,20 @@ export async function getApplicationsForExport({
   filters: ApplicationExportFilters;
   maxRows?: number;
 }) {
+  const matchingProfileIds = await resolveMatchingProfileIds({
+    supabase,
+    rawQuery: filters.query,
+  });
+
+  if (matchingProfileIds && matchingProfileIds.length === 0) {
+    return {
+      rows: [],
+      records: [],
+      total: 0,
+      truncated: false,
+    };
+  }
+
   let query = supabase.from("applications").select(
     "id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, created_at, updated_at",
     { count: "exact" },
@@ -577,6 +739,14 @@ export async function getApplicationsForExport({
 
   if (filters.status) {
     query = query.eq("status", filters.status);
+  }
+
+  if (filters.applicationIds && filters.applicationIds.length > 0) {
+    query = query.in("id", filters.applicationIds);
+  }
+
+  if (matchingProfileIds) {
+    query = query.in("applicant_id", matchingProfileIds);
   }
 
   query = mapEligibilityFilters(query, filters.eligibility);
@@ -812,6 +982,489 @@ export function buildDynamicCsvExport(table: { headers: string[]; rows: string[]
   const header = table.headers.map((column) => csvCell(column)).join(",");
   const lines = table.rows.map((row) => row.map((value) => csvCell(value)).join(","));
   return [header, ...lines].join("\n");
+}
+
+function buildApplicantHeader(record: ApplicationExportContext) {
+  const name = getApplicationName(
+    {
+      id: record.application.id,
+      applicant_id: record.application.applicant_id,
+      cycle_id: record.application.cycle_id,
+      stage_code: record.application.stage_code,
+      status: record.application.status,
+      payload: (record.application.payload ?? {}) as Record<string, string | number | boolean | null>,
+      files: {},
+      validation_notes: record.application.validation_notes,
+      error_report_count: 0,
+      created_at: record.application.created_at,
+      updated_at: record.application.updated_at,
+    },
+    record.applicant?.full_name ?? "Postulante",
+  );
+  const email = record.applicant?.email?.trim();
+
+  return email && email !== name ? `${name} (${email})` : name;
+}
+
+function sortRecordsForExport(records: ApplicationExportContext[]) {
+  return [...records].sort((left, right) =>
+    buildApplicantHeader(left).localeCompare(buildApplicantHeader(right), "es"),
+  );
+}
+
+function sanitizeWorksheetName(name: string, fallback: string) {
+  const cleaned = name.replace(/[\[\]\*\/\\:\?]/g, " ").replace(/\s+/g, " ").trim();
+  const finalName = cleaned || fallback;
+  return finalName.slice(0, 31);
+}
+
+function resolveFieldValueForRecord({
+  record,
+  fieldKey,
+}: {
+  record: ApplicationExportContext;
+  fieldKey: string;
+}) {
+  const coreRow: ApplicationExportRow = {
+    applicationId: record.application.id,
+    cycleId: record.application.cycle_id,
+    cycleName: record.cycle?.name ?? "(sin nombre)",
+    applicantId: record.application.applicant_id,
+    applicantEmail: record.applicant?.email ?? "(sin email)",
+    applicantName: getApplicationName(
+      {
+        id: record.application.id,
+        applicant_id: record.application.applicant_id,
+        cycle_id: record.application.cycle_id,
+        stage_code: record.application.stage_code,
+        status: record.application.status,
+        payload: (record.application.payload ?? {}) as Record<string, string | number | boolean | null>,
+        files: {},
+        validation_notes: record.application.validation_notes,
+        error_report_count: 0,
+        created_at: record.application.created_at,
+        updated_at: record.application.updated_at,
+      },
+      record.applicant?.full_name ?? "(sin nombre)",
+    ),
+    stageCode: record.application.stage_code,
+    status: record.application.status,
+    validationNotes: record.application.validation_notes ?? "",
+    mentorRecommendationSubmitted: record.recommendations.some(
+      (item) => item.role === "mentor" && item.status === "submitted",
+    ),
+    friendRecommendationSubmitted: record.recommendations.some(
+      (item) => item.role === "friend" && item.status === "submitted",
+    ),
+    recommendationCompletion:
+      record.recommendations.some((item) => item.role === "mentor" && item.status === "submitted") &&
+      record.recommendations.some((item) => item.role === "friend" && item.status === "submitted")
+        ? "complete"
+        : "incomplete",
+    fileCount: countFiles(record.application.files),
+    createdAt: record.application.created_at,
+    updatedAt: record.application.updated_at,
+  };
+
+  if (fieldKey.startsWith("payload.")) {
+    return resolveNestedExportValue(
+      (record.application.payload ?? {}) as Record<string, unknown>,
+      fieldKey.replace(/^payload\./, ""),
+    );
+  }
+
+  return getCoreExportValue(coreRow, fieldKey as keyof ApplicationExportRow);
+}
+
+export function buildRandomSampleGroups<T>({
+  items,
+  groupCount,
+  applicantsPerGroup,
+  random = Math.random,
+}: {
+  items: T[];
+  groupCount: number;
+  applicantsPerGroup: number;
+  random?: () => number;
+}) {
+  const totalRequested = groupCount * applicantsPerGroup;
+  if (groupCount < 1 || applicantsPerGroup < 1) {
+    throw new AppError({
+      message: "Invalid random sample dimensions",
+      userMessage: "La muestra aleatoria debe tener al menos un grupo y un postulante por grupo.",
+      status: 400,
+    });
+  }
+
+  if (totalRequested > items.length) {
+    throw new AppError({
+      message: "Random sample larger than candidate pool",
+      userMessage: "No hay suficientes postulantes filtrados para completar la muestra aleatoria.",
+      status: 400,
+    });
+  }
+
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    const current = shuffled[index];
+    shuffled[index] = shuffled[swapIndex];
+    shuffled[swapIndex] = current;
+  }
+
+  const sampled = shuffled.slice(0, totalRequested);
+
+  return Array.from({ length: groupCount }, (_, groupIndex) => {
+    const start = groupIndex * applicantsPerGroup;
+    return sampled.slice(start, start + applicantsPerGroup);
+  });
+}
+
+export function prepareMatrixExportGroups({
+  records,
+  targetMode,
+  selectedApplicationIds,
+  groupAssignments,
+  randomSample,
+  random = Math.random,
+}: {
+  records: ApplicationExportContext[];
+  targetMode: ExportTargetMode;
+  selectedApplicationIds?: string[];
+  groupAssignments?: GroupAssignment[];
+  randomSample?: RandomSampleConfig;
+  random?: () => number;
+}) {
+  const sortedRecords = sortRecordsForExport(records);
+  const selectedIdSet = new Set(selectedApplicationIds ?? []);
+  const assignmentMap = new Map(
+    (groupAssignments ?? []).map((assignment) => [assignment.applicationId, assignment]),
+  );
+
+  if (targetMode === "randomSample") {
+    if (!randomSample) {
+      throw new AppError({
+        message: "Missing random sample configuration",
+        userMessage: "Configura la cantidad de grupos y postulantes por grupo.",
+        status: 400,
+      });
+    }
+
+    const sampledGroups = buildRandomSampleGroups({
+      items: sortedRecords,
+      groupCount: randomSample.groupCount,
+      applicantsPerGroup: randomSample.applicantsPerGroup,
+      random,
+    });
+
+    return {
+      includeGroupRow: true,
+      groups: sampledGroups.map((groupRecords, index) => ({
+        key: `group-${index + 1}`,
+        label: `Grupo ${index + 1}`,
+        records: sortRecordsForExport(groupRecords),
+      })),
+    };
+  }
+
+  const scopedRecords = targetMode === "manual"
+    ? sortedRecords.filter((record) => selectedIdSet.has(record.application.id))
+    : sortedRecords;
+
+  if (scopedRecords.length === 0) {
+    throw new AppError({
+      message: "No applications selected for export",
+      userMessage: "Selecciona al menos un postulante para exportar.",
+      status: 400,
+    });
+  }
+
+  if (assignmentMap.size === 0) {
+    return {
+      includeGroupRow: false,
+      groups: [
+        {
+          key: "all",
+          label: "Postulantes",
+          records: scopedRecords,
+        },
+      ],
+    };
+  }
+
+  const groupsByKey = new Map<string, { key: string; label: string; records: ApplicationExportContext[] }>();
+
+  for (const record of scopedRecords) {
+    const assignment = assignmentMap.get(record.application.id) ?? {
+      applicationId: record.application.id,
+      groupKey: "group-1",
+      groupLabel: "Grupo 1",
+    };
+
+    if (!groupsByKey.has(assignment.groupKey)) {
+      groupsByKey.set(assignment.groupKey, {
+        key: assignment.groupKey,
+        label: assignment.groupLabel.trim() || assignment.groupKey,
+        records: [],
+      });
+    }
+
+    groupsByKey.get(assignment.groupKey)?.records.push(record);
+  }
+
+  const groups = Array.from(groupsByKey.values())
+    .map((group) => ({
+      ...group,
+      records: sortRecordsForExport(group.records),
+    }))
+    .filter((group) => group.records.length > 0);
+
+  return {
+    includeGroupRow: true,
+    groups,
+  };
+}
+
+export function buildMatrixExportWorkbook({
+  groups,
+  selectedFields,
+  catalog,
+  groupedExportMode,
+  includeGroupRow,
+}: {
+  groups: Array<{ key: string; label: string; records: ApplicationExportContext[] }>;
+  selectedFields: string[];
+  catalog: ExportCatalog;
+  groupedExportMode: GroupedExportMode;
+  includeGroupRow: boolean;
+}): MatrixExportWorkbook {
+  const normalizedFields = validateSelectedExportFields({
+    selectedFields,
+    catalog,
+  });
+  const labelByField = new Map(catalog.fields.map((field) => [field.key, field.label]));
+
+  const buildRows = (records: ApplicationExportContext[], groupLabels?: string[]): MatrixExportFieldRow[] => {
+    const rows: MatrixExportFieldRow[] = [];
+
+    if (includeGroupRow && groupLabels) {
+      rows.push({
+        label: "Grupo",
+        values: groupLabels,
+      });
+    }
+
+    for (const fieldKey of normalizedFields) {
+      rows.push({
+        label: labelByField.get(fieldKey) ?? fieldKey,
+        values: records.map((record) =>
+          resolveFieldValueForRecord({
+            record,
+            fieldKey,
+          })),
+      });
+    }
+
+    return rows;
+  };
+
+  if (groupedExportMode === "single-sheet") {
+    const mergedRecords = groups.flatMap((group) => group.records);
+    const mergedGroupLabels = groups.flatMap((group) =>
+      group.records.map(() => group.label),
+    );
+
+    return {
+      grouped: includeGroupRow,
+      sheets: [
+        {
+          name: "Postulantes",
+          applicantHeaders: mergedRecords.map((record) => buildApplicantHeader(record)),
+          rows: buildRows(mergedRecords, includeGroupRow ? mergedGroupLabels : undefined),
+        },
+      ],
+    };
+  }
+
+  return {
+    grouped: includeGroupRow,
+    sheets: groups.map((group, index) => ({
+      name: sanitizeWorksheetName(group.label, `Grupo ${index + 1}`),
+      applicantHeaders: group.records.map((record) => buildApplicantHeader(record)),
+      rows: buildRows(
+        group.records,
+        includeGroupRow ? group.records.map(() => group.label) : undefined,
+      ),
+    })),
+  };
+}
+
+export function buildMatrixCsvExport(sheet: MatrixExportSheet) {
+  const header = ["Campo", ...sheet.applicantHeaders].map((value) => csvCell(value)).join(",");
+  const lines = sheet.rows.map((row) =>
+    [row.label, ...row.values].map((value) => csvCell(value)).join(","),
+  );
+  return [header, ...lines].join("\n");
+}
+
+function appendMatrixSheetToWorkbook({
+  workbook,
+  sheetData,
+}: {
+  workbook: { addWorksheet: (name: string) => unknown };
+  sheetData: MatrixExportSheet;
+}) {
+  const worksheet = workbook.addWorksheet(sheetData.name) as {
+    columns: Array<Record<string, unknown>>;
+    views: Array<Record<string, unknown>>;
+    getRow: (rowNumber: number) => {
+      getCell: (columnNumber: number) => {
+        value: unknown;
+        font?: Record<string, unknown>;
+        alignment?: Record<string, unknown>;
+        fill?: Record<string, unknown>;
+      };
+      height?: number;
+    };
+  };
+  const columnCount = Math.max(sheetData.applicantHeaders.length, 1);
+  const columns = [{ width: 28 }];
+
+  for (let index = 0; index < columnCount; index += 1) {
+    columns.push({ width: 32 });
+    if (index < columnCount - 1) {
+      columns.push({ width: 4.25 });
+    }
+  }
+
+  worksheet.columns = columns;
+  worksheet.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+
+  const headerRow = worksheet.getRow(1);
+  headerRow.getCell(1).value = "Campo";
+  headerRow.getCell(1).font = { bold: true };
+  headerRow.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
+  headerRow.getCell(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFE7E0D0" },
+  };
+
+  sheetData.applicantHeaders.forEach((header, index) => {
+    const columnIndex = 2 + index * 2;
+    const cell = headerRow.getCell(columnIndex);
+    cell.value = header;
+    cell.font = { bold: true };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFF3EEE5" },
+    };
+  });
+  headerRow.height = 28;
+
+  sheetData.rows.forEach((row, rowIndex) => {
+    const worksheetRow = worksheet.getRow(rowIndex + 2);
+    const labelCell = worksheetRow.getCell(1);
+    labelCell.value = row.label;
+    labelCell.font = { bold: true };
+    labelCell.alignment = { horizontal: "center", vertical: "top", wrapText: true };
+
+    if (row.label === "Grupo") {
+      labelCell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFFCE8C8" },
+      };
+    }
+
+    row.values.forEach((value, valueIndex) => {
+      const columnIndex = 2 + valueIndex * 2;
+      const valueCell = worksheetRow.getCell(columnIndex);
+      valueCell.value = value;
+      valueCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+      if (row.label === "Grupo") {
+        valueCell.font = { bold: true };
+        valueCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFFFF2D8" },
+        };
+      }
+    });
+  });
+}
+
+export async function buildMatrixExportXlsx(workbookData: MatrixExportWorkbook): Promise<Buffer> {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "UWC Peru Platform";
+  workbook.created = new Date();
+
+  for (const sheetData of workbookData.sheets) {
+    appendMatrixSheetToWorkbook({
+      workbook,
+      sheetData,
+    });
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  return Buffer.from(buffer);
+}
+
+export async function buildGroupedExportZip({
+  workbookData,
+  format,
+}: {
+  workbookData: MatrixExportWorkbook;
+  format: "csv" | "xlsx";
+}) {
+  const archiverImport = await import("archiver");
+  const createArchive = (archiverImport.default ?? archiverImport) as (
+    format: "zip",
+    options?: { zlib?: { level?: number } },
+  ) => {
+    append: (source: Buffer | string, data: { name: string }) => void;
+    finalize: () => Promise<void>;
+    on: (event: "error", listener: (error: Error) => void) => void;
+    pipe: (stream: NodeJS.WritableStream) => void;
+  };
+  const { PassThrough } = await import("node:stream");
+  const output = new PassThrough();
+  const chunks: Buffer[] = [];
+
+  output.on("data", (chunk) => {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  });
+
+  const archive = createArchive("zip", { zlib: { level: 9 } });
+
+  const completion = new Promise<Buffer>((resolve, reject) => {
+    output.on("end", () => resolve(Buffer.concat(chunks)));
+    output.on("error", reject);
+    archive.on("error", reject);
+  });
+
+  archive.pipe(output);
+
+  for (const sheet of workbookData.sheets) {
+    const safeName = sheet.name.replace(/\s+/g, "-").toLowerCase();
+    if (format === "xlsx") {
+      const buffer = await buildMatrixExportXlsx({
+        grouped: workbookData.grouped,
+        sheets: [sheet],
+      });
+      archive.append(buffer, { name: `${safeName}.xlsx` });
+    } else {
+      archive.append(buildMatrixCsvExport(sheet), { name: `${safeName}.csv` });
+    }
+  }
+
+  await archive.finalize();
+  output.end();
+
+  return completion;
 }
 
 /* -------------------------------------------------------------------------- */

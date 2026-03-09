@@ -39,6 +39,10 @@ import {
   type OcrExpectedOutputFieldType,
 } from "@/lib/ocr/expected-output-schema";
 import {
+  normalizeFieldAiReferenceFiles,
+  type FieldAiReferenceFile,
+} from "@/lib/ocr/field-ai-parser";
+import {
   DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
   DEFAULT_OCR_PROMPT,
   DEFAULT_OCR_SCHEMA_TEMPLATE,
@@ -51,6 +55,7 @@ import {
   guessUwcStageOnePresetDraft,
   parseRubricBlueprintV1,
   tryHydrateBlueprintFromRubric,
+  type UwcStageOnePresetDraft,
 } from "@/lib/rubric/default-rubric-presets";
 import {
   getDefaultEligibilityRubricConfig,
@@ -145,17 +150,21 @@ const RUBRIC_KIND_OPTIONS: Array<{
   { value: "ocr_field_in", label: "OCR valor permitido" },
   { value: "ocr_field_not_in", label: "OCR valor observado (revisión)" },
   { value: "field_matches_ocr", label: "Campo coincide con OCR" },
-  { value: "file_upload_count_between", label: "Cantidad de archivos en rango" },
+  {
+    value: "file_upload_count_between",
+    label: "Cantidad de archivos en rango",
+  },
   { value: "any_of", label: "Cumple al menos una condición" },
 ];
 
-const OCR_OUTPUT_FIELD_TYPE_LABELS: Record<OcrExpectedOutputFieldType, string> = {
-  text: "Texto",
-  number: "Número entero",
-  decimal: "Número decimal",
-  date: "Fecha",
-  boolean: "Sí/No",
-};
+const OCR_OUTPUT_FIELD_TYPE_LABELS: Record<OcrExpectedOutputFieldType, string> =
+  {
+    text: "Texto",
+    number: "Número entero",
+    decimal: "Número decimal",
+    date: "Fecha",
+    boolean: "Sí/No",
+  };
 
 function parseCommaSeparatedList(raw: string) {
   const seen = new Set<string>();
@@ -175,11 +184,80 @@ function formatCommaSeparatedList(values: string[] | undefined) {
   return (values ?? []).join(", ");
 }
 
+function formatFileSize(bytes: number | null | undefined) {
+  if (typeof bytes !== "number" || !Number.isFinite(bytes) || bytes <= 0) {
+    return "Tamano desconocido";
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
+async function readJsonSafely(response: Response) {
+  try {
+    return (await response.json()) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function parseCommaSeparatedNumbers(raw: string) {
+  const seen = new Set<number>();
+  const values: number[] = [];
+
+  for (const candidate of raw.split(/[,\s;]+/)) {
+    const trimmed = candidate.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    const parsed = Number(trimmed);
+    if (!Number.isInteger(parsed) || seen.has(parsed)) {
+      continue;
+    }
+
+    seen.add(parsed);
+    values.push(parsed);
+  }
+
+  return values;
+}
+
+function presetDraftFromBlueprint(
+  blueprint: RubricBlueprintV1,
+): UwcStageOnePresetDraft {
+  return {
+    idDocumentFileKeys: blueprint.mappings.idDocumentFileKeys,
+    gradesDocumentFileKeys: blueprint.mappings.gradesDocumentFileKeys,
+    topThirdProofFileKey: blueprint.mappings.topThirdProofFileKey,
+    applicantNameFieldKey: blueprint.mappings.applicantNameFieldKey,
+    averageGradeFieldKey: blueprint.mappings.averageGradeFieldKey,
+    signedAuthorizationFileKey: blueprint.mappings.signedAuthorizationFileKey,
+    applicantPhotoFileKey: blueprint.mappings.applicantPhotoFileKey,
+    ocrNamePath: blueprint.mappings.ocrPaths.idName,
+    ocrBirthYearPath: blueprint.mappings.ocrPaths.birthYear,
+    ocrDocumentTypePath: blueprint.mappings.ocrPaths.documentType,
+    ocrDocumentIssuePath: blueprint.mappings.ocrPaths.documentIssue,
+    allowedBirthYears: blueprint.policy.allowedBirthYears,
+    minAverageGrade: blueprint.policy.minAverageGrade,
+    recommendationCompleteness: blueprint.policy.recommendationCompleteness,
+    recommendationRoles: ["mentor", "friend"],
+    minRecommendationResponses: blueprint.policy.recommendationMinAnswers ?? 0,
+    gradesCombinationRule: blueprint.policy.gradesCombinationRule,
+    idExceptionRule: blueprint.policy.idExceptionRule,
+    limitGradesDocumentToSingleUpload:
+      blueprint.policy.gradesCombinationRule !== "allow_multiple",
+  };
+}
+
 function createUniqueCriterionId(
   kind: EligibilityRubricCriterion["kind"],
   existingCriteria: EligibilityRubricCriterion[],
 ) {
-  const existingIds = new Set(existingCriteria.map((criterion) => criterion.id));
+  const existingIds = new Set(
+    existingCriteria.map((criterion) => criterion.id),
+  );
   const base = kind.replace(/[^a-zA-Z0-9]+/g, "_").toLowerCase();
   let counter = existingCriteria.length + 1;
   let candidate = `${base}_${counter}`;
@@ -315,12 +393,15 @@ function createDefaultFieldAiParserConfig(): FieldAiParserDraft {
     systemPrompt: null,
     extractionInstructions: DEFAULT_OCR_EXTRACTION_INSTRUCTIONS,
     expectedSchemaTemplate: DEFAULT_OCR_SCHEMA_TEMPLATE,
+    referenceFiles: [],
     expectedOutputFields,
     strictSchema: true,
   };
 }
 
-function normalizeFieldAiParserConfig(value: unknown): FieldAiParserDraft | null {
+function normalizeFieldAiParserConfig(
+  value: unknown,
+): FieldAiParserDraft | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -330,15 +411,18 @@ function normalizeFieldAiParserConfig(value: unknown): FieldAiParserDraft | null
   }
 
   const extractionInstructions =
-    typeof value.extractionInstructions === "string" && value.extractionInstructions.trim().length > 0
+    typeof value.extractionInstructions === "string" &&
+    value.extractionInstructions.trim().length > 0
       ? value.extractionInstructions
       : DEFAULT_OCR_EXTRACTION_INSTRUCTIONS;
   const expectedSchemaTemplate =
-    typeof value.expectedSchemaTemplate === "string" && value.expectedSchemaTemplate.trim().length > 0
+    typeof value.expectedSchemaTemplate === "string" &&
+    value.expectedSchemaTemplate.trim().length > 0
       ? value.expectedSchemaTemplate
       : DEFAULT_OCR_SCHEMA_TEMPLATE;
   const expectedOutputFields =
-    Array.isArray(value.expectedOutputFields) && value.expectedOutputFields.length > 0
+    Array.isArray(value.expectedOutputFields) &&
+    value.expectedOutputFields.length > 0
       ? normalizeExpectedOutputFields(
           value.expectedOutputFields.filter(
             (item) =>
@@ -349,19 +433,28 @@ function normalizeFieldAiParserConfig(value: unknown): FieldAiParserDraft | null
           ) as Array<{ key: string; type: string }>,
         )
       : parseExpectedOutputFieldsFromSchemaTemplate(expectedSchemaTemplate);
+  const referenceFiles =
+    Array.isArray(value.referenceFiles) && value.referenceFiles.length > 0
+      ? normalizeFieldAiReferenceFiles(
+          value.referenceFiles as FieldAiReferenceFile[],
+        )
+      : [];
 
   return {
     enabled: true,
     modelId: typeof value.modelId === "string" ? value.modelId : null,
-    promptTemplate: typeof value.promptTemplate === "string" ? value.promptTemplate : null,
-    systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : null,
+    promptTemplate:
+      typeof value.promptTemplate === "string" ? value.promptTemplate : null,
+    systemPrompt:
+      typeof value.systemPrompt === "string" ? value.systemPrompt : null,
     extractionInstructions,
     expectedSchemaTemplate,
+    referenceFiles,
     expectedOutputFields,
-    strictSchema: typeof value.strictSchema === "boolean" ? value.strictSchema : true,
+    strictSchema:
+      typeof value.strictSchema === "boolean" ? value.strictSchema : true,
   };
 }
-
 
 function mapFieldsWithLocalId(fields: CycleStageField[]) {
   return [...fields]
@@ -407,7 +500,10 @@ function deriveEditorSections(
 ): EditorSection[] {
   const sortedSections = [...sections]
     .filter((s) => s.is_visible)
-    .filter((s) => !(documentsRouteRepresentsMainForm && s.section_key === "eligibility"))
+    .filter(
+      (s) =>
+        !(documentsRouteRepresentsMainForm && s.section_key === "eligibility"),
+    )
     .sort((a, b) => a.sort_order - b.sort_order);
 
   const otherSection = sortedSections.find((s) => s.section_key === "other");
@@ -631,7 +727,9 @@ function parseRubricMeta(value: unknown): RubricMeta | null {
   if (
     value.presetId === "uwc_stage1" &&
     typeof value.compiledAt === "string" &&
-    (typeof value.compiledBy === "string" || value.compiledBy === null || value.compiledBy === undefined) &&
+    (typeof value.compiledBy === "string" ||
+      value.compiledBy === null ||
+      value.compiledBy === undefined) &&
     (value.source === "wizard" || value.source === "advanced") &&
     value.version === 1
   ) {
@@ -639,9 +737,7 @@ function parseRubricMeta(value: unknown): RubricMeta | null {
       presetId: "uwc_stage1",
       compiledAt: value.compiledAt,
       compiledBy:
-        typeof value.compiledBy === "string"
-          ? value.compiledBy
-          : null,
+        typeof value.compiledBy === "string" ? value.compiledBy : null,
       source: value.source,
       version: 1,
     };
@@ -733,7 +829,9 @@ export function StageConfigEditor({
     | "stats";
 }) {
   const router = useRouter();
-  const [fields, setFields] = useState<EditableField[]>(mapFieldsWithLocalId(initialFields));
+  const [fields, setFields] = useState<EditableField[]>(
+    mapFieldsWithLocalId(initialFields),
+  );
   const [automations, setAutomations] = useState<EditableAutomation[]>(
     mapAutomationsWithLocalId(initialAutomations),
   );
@@ -751,13 +849,27 @@ export function StageConfigEditor({
     initialOcrPromptTemplate ?? DEFAULT_OCR_PROMPT_TEMPLATE,
   );
   const [activeTab, setActiveTab] = useState<
-    "editor" | "settings" | "automations" | "communications" | "prompt_studio" | "stats"
+    | "editor"
+    | "settings"
+    | "automations"
+    | "communications"
+    | "prompt_studio"
+    | "stats"
   >(initialTab);
   const [activeFieldId, setActiveFieldId] = useState<string | null>(null);
-  const [pendingEditorFieldFocusId, setPendingEditorFieldFocusId] = useState<string | null>(null);
-  const [sectionPlaceholders, setSectionPlaceholders] = useState<SectionPlaceholderDraft[]>([]);
+  const [aiReferenceUploadState, setAiReferenceUploadState] = useState<
+    Record<string, { isUploading: boolean; error: string | null }>
+  >({});
+  const [pendingEditorFieldFocusId, setPendingEditorFieldFocusId] = useState<
+    string | null
+  >(null);
+  const [sectionPlaceholders, setSectionPlaceholders] = useState<
+    SectionPlaceholderDraft[]
+  >([]);
 
-  const parsedStageAdminConfigRef = useRef(parseStageAdminConfig(initialStageAdminConfig));
+  const parsedStageAdminConfigRef = useRef(
+    parseStageAdminConfig(initialStageAdminConfig),
+  );
   const [sections, setSections] = useState<StageSection[]>(initialSections);
   const [collapsedSectionIds, setCollapsedSectionIds] = useState<string[]>([]);
   const [previewData, setPreviewData] = useState<{
@@ -766,7 +878,9 @@ export function StageConfigEditor({
   } | null>(null);
   const [previewLoading, setPreviewLoading] = useState<string | null>(null);
   const [testSendLoading, setTestSendLoading] = useState<string | null>(null);
-  const [testSendResult, setTestSendResult] = useState<Record<string, "sent" | "error">>({});
+  const [testSendResult, setTestSendResult] = useState<
+    Record<string, "sent" | "error">
+  >({});
   const initializedSectionCollapseRef = useRef(false);
 
   const savedFieldsSnapshotRef = useRef(
@@ -821,7 +935,9 @@ export function StageConfigEditor({
   }
 
   function applyOrderedFields(nextFields: EditableField[]) {
-    setFields(nextFields.map((field, index) => ({ ...field, sort_order: index + 1 })));
+    setFields(
+      nextFields.map((field, index) => ({ ...field, sort_order: index + 1 })),
+    );
   }
 
   function updateFieldByLocalId(
@@ -848,16 +964,107 @@ export function StageConfigEditor({
     });
   }
 
+  async function uploadAiParserReferenceFiles(
+    localId: string,
+    uploadedFiles: FileList | File[],
+  ) {
+    const filesToUpload = Array.from(uploadedFiles);
+    if (filesToUpload.length === 0) {
+      return;
+    }
+
+    setAiReferenceUploadState((current) => ({
+      ...current,
+      [localId]: { isUploading: true, error: null },
+    }));
+
+    try {
+      const formData = new FormData();
+      for (const file of filesToUpload) {
+        formData.append("files", file);
+      }
+
+      const response = await fetch(
+        `/api/cycles/${cycleId}/stages/${stageId}/ai-reference-files`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const body = await readJsonSafely(response);
+
+      if (!response.ok) {
+        const message =
+          body &&
+          typeof body === "object" &&
+          typeof (body as { message?: unknown }).message === "string"
+            ? (body as { message: string }).message
+            : "No se pudieron subir los archivos de referencia.";
+        throw new Error(message);
+      }
+
+      const uploadedReferenceFiles =
+        body &&
+        typeof body === "object" &&
+        Array.isArray((body as { referenceFiles?: unknown }).referenceFiles)
+          ? normalizeFieldAiReferenceFiles(
+              (body as { referenceFiles: FieldAiReferenceFile[] })
+                .referenceFiles,
+            )
+          : [];
+
+      updateFieldAiParserConfig(localId, (currentConfig) => ({
+        ...currentConfig,
+        referenceFiles: normalizeFieldAiReferenceFiles([
+          ...(currentConfig.referenceFiles ?? []),
+          ...uploadedReferenceFiles,
+        ]),
+      }));
+
+      setAiReferenceUploadState((current) => ({
+        ...current,
+        [localId]: { isUploading: false, error: null },
+      }));
+    } catch (uploadError) {
+      setAiReferenceUploadState((current) => ({
+        ...current,
+        [localId]: {
+          isUploading: false,
+          error:
+            uploadError instanceof Error
+              ? uploadError.message
+              : "No se pudieron subir los archivos de referencia.",
+        },
+      }));
+    }
+  }
+
+  function removeAiParserReferenceFile(localId: string, path: string) {
+    updateFieldAiParserConfig(localId, (currentConfig) => ({
+      ...currentConfig,
+      referenceFiles: (currentConfig.referenceFiles ?? []).filter(
+        (referenceFile) => referenceFile.path !== path,
+      ),
+    }));
+  }
+
   function addExpectedOutputField(localId: string) {
     updateFieldAiParserConfig(localId, (currentConfig) => {
-      const currentFields = normalizeExpectedOutputFields(currentConfig.expectedOutputFields);
+      const currentFields = normalizeExpectedOutputFields(
+        currentConfig.expectedOutputFields,
+      );
       const nextIndex = currentFields.length + 1;
-      const fallbackKey = normalizeOcrOutputKey(`campo_${nextIndex}`) || `campo_${nextIndex}`;
-      const nextFields = [...currentFields, { key: fallbackKey, type: "text" as const }];
+      const fallbackKey =
+        normalizeOcrOutputKey(`campo_${nextIndex}`) || `campo_${nextIndex}`;
+      const nextFields = [
+        ...currentFields,
+        { key: fallbackKey, type: "text" as const },
+      ];
       return {
         ...currentConfig,
         expectedOutputFields: nextFields,
-        expectedSchemaTemplate: buildSchemaTemplateFromExpectedOutputFields(nextFields),
+        expectedSchemaTemplate:
+          buildSchemaTemplateFromExpectedOutputFields(nextFields),
       };
     });
   }
@@ -903,13 +1110,19 @@ export function StageConfigEditor({
 
   function removeExpectedOutputField(localId: string, index: number) {
     updateFieldAiParserConfig(localId, (currentConfig) => {
-      const currentFields = normalizeExpectedOutputFields(currentConfig.expectedOutputFields);
-      const nextFields = currentFields.filter((_, fieldIndex) => fieldIndex !== index);
+      const currentFields = normalizeExpectedOutputFields(
+        currentConfig.expectedOutputFields,
+      );
+      const nextFields = currentFields.filter(
+        (_, fieldIndex) => fieldIndex !== index,
+      );
       return {
         ...currentConfig,
         expectedOutputFields: nextFields,
         expectedSchemaTemplate:
-          nextFields.length > 0 ? buildSchemaTemplateFromExpectedOutputFields(nextFields) : "{}",
+          nextFields.length > 0
+            ? buildSchemaTemplateFromExpectedOutputFields(nextFields)
+            : "{}",
       };
     });
   }
@@ -920,7 +1133,13 @@ export function StageConfigEditor({
       | Partial<
           Pick<
             EditableField,
-            "field_key" | "field_label" | "field_type" | "is_required" | "placeholder" | "help_text" | "is_active"
+            | "field_key"
+            | "field_label"
+            | "field_type"
+            | "is_required"
+            | "placeholder"
+            | "help_text"
+            | "is_active"
           >
         >
       | undefined,
@@ -953,7 +1172,9 @@ export function StageConfigEditor({
 
     applyOrderedFields(nextFields);
     setActiveFieldId(insertedField.localId);
-    setStatusMessage("Campo agregado localmente. Guarda configuración para persistir cambios.");
+    setStatusMessage(
+      "Campo agregado localmente. Guarda configuración para persistir cambios.",
+    );
   }
 
   function addNextSection() {
@@ -980,7 +1201,9 @@ export function StageConfigEditor({
       };
       return [...current, newSection];
     });
-    setStatusMessage(`Se creó la sección “${newSectionTitle}”. Guarda configuración para persistir.`);
+    setStatusMessage(
+      `Se creó la sección “${newSectionTitle}”. Guarda configuración para persistir.`,
+    );
   }
 
   function renameSection(sectionId: string) {
@@ -993,7 +1216,10 @@ export function StageConfigEditor({
       return;
     }
 
-    const nextTitle = window.prompt("Nuevo nombre de la sección", section.title);
+    const nextTitle = window.prompt(
+      "Nuevo nombre de la sección",
+      section.title,
+    );
     if (nextTitle === null) {
       return;
     }
@@ -1010,12 +1236,12 @@ export function StageConfigEditor({
 
     setSections((current) =>
       current.map((item) =>
-        item.id === sectionId
-          ? { ...item, title: sanitizedTitle }
-          : item,
+        item.id === sectionId ? { ...item, title: sanitizedTitle } : item,
       ),
     );
-    setStatusMessage(`Sección renombrada a “${sanitizedTitle}”. Guarda configuración para persistir.`);
+    setStatusMessage(
+      `Sección renombrada a “${sanitizedTitle}”. Guarda configuración para persistir.`,
+    );
   }
 
   async function openPreview() {
@@ -1024,7 +1250,9 @@ export function StageConfigEditor({
     }
 
     if (hasUnsavedConfigChanges) {
-      setStatusMessage("Guardando cambios antes de abrir la previsualización...");
+      setStatusMessage(
+        "Guardando cambios antes de abrir la previsualización...",
+      );
       const didSave = await saveStageConfig();
       if (!didSave) {
         return;
@@ -1054,20 +1282,29 @@ export function StageConfigEditor({
 
   function addFieldToPlaceholder(placeholder: SectionPlaceholderDraft) {
     // Find or create a section matching the placeholder's sectionKey
-    const matchingSection = sections.find((s) => s.section_key === placeholder.sectionKey);
+    const matchingSection = sections.find(
+      (s) => s.section_key === placeholder.sectionKey,
+    );
     const suffix = fields.length + 1;
-    const seed = getNewFieldSeedForSection({ sectionKey: placeholder.sectionKey, suffix });
-    insertFieldAt(fields.length, {
-      field_key: seed.field_key,
-      field_label: seed.field_label,
-      field_type: seed.field_type,
-      is_required: false,
-      placeholder: "",
-      help_text: "",
-      is_active: true,
-    }, {
-      sectionId: matchingSection?.id ?? null,
+    const seed = getNewFieldSeedForSection({
+      sectionKey: placeholder.sectionKey,
+      suffix,
     });
+    insertFieldAt(
+      fields.length,
+      {
+        field_key: seed.field_key,
+        field_label: seed.field_label,
+        field_type: seed.field_type,
+        is_required: false,
+        placeholder: "",
+        help_text: "",
+        is_active: true,
+      },
+      {
+        sectionId: matchingSection?.id ?? null,
+      },
+    );
     setSectionPlaceholders((current) =>
       current.filter((draft) => draft.localId !== placeholder.localId),
     );
@@ -1111,8 +1348,12 @@ export function StageConfigEditor({
       return;
     }
 
-    const draggingIndex = fields.findIndex((field) => field.localId === draggedFieldId);
-    const targetIndex = fields.findIndex((field) => field.localId === targetLocalId);
+    const draggingIndex = fields.findIndex(
+      (field) => field.localId === draggedFieldId,
+    );
+    const targetIndex = fields.findIndex(
+      (field) => field.localId === targetLocalId,
+    );
 
     if (draggingIndex < 0 || targetIndex < 0) {
       return;
@@ -1124,7 +1365,10 @@ export function StageConfigEditor({
     applyOrderedFields(nextFields);
   }
 
-  function handleFieldDrop(event: DragEvent<HTMLDivElement>, targetLocalId: string) {
+  function handleFieldDrop(
+    event: DragEvent<HTMLDivElement>,
+    targetLocalId: string,
+  ) {
     event.preventDefault();
     reorderDraggedField(targetLocalId);
     setDragOverFieldId(null);
@@ -1132,7 +1376,9 @@ export function StageConfigEditor({
   }
 
   function addAutomation() {
-    const baseTrigger = automations.some((automation) => automation.trigger_event === "application_submitted")
+    const baseTrigger = automations.some(
+      (automation) => automation.trigger_event === "application_submitted",
+    )
       ? "stage_result"
       : "application_submitted";
     setAutomations((current) => [
@@ -1173,7 +1419,9 @@ export function StageConfigEditor({
   }
 
   function removeAutomation(localId: string) {
-    setAutomations((current) => current.filter((automation) => automation.localId !== localId));
+    setAutomations((current) =>
+      current.filter((automation) => automation.localId !== localId),
+    );
   }
 
   async function handlePreviewEmail(automationId: string) {
@@ -1243,11 +1491,14 @@ export function StageConfigEditor({
     }
 
     let parsedEligibilityRubric: EligibilityRubricConfig;
-    const nextRubricBlueprintForSave: RubricBlueprintV1 | null = settingsRubricBlueprint;
+    const nextRubricBlueprintForSave: RubricBlueprintV1 | null =
+      settingsRubricBlueprint;
     let nextRubricMetaForSave: RubricMeta | null = settingsRubricMeta;
 
     {
-      const rubricValidation = validateRubricJsonText(settingsEligibilityRubricJson);
+      const rubricValidation = validateRubricJsonText(
+        settingsEligibilityRubricJson,
+      );
       if (!rubricValidation.success) {
         setSettingsEligibilityRubricErrors(rubricValidation.errors);
         setError({
@@ -1259,60 +1510,68 @@ export function StageConfigEditor({
         return false;
       }
       parsedEligibilityRubric = rubricValidation.data;
-      nextRubricMetaForSave = settingsRubricMeta ?? createRubricMeta({ source: "advanced" });
+      nextRubricMetaForSave =
+        settingsRubricMeta ?? createRubricMeta({ source: "advanced" });
     }
 
     try {
-      const response = await fetch(`/api/cycles/${cycleId}/stages/${stageId}/config`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          fields: fields.map((field, index) => ({
-            id: isUuid(field.id) ? field.id : undefined,
-            fieldKey: field.field_key,
-            fieldLabel: field.field_label,
-            fieldType: field.field_type,
-            isRequired: field.is_required,
-            placeholder: field.placeholder,
-            helpText: field.help_text,
-            groupName: field.group_name?.trim() || null,
-            sortOrder: index + 1,
-            isActive: field.is_active,
-            sectionKey: sections.find((s) => s.id === field.section_id)?.section_key ?? null,
-            aiParser: normalizeFieldAiParserConfig(field.ai_parser_config),
-          })),
-          sections: sections.map((s, index) => ({
-            sectionKey: s.section_key,
-            title:
-              s.title.trim() ||
-              getDefaultSectionTitle(s.section_key, index + 1),
-            description: s.description.trim(),
-            sortOrder: index + 1,
-            isVisible: s.is_visible,
-          })),
-          automations: automations.map((automation) => ({
-            id: isUuid(automation.id) ? automation.id : undefined,
-            triggerEvent: automation.trigger_event,
-            channel: automation.channel,
-            isEnabled: automation.is_enabled,
-            templateSubject: automation.template_subject,
-            templateBody: automation.template_body,
-          })),
-          ocrPromptTemplate:
-            ocrPromptTemplate.trim().length > 0 ? ocrPromptTemplate.trim() : null,
-          settings: {
-            stageName: settingsStageName.trim(),
-            description: settingsDescription.trim(),
-            openDate: settingsOpenDate || null,
-            closeDate: settingsCloseDate || null,
-            previousStageRequirement,
-            blockIfPreviousNotMet,
-            eligibilityRubric: parsedEligibilityRubric,
-            rubricBlueprintV1: nextRubricBlueprintForSave,
-            rubricMeta: nextRubricMetaForSave,
-          },
-        }),
-      });
+      const response = await fetch(
+        `/api/cycles/${cycleId}/stages/${stageId}/config`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: fields.map((field, index) => ({
+              id: isUuid(field.id) ? field.id : undefined,
+              fieldKey: field.field_key,
+              fieldLabel: field.field_label,
+              fieldType: field.field_type,
+              isRequired: field.is_required,
+              placeholder: field.placeholder,
+              helpText: field.help_text,
+              groupName: field.group_name?.trim() || null,
+              sortOrder: index + 1,
+              isActive: field.is_active,
+              sectionKey:
+                sections.find((s) => s.id === field.section_id)?.section_key ??
+                null,
+              aiParser: normalizeFieldAiParserConfig(field.ai_parser_config),
+            })),
+            sections: sections.map((s, index) => ({
+              sectionKey: s.section_key,
+              title:
+                s.title.trim() ||
+                getDefaultSectionTitle(s.section_key, index + 1),
+              description: s.description.trim(),
+              sortOrder: index + 1,
+              isVisible: s.is_visible,
+            })),
+            automations: automations.map((automation) => ({
+              id: isUuid(automation.id) ? automation.id : undefined,
+              triggerEvent: automation.trigger_event,
+              channel: automation.channel,
+              isEnabled: automation.is_enabled,
+              templateSubject: automation.template_subject,
+              templateBody: automation.template_body,
+            })),
+            ocrPromptTemplate:
+              ocrPromptTemplate.trim().length > 0
+                ? ocrPromptTemplate.trim()
+                : null,
+            settings: {
+              stageName: settingsStageName.trim(),
+              description: settingsDescription.trim(),
+              openDate: settingsOpenDate || null,
+              closeDate: settingsCloseDate || null,
+              previousStageRequirement,
+              blockIfPreviousNotMet,
+              eligibilityRubric: parsedEligibilityRubric,
+              rubricBlueprintV1: nextRubricBlueprintForSave,
+              rubricMeta: nextRubricMetaForSave,
+            },
+          }),
+        },
+      );
       const body = await response.json();
 
       if (!response.ok) {
@@ -1324,14 +1583,18 @@ export function StageConfigEditor({
         ? (body.sections as StageSection[])
         : sections;
       const nextSavedFields = mapFieldsWithLocalId(body.fields ?? []);
-      const nextSavedAutomations = mapAutomationsWithLocalId(body.automations ?? []);
+      const nextSavedAutomations = mapAutomationsWithLocalId(
+        body.automations ?? [],
+      );
       const nextSavedOcrPrompt = body.ocrPromptTemplate ?? "";
       const nextSavedRubric =
         parseEligibilityRubricConfig(body.settings?.eligibilityRubric) ??
         parsedEligibilityRubric;
       const nextSavedBlueprint =
-        parseRubricBlueprintV1(body.settings?.rubricBlueprintV1) ?? nextRubricBlueprintForSave;
-      const nextSavedMeta = parseRubricMeta(body.settings?.rubricMeta) ?? nextRubricMetaForSave;
+        parseRubricBlueprintV1(body.settings?.rubricBlueprintV1) ??
+        nextRubricBlueprintForSave;
+      const nextSavedMeta =
+        parseRubricMeta(body.settings?.rubricMeta) ?? nextRubricMetaForSave;
       const nextSavedSettings = {
         stageName:
           typeof body.settings?.stageName === "string"
@@ -1342,9 +1605,13 @@ export function StageConfigEditor({
             ? body.settings.description
             : settingsDescription.trim(),
         openDate:
-          typeof body.settings?.openDate === "string" ? body.settings.openDate : "",
+          typeof body.settings?.openDate === "string"
+            ? body.settings.openDate
+            : "",
         closeDate:
-          typeof body.settings?.closeDate === "string" ? body.settings.closeDate : "",
+          typeof body.settings?.closeDate === "string"
+            ? body.settings.closeDate
+            : "",
         previousStageRequirement:
           typeof body.settings?.previousStageRequirement === "string"
             ? body.settings.previousStageRequirement
@@ -1358,7 +1625,11 @@ export function StageConfigEditor({
             ? body.ocrPromptTemplate
             : nextSavedOcrPrompt,
         eligibilityRubricJson: JSON.stringify(nextSavedRubric, null, 2),
-        rubricBlueprintV1Json: JSON.stringify(nextSavedBlueprint ?? null, null, 2),
+        rubricBlueprintV1Json: JSON.stringify(
+          nextSavedBlueprint ?? null,
+          null,
+          2,
+        ),
         rubricMetaJson: JSON.stringify(nextSavedMeta ?? null, null, 2),
       } satisfies StageEditorSettingsDraft;
 
@@ -1378,11 +1649,13 @@ export function StageConfigEditor({
       setSettingsRubricMeta(nextSavedMeta);
       setSettingsEligibilityRubricErrors([]);
       savedSectionsSnapshotRef.current = serializeSections(nextSavedSections);
-      savedFieldsSnapshotRef.current = serializePersistedFields(nextSavedFields);
+      savedFieldsSnapshotRef.current =
+        serializePersistedFields(nextSavedFields);
       savedAutomationsSnapshotRef.current = serializePersistedAutomations({
         automations: nextSavedAutomations,
       });
-      savedSettingsSnapshotRef.current = serializeSettingsDraft(nextSavedSettings);
+      savedSettingsSnapshotRef.current =
+        serializeSettingsDraft(nextSavedSettings);
       setLastSavedAtIso(new Date().toISOString());
       didSave = true;
     } finally {
@@ -1398,14 +1671,9 @@ export function StageConfigEditor({
       ? "Examen Académico"
       : stageLabel;
   const parsedStageAdminConfig = parsedStageAdminConfigRef.current;
-  const autoPopulatedRubric = parsedStageAdminConfig.eligibilityRubric
-    ? null
-    : buildUwcStageOneRubricFromDraft(guessUwcStageOnePresetDraft(initialFields));
   const initialEligibilityRubricConfig =
     parsedStageAdminConfig.eligibilityRubric ??
-    (autoPopulatedRubric && autoPopulatedRubric.criteria.length > 0
-      ? autoPopulatedRubric
-      : getDefaultEligibilityRubricConfig());
+    getDefaultEligibilityRubricConfig();
   const hydratedBlueprintFromRubric = parsedStageAdminConfig.eligibilityRubric
     ? tryHydrateBlueprintFromRubric(parsedStageAdminConfig.eligibilityRubric)
     : null;
@@ -1414,6 +1682,9 @@ export function StageConfigEditor({
   const initialRubricMeta =
     parsedStageAdminConfig.rubricMeta ??
     (initialRubricBlueprint ? createRubricMeta({ source: "wizard" }) : null);
+  const initialWizardDraft = initialRubricBlueprint
+    ? presetDraftFromBlueprint(initialRubricBlueprint)
+    : guessUwcStageOnePresetDraft(initialFields);
   const [settingsStageName, setSettingsStageName] = useState(
     parsedStageAdminConfig.stageName ?? displayStageLabel,
   );
@@ -1433,24 +1704,32 @@ export function StageConfigEditor({
     parsedStageAdminConfig.previousStageRequirement ?? "none",
   );
   const [blockIfPreviousNotMet, setBlockIfPreviousNotMet] = useState(
-    parsedStageAdminConfig.blockIfPreviousNotMet ?? documentsRouteRepresentsMainForm,
+    parsedStageAdminConfig.blockIfPreviousNotMet ??
+      documentsRouteRepresentsMainForm,
   );
-  const [rubricEditorMode, setRubricEditorMode] = useState<RubricEditorMode>("guided");
+  const [rubricEditorMode, setRubricEditorMode] =
+    useState<RubricEditorMode>("guided");
   const [newRubricCriterionKind, setNewRubricCriterionKind] =
     useState<EligibilityRubricCriterion["kind"]>("field_present");
-  const [collapsedCriteria, setCollapsedCriteria] = useState<Set<number>>(new Set());
+  const [collapsedCriteria, setCollapsedCriteria] = useState<Set<number>>(
+    new Set(),
+  );
   const [settingsEligibilityRubricDraft, setSettingsEligibilityRubricDraft] =
     useState<EligibilityRubricConfig>(initialEligibilityRubricConfig);
-  const [settingsEligibilityRubricJson, setSettingsEligibilityRubricJson] = useState(
-    JSON.stringify(initialEligibilityRubricConfig, null, 2),
+  const [settingsEligibilityRubricJson, setSettingsEligibilityRubricJson] =
+    useState(JSON.stringify(initialEligibilityRubricConfig, null, 2));
+  const [settingsEligibilityRubricErrors, setSettingsEligibilityRubricErrors] =
+    useState<string[]>([]);
+  const [settingsRubricBlueprint, setSettingsRubricBlueprint] =
+    useState<RubricBlueprintV1 | null>(initialRubricBlueprint);
+  const [settingsRubricMeta, setSettingsRubricMeta] =
+    useState<RubricMeta | null>(initialRubricMeta);
+  const suggestedUwcPresetDraft = useMemo(
+    () => guessUwcStageOnePresetDraft(fields),
+    [fields],
   );
-  const [settingsEligibilityRubricErrors, setSettingsEligibilityRubricErrors] = useState<string[]>(
-    [],
-  );
-  const [settingsRubricBlueprint, setSettingsRubricBlueprint] = useState<RubricBlueprintV1 | null>(
-    initialRubricBlueprint,
-  );
-  const [settingsRubricMeta, setSettingsRubricMeta] = useState<RubricMeta | null>(initialRubricMeta);
+  const [uwcPresetDraft, setUwcPresetDraft] =
+    useState<UwcStageOnePresetDraft>(initialWizardDraft);
   const rubricFieldOptions = useMemo(() => {
     const seen = new Set<string>();
     return fields
@@ -1468,19 +1747,23 @@ export function StageConfigEditor({
       }));
   }, [fields]);
   const rubricFileFieldOptions = useMemo(
-    () => rubricFieldOptions.filter((option) =>
-      fields.some(
-        (field) => field.field_key === option.value && field.field_type === "file",
+    () =>
+      rubricFieldOptions.filter((option) =>
+        fields.some(
+          (field) =>
+            field.field_key === option.value && field.field_type === "file",
+        ),
       ),
-    ),
     [fields, rubricFieldOptions],
   );
   const rubricNumberFieldOptions = useMemo(
-    () => rubricFieldOptions.filter((option) =>
-      fields.some(
-        (field) => field.field_key === option.value && field.field_type === "number",
+    () =>
+      rubricFieldOptions.filter((option) =>
+        fields.some(
+          (field) =>
+            field.field_key === option.value && field.field_type === "number",
+        ),
       ),
-    ),
     [fields, rubricFieldOptions],
   );
   const defaultRubricFieldKey = rubricFieldOptions[0]?.value ?? "field_key";
@@ -1488,6 +1771,23 @@ export function StageConfigEditor({
   const defaultRubricNumberFieldKey =
     rubricNumberFieldOptions[0]?.value ?? defaultRubricFieldKey;
 
+  function applyUwcPeruTemplate() {
+    const result = buildUwcStageOneRubricFromDraft(uwcPresetDraft);
+    if (!result || result.criteria.length === 0) {
+      setRubricFeedback({
+        type: "error",
+        message:
+          "No se pudo generar la plantilla. Verifica que los campos de mapeo estén completos.",
+      });
+      return;
+    }
+    setRubricEditorMode("guided");
+    syncGuidedRubricDraft(result, { source: "advanced" });
+    setRubricFeedback({
+      type: "success",
+      message: `Plantilla UWC Perú aplicada: ${result.criteria.length} criterios generados.`,
+    });
+  }
 
   function syncGuidedRubricDraft(
     nextDraft: EligibilityRubricConfig,
@@ -1499,7 +1799,9 @@ export function StageConfigEditor({
     setSettingsEligibilityRubricDraft(nextDraft);
     setSettingsEligibilityRubricJson(JSON.stringify(nextDraft, null, 2));
     const validation = validateEligibilityRubricConfig(nextDraft);
-    setSettingsEligibilityRubricErrors(validation.success ? [] : validation.errors);
+    setSettingsEligibilityRubricErrors(
+      validation.success ? [] : validation.errors,
+    );
 
     if (options?.blueprint !== undefined) {
       setSettingsRubricBlueprint(options.blueprint);
@@ -1551,10 +1853,13 @@ export function StageConfigEditor({
 
   function updateGuidedRubricCriterion(
     criterionIndex: number,
-    updater: (criterion: EligibilityRubricCriterion) => EligibilityRubricCriterion,
+    updater: (
+      criterion: EligibilityRubricCriterion,
+    ) => EligibilityRubricCriterion,
   ) {
-    const nextCriteria = settingsEligibilityRubricDraft.criteria.map((criterion, index) =>
-      index === criterionIndex ? updater(criterion) : criterion,
+    const nextCriteria = settingsEligibilityRubricDraft.criteria.map(
+      (criterion, index) =>
+        index === criterionIndex ? updater(criterion) : criterion,
     );
     syncGuidedRubricDraft(
       {
@@ -1582,8 +1887,12 @@ export function StageConfigEditor({
     criterionIndex: number,
     direction: "up" | "down",
   ) {
-    const targetIndex = direction === "up" ? criterionIndex - 1 : criterionIndex + 1;
-    if (targetIndex < 0 || targetIndex >= settingsEligibilityRubricDraft.criteria.length) {
+    const targetIndex =
+      direction === "up" ? criterionIndex - 1 : criterionIndex + 1;
+    if (
+      targetIndex < 0 ||
+      targetIndex >= settingsEligibilityRubricDraft.criteria.length
+    ) {
       return;
     }
 
@@ -1630,7 +1939,9 @@ export function StageConfigEditor({
     const validation = validateRubricJsonText(settingsEligibilityRubricJson);
     if (validation.success) {
       setSettingsEligibilityRubricDraft(validation.data);
-      setSettingsEligibilityRubricJson(JSON.stringify(validation.data, null, 2));
+      setSettingsEligibilityRubricJson(
+        JSON.stringify(validation.data, null, 2),
+      );
       setSettingsEligibilityRubricErrors([]);
       setSettingsRubricMeta(
         createRubricMeta({
@@ -1638,13 +1949,32 @@ export function StageConfigEditor({
         }),
       );
       setError(null);
-      setStatusMessage(`Rúbrica válida: ${validation.data.criteria.length} criterio(s).`);
+      setStatusMessage(
+        `Rúbrica válida: ${validation.data.criteria.length} criterio(s).`,
+      );
       return;
     }
 
     setSettingsEligibilityRubricErrors(validation.errors);
     setError({
       message: `La rúbrica automática no es válida:\n${validation.errors.slice(0, 6).join("\n")}`,
+    });
+  }
+
+  function togglePresetFileKey(
+    listKey: "idDocumentFileKeys" | "gradesDocumentFileKeys",
+    fieldKey: string,
+  ) {
+    setUwcPresetDraft((current) => {
+      const currentValues = current[listKey];
+      const exists = currentValues.includes(fieldKey);
+      const nextValues = exists
+        ? currentValues.filter((value) => value !== fieldKey)
+        : [...currentValues, fieldKey];
+      return {
+        ...current,
+        [listKey]: nextValues,
+      };
     });
   }
 
@@ -1696,7 +2026,11 @@ export function StageConfigEditor({
         blockIfPreviousNotMet,
         ocrPromptTemplate,
         eligibilityRubricJson: settingsEligibilityRubricJson,
-        rubricBlueprintV1Json: JSON.stringify(settingsRubricBlueprint ?? null, null, 2),
+        rubricBlueprintV1Json: JSON.stringify(
+          settingsRubricBlueprint ?? null,
+          null,
+          2,
+        ),
         rubricMetaJson: JSON.stringify(settingsRubricMeta ?? null, null, 2),
       }),
     [
@@ -1741,9 +2075,9 @@ export function StageConfigEditor({
       ? "Hay cambios sin guardar"
       : hasUnsavedSectionDraftChanges
         ? "Hay cambios locales pendientes"
-      : lastSavedAtIso
-        ? "Configuración guardada"
-        : "Sin cambios";
+        : lastSavedAtIso
+          ? "Configuración guardada"
+          : "Sin cambios";
   const isLargeFormEditor = fields.length >= 80;
   const saveableChangeLabels = [
     hasUnsavedFieldConfigChanges ? "Editor de Formulario" : null,
@@ -1769,16 +2103,17 @@ export function StageConfigEditor({
           ? `Configuración guardada (${saveStatusTimestamp}).`
           : "Sin cambios pendientes.";
 
-  const editorSections = useMemo(
-    () => {
-      if (activeTab !== "editor") {
-        return [];
-      }
+  const editorSections = useMemo(() => {
+    if (activeTab !== "editor") {
+      return [];
+    }
 
-      return deriveEditorSections(deferredFields, sections, documentsRouteRepresentsMainForm);
-    },
-    [activeTab, deferredFields, sections, documentsRouteRepresentsMainForm],
-  );
+    return deriveEditorSections(
+      deferredFields,
+      sections,
+      documentsRouteRepresentsMainForm,
+    );
+  }, [activeTab, deferredFields, sections, documentsRouteRepresentsMainForm]);
 
   const displayedEditorFields = useMemo(() => {
     if (activeTab !== "editor") {
@@ -1805,22 +2140,21 @@ export function StageConfigEditor({
   const sectionPositionById = useMemo(() => {
     const total = editorSections.length;
     return new Map(
-      editorSections.map((section, index) => [section.id, { index, total }] as const),
+      editorSections.map(
+        (section, index) => [section.id, { index, total }] as const,
+      ),
     );
   }, [editorSections]);
 
-  const orderedFieldIndexByLocalId = useMemo(
-    () => {
-      if (activeTab !== "editor") {
-        return new Map<string, number>();
-      }
+  const orderedFieldIndexByLocalId = useMemo(() => {
+    if (activeTab !== "editor") {
+      return new Map<string, number>();
+    }
 
-      return new Map(
-        fields.map((field, index) => [field.localId, index] as const),
-      );
-    },
-    [activeTab, fields],
-  );
+    return new Map(
+      fields.map((field, index) => [field.localId, index] as const),
+    );
+  }, [activeTab, fields]);
 
   const editorFieldSectionMeta = useMemo(() => {
     if (activeTab !== "editor") {
@@ -1847,7 +2181,8 @@ export function StageConfigEditor({
     editorSections.forEach((section, index) => {
       const sectionFields = section.fields as EditableField[];
       const heading = `Sección ${index + 1}: ${
-        section.title.trim() || getDefaultSectionTitle(section.sectionKey, index + 1)
+        section.title.trim() ||
+        getDefaultSectionTitle(section.sectionKey, index + 1)
       }`;
       const firstField = sectionFields[0];
       const lastField = sectionFields.at(-1);
@@ -1908,8 +2243,12 @@ export function StageConfigEditor({
       return;
     }
 
-    const availableSectionIds = new Set(editorSections.map((section) => String(section.id)));
-    setCollapsedSectionIds((current) => current.filter((id) => availableSectionIds.has(id)));
+    const availableSectionIds = new Set(
+      editorSections.map((section) => String(section.id)),
+    );
+    setCollapsedSectionIds((current) =>
+      current.filter((id) => availableSectionIds.has(id)),
+    );
 
     if (initializedSectionCollapseRef.current || editorSections.length === 0) {
       return;
@@ -1920,7 +2259,9 @@ export function StageConfigEditor({
       return;
     }
 
-    setCollapsedSectionIds(editorSections.slice(1).map((section) => String(section.id)));
+    setCollapsedSectionIds(
+      editorSections.slice(1).map((section) => String(section.id)),
+    );
   }, [activeTab, editorSections, isLargeFormEditor]);
 
   const collapsedSectionIdSet = useMemo(
@@ -1957,7 +2298,9 @@ export function StageConfigEditor({
 
   function moveSection(sectionId: string, direction: "up" | "down") {
     setSections((current) => {
-      const visible = current.filter((s) => s.is_visible).sort((a, b) => a.sort_order - b.sort_order);
+      const visible = current
+        .filter((s) => s.is_visible)
+        .sort((a, b) => a.sort_order - b.sort_order);
       const idx = visible.findIndex((s) => s.id === sectionId);
       if (idx < 0) return current;
       const target = direction === "up" ? idx - 1 : idx + 1;
@@ -1971,7 +2314,9 @@ export function StageConfigEditor({
       const hiddenSections = current.filter((s) => !s.is_visible);
       return [...reordered, ...hiddenSections];
     });
-    setStatusMessage("Orden de sección actualizado localmente. Guarda configuración para persistir.");
+    setStatusMessage(
+      "Orden de sección actualizado localmente. Guarda configuración para persistir.",
+    );
   }
 
   function removeSection(sectionId: string) {
@@ -1985,7 +2330,8 @@ export function StageConfigEditor({
         .findIndex((candidate) => candidate.id === section.id) + 1,
     );
     const sectionDisplayTitle =
-      section.title.trim() || getDefaultSectionTitle(section.section_key, sectionOrder);
+      section.title.trim() ||
+      getDefaultSectionTitle(section.section_key, sectionOrder);
 
     const fieldCount = fields.filter((f) => f.section_id === sectionId).length;
     const fallbackSection =
@@ -2029,13 +2375,19 @@ export function StageConfigEditor({
     const isCollapsed = collapsedSectionIdSet.has(sectionId);
     const canCollapse = options?.canCollapse ?? true;
     const canMoveUp = Boolean(position && position.index > 0);
-    const canMoveDown = Boolean(position && position.index < position.total - 1);
+    const canMoveDown = Boolean(
+      position && position.index < position.total - 1,
+    );
     const canDelete = Boolean(section);
 
     return (
       <div className="admin-stage-section-heading-row">
         <div className="builder-section-title">{heading}</div>
-        <div className="admin-stage-section-header-actions" role="group" aria-label="Acciones de sección">
+        <div
+          className="admin-stage-section-header-actions"
+          role="group"
+          aria-label="Acciones de sección"
+        >
           <button
             type="button"
             className="admin-stage-section-header-btn"
@@ -2159,14 +2511,21 @@ export function StageConfigEditor({
   }
 
   function renderEmptySection(section: EditorSection) {
-    const sectionNumber = editorSections.findIndex((candidate) => candidate.id === section.id) + 1;
-    const sectionTitle = section.title.trim() || getDefaultSectionTitle(section.sectionKey, sectionNumber);
+    const sectionNumber =
+      editorSections.findIndex((candidate) => candidate.id === section.id) + 1;
+    const sectionTitle =
+      section.title.trim() ||
+      getDefaultSectionTitle(section.sectionKey, sectionNumber);
 
     return (
       <div key={section.id} className="admin-stage-section-placeholder">
-        {renderSectionHeading(`Sección ${sectionNumber}: ${sectionTitle}`, section.id, {
-          canCollapse: false,
-        })}
+        {renderSectionHeading(
+          `Sección ${sectionNumber}: ${sectionTitle}`,
+          section.id,
+          {
+            canCollapse: false,
+          },
+        )}
         <div className="settings-card admin-stage-empty-section-card">
           <div className="editor-grid">
             <div className="form-field full">
@@ -2216,7 +2575,18 @@ export function StageConfigEditor({
               );
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
             Añadir nuevo campo en esta sección
           </button>
         </div>
@@ -2229,9 +2599,18 @@ export function StageConfigEditor({
       {/* Main Workspace */}
       <main className="main">
         <div className="canvas-header">
-          {error && <ErrorCallout message={error.message} errorId={error.errorId} context="stage_config" />}
+          {error && (
+            <ErrorCallout
+              message={error.message}
+              errorId={error.errorId}
+              context="stage_config"
+            />
+          )}
           {statusMessage && (
-            <div className="admin-feedback success" style={{ marginBottom: "16px" }}>
+            <div
+              className="admin-feedback success"
+              style={{ marginBottom: "16px" }}
+            >
               {statusMessage}
             </div>
           )}
@@ -2239,7 +2618,10 @@ export function StageConfigEditor({
           <div className="canvas-title-row">
             <div>
               <h1>{settingsStageName.trim() || displayStageLabel}</h1>
-              <p>Configura la captura de datos, reglas de acceso y notificaciones para {cycleName}.</p>
+              <p>
+                Configura la captura de datos, reglas de acceso y notificaciones
+                para {cycleName}.
+              </p>
             </div>
             <div className="admin-stage-header-actions">
               <button
@@ -2274,11 +2656,19 @@ export function StageConfigEditor({
               </button>
             </div>
           </div>
-          <div className={`admin-stage-save-status ${saveStatusTone}`} aria-live="polite">
+          <div
+            className={`admin-stage-save-status ${saveStatusTone}`}
+            aria-live="polite"
+          >
             <div className="admin-stage-save-status-headline">
-              <span className="admin-stage-save-status-dot" aria-hidden="true" />
+              <span
+                className="admin-stage-save-status-dot"
+                aria-hidden="true"
+              />
               <span>{saveFeedbackLabel}</span>
-              <span className="admin-stage-save-status-time">{saveFeedbackSummary}</span>
+              <span className="admin-stage-save-status-time">
+                {saveFeedbackSummary}
+              </span>
             </div>
           </div>
 
@@ -2340,32 +2730,57 @@ export function StageConfigEditor({
                       className="add-field-btn admin-stage-empty-add-field"
                       onClick={() => insertFieldAt(0)}
                     >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                      <svg
+                        width="16"
+                        height="16"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        aria-hidden="true"
+                      >
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
                       Añadir nuevo campo
                     </button>
                   </>
                 ) : null}
                 {displayedEditorFields.map((field) => {
                   const isEditing = activeFieldId === field.localId;
-                  const isSectionStart = editorFieldSectionMeta.firstFieldIds.has(
-                    field.localId,
-                  );
+                  const isSectionStart =
+                    editorFieldSectionMeta.firstFieldIds.has(field.localId);
                   const isSectionEnd = editorFieldSectionMeta.lastFieldIds.has(
                     field.localId,
                   );
                   const sectionHeading =
-                    editorFieldSectionMeta.headingByFieldId.get(field.localId) ??
-                    "Sección: Otros campos";
+                    editorFieldSectionMeta.headingByFieldId.get(
+                      field.localId,
+                    ) ?? "Sección: Otros campos";
                   const sectionInsertPosition =
                     editorFieldSectionMeta.insertPositionByLastFieldId.get(
                       field.localId,
                     ) ?? fields.length;
                   const sectionIdForInsert =
-                    editorFieldSectionMeta.sectionIdByLastFieldId.get(field.localId) ?? null;
+                    editorFieldSectionMeta.sectionIdByLastFieldId.get(
+                      field.localId,
+                    ) ?? null;
                   const sectionId =
-                    editorFieldSectionMeta.sectionIdByFieldId.get(field.localId) ?? null;
-                  const isSectionCollapsed = sectionId ? collapsedSectionIdSet.has(sectionId) : false;
-                  const aiParserConfig = normalizeFieldAiParserConfig(field.ai_parser_config);
+                    editorFieldSectionMeta.sectionIdByFieldId.get(
+                      field.localId,
+                    ) ?? null;
+                  const isSectionCollapsed = sectionId
+                    ? collapsedSectionIdSet.has(sectionId)
+                    : false;
+                  const aiParserConfig = normalizeFieldAiParserConfig(
+                    field.ai_parser_config,
+                  );
+                  const aiReferenceUpload = aiReferenceUploadState[
+                    field.localId
+                  ] ?? {
+                    isUploading: false,
+                    error: null,
+                  };
 
                   if (isSectionCollapsed && !isSectionStart) {
                     return null;
@@ -2373,496 +2788,893 @@ export function StageConfigEditor({
 
                   return (
                     <div key={field.localId}>
-                      {isSectionStart && sectionId ? renderSectionHeading(sectionHeading, sectionId) : null}
+                      {isSectionStart && sectionId
+                        ? renderSectionHeading(sectionHeading, sectionId)
+                        : null}
                       {isSectionCollapsed ? null : (
-                      <div
-                        key={`${field.localId}-${isEditing ? "ed" : "st"}`}
-                        id={`field-card-${field.localId}`}
-                        className={[
-                          "field-card",
-                          isEditing ? "editing" : "",
-                          dragOverFieldId === field.localId ? "is-drag-over" : "",
-                          draggedFieldId === field.localId ? "is-dragging" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                        draggable={!isEditing}
-                        onDragStart={() => setDraggedFieldId(field.localId)}
-                        onDragOver={(event) => {
-                          event.preventDefault();
-                          setDragOverFieldId(field.localId);
-                        }}
-                        onDragLeave={() => {
-                          setDragOverFieldId((current) => (current === field.localId ? null : current));
-                        }}
-                        onDrop={(event) => handleFieldDrop(event, field.localId)}
-                        onDragEnd={() => {
-                          setDraggedFieldId(null);
-                          setDragOverFieldId(null);
-                        }}
-                      >
                         <div
-                          className="field-header"
-                          onClick={() => setActiveFieldId(isEditing ? null : field.localId)}
+                          key={`${field.localId}-${isEditing ? "ed" : "st"}`}
+                          id={`field-card-${field.localId}`}
+                          className={[
+                            "field-card",
+                            isEditing ? "editing" : "",
+                            dragOverFieldId === field.localId
+                              ? "is-drag-over"
+                              : "",
+                            draggedFieldId === field.localId
+                              ? "is-dragging"
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          draggable={!isEditing}
+                          onDragStart={() => setDraggedFieldId(field.localId)}
+                          onDragOver={(event) => {
+                            event.preventDefault();
+                            setDragOverFieldId(field.localId);
+                          }}
+                          onDragLeave={() => {
+                            setDragOverFieldId((current) =>
+                              current === field.localId ? null : current,
+                            );
+                          }}
+                          onDrop={(event) =>
+                            handleFieldDrop(event, field.localId)
+                          }
+                          onDragEnd={() => {
+                            setDraggedFieldId(null);
+                            setDragOverFieldId(null);
+                          }}
                         >
                           <div
-                            className={`drag-handle ${draggedFieldId === field.localId ? "dragging" : ""}`}
+                            className="field-header"
+                            onClick={() =>
+                              setActiveFieldId(isEditing ? null : field.localId)
+                            }
                           >
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
-                          </div>
-                          <div className="field-icon">
-                            {getFieldIcon(field.field_type)}
-                          </div>
-                          <div className="field-details">
-                            <div className="field-name">
-                              {field.field_label} {field.is_required && <span className="req-star">*</span>}
-                              {isEditing && <span className="editing-badge">Editando</span>}
-                            </div>
-                            <div className="field-type">
-                              {getFieldTypeLabel(field.field_type)} • id: <code>{field.field_key}</code>
-                              {field.group_name?.trim() ? (
-                                <>
-                                  {" "}• grupo: <span>{field.group_name}</span>
-                                </>
-                              ) : null}
-                            </div>
-                          </div>
-                          <div className="field-actions">
-                            <button
-                              className="btn-icon"
-                              title="Editar"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveFieldId(isEditing ? null : field.localId);
-                              }}
+                            <div
+                              className={`drag-handle ${draggedFieldId === field.localId ? "dragging" : ""}`}
                             >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                            </button>
-                            <button
-                              className="btn-icon danger"
-                              title="Eliminar"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                removeField(field.localId);
-                              }}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                            </button>
-                          </div>
-                        </div>
-
-                        {isEditing && (
-                          <div className="field-editor" key={`editor-${field.localId}`}>
-                            <div className="editor-grid">
-                              <div className="form-field full">
-                                <label htmlFor={`title-${field.localId}`}>Título</label>
-                                <input
-                                  id={`title-${field.localId}`}
-                                  type="text"
-                                  defaultValue={field.field_label}
-                                  onBlur={(event) => {
-                                    const value = event.target.value;
-                                    setFields((current) =>
-                                      current.map((item) =>
-                                        item.localId === field.localId
-                                          ? {
-                                              ...item,
-                                              field_label: value,
-                                              field_key:
-                                                item.id.startsWith("new-") || item.field_key.startsWith("nuevoCampo")
-                                                  ? ensureUniqueFieldKey(value, field.localId)
-                                                  : item.field_key,
-                                            }
-                                          : item,
-                                      ),
-                                    );
-                                  }}
-                                />
+                              <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              >
+                                <circle cx="9" cy="12" r="1" />
+                                <circle cx="9" cy="5" r="1" />
+                                <circle cx="9" cy="19" r="1" />
+                                <circle cx="15" cy="12" r="1" />
+                                <circle cx="15" cy="5" r="1" />
+                                <circle cx="15" cy="19" r="1" />
+                              </svg>
+                            </div>
+                            <div className="field-icon">
+                              {getFieldIcon(field.field_type)}
+                            </div>
+                            <div className="field-details">
+                              <div className="field-name">
+                                {field.field_label}{" "}
+                                {field.is_required && (
+                                  <span className="req-star">*</span>
+                                )}
+                                {isEditing && (
+                                  <span className="editing-badge">
+                                    Editando
+                                  </span>
+                                )}
                               </div>
-                              <div className="form-field">
-                                <label htmlFor={`key-${field.localId}`}>Identificador interno (Clave)</label>
-                                <input
-                                  id={`key-${field.localId}`}
-                                  type="text"
-                                  defaultValue={field.field_key}
-                                  onBlur={(event) => {
-                                    const nextFieldKey = normalizeFieldKey(event.target.value);
-                                    setFields((current) =>
-                                      current.map((item) =>
-                                        item.localId === field.localId
-                                          ? {
-                                              ...item,
-                                              field_key: nextFieldKey,
-                                            }
-                                          : item,
-                                      ),
-                                    );
-                                  }}
-                                  style={{ fontFamily: "monospace", color: "var(--muted)", background: "var(--paper)" }}
-                                />
-                              </div>
-                              <div className="form-field">
-                                <label htmlFor={`type-${field.localId}`}>Tipo de campo</label>
-                                <select
-                                  id={`type-${field.localId}`}
-                                  value={field.field_type}
-                                  onChange={(event) => {
-                                    const nextType = event.target.value as CycleStageField["field_type"];
-                                    setFields((current) =>
-                                      current.map((item) =>
-                                        item.localId === field.localId
-                                          ? {
-                                              ...item,
-                                              field_type: nextType,
-                                              ai_parser_config:
-                                                nextType === "file"
-                                                  ? normalizeFieldAiParserConfig(item.ai_parser_config)
-                                                  : null,
-                                            }
-                                          : item,
-                                      ),
-                                    );
-                                  }}
-                                >
-                                  <option value="short_text">Texto corto</option>
-                                  <option value="long_text">Texto largo</option>
-                                  <option value="number">Número</option>
-                                  <option value="date">Fecha</option>
-                                  <option value="email">Correo</option>
-                                  <option value="file">Archivo</option>
-                                </select>
-                              </div>
-                              <div className="form-field full">
-                                <label htmlFor={`placeholder-${field.localId}`}>Placeholder</label>
-                                <input
-                                  id={`placeholder-${field.localId}`}
-                                  type="text"
-                                  defaultValue={field.placeholder ?? ""}
-                                  onBlur={(event) =>
-                                    setFields((current) =>
-                                      current.map((item) =>
-                                        item.localId === field.localId ? { ...item, placeholder: event.target.value } : item,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </div>
-                              <div className="form-field full">
-                                <label htmlFor={`help-${field.localId}`}>Ayuda</label>
-                                <input
-                                  id={`help-${field.localId}`}
-                                  type="text"
-                                  defaultValue={field.help_text ?? ""}
-                                  onBlur={(event) =>
-                                    setFields((current) =>
-                                      current.map((item) =>
-                                        item.localId === field.localId ? { ...item, help_text: event.target.value } : item,
-                                      ),
-                                    )
-                                  }
-                                />
-                              </div>
-                              <div className="form-field full">
-                                <label htmlFor={`group-name-${field.localId}`}>
-                                  Nombre de grupo (opcional)
-                                </label>
-                                <input
-                                  id={`group-name-${field.localId}`}
-                                  type="text"
-                                  defaultValue={field.group_name ?? ""}
-                                  onBlur={(event) =>
-                                    setFields((current) =>
-                                      current.map((item) =>
-                                        item.localId === field.localId
-                                          ? { ...item, group_name: event.target.value.trim() || null }
-                                          : item,
-                                      ),
-                                    )
-                                  }
-                                />
-                                <small className="admin-text-muted">
-                                  Si lo completas, este campo se mostrará agrupado bajo ese título en la vista del postulante.
-                                </small>
-                              </div>
-
-                              <div className="form-field full" style={{ marginTop: "16px" }}>
-                                <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)", marginBottom: "8px" }}>
-                                  <div>
-                                    <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>Campo obligatorio</div>
-                                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>El postulante no podrá avanzar si no responde.</div>
-                                  </div>
-                                  <label className="switch">
-                                    <input
-                                      type="checkbox"
-                                      checked={field.is_required}
-                                      onChange={(event) =>
-                                        setFields((current) =>
-                                          current.map((item) =>
-                                            item.localId === field.localId
-                                              ? { ...item, is_required: event.target.checked }
-                                              : item,
-                                          ),
-                                        )
-                                      }
-                                    />
-                                    <span className="slider"></span>
-                                  </label>
-                                </div>
-                                <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)" }}>
-                                  <div>
-                                    <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>Campo visible</div>
-                                    <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Si está oculto, los postulantes no lo verán.</div>
-                                  </div>
-                                  <label className="switch">
-                                    <input
-                                      type="checkbox"
-                                      checked={field.is_active}
-                                      onChange={(event) =>
-                                        setFields((current) =>
-                                          current.map((item) =>
-                                            item.localId === field.localId
-                                              ? { ...item, is_active: event.target.checked }
-                                              : item,
-                                          ),
-                                        )
-                                      }
-                                    />
-                                    <span className="slider"></span>
-                                  </label>
-                                </div>
-                                {field.field_type === "file" ? (
-                                  <div className="admin-ai-parser-panel">
-                                    <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)" }}>
-                                      <div>
-                                        <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>
-                                          Parsing con IA{" "}
-                                          <FieldHint label="Qué hace parsing con IA">
-                                            Habilita el análisis OCR con esquema JSON para este archivo desde la vista de administración.
-                                          </FieldHint>
-                                        </div>
-                                        <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
-                                          Actívalo solo para archivos que quieras procesar automáticamente.
-                                        </div>
-                                      </div>
-                                      <label className="switch">
-                                        <input
-                                          type="checkbox"
-                                          aria-label={`Habilitar parsing IA para ${field.field_label}`}
-                                          checked={Boolean(aiParserConfig?.enabled)}
-                                          onChange={(event) => {
-                                            if (event.target.checked) {
-                                              updateFieldByLocalId(field.localId, (item) => ({
-                                                ...item,
-                                                ai_parser_config: createDefaultFieldAiParserConfig(),
-                                              }));
-                                              return;
-                                            }
-                                            updateFieldByLocalId(field.localId, (item) => ({
-                                              ...item,
-                                              ai_parser_config: null,
-                                            }));
-                                          }}
-                                        />
-                                        <span className="slider"></span>
-                                      </label>
-                                    </div>
-                                    {aiParserConfig?.enabled ? (
-                                      <div className="admin-ai-parser-editor">
-                                        <div className="form-field full">
-                                          <label htmlFor={`ai-parser-extraction-${field.localId}`}>
-                                            Instrucciones de extracción{" "}
-                                            <FieldHint label="Cómo redactar la extracción">
-                                              Especifica exactamente qué datos extraer y cómo validarlos. Evita instrucciones ambiguas.
-                                            </FieldHint>
-                                          </label>
-                                          <textarea
-                                            id={`ai-parser-extraction-${field.localId}`}
-                                            rows={4}
-                                            value={aiParserConfig.extractionInstructions}
-                                            onChange={(event) =>
-                                              updateFieldAiParserConfig(field.localId, (currentConfig) => ({
-                                                ...currentConfig,
-                                                extractionInstructions: event.target.value,
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                        <div className="form-field full">
-                                          <label>
-                                            Campos esperados del documento{" "}
-                                            <FieldHint label="Definir campos esperados">
-                                              Define las salidas esperadas de OCR en lenguaje simple. Se convierten automáticamente a un esquema JSON.
-                                            </FieldHint>
-                                          </label>
-                                          <div className="admin-ai-parser-schema-builder">
-                                            {(aiParserConfig.expectedOutputFields ?? []).map((outputField, fieldIndex) => (
-                                              <div
-                                                key={`ai-parser-output-${field.localId}-${fieldIndex}`}
-                                                className="admin-ai-parser-schema-row"
-                                              >
-                                                <input
-                                                  type="text"
-                                                  className="admin-ai-parser-key-input"
-                                                  value={outputField.key}
-                                                  placeholder="fecha-de-nacimiento"
-                                                  autoCapitalize="none"
-                                                  autoCorrect="off"
-                                                  spellCheck={false}
-                                                  onChange={(event) =>
-                                                    updateExpectedOutputField(field.localId, fieldIndex, {
-                                                      key: event.target.value,
-                                                    })
-                                                  }
-                                                  onBlur={() => finalizeExpectedOutputFields(field.localId)}
-                                                  aria-label={`Clave OCR ${fieldIndex + 1}`}
-                                                />
-                                                <select
-                                                  value={outputField.type}
-                                                  onChange={(event) =>
-                                                    updateExpectedOutputField(field.localId, fieldIndex, {
-                                                      type: event.target.value as OcrExpectedOutputFieldType,
-                                                    })
-                                                  }
-                                                  aria-label={`Tipo OCR ${fieldIndex + 1}`}
-                                                >
-                                                  {OCR_EXPECTED_OUTPUT_TYPES.map((typeValue) => (
-                                                    <option key={`ocr-output-type-${typeValue}`} value={typeValue}>
-                                                      {OCR_OUTPUT_FIELD_TYPE_LABELS[typeValue]}
-                                                    </option>
-                                                  ))}
-                                                </select>
-                                                <button
-                                                  type="button"
-                                                  className="btn btn-outline"
-                                                  onClick={() => removeExpectedOutputField(field.localId, fieldIndex)}
-                                                  aria-label={`Eliminar campo OCR ${fieldIndex + 1}`}
-                                                >
-                                                  Eliminar
-                                                </button>
-                                                <div className="form-hint admin-ai-parser-schema-preview">
-                                                  {`${field.field_key}_${normalizeOcrOutputKey(outputField.key || "campo")}`}
-                                                </div>
-                                              </div>
-                                            ))}
-                                            <button
-                                              type="button"
-                                              className="btn btn-outline"
-                                              onClick={() => addExpectedOutputField(field.localId)}
-                                            >
-                                              + Añadir campo OCR
-                                            </button>
-                                          </div>
-                                        </div>
-                                        <details className="admin-ai-parser-advanced">
-                                          <summary>Opciones avanzadas</summary>
-                                          <div className="form-field full">
-                                            <label htmlFor={`ai-parser-schema-${field.localId}`}>
-                                              Esquema JSON esperado (avanzado)
-                                            </label>
-                                            <textarea
-                                              id={`ai-parser-schema-${field.localId}`}
-                                              rows={6}
-                                              value={aiParserConfig.expectedSchemaTemplate}
-                                              onChange={(event) =>
-                                                updateFieldAiParserConfig(field.localId, (currentConfig) => {
-                                                  const nextTemplate = event.target.value;
-                                                  return {
-                                                    ...currentConfig,
-                                                    expectedSchemaTemplate: nextTemplate,
-                                                    expectedOutputFields: parseExpectedOutputFieldsFromSchemaTemplate(
-                                                      nextTemplate,
-                                                    ),
-                                                  };
-                                                })
-                                              }
-                                              style={{ fontFamily: "monospace" }}
-                                            />
-                                          </div>
-                                          <div className="form-field full">
-                                            <label htmlFor={`ai-parser-system-${field.localId}`}>
-                                              System prompt adicional
-                                            </label>
-                                            <textarea
-                                              id={`ai-parser-system-${field.localId}`}
-                                              rows={3}
-                                              value={aiParserConfig.systemPrompt ?? ""}
-                                              onChange={(event) =>
-                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
-                                                  ...currentConfig,
-                                                  systemPrompt: event.target.value || null,
-                                                }))
-                                              }
-                                            />
-                                          </div>
-                                          <div className="form-field full">
-                                            <label htmlFor={`ai-parser-prompt-${field.localId}`}>
-                                              Prompt base opcional
-                                            </label>
-                                            <textarea
-                                              id={`ai-parser-prompt-${field.localId}`}
-                                              rows={3}
-                                              value={aiParserConfig.promptTemplate ?? ""}
-                                              onChange={(event) =>
-                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
-                                                  ...currentConfig,
-                                                  promptTemplate: event.target.value || null,
-                                                }))
-                                              }
-                                            />
-                                          </div>
-                                        </details>
-                                        <div className="switch-wrapper" style={{ borderColor: "var(--maroon-soft)", background: "var(--paper)" }}>
-                                          <div>
-                                            <div style={{ fontSize: "0.8rem", fontWeight: 500, color: "var(--ink)" }}>Validación estricta de esquema</div>
-                                            <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>Falla la corrida si el JSON no coincide exactamente con el esquema.</div>
-                                          </div>
-                                          <label className="switch">
-                                            <input
-                                              type="checkbox"
-                                              aria-label={`Validación estricta para ${field.field_label}`}
-                                              checked={aiParserConfig.strictSchema}
-                                              onChange={(event) =>
-                                                updateFieldAiParserConfig(field.localId, (currentConfig) => ({
-                                                  ...currentConfig,
-                                                  strictSchema: event.target.checked,
-                                                }))
-                                              }
-                                            />
-                                            <span className="slider"></span>
-                                          </label>
-                                        </div>
-                                      </div>
-                                    ) : null}
-                                  </div>
+                              <div className="field-type">
+                                {getFieldTypeLabel(field.field_type)} • id:{" "}
+                                <code>{field.field_key}</code>
+                                {field.group_name?.trim() ? (
+                                  <>
+                                    {" "}
+                                    • grupo: <span>{field.group_name}</span>
+                                  </>
                                 ) : null}
                               </div>
                             </div>
-                            <div className="admin-field-editor-footer">
+                            <div className="field-actions">
                               <button
-                                className="btn btn-ghost"
+                                className="btn-icon"
+                                title="Editar"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setActiveFieldId(null);
+                                  setActiveFieldId(
+                                    isEditing ? null : field.localId,
+                                  );
                                 }}
                               >
-                                Cancelar
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                >
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                                </svg>
                               </button>
                               <button
-                                className="btn btn-primary"
+                                className="btn-icon danger"
+                                title="Eliminar"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setStatusMessage(
-                                    "Campo actualizado localmente. Haz clic en Guardar configuración para persistir los cambios.",
-                                  );
-                                  setActiveFieldId(null);
+                                  removeField(field.localId);
                                 }}
                               >
-                                Aplicar cambios
+                                <svg
+                                  width="14"
+                                  height="14"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                >
+                                  <polyline points="3 6 5 6 21 6" />
+                                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                                </svg>
                               </button>
                             </div>
                           </div>
-                        )}
-                      </div>
+
+                          {isEditing && (
+                            <div
+                              className="field-editor"
+                              key={`editor-${field.localId}`}
+                            >
+                              <div className="editor-grid">
+                                <div className="form-field full">
+                                  <label htmlFor={`title-${field.localId}`}>
+                                    Título
+                                  </label>
+                                  <input
+                                    id={`title-${field.localId}`}
+                                    type="text"
+                                    defaultValue={field.field_label}
+                                    onBlur={(event) => {
+                                      const value = event.target.value;
+                                      setFields((current) =>
+                                        current.map((item) =>
+                                          item.localId === field.localId
+                                            ? {
+                                                ...item,
+                                                field_label: value,
+                                                field_key:
+                                                  item.id.startsWith("new-") ||
+                                                  item.field_key.startsWith(
+                                                    "nuevoCampo",
+                                                  )
+                                                    ? ensureUniqueFieldKey(
+                                                        value,
+                                                        field.localId,
+                                                      )
+                                                    : item.field_key,
+                                              }
+                                            : item,
+                                        ),
+                                      );
+                                    }}
+                                  />
+                                </div>
+                                <div className="form-field">
+                                  <label htmlFor={`key-${field.localId}`}>
+                                    Identificador interno (Clave)
+                                  </label>
+                                  <input
+                                    id={`key-${field.localId}`}
+                                    type="text"
+                                    defaultValue={field.field_key}
+                                    onBlur={(event) => {
+                                      const nextFieldKey = normalizeFieldKey(
+                                        event.target.value,
+                                      );
+                                      setFields((current) =>
+                                        current.map((item) =>
+                                          item.localId === field.localId
+                                            ? {
+                                                ...item,
+                                                field_key: nextFieldKey,
+                                              }
+                                            : item,
+                                        ),
+                                      );
+                                    }}
+                                    style={{
+                                      fontFamily: "monospace",
+                                      color: "var(--muted)",
+                                      background: "var(--paper)",
+                                    }}
+                                  />
+                                </div>
+                                <div className="form-field">
+                                  <label htmlFor={`type-${field.localId}`}>
+                                    Tipo de campo
+                                  </label>
+                                  <select
+                                    id={`type-${field.localId}`}
+                                    value={field.field_type}
+                                    onChange={(event) => {
+                                      const nextType = event.target
+                                        .value as CycleStageField["field_type"];
+                                      setFields((current) =>
+                                        current.map((item) =>
+                                          item.localId === field.localId
+                                            ? {
+                                                ...item,
+                                                field_type: nextType,
+                                                ai_parser_config:
+                                                  nextType === "file"
+                                                    ? normalizeFieldAiParserConfig(
+                                                        item.ai_parser_config,
+                                                      )
+                                                    : null,
+                                              }
+                                            : item,
+                                        ),
+                                      );
+                                    }}
+                                  >
+                                    <option value="short_text">
+                                      Texto corto
+                                    </option>
+                                    <option value="long_text">
+                                      Texto largo
+                                    </option>
+                                    <option value="number">Número</option>
+                                    <option value="date">Fecha</option>
+                                    <option value="email">Correo</option>
+                                    <option value="file">Archivo</option>
+                                  </select>
+                                </div>
+                                <div className="form-field full">
+                                  <label
+                                    htmlFor={`placeholder-${field.localId}`}
+                                  >
+                                    Placeholder
+                                  </label>
+                                  <input
+                                    id={`placeholder-${field.localId}`}
+                                    type="text"
+                                    defaultValue={field.placeholder ?? ""}
+                                    onBlur={(event) =>
+                                      setFields((current) =>
+                                        current.map((item) =>
+                                          item.localId === field.localId
+                                            ? {
+                                                ...item,
+                                                placeholder: event.target.value,
+                                              }
+                                            : item,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="form-field full">
+                                  <label htmlFor={`help-${field.localId}`}>
+                                    Ayuda
+                                  </label>
+                                  <input
+                                    id={`help-${field.localId}`}
+                                    type="text"
+                                    defaultValue={field.help_text ?? ""}
+                                    onBlur={(event) =>
+                                      setFields((current) =>
+                                        current.map((item) =>
+                                          item.localId === field.localId
+                                            ? {
+                                                ...item,
+                                                help_text: event.target.value,
+                                              }
+                                            : item,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                </div>
+                                <div className="form-field full">
+                                  <label
+                                    htmlFor={`group-name-${field.localId}`}
+                                  >
+                                    Nombre de grupo (opcional)
+                                  </label>
+                                  <input
+                                    id={`group-name-${field.localId}`}
+                                    type="text"
+                                    defaultValue={field.group_name ?? ""}
+                                    onBlur={(event) =>
+                                      setFields((current) =>
+                                        current.map((item) =>
+                                          item.localId === field.localId
+                                            ? {
+                                                ...item,
+                                                group_name:
+                                                  event.target.value.trim() ||
+                                                  null,
+                                              }
+                                            : item,
+                                        ),
+                                      )
+                                    }
+                                  />
+                                  <small className="admin-text-muted">
+                                    Si lo completas, este campo se mostrará
+                                    agrupado bajo ese título en la vista del
+                                    postulante.
+                                  </small>
+                                </div>
+
+                                <div
+                                  className="form-field full"
+                                  style={{ marginTop: "16px" }}
+                                >
+                                  <div
+                                    className="switch-wrapper"
+                                    style={{
+                                      borderColor: "var(--maroon-soft)",
+                                      background: "var(--paper)",
+                                      marginBottom: "8px",
+                                    }}
+                                  >
+                                    <div>
+                                      <div
+                                        style={{
+                                          fontSize: "0.8rem",
+                                          fontWeight: 500,
+                                          color: "var(--ink)",
+                                        }}
+                                      >
+                                        Campo obligatorio
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: "0.75rem",
+                                          color: "var(--muted)",
+                                        }}
+                                      >
+                                        El postulante no podrá avanzar si no
+                                        responde.
+                                      </div>
+                                    </div>
+                                    <label className="switch">
+                                      <input
+                                        type="checkbox"
+                                        checked={field.is_required}
+                                        onChange={(event) =>
+                                          setFields((current) =>
+                                            current.map((item) =>
+                                              item.localId === field.localId
+                                                ? {
+                                                    ...item,
+                                                    is_required:
+                                                      event.target.checked,
+                                                  }
+                                                : item,
+                                            ),
+                                          )
+                                        }
+                                      />
+                                      <span className="slider"></span>
+                                    </label>
+                                  </div>
+                                  <div
+                                    className="switch-wrapper"
+                                    style={{
+                                      borderColor: "var(--maroon-soft)",
+                                      background: "var(--paper)",
+                                    }}
+                                  >
+                                    <div>
+                                      <div
+                                        style={{
+                                          fontSize: "0.8rem",
+                                          fontWeight: 500,
+                                          color: "var(--ink)",
+                                        }}
+                                      >
+                                        Campo visible
+                                      </div>
+                                      <div
+                                        style={{
+                                          fontSize: "0.75rem",
+                                          color: "var(--muted)",
+                                        }}
+                                      >
+                                        Si está oculto, los postulantes no lo
+                                        verán.
+                                      </div>
+                                    </div>
+                                    <label className="switch">
+                                      <input
+                                        type="checkbox"
+                                        checked={field.is_active}
+                                        onChange={(event) =>
+                                          setFields((current) =>
+                                            current.map((item) =>
+                                              item.localId === field.localId
+                                                ? {
+                                                    ...item,
+                                                    is_active:
+                                                      event.target.checked,
+                                                  }
+                                                : item,
+                                            ),
+                                          )
+                                        }
+                                      />
+                                      <span className="slider"></span>
+                                    </label>
+                                  </div>
+                                  {field.field_type === "file" ? (
+                                    <div className="admin-ai-parser-panel">
+                                      <div
+                                        className="switch-wrapper"
+                                        style={{
+                                          borderColor: "var(--maroon-soft)",
+                                          background: "var(--paper)",
+                                        }}
+                                      >
+                                        <div>
+                                          <div
+                                            style={{
+                                              fontSize: "0.8rem",
+                                              fontWeight: 500,
+                                              color: "var(--ink)",
+                                            }}
+                                          >
+                                            Parsing con IA{" "}
+                                            <FieldHint label="Qué hace parsing con IA">
+                                              Habilita el análisis OCR con
+                                              esquema JSON para este archivo
+                                              desde la vista de administración.
+                                            </FieldHint>
+                                          </div>
+                                          <div
+                                            style={{
+                                              fontSize: "0.75rem",
+                                              color: "var(--muted)",
+                                            }}
+                                          >
+                                            Actívalo solo para archivos que
+                                            quieras procesar automáticamente.
+                                          </div>
+                                        </div>
+                                        <label className="switch">
+                                          <input
+                                            type="checkbox"
+                                            aria-label={`Habilitar parsing IA para ${field.field_label}`}
+                                            checked={Boolean(
+                                              aiParserConfig?.enabled,
+                                            )}
+                                            onChange={(event) => {
+                                              if (event.target.checked) {
+                                                updateFieldByLocalId(
+                                                  field.localId,
+                                                  (item) => ({
+                                                    ...item,
+                                                    ai_parser_config:
+                                                      createDefaultFieldAiParserConfig(),
+                                                  }),
+                                                );
+                                                return;
+                                              }
+                                              updateFieldByLocalId(
+                                                field.localId,
+                                                (item) => ({
+                                                  ...item,
+                                                  ai_parser_config: null,
+                                                }),
+                                              );
+                                            }}
+                                          />
+                                          <span className="slider"></span>
+                                        </label>
+                                      </div>
+                                      {aiParserConfig?.enabled ? (
+                                        <div className="admin-ai-parser-editor">
+                                          <div className="form-field full">
+                                            <label
+                                              htmlFor={`ai-parser-extraction-${field.localId}`}
+                                            >
+                                              Instrucciones de extracción{" "}
+                                              <FieldHint label="Cómo redactar la extracción">
+                                                Especifica exactamente qué datos
+                                                extraer y cómo validarlos. Evita
+                                                instrucciones ambiguas.
+                                              </FieldHint>
+                                            </label>
+                                            <textarea
+                                              id={`ai-parser-extraction-${field.localId}`}
+                                              rows={4}
+                                              value={
+                                                aiParserConfig.extractionInstructions
+                                              }
+                                              onChange={(event) =>
+                                                updateFieldAiParserConfig(
+                                                  field.localId,
+                                                  (currentConfig) => ({
+                                                    ...currentConfig,
+                                                    extractionInstructions:
+                                                      event.target.value,
+                                                  }),
+                                                )
+                                              }
+                                            />
+                                          </div>
+                                          <div className="form-field full">
+                                            <label>
+                                              Archivos de referencia{" "}
+                                              <FieldHint label="Cómo usar referencias OCR">
+                                                Sube PDFs o imágenes de ejemplo
+                                                para dar contexto al modelo. Se
+                                                enviarán junto con el documento
+                                                del postulante cada vez que
+                                                corra el OCR de este campo.
+                                              </FieldHint>
+                                            </label>
+                                            <div className="admin-ai-parser-reference-upload">
+                                              <label className="btn btn-outline">
+                                                <input
+                                                  type="file"
+                                                  accept=".pdf,.jpg,.jpeg,.png,.webp"
+                                                  multiple
+                                                  style={{ display: "none" }}
+                                                  aria-label={`Subir referencias OCR para ${field.field_label}`}
+                                                  onChange={(event) => {
+                                                    void uploadAiParserReferenceFiles(
+                                                      field.localId,
+                                                      event.target.files ?? [],
+                                                    );
+                                                    event.target.value = "";
+                                                  }}
+                                                />
+                                                {aiReferenceUpload.isUploading
+                                                  ? "Subiendo referencias..."
+                                                  : "Subir referencias"}
+                                              </label>
+                                              <span className="form-hint">
+                                                Opcional. Útil para plantillas
+                                                visuales, formatos o ejemplos de
+                                                documentos.
+                                              </span>
+                                            </div>
+                                            {aiReferenceUpload.error ? (
+                                              <div
+                                                className="form-hint"
+                                                style={{
+                                                  color: "var(--danger)",
+                                                }}
+                                              >
+                                                {aiReferenceUpload.error}
+                                              </div>
+                                            ) : null}
+                                            {(
+                                              aiParserConfig.referenceFiles ??
+                                              []
+                                            ).length > 0 ? (
+                                              <div className="admin-ai-parser-reference-list">
+                                                {(
+                                                  aiParserConfig.referenceFiles ??
+                                                  []
+                                                ).map((referenceFile) => (
+                                                  <div
+                                                    key={referenceFile.path}
+                                                    className="admin-ai-parser-reference-item"
+                                                  >
+                                                    <div>
+                                                      <div>
+                                                        {referenceFile.fileName}
+                                                      </div>
+                                                      <div className="admin-ai-parser-reference-meta">
+                                                        {referenceFile.mimeType}{" "}
+                                                        •{" "}
+                                                        {formatFileSize(
+                                                          referenceFile.sizeBytes,
+                                                        )}
+                                                      </div>
+                                                    </div>
+                                                    <button
+                                                      type="button"
+                                                      className="btn btn-ghost btn-sm"
+                                                      onClick={() =>
+                                                        removeAiParserReferenceFile(
+                                                          field.localId,
+                                                          referenceFile.path,
+                                                        )
+                                                      }
+                                                    >
+                                                      Quitar
+                                                    </button>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            ) : null}
+                                          </div>
+                                          <div className="form-field full">
+                                            <label>
+                                              Campos esperados del documento{" "}
+                                              <FieldHint label="Definir campos esperados">
+                                                Define las salidas esperadas de
+                                                OCR en lenguaje simple. Se
+                                                convierten automáticamente a un
+                                                esquema JSON.
+                                              </FieldHint>
+                                            </label>
+                                            <div className="admin-ai-parser-schema-builder">
+                                              {(
+                                                aiParserConfig.expectedOutputFields ??
+                                                []
+                                              ).map(
+                                                (outputField, fieldIndex) => (
+                                                  <div
+                                                    key={`ai-parser-output-${field.localId}-${fieldIndex}`}
+                                                    className="admin-ai-parser-schema-row"
+                                                  >
+                                                    <input
+                                                      type="text"
+                                                      className="admin-ai-parser-key-input"
+                                                      value={outputField.key}
+                                                      placeholder="fecha-de-nacimiento"
+                                                      autoCapitalize="none"
+                                                      autoCorrect="off"
+                                                      spellCheck={false}
+                                                      onChange={(event) =>
+                                                        updateExpectedOutputField(
+                                                          field.localId,
+                                                          fieldIndex,
+                                                          {
+                                                            key: event.target
+                                                              .value,
+                                                          },
+                                                        )
+                                                      }
+                                                      onBlur={() =>
+                                                        finalizeExpectedOutputFields(
+                                                          field.localId,
+                                                        )
+                                                      }
+                                                      aria-label={`Clave OCR ${fieldIndex + 1}`}
+                                                    />
+                                                    <select
+                                                      value={outputField.type}
+                                                      onChange={(event) =>
+                                                        updateExpectedOutputField(
+                                                          field.localId,
+                                                          fieldIndex,
+                                                          {
+                                                            type: event.target
+                                                              .value as OcrExpectedOutputFieldType,
+                                                          },
+                                                        )
+                                                      }
+                                                      aria-label={`Tipo OCR ${fieldIndex + 1}`}
+                                                    >
+                                                      {OCR_EXPECTED_OUTPUT_TYPES.map(
+                                                        (typeValue) => (
+                                                          <option
+                                                            key={`ocr-output-type-${typeValue}`}
+                                                            value={typeValue}
+                                                          >
+                                                            {
+                                                              OCR_OUTPUT_FIELD_TYPE_LABELS[
+                                                                typeValue
+                                                              ]
+                                                            }
+                                                          </option>
+                                                        ),
+                                                      )}
+                                                    </select>
+                                                    <button
+                                                      type="button"
+                                                      className="btn btn-outline"
+                                                      onClick={() =>
+                                                        removeExpectedOutputField(
+                                                          field.localId,
+                                                          fieldIndex,
+                                                        )
+                                                      }
+                                                      aria-label={`Eliminar campo OCR ${fieldIndex + 1}`}
+                                                    >
+                                                      Eliminar
+                                                    </button>
+                                                    <div className="form-hint admin-ai-parser-schema-preview">
+                                                      {`${field.field_key}_${normalizeOcrOutputKey(outputField.key || "campo")}`}
+                                                    </div>
+                                                  </div>
+                                                ),
+                                              )}
+                                              <button
+                                                type="button"
+                                                className="btn btn-outline"
+                                                onClick={() =>
+                                                  addExpectedOutputField(
+                                                    field.localId,
+                                                  )
+                                                }
+                                              >
+                                                + Añadir campo OCR
+                                              </button>
+                                            </div>
+                                          </div>
+                                          <details className="admin-ai-parser-advanced">
+                                            <summary>
+                                              Opciones avanzadas
+                                            </summary>
+                                            <div className="form-field full">
+                                              <label
+                                                htmlFor={`ai-parser-schema-${field.localId}`}
+                                              >
+                                                Esquema JSON esperado (avanzado)
+                                              </label>
+                                              <textarea
+                                                id={`ai-parser-schema-${field.localId}`}
+                                                rows={6}
+                                                value={
+                                                  aiParserConfig.expectedSchemaTemplate
+                                                }
+                                                onChange={(event) =>
+                                                  updateFieldAiParserConfig(
+                                                    field.localId,
+                                                    (currentConfig) => {
+                                                      const nextTemplate =
+                                                        event.target.value;
+                                                      return {
+                                                        ...currentConfig,
+                                                        expectedSchemaTemplate:
+                                                          nextTemplate,
+                                                        expectedOutputFields:
+                                                          parseExpectedOutputFieldsFromSchemaTemplate(
+                                                            nextTemplate,
+                                                          ),
+                                                      };
+                                                    },
+                                                  )
+                                                }
+                                                style={{
+                                                  fontFamily: "monospace",
+                                                }}
+                                              />
+                                            </div>
+                                            <div className="form-field full">
+                                              <label
+                                                htmlFor={`ai-parser-system-${field.localId}`}
+                                              >
+                                                System prompt adicional
+                                              </label>
+                                              <textarea
+                                                id={`ai-parser-system-${field.localId}`}
+                                                rows={3}
+                                                value={
+                                                  aiParserConfig.systemPrompt ??
+                                                  ""
+                                                }
+                                                onChange={(event) =>
+                                                  updateFieldAiParserConfig(
+                                                    field.localId,
+                                                    (currentConfig) => ({
+                                                      ...currentConfig,
+                                                      systemPrompt:
+                                                        event.target.value ||
+                                                        null,
+                                                    }),
+                                                  )
+                                                }
+                                              />
+                                            </div>
+                                            <div className="form-field full">
+                                              <label
+                                                htmlFor={`ai-parser-prompt-${field.localId}`}
+                                              >
+                                                Prompt base opcional
+                                              </label>
+                                              <textarea
+                                                id={`ai-parser-prompt-${field.localId}`}
+                                                rows={3}
+                                                value={
+                                                  aiParserConfig.promptTemplate ??
+                                                  ""
+                                                }
+                                                onChange={(event) =>
+                                                  updateFieldAiParserConfig(
+                                                    field.localId,
+                                                    (currentConfig) => ({
+                                                      ...currentConfig,
+                                                      promptTemplate:
+                                                        event.target.value ||
+                                                        null,
+                                                    }),
+                                                  )
+                                                }
+                                              />
+                                            </div>
+                                          </details>
+                                          <div
+                                            className="switch-wrapper"
+                                            style={{
+                                              borderColor: "var(--maroon-soft)",
+                                              background: "var(--paper)",
+                                            }}
+                                          >
+                                            <div>
+                                              <div
+                                                style={{
+                                                  fontSize: "0.8rem",
+                                                  fontWeight: 500,
+                                                  color: "var(--ink)",
+                                                }}
+                                              >
+                                                Validación estricta de esquema
+                                              </div>
+                                              <div
+                                                style={{
+                                                  fontSize: "0.75rem",
+                                                  color: "var(--muted)",
+                                                }}
+                                              >
+                                                Falla la corrida si el JSON no
+                                                coincide exactamente con el
+                                                esquema.
+                                              </div>
+                                            </div>
+                                            <label className="switch">
+                                              <input
+                                                type="checkbox"
+                                                aria-label={`Validación estricta para ${field.field_label}`}
+                                                checked={
+                                                  aiParserConfig.strictSchema
+                                                }
+                                                onChange={(event) =>
+                                                  updateFieldAiParserConfig(
+                                                    field.localId,
+                                                    (currentConfig) => ({
+                                                      ...currentConfig,
+                                                      strictSchema:
+                                                        event.target.checked,
+                                                    }),
+                                                  )
+                                                }
+                                              />
+                                              <span className="slider"></span>
+                                            </label>
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </div>
+                                  ) : null}
+                                </div>
+                              </div>
+                              <div className="admin-field-editor-footer">
+                                <button
+                                  className="btn btn-ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveFieldId(null);
+                                  }}
+                                >
+                                  Cancelar
+                                </button>
+                                <button
+                                  className="btn btn-primary"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setStatusMessage(
+                                      "Campo actualizado localmente. Haz clic en Guardar configuración para persistir los cambios.",
+                                    );
+                                    setActiveFieldId(null);
+                                  }}
+                                >
+                                  Aplicar cambios
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
                       {isSectionEnd && !isSectionCollapsed ? (
                         <button
@@ -2870,26 +3682,43 @@ export function StageConfigEditor({
                           onClick={() => {
                             const suffix = fields.length + 1;
                             const insertSection = sectionIdForInsert
-                              ? editorSections.find((s) => s.id === sectionIdForInsert)
+                              ? editorSections.find(
+                                  (s) => s.id === sectionIdForInsert,
+                                )
                               : null;
                             const seed = getNewFieldSeedForSection({
                               sectionKey: insertSection?.sectionKey ?? "other",
                               suffix,
                             });
-                            insertFieldAt(sectionInsertPosition, {
-                              field_key: seed.field_key,
-                              field_label: seed.field_label,
-                              field_type: seed.field_type,
-                              is_required: false,
-                              placeholder: "",
-                              help_text: "",
-                              is_active: true,
-                            }, {
-                              sectionId: sectionIdForInsert,
-                            });
+                            insertFieldAt(
+                              sectionInsertPosition,
+                              {
+                                field_key: seed.field_key,
+                                field_label: seed.field_label,
+                                field_type: seed.field_type,
+                                is_required: false,
+                                placeholder: "",
+                                help_text: "",
+                                is_active: true,
+                              },
+                              {
+                                sectionId: sectionIdForInsert,
+                              },
+                            );
                           }}
                         >
-                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                          <svg
+                            width="16"
+                            height="16"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            aria-hidden="true"
+                          >
+                            <line x1="12" y1="5" x2="12" y2="19" />
+                            <line x1="5" y1="12" x2="19" y2="12" />
+                          </svg>
                           Añadir nuevo campo
                         </button>
                       ) : null}
@@ -2897,7 +3726,10 @@ export function StageConfigEditor({
                   );
                 })}
                 {sectionPlaceholders.map((placeholder, index) => (
-                    <div key={placeholder.localId} className="admin-stage-section-placeholder">
+                  <div
+                    key={placeholder.localId}
+                    className="admin-stage-section-placeholder"
+                  >
                     <div className="admin-stage-section-heading-row">
                       <div className="builder-section-title">
                         {`Sección ${editorSections.length + index + 1}: ${placeholder.title}`}
@@ -2906,7 +3738,9 @@ export function StageConfigEditor({
                     <div className="settings-card admin-stage-empty-section-card">
                       <div className="editor-grid">
                         <div className="form-field full">
-                          <label htmlFor={`section-title-${placeholder.localId}`}>
+                          <label
+                            htmlFor={`section-title-${placeholder.localId}`}
+                          >
                             Nombre de la sección
                           </label>
                           <input
@@ -2924,7 +3758,8 @@ export function StageConfigEditor({
                             }
                           />
                           <small className="admin-text-muted">
-                            La sección quedará visible cuando agregues al menos un campo.
+                            La sección quedará visible cuando agregues al menos
+                            un campo.
                           </small>
                         </div>
                       </div>
@@ -2933,15 +3768,24 @@ export function StageConfigEditor({
                         className="add-field-btn"
                         onClick={() => addFieldToPlaceholder(placeholder)}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          aria-hidden="true"
+                        >
+                          <line x1="12" y1="5" x2="12" y2="19" />
+                          <line x1="5" y1="12" x2="19" y2="12" />
+                        </svg>
                         Añadir nuevo campo en esta sección
                       </button>
                     </div>
                   </div>
                 ))}
-                {emptySections.map((section) =>
-                  renderEmptySection(section),
-                )}
+                {emptySections.map((section) => renderEmptySection(section))}
                 <div className="admin-stage-editor-add-section">
                   <button
                     type="button"
@@ -2964,40 +3808,59 @@ export function StageConfigEditor({
                 </div>
                 <div className="editor-grid">
                   <div className="form-field full">
-                    <label htmlFor={`stage-name-${stageCode}`}>Nombre de la etapa</label>
+                    <label htmlFor={`stage-name-${stageCode}`}>
+                      Nombre de la etapa
+                    </label>
                     <input
                       id={`stage-name-${stageCode}`}
                       type="text"
                       value={settingsStageName}
-                      onChange={(event) => setSettingsStageName(event.target.value)}
+                      onChange={(event) =>
+                        setSettingsStageName(event.target.value)
+                      }
                     />
                   </div>
                   <div className="form-field full">
-                    <label htmlFor={`stage-description-${stageCode}`}>Instrucciones de la etapa (Markdown)</label>
+                    <label htmlFor={`stage-description-${stageCode}`}>
+                      Instrucciones de la etapa (Markdown)
+                    </label>
                     <textarea
                       id={`stage-description-${stageCode}`}
                       rows={5}
                       value={settingsDescription}
-                      onChange={(event) => setSettingsDescription(event.target.value)}
+                      onChange={(event) =>
+                        setSettingsDescription(event.target.value)
+                      }
                     />
-                    <div className="form-hint">Se muestra primero en el paso inicial del postulante. Soporta encabezados, listas, enfasis y enlaces seguros.</div>
+                    <div className="form-hint">
+                      Se muestra primero en el paso inicial del postulante.
+                      Soporta encabezados, listas, enfasis y enlaces seguros.
+                    </div>
                   </div>
                   <div className="form-field">
-                    <label htmlFor={`stage-open-date-${stageCode}`}>Fecha de apertura</label>
+                    <label htmlFor={`stage-open-date-${stageCode}`}>
+                      Fecha de apertura
+                    </label>
                     <input
                       id={`stage-open-date-${stageCode}`}
                       type="date"
                       value={settingsOpenDate}
-                      onChange={(event) => setSettingsOpenDate(event.target.value)}
+                      onChange={(event) =>
+                        setSettingsOpenDate(event.target.value)
+                      }
                     />
                   </div>
                   <div className="form-field">
-                    <label htmlFor={`stage-close-date-${stageCode}`}>Fecha de cierre</label>
+                    <label htmlFor={`stage-close-date-${stageCode}`}>
+                      Fecha de cierre
+                    </label>
                     <input
                       id={`stage-close-date-${stageCode}`}
                       type="date"
                       value={settingsCloseDate}
-                      onChange={(event) => setSettingsCloseDate(event.target.value)}
+                      onChange={(event) =>
+                        setSettingsCloseDate(event.target.value)
+                      }
                     />
                   </div>
                 </div>
@@ -3006,11 +3869,16 @@ export function StageConfigEditor({
               <div className="settings-card">
                 <div className="settings-card-header">
                   <h3>Reglas de Acceso</h3>
-                  <p>Condiciones para que un postulante pueda ingresar a esta etapa.</p>
+                  <p>
+                    Condiciones para que un postulante pueda ingresar a esta
+                    etapa.
+                  </p>
                 </div>
                 <div className="admin-stage-settings-stack">
                   <div className="form-field">
-                    <label htmlFor={`prev-stage-${stageCode}`}>Etapa previa requerida</label>
+                    <label htmlFor={`prev-stage-${stageCode}`}>
+                      Etapa previa requerida
+                    </label>
                     <select
                       id={`prev-stage-${stageCode}`}
                       value={previousStageRequirement}
@@ -3020,7 +3888,9 @@ export function StageConfigEditor({
                     >
                       <option value="none">Ninguna (acceso directo)</option>
                       <option value="main_form">1. Formulario Principal</option>
-                      <option value="exam_placeholder">2. Examen Académico</option>
+                      <option value="exam_placeholder">
+                        2. Examen Académico
+                      </option>
                       {stageTemplates
                         .filter((template) => template.id !== stageId)
                         .filter(
@@ -3038,16 +3908,21 @@ export function StageConfigEditor({
                   </div>
                   <div className="switch-wrapper">
                     <div>
-                      <div className="admin-switch-label">Bloquear si no cumple requisitos</div>
+                      <div className="admin-switch-label">
+                        Bloquear si no cumple requisitos
+                      </div>
                       <div className="admin-switch-help">
-                        El postulante no podrá ver esta etapa si fue rechazado en la etapa previa.
+                        El postulante no podrá ver esta etapa si fue rechazado
+                        en la etapa previa.
                       </div>
                     </div>
                     <label className="switch">
                       <input
                         type="checkbox"
                         checked={blockIfPreviousNotMet}
-                        onChange={(event) => setBlockIfPreviousNotMet(event.target.checked)}
+                        onChange={(event) =>
+                          setBlockIfPreviousNotMet(event.target.checked)
+                        }
                       />
                       <span className="slider"></span>
                     </label>
@@ -3059,12 +3934,413 @@ export function StageConfigEditor({
                 <div className="settings-card-header">
                   <h3>Rúbrica de Elegibilidad Automática</h3>
                   <p>
-                    Define criterios para clasificar postulaciones como <strong>elegible</strong>,{" "}
-                    <strong>no elegible</strong> o <strong>revisión manual</strong>.
+                    Define criterios para clasificar postulaciones como{" "}
+                    <strong>elegible</strong>, <strong>no elegible</strong> o{" "}
+                    <strong>revisión manual</strong>.
                   </p>
                 </div>
                 <div className="editor-grid">
                   <div className="form-field full">
+                    <details className="rubric-template-details">
+                      <summary className="rubric-template-summary">
+                        Generador de plantilla UWC Perú
+                      </summary>
+                      <div className="rubric-template-body">
+                        <div
+                          className="form-hint"
+                          style={{ marginBottom: "12px" }}
+                        >
+                          Selecciona los campos del formulario que corresponden
+                          a cada dato requerido. Al aplicar, se generará una
+                          rúbrica pre-configurada con criterios editables.
+                        </div>
+                        <div className="editor-grid">
+                          <div className="form-field full">
+                            <label>
+                              Campos de archivo para identidad
+                              (DNI/Pasaporte/Carnet)
+                            </label>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "12px",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {rubricFileFieldOptions.length > 0 ? (
+                                rubricFileFieldOptions.map((option) => (
+                                  <label
+                                    key={`tpl-id-${option.value}`}
+                                    style={{
+                                      display: "flex",
+                                      gap: "6px",
+                                      alignItems: "center",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={uwcPresetDraft.idDocumentFileKeys.includes(
+                                        option.value,
+                                      )}
+                                      onChange={() =>
+                                        togglePresetFileKey(
+                                          "idDocumentFileKeys",
+                                          option.value,
+                                        )
+                                      }
+                                    />
+                                    {option.label}
+                                  </label>
+                                ))
+                              ) : (
+                                <span className="form-hint">
+                                  No hay campos de archivo disponibles.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="form-field full">
+                            <label>
+                              Campos de archivo para notas oficiales
+                            </label>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: "12px",
+                                flexWrap: "wrap",
+                              }}
+                            >
+                              {rubricFileFieldOptions.length > 0 ? (
+                                rubricFileFieldOptions.map((option) => (
+                                  <label
+                                    key={`tpl-grades-${option.value}`}
+                                    style={{
+                                      display: "flex",
+                                      gap: "6px",
+                                      alignItems: "center",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={uwcPresetDraft.gradesDocumentFileKeys.includes(
+                                        option.value,
+                                      )}
+                                      onChange={() =>
+                                        togglePresetFileKey(
+                                          "gradesDocumentFileKeys",
+                                          option.value,
+                                        )
+                                      }
+                                    />
+                                    {option.label}
+                                  </label>
+                                ))
+                              ) : (
+                                <span className="form-hint">
+                                  No hay campos de archivo disponibles.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-name-${stageCode}`}>
+                              Campo nombre postulante
+                            </label>
+                            <select
+                              id={`tpl-name-${stageCode}`}
+                              value={uwcPresetDraft.applicantNameFieldKey ?? ""}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  applicantNameFieldKey:
+                                    event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Selecciona un campo</option>
+                              {rubricFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-average-${stageCode}`}>
+                              Campo promedio de notas (numérico)
+                            </label>
+                            <select
+                              id={`tpl-average-${stageCode}`}
+                              value={uwcPresetDraft.averageGradeFieldKey ?? ""}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  averageGradeFieldKey:
+                                    event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Selecciona un campo</option>
+                              {rubricNumberFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-authorization-${stageCode}`}>
+                              Campo autorización firmada
+                            </label>
+                            <select
+                              id={`tpl-authorization-${stageCode}`}
+                              value={
+                                uwcPresetDraft.signedAuthorizationFileKey ?? ""
+                              }
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  signedAuthorizationFileKey:
+                                    event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Selecciona un campo</option>
+                              {rubricFileFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-photo-${stageCode}`}>
+                              Campo foto postulante
+                            </label>
+                            <select
+                              id={`tpl-photo-${stageCode}`}
+                              value={uwcPresetDraft.applicantPhotoFileKey ?? ""}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  applicantPhotoFileKey:
+                                    event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Selecciona un campo</option>
+                              {rubricFileFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-top-third-${stageCode}`}>
+                              Campo archivo de tercio superior (opcional)
+                            </label>
+                            <select
+                              id={`tpl-top-third-${stageCode}`}
+                              value={uwcPresetDraft.topThirdProofFileKey ?? ""}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  topThirdProofFileKey:
+                                    event.target.value || null,
+                                }))
+                              }
+                            >
+                              <option value="">Sin archivo dedicado</option>
+                              {rubricFileFieldOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                  {option.label}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-birth-years-${stageCode}`}>
+                              Años de nacimiento permitidos (coma)
+                            </label>
+                            <input
+                              id={`tpl-birth-years-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.allowedBirthYears.join(
+                                ", ",
+                              )}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  allowedBirthYears: parseCommaSeparatedNumbers(
+                                    event.target.value,
+                                  ),
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-average-min-${stageCode}`}>
+                              Promedio mínimo (0-20)
+                            </label>
+                            <input
+                              id={`tpl-average-min-${stageCode}`}
+                              type="number"
+                              min={0}
+                              max={20}
+                              step={0.1}
+                              value={String(uwcPresetDraft.minAverageGrade)}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  minAverageGrade:
+                                    Number(event.target.value) || 14,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-min-responses-${stageCode}`}>
+                              Respuestas mínimas por recomendación
+                            </label>
+                            <input
+                              id={`tpl-min-responses-${stageCode}`}
+                              type="number"
+                              min={0}
+                              max={20}
+                              step={1}
+                              value={String(
+                                uwcPresetDraft.minRecommendationResponses,
+                              )}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  minRecommendationResponses:
+                                    Number(event.target.value) || 0,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-ocr-name-${stageCode}`}>
+                              OCR path para nombre
+                            </label>
+                            <input
+                              id={`tpl-ocr-name-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.ocrNamePath}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  ocrNamePath: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-ocr-birth-${stageCode}`}>
+                              OCR path para año nacimiento
+                            </label>
+                            <input
+                              id={`tpl-ocr-birth-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.ocrBirthYearPath}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  ocrBirthYearPath: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-ocr-doc-type-${stageCode}`}>
+                              OCR path para tipo documento
+                            </label>
+                            <input
+                              id={`tpl-ocr-doc-type-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.ocrDocumentTypePath}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  ocrDocumentTypePath: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="form-field">
+                            <label htmlFor={`tpl-ocr-doc-issue-${stageCode}`}>
+                              OCR path para observaciones de documento
+                            </label>
+                            <input
+                              id={`tpl-ocr-doc-issue-${stageCode}`}
+                              type="text"
+                              value={uwcPresetDraft.ocrDocumentIssuePath}
+                              onChange={(event) =>
+                                setUwcPresetDraft((current) => ({
+                                  ...current,
+                                  ocrDocumentIssuePath: event.target.value,
+                                }))
+                              }
+                            />
+                          </div>
+                          <div className="switch-wrapper">
+                            <div>
+                              <div className="admin-switch-label">
+                                Marcar combinación de múltiples certificados
+                                como revisión manual
+                              </div>
+                            </div>
+                            <label className="switch">
+                              <input
+                                type="checkbox"
+                                checked={
+                                  uwcPresetDraft.limitGradesDocumentToSingleUpload
+                                }
+                                onChange={(event) =>
+                                  setUwcPresetDraft((current) => ({
+                                    ...current,
+                                    limitGradesDocumentToSingleUpload:
+                                      event.target.checked,
+                                    gradesCombinationRule: event.target.checked
+                                      ? "single_or_review"
+                                      : "allow_multiple",
+                                  }))
+                                }
+                              />
+                              <span className="slider" />
+                            </label>
+                          </div>
+                          <div
+                            className="form-field full"
+                            style={{
+                              display: "flex",
+                              gap: "8px",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <button
+                              type="button"
+                              className="btn btn-primary"
+                              onClick={applyUwcPeruTemplate}
+                            >
+                              Generar rúbrica desde plantilla
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-outline"
+                              onClick={() =>
+                                setUwcPresetDraft(suggestedUwcPresetDraft)
+                              }
+                            >
+                              Recargar sugerencias desde campos actuales
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </details>
+
                     {rubricFeedback && (
                       <div
                         className={`admin-feedback ${rubricFeedback.type === "error" ? "error" : "success"}`}
@@ -3076,8 +4352,12 @@ export function StageConfigEditor({
 
                     <div className="rubric-toolbar">
                       <div className="rubric-toolbar-left">
-                        <div className="rubric-enable-toggle">
-                          <span className="admin-switch-label">Habilitar rúbrica</span>
+                        <div className="switch-wrapper" style={{ margin: 0 }}>
+                          <div>
+                            <div className="admin-switch-label">
+                              Habilitar rúbrica
+                            </div>
+                          </div>
                           <label className="switch">
                             <input
                               type="checkbox"
@@ -3094,28 +4374,6 @@ export function StageConfigEditor({
                         </div>
                       </div>
                       <div className="rubric-toolbar-right">
-                        <button
-                          type="button"
-                          className="btn btn-sm btn-outline rubric-btn-preset"
-                          title="Carga los criterios Stage 1 de UWC Perú. Reemplaza los criterios actuales."
-                          onClick={() => {
-                            if (
-                              settingsEligibilityRubricDraft.criteria.length > 0 &&
-                              !window.confirm(
-                                "¿Reemplazar los criterios actuales con el preset Stage 1 de UWC Perú?",
-                              )
-                            ) {
-                              return;
-                            }
-                            const preset = buildUwcStageOneRubricFromDraft(
-                              guessUwcStageOnePresetDraft(fields),
-                            );
-                            syncGuidedRubricDraft({ ...preset, enabled: true });
-                          }}
-                        >
-                          Preset Stage 1
-                        </button>
-                        <span className="rubric-toolbar-divider" />
                         <button
                           type="button"
                           className={`btn btn-sm ${rubricEditorMode === "guided" ? "btn-primary" : "btn-outline"}`}
@@ -3144,967 +4402,1386 @@ export function StageConfigEditor({
                       <div className="rubric-criteria-list">
                         {settingsEligibilityRubricDraft.enabled ? (
                           <>
-                            {settingsEligibilityRubricDraft.criteria.length === 0 ? (
+                            {settingsEligibilityRubricDraft.criteria.length ===
+                            0 ? (
                               <div className="rubric-empty-state">
-                                No hay criterios configurados. Usa <strong>Preset Stage 1</strong> para cargar los criterios base, o agrega criterios manualmente.
+                                No hay criterios configurados. Usa el generador
+                                de plantilla o agrega criterios manualmente.
                               </div>
                             ) : null}
-                            {settingsEligibilityRubricDraft.criteria.map((criterion, criterionIndex) => {
-                              const isCollapsed = collapsedCriteria.has(criterionIndex);
-                              const fieldKeyOptions =
-                                criterion.fieldKey &&
-                                !rubricFieldOptions.some((option) => option.value === criterion.fieldKey)
-                                  ? [
-                                      {
-                                        value: criterion.fieldKey,
-                                        label: `${criterion.fieldKey} (actual)`,
-                                      },
-                                      ...rubricFieldOptions,
-                                    ]
-                                  : rubricFieldOptions;
-                              const fileKeyOptions =
-                                criterion.fileKey &&
-                                !rubricFileFieldOptions.some((option) => option.value === criterion.fileKey)
-                                  ? [
-                                      {
-                                        value: criterion.fileKey,
-                                        label: `${criterion.fileKey} (actual)`,
-                                      },
-                                      ...rubricFileFieldOptions,
-                                    ]
-                                  : rubricFileFieldOptions;
-                              const numberFieldOptions =
-                                criterion.fieldKey &&
-                                !rubricNumberFieldOptions.some(
-                                  (option) => option.value === criterion.fieldKey,
-                                )
-                                  ? [
-                                      {
-                                        value: criterion.fieldKey,
-                                        label: `${criterion.fieldKey} (actual)`,
-                                      },
-                                      ...rubricNumberFieldOptions,
-                                    ]
-                                  : rubricNumberFieldOptions;
-                              const criterionRoles = new Set(criterion.roles ?? []);
-                              const kindOption = RUBRIC_KIND_OPTIONS.find((o) => o.value === criterion.kind);
+                            {settingsEligibilityRubricDraft.criteria.map(
+                              (criterion, criterionIndex) => {
+                                const isCollapsed =
+                                  collapsedCriteria.has(criterionIndex);
+                                const fieldKeyOptions =
+                                  criterion.fieldKey &&
+                                  !rubricFieldOptions.some(
+                                    (option) =>
+                                      option.value === criterion.fieldKey,
+                                  )
+                                    ? [
+                                        {
+                                          value: criterion.fieldKey,
+                                          label: `${criterion.fieldKey} (actual)`,
+                                        },
+                                        ...rubricFieldOptions,
+                                      ]
+                                    : rubricFieldOptions;
+                                const fileKeyOptions =
+                                  criterion.fileKey &&
+                                  !rubricFileFieldOptions.some(
+                                    (option) =>
+                                      option.value === criterion.fileKey,
+                                  )
+                                    ? [
+                                        {
+                                          value: criterion.fileKey,
+                                          label: `${criterion.fileKey} (actual)`,
+                                        },
+                                        ...rubricFileFieldOptions,
+                                      ]
+                                    : rubricFileFieldOptions;
+                                const numberFieldOptions =
+                                  criterion.fieldKey &&
+                                  !rubricNumberFieldOptions.some(
+                                    (option) =>
+                                      option.value === criterion.fieldKey,
+                                  )
+                                    ? [
+                                        {
+                                          value: criterion.fieldKey,
+                                          label: `${criterion.fieldKey} (actual)`,
+                                        },
+                                        ...rubricNumberFieldOptions,
+                                      ]
+                                    : rubricNumberFieldOptions;
+                                const criterionRoles = new Set(
+                                  criterion.roles ?? [],
+                                );
+                                const kindOption = RUBRIC_KIND_OPTIONS.find(
+                                  (o) => o.value === criterion.kind,
+                                );
 
-                              return (
-                                <div
-                                  key={`${criterion.id}-${criterionIndex}`}
-                                  className="rubric-criterion-card"
-                                >
+                                return (
                                   <div
-                                    className="rubric-criterion-header"
-                                    onClick={() => toggleCriterionCollapsed(criterionIndex)}
+                                    key={`${criterion.id}-${criterionIndex}`}
+                                    className="rubric-criterion-card"
                                   >
-                                    <div className="rubric-criterion-header-left">
-                                      <span className="rubric-criterion-drag">&#x2630;</span>
-                                      <div className="rubric-criterion-title-group">
-                                        <span className="rubric-criterion-title">
-                                          {criterion.label || criterion.id}
+                                    <div
+                                      className="rubric-criterion-header"
+                                      onClick={() =>
+                                        toggleCriterionCollapsed(criterionIndex)
+                                      }
+                                    >
+                                      <div className="rubric-criterion-header-left">
+                                        <span className="rubric-criterion-drag">
+                                          &#x2630;
                                         </span>
-                                        <span className="rubric-criterion-kind-badge">
-                                          {kindOption?.label ?? criterion.kind}
+                                        <div className="rubric-criterion-title-group">
+                                          <span className="rubric-criterion-title">
+                                            {criterion.label || criterion.id}
+                                          </span>
+                                          <span className="rubric-criterion-kind-badge">
+                                            {kindOption?.label ??
+                                              criterion.kind}
+                                          </span>
+                                        </div>
+                                      </div>
+                                      <div className="rubric-criterion-header-right">
+                                        <span
+                                          className={`rubric-outcome-badge rubric-outcome-badge--${criterion.onFail}`}
+                                        >
+                                          {criterion.onFail === "not_eligible"
+                                            ? "No elegible"
+                                            : criterion.onFail ===
+                                                "needs_review"
+                                              ? "Revisión"
+                                              : "Elegible"}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            moveGuidedRubricCriterion(
+                                              criterionIndex,
+                                              "up",
+                                            );
+                                          }}
+                                          disabled={criterionIndex === 0}
+                                          title="Subir"
+                                        >
+                                          &uarr;
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            moveGuidedRubricCriterion(
+                                              criterionIndex,
+                                              "down",
+                                            );
+                                          }}
+                                          disabled={
+                                            criterionIndex ===
+                                            settingsEligibilityRubricDraft
+                                              .criteria.length -
+                                              1
+                                          }
+                                          title="Bajar"
+                                        >
+                                          &darr;
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="btn btn-sm btn-outline rubric-btn-delete"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            removeGuidedRubricCriterion(
+                                              criterionIndex,
+                                            );
+                                          }}
+                                          title="Eliminar"
+                                        >
+                                          &times;
+                                        </button>
+                                        <span
+                                          className={`rubric-chevron ${isCollapsed ? "" : "rubric-chevron--open"}`}
+                                        >
+                                          &#x25B6;
                                         </span>
                                       </div>
                                     </div>
-                                    <div className="rubric-criterion-header-right">
-                                      <span
-                                        className={`rubric-outcome-badge rubric-outcome-badge--${criterion.onFail}`}
-                                      >
-                                        {criterion.onFail === "not_eligible"
-                                          ? "No elegible"
-                                          : criterion.onFail === "needs_review"
-                                            ? "Revisión"
-                                            : "Elegible"}
-                                      </span>
-                                      <button
-                                        type="button"
-                                        className="btn btn-sm btn-outline"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          moveGuidedRubricCriterion(criterionIndex, "up");
-                                        }}
-                                        disabled={criterionIndex === 0}
-                                        title="Subir"
-                                      >
-                                        &uarr;
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn btn-sm btn-outline"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          moveGuidedRubricCriterion(criterionIndex, "down");
-                                        }}
-                                        disabled={
-                                          criterionIndex ===
-                                          settingsEligibilityRubricDraft.criteria.length - 1
-                                        }
-                                        title="Bajar"
-                                      >
-                                        &darr;
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="btn btn-sm btn-outline rubric-btn-delete"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          removeGuidedRubricCriterion(criterionIndex);
-                                        }}
-                                        title="Eliminar"
-                                      >
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                                          <polyline points="3 6 5 6 21 6" />
-                                          <path d="M19 6l-1 14H6L5 6" />
-                                          <path d="M10 11v6M14 11v6" />
-                                          <path d="M9 6V4h6v2" />
-                                        </svg>
-                                      </button>
-                                      <span className={`rubric-chevron ${isCollapsed ? "" : "rubric-chevron--open"}`}>
-                                        &#x25B6;
-                                      </span>
-                                    </div>
-                                  </div>
-                                  {!isCollapsed && (
-                                    <div className="rubric-criterion-body">
-                                      <div className="editor-grid">
-                                        <div className="form-field">
-                                          <label htmlFor={`rubric-criterion-kind-${stageCode}-${criterionIndex}`}>
-                                            Tipo
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-kind-${stageCode}-${criterionIndex}`}
-                                            value={criterion.kind}
-                                            onChange={(event) => {
-                                              const nextKind = event.target
-                                                .value as EligibilityRubricCriterion["kind"];
-                                              const replacement = createDefaultRubricCriterion({
-                                                kind: nextKind,
-                                                existingCriteria:
-                                                  settingsEligibilityRubricDraft.criteria.filter(
-                                                    (_, index) => index !== criterionIndex,
-                                                  ),
-                                                defaultFieldKey: defaultRubricFieldKey,
-                                                defaultFileKey: defaultRubricFileKey,
-                                                defaultNumberFieldKey: defaultRubricNumberFieldKey,
-                                              });
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...replacement,
-                                                id: currentCriterion.id,
-                                                label: currentCriterion.label,
-                                                description: currentCriterion.description,
-                                                onFail: currentCriterion.onFail,
-                                                onMissingData: currentCriterion.onMissingData,
-                                              }));
-                                            }}
-                                          >
-                                            {RUBRIC_KIND_OPTIONS.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div className="form-field">
-                                          <label htmlFor={`rubric-criterion-id-${stageCode}-${criterionIndex}`}>
-                                            ID técnico
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-id-${stageCode}-${criterionIndex}`}
-                                            type="text"
-                                            value={criterion.id}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                id: event.target.value,
-                                              }))
-                                            }
-                                            style={{ fontFamily: "monospace" }}
-                                          />
-                                        </div>
-                                        <div className="form-field full">
-                                          <label htmlFor={`rubric-criterion-label-${stageCode}-${criterionIndex}`}>
-                                            Etiqueta visible
-                                          </label>
-                                          <input
-                                            id={`rubric-criterion-label-${stageCode}-${criterionIndex}`}
-                                            type="text"
-                                            value={criterion.label}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                label: event.target.value,
-                                              }))
-                                            }
-                                          />
-                                        </div>
-                                        <div className="form-field">
-                                          <label htmlFor={`rubric-criterion-onfail-${stageCode}-${criterionIndex}`}>
-                                            Resultado si falla
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-onfail-${stageCode}-${criterionIndex}`}
-                                            value={criterion.onFail}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                onFail:
-                                                  event.target
-                                                    .value as EligibilityRubricCriterion["onFail"],
-                                              }))
-                                            }
-                                          >
-                                            {RUBRIC_OUTCOME_OPTIONS.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-                                        <div className="form-field">
-                                          <label htmlFor={`rubric-criterion-missing-${stageCode}-${criterionIndex}`}>
-                                            Resultado si falta data
-                                          </label>
-                                          <select
-                                            id={`rubric-criterion-missing-${stageCode}-${criterionIndex}`}
-                                            value={criterion.onMissingData}
-                                            onChange={(event) =>
-                                              updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                ...currentCriterion,
-                                                onMissingData:
-                                                  event.target
-                                                    .value as EligibilityRubricCriterion["onMissingData"],
-                                              }))
-                                            }
-                                          >
-                                            {RUBRIC_OUTCOME_OPTIONS.map((option) => (
-                                              <option key={option.value} value={option.value}>
-                                                {option.label}
-                                              </option>
-                                            ))}
-                                          </select>
-                                        </div>
-
-                                        {/* Kind-specific fields - same as existing guided editor */}
-                                        {criterion.kind === "field_present" ? (
-                                          <div className="form-field full">
+                                    {!isCollapsed && (
+                                      <div className="rubric-criterion-body">
+                                        <div className="editor-grid">
+                                          <div className="form-field">
                                             <label
-                                              htmlFor={`rubric-criterion-fieldkey-${stageCode}-${criterionIndex}`}
+                                              htmlFor={`rubric-criterion-kind-${stageCode}-${criterionIndex}`}
                                             >
-                                              Campo objetivo
+                                              Tipo
                                             </label>
                                             <select
-                                              id={`rubric-criterion-fieldkey-${stageCode}-${criterionIndex}`}
-                                              value={criterion.fieldKey ?? ""}
-                                              onChange={(event) =>
-                                                updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                  ...currentCriterion,
-                                                  fieldKey: event.target.value,
-                                                }))
-                                              }
+                                              id={`rubric-criterion-kind-${stageCode}-${criterionIndex}`}
+                                              value={criterion.kind}
+                                              onChange={(event) => {
+                                                const nextKind = event.target
+                                                  .value as EligibilityRubricCriterion["kind"];
+                                                const replacement =
+                                                  createDefaultRubricCriterion({
+                                                    kind: nextKind,
+                                                    existingCriteria:
+                                                      settingsEligibilityRubricDraft.criteria.filter(
+                                                        (_, index) =>
+                                                          index !==
+                                                          criterionIndex,
+                                                      ),
+                                                    defaultFieldKey:
+                                                      defaultRubricFieldKey,
+                                                    defaultFileKey:
+                                                      defaultRubricFileKey,
+                                                    defaultNumberFieldKey:
+                                                      defaultRubricNumberFieldKey,
+                                                  });
+                                                updateGuidedRubricCriterion(
+                                                  criterionIndex,
+                                                  (currentCriterion) => ({
+                                                    ...replacement,
+                                                    id: currentCriterion.id,
+                                                    label:
+                                                      currentCriterion.label,
+                                                    description:
+                                                      currentCriterion.description,
+                                                    onFail:
+                                                      currentCriterion.onFail,
+                                                    onMissingData:
+                                                      currentCriterion.onMissingData,
+                                                  }),
+                                                );
+                                              }}
                                             >
-                                              <option value="">Selecciona un campo</option>
-                                              {fieldKeyOptions.map((option) => (
-                                                <option key={option.value} value={option.value}>
-                                                  {option.label}
-                                                </option>
-                                              ))}
+                                              {RUBRIC_KIND_OPTIONS.map(
+                                                (option) => (
+                                                  <option
+                                                    key={option.value}
+                                                    value={option.value}
+                                                  >
+                                                    {option.label}
+                                                  </option>
+                                                ),
+                                              )}
                                             </select>
                                           </div>
-                                        ) : null}
-
-                                        {criterion.kind === "all_present" || criterion.kind === "any_present" ? (
-                                          <div className="form-field full">
+                                          <div className="form-field">
                                             <label
-                                              htmlFor={`rubric-criterion-fieldkeys-${stageCode}-${criterionIndex}`}
+                                              htmlFor={`rubric-criterion-id-${stageCode}-${criterionIndex}`}
                                             >
-                                              Campos (separados por coma)
+                                              ID técnico
                                             </label>
                                             <input
-                                              id={`rubric-criterion-fieldkeys-${stageCode}-${criterionIndex}`}
+                                              id={`rubric-criterion-id-${stageCode}-${criterionIndex}`}
                                               type="text"
-                                              value={formatCommaSeparatedList(criterion.fieldKeys)}
+                                              value={criterion.id}
                                               onChange={(event) =>
-                                                updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                  ...currentCriterion,
-                                                  fieldKeys: parseCommaSeparatedList(event.target.value),
-                                                }))
+                                                updateGuidedRubricCriterion(
+                                                  criterionIndex,
+                                                  (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    id: event.target.value,
+                                                  }),
+                                                )
                                               }
-                                              placeholder="dateOfBirth, nationality"
+                                              style={{
+                                                fontFamily: "monospace",
+                                              }}
                                             />
                                           </div>
-                                        ) : null}
+                                          <div className="form-field full">
+                                            <label
+                                              htmlFor={`rubric-criterion-label-${stageCode}-${criterionIndex}`}
+                                            >
+                                              Etiqueta visible
+                                            </label>
+                                            <input
+                                              id={`rubric-criterion-label-${stageCode}-${criterionIndex}`}
+                                              type="text"
+                                              value={criterion.label}
+                                              onChange={(event) =>
+                                                updateGuidedRubricCriterion(
+                                                  criterionIndex,
+                                                  (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    label: event.target.value,
+                                                  }),
+                                                )
+                                              }
+                                            />
+                                          </div>
+                                          <div className="form-field">
+                                            <label
+                                              htmlFor={`rubric-criterion-onfail-${stageCode}-${criterionIndex}`}
+                                            >
+                                              Resultado si falla
+                                            </label>
+                                            <select
+                                              id={`rubric-criterion-onfail-${stageCode}-${criterionIndex}`}
+                                              value={criterion.onFail}
+                                              onChange={(event) =>
+                                                updateGuidedRubricCriterion(
+                                                  criterionIndex,
+                                                  (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    onFail: event.target
+                                                      .value as EligibilityRubricCriterion["onFail"],
+                                                  }),
+                                                )
+                                              }
+                                            >
+                                              {RUBRIC_OUTCOME_OPTIONS.map(
+                                                (option) => (
+                                                  <option
+                                                    key={option.value}
+                                                    value={option.value}
+                                                  >
+                                                    {option.label}
+                                                  </option>
+                                                ),
+                                              )}
+                                            </select>
+                                          </div>
+                                          <div className="form-field">
+                                            <label
+                                              htmlFor={`rubric-criterion-missing-${stageCode}-${criterionIndex}`}
+                                            >
+                                              Resultado si falta data
+                                            </label>
+                                            <select
+                                              id={`rubric-criterion-missing-${stageCode}-${criterionIndex}`}
+                                              value={criterion.onMissingData}
+                                              onChange={(event) =>
+                                                updateGuidedRubricCriterion(
+                                                  criterionIndex,
+                                                  (currentCriterion) => ({
+                                                    ...currentCriterion,
+                                                    onMissingData: event.target
+                                                      .value as EligibilityRubricCriterion["onMissingData"],
+                                                  }),
+                                                )
+                                              }
+                                            >
+                                              {RUBRIC_OUTCOME_OPTIONS.map(
+                                                (option) => (
+                                                  <option
+                                                    key={option.value}
+                                                    value={option.value}
+                                                  >
+                                                    {option.label}
+                                                  </option>
+                                                ),
+                                              )}
+                                            </select>
+                                          </div>
 
-                                        {criterion.kind === "field_in" ? (
-                                          <>
-                                            <div className="form-field">
+                                          {/* Kind-specific fields - same as existing guided editor */}
+                                          {criterion.kind ===
+                                          "field_present" ? (
+                                            <div className="form-field full">
                                               <label
-                                                htmlFor={`rubric-criterion-fieldin-key-${stageCode}-${criterionIndex}`}
+                                                htmlFor={`rubric-criterion-fieldkey-${stageCode}-${criterionIndex}`}
                                               >
                                                 Campo objetivo
                                               </label>
                                               <select
-                                                id={`rubric-criterion-fieldin-key-${stageCode}-${criterionIndex}`}
+                                                id={`rubric-criterion-fieldkey-${stageCode}-${criterionIndex}`}
                                                 value={criterion.fieldKey ?? ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    fieldKey: event.target.value,
-                                                  }))
-                                                }
-                                              >
-                                                <option value="">Selecciona un campo</option>
-                                                {fieldKeyOptions.map((option) => (
-                                                  <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-fieldin-sensitive-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Coincidencia
-                                              </label>
-                                              <select
-                                                id={`rubric-criterion-fieldin-sensitive-${stageCode}-${criterionIndex}`}
-                                                value={criterion.caseSensitive ? "strict" : "ignore_case"}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    caseSensitive: event.target.value === "strict",
-                                                  }))
-                                                }
-                                              >
-                                                <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
-                                                <option value="strict">Exacta (case-sensitive)</option>
-                                              </select>
-                                            </div>
-                                            <div className="form-field full">
-                                              <label
-                                                htmlFor={`rubric-criterion-fieldin-values-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Valores permitidos (separados por coma)
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-fieldin-values-${stageCode}-${criterionIndex}`}
-                                                type="text"
-                                                value={formatCommaSeparatedList(criterion.allowedValues)}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    allowedValues: parseCommaSeparatedList(event.target.value),
-                                                  }))
-                                                }
-                                                placeholder="peru, chile"
-                                              />
-                                            </div>
-                                          </>
-                                        ) : null}
-
-                                        {criterion.kind === "number_between" ? (
-                                          <>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-number-key-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Campo numérico
-                                              </label>
-                                              <select
-                                                id={`rubric-criterion-number-key-${stageCode}-${criterionIndex}`}
-                                                value={criterion.fieldKey ?? ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    fieldKey: event.target.value,
-                                                  }))
-                                                }
-                                              >
-                                                <option value="">Selecciona un campo</option>
-                                                {numberFieldOptions.map((option) => (
-                                                  <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-number-min-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Mínimo
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-number-min-${stageCode}-${criterionIndex}`}
-                                                type="number"
-                                                value={typeof criterion.min === "number" ? String(criterion.min) : ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    min:
-                                                      event.target.value.trim() === ""
-                                                        ? undefined
-                                                        : Number(event.target.value),
-                                                  }))
-                                                }
-                                              />
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-number-max-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Máximo
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-number-max-${stageCode}-${criterionIndex}`}
-                                                type="number"
-                                                value={typeof criterion.max === "number" ? String(criterion.max) : ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    max:
-                                                      event.target.value.trim() === ""
-                                                        ? undefined
-                                                        : Number(event.target.value),
-                                                  }))
-                                                }
-                                              />
-                                            </div>
-                                          </>
-                                        ) : null}
-
-                                        {criterion.kind === "file_uploaded" ? (
-                                          <div className="form-field full">
-                                            <label
-                                              htmlFor={`rubric-criterion-file-key-${stageCode}-${criterionIndex}`}
-                                            >
-                                              Campo de archivo
-                                            </label>
-                                            <select
-                                              id={`rubric-criterion-file-key-${stageCode}-${criterionIndex}`}
-                                              value={criterion.fileKey ?? ""}
-                                              onChange={(event) =>
-                                                updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                  ...currentCriterion,
-                                                  fileKey: event.target.value,
-                                                }))
-                                              }
-                                            >
-                                              <option value="">Selecciona un archivo</option>
-                                              {fileKeyOptions.map((option) => (
-                                                <option key={option.value} value={option.value}>
-                                                  {option.label}
-                                                </option>
-                                              ))}
-                                            </select>
-                                          </div>
-                                        ) : null}
-
-                                        {criterion.kind === "recommendations_complete" ? (
-                                          <>
-                                            <div className="form-field full">
-                                              <label>Roles requeridos</label>
-                                              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                                                <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={criterionRoles.has("mentor")}
-                                                    onChange={(event) => {
-                                                      const nextRoles = new Set(criterionRoles);
-                                                      if (event.target.checked) {
-                                                        nextRoles.add("mentor");
-                                                      } else {
-                                                        nextRoles.delete("mentor");
-                                                      }
-                                                      updateGuidedRubricCriterion(
-                                                        criterionIndex,
-                                                        (currentCriterion) => ({
-                                                          ...currentCriterion,
-                                                          roles: Array.from(nextRoles),
-                                                        }),
-                                                      );
-                                                    }}
-                                                  />
-                                                  Mentor
-                                                </label>
-                                                <label style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={criterionRoles.has("friend")}
-                                                    onChange={(event) => {
-                                                      const nextRoles = new Set(criterionRoles);
-                                                      if (event.target.checked) {
-                                                        nextRoles.add("friend");
-                                                      } else {
-                                                        nextRoles.delete("friend");
-                                                      }
-                                                      updateGuidedRubricCriterion(
-                                                        criterionIndex,
-                                                        (currentCriterion) => ({
-                                                          ...currentCriterion,
-                                                          roles: Array.from(nextRoles),
-                                                        }),
-                                                      );
-                                                    }}
-                                                  />
-                                                  Friend
-                                                </label>
-                                              </div>
-                                            </div>
-                                            <div className="switch-wrapper">
-                                              <div>
-                                                <div className="admin-switch-label">
-                                                  Verificar que fueron solicitadas
-                                                </div>
-                                              </div>
-                                              <label className="switch">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={criterion.requireRequested !== false}
-                                                  onChange={(event) =>
-                                                    updateGuidedRubricCriterion(
-                                                      criterionIndex,
-                                                      (currentCriterion) => ({
-                                                        ...currentCriterion,
-                                                        requireRequested: event.target.checked,
-                                                      }),
-                                                    )
-                                                  }
-                                                />
-                                                <span className="slider" />
-                                              </label>
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-min-responses-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Respuestas mínimas por carta
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-min-responses-${stageCode}-${criterionIndex}`}
-                                                type="number"
-                                                min={0}
-                                                max={20}
-                                                step={1}
-                                                value={
-                                                  typeof criterion.minFilledResponses === "number"
-                                                    ? String(criterion.minFilledResponses)
-                                                    : "0"
-                                                }
                                                 onChange={(event) =>
                                                   updateGuidedRubricCriterion(
                                                     criterionIndex,
                                                     (currentCriterion) => ({
                                                       ...currentCriterion,
-                                                      minFilledResponses:
-                                                        Number(event.target.value) || 0,
+                                                      fieldKey:
+                                                        event.target.value,
                                                     }),
                                                   )
                                                 }
-                                              />
+                                              >
+                                                <option value="">
+                                                  Selecciona un campo
+                                                </option>
+                                                {fieldKeyOptions.map(
+                                                  (option) => (
+                                                    <option
+                                                      key={option.value}
+                                                      value={option.value}
+                                                    >
+                                                      {option.label}
+                                                    </option>
+                                                  ),
+                                                )}
+                                              </select>
                                             </div>
-                                          </>
-                                        ) : null}
+                                          ) : null}
 
-                                        {criterion.kind === "ocr_confidence" ? (
-                                          <>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-ocr-key-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Campo de archivo OCR
-                                              </label>
-                                              <select
-                                                id={`rubric-criterion-ocr-key-${stageCode}-${criterionIndex}`}
-                                                value={criterion.fileKey ?? ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    fileKey: event.target.value,
-                                                  }))
-                                                }
-                                              >
-                                                <option value="">Selecciona un archivo</option>
-                                                {fileKeyOptions.map((option) => (
-                                                  <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-ocr-confidence-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Confianza mínima (0 a 1)
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-ocr-confidence-${stageCode}-${criterionIndex}`}
-                                                type="number"
-                                                min={0}
-                                                max={1}
-                                                step={0.01}
-                                                value={
-                                                  typeof criterion.minConfidence === "number"
-                                                    ? String(criterion.minConfidence)
-                                                    : ""
-                                                }
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    minConfidence:
-                                                      event.target.value.trim() === ""
-                                                        ? undefined
-                                                        : Number(event.target.value),
-                                                  }))
-                                                }
-                                              />
-                                            </div>
-                                          </>
-                                        ) : null}
-
-                                        {criterion.kind === "ocr_field_in" ||
-                                        criterion.kind === "ocr_field_not_in" ? (
-                                          <>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-ocr-value-key-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Campo de archivo OCR
-                                              </label>
-                                              <select
-                                                id={`rubric-criterion-ocr-value-key-${stageCode}-${criterionIndex}`}
-                                                value={criterion.fileKey ?? ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    fileKey: event.target.value,
-                                                  }))
-                                                }
-                                              >
-                                                <option value="">Selecciona un archivo</option>
-                                                {fileKeyOptions.map((option) => (
-                                                  <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-ocr-value-path-${stageCode}-${criterionIndex}`}
-                                              >
-                                                JSON path OCR
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-ocr-value-path-${stageCode}-${criterionIndex}`}
-                                                type="text"
-                                                value={criterion.jsonPath ?? ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    jsonPath: event.target.value,
-                                                  }))
-                                                }
-                                              />
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-ocr-value-sensitive-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Coincidencia
-                                              </label>
-                                              <select
-                                                id={`rubric-criterion-ocr-value-sensitive-${stageCode}-${criterionIndex}`}
-                                                value={criterion.caseSensitive ? "strict" : "ignore_case"}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    caseSensitive: event.target.value === "strict",
-                                                  }))
-                                                }
-                                              >
-                                                <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
-                                                <option value="strict">Exacta (case-sensitive)</option>
-                                              </select>
-                                            </div>
+                                          {criterion.kind === "all_present" ||
+                                          criterion.kind === "any_present" ? (
                                             <div className="form-field full">
                                               <label
-                                                htmlFor={`rubric-criterion-ocr-values-${stageCode}-${criterionIndex}`}
+                                                htmlFor={`rubric-criterion-fieldkeys-${stageCode}-${criterionIndex}`}
                                               >
-                                                {criterion.kind === "ocr_field_in"
-                                                  ? "Valores permitidos (coma)"
-                                                  : "Valores que disparan revisión (coma)"}
+                                                Campos (separados por coma)
                                               </label>
                                               <input
-                                                id={`rubric-criterion-ocr-values-${stageCode}-${criterionIndex}`}
+                                                id={`rubric-criterion-fieldkeys-${stageCode}-${criterionIndex}`}
                                                 type="text"
-                                                value={
-                                                  criterion.kind === "ocr_field_in"
-                                                    ? formatCommaSeparatedList(criterion.allowedValues)
-                                                    : formatCommaSeparatedList(criterion.disallowedValues)
-                                                }
+                                                value={formatCommaSeparatedList(
+                                                  criterion.fieldKeys,
+                                                )}
                                                 onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => {
-                                                    if (currentCriterion.kind === "ocr_field_in") {
-                                                      return {
-                                                        ...currentCriterion,
-                                                        allowedValues: parseCommaSeparatedList(
+                                                  updateGuidedRubricCriterion(
+                                                    criterionIndex,
+                                                    (currentCriterion) => ({
+                                                      ...currentCriterion,
+                                                      fieldKeys:
+                                                        parseCommaSeparatedList(
                                                           event.target.value,
                                                         ),
-                                                      };
-                                                    }
-                                                    return {
-                                                      ...currentCriterion,
-                                                      disallowedValues: parseCommaSeparatedList(
-                                                        event.target.value,
-                                                      ),
-                                                    };
-                                                  })
+                                                    }),
+                                                  )
                                                 }
+                                                placeholder="dateOfBirth, nationality"
                                               />
                                             </div>
-                                          </>
-                                        ) : null}
+                                          ) : null}
 
-                                        {criterion.kind === "field_matches_ocr" ? (
-                                          <>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-match-field-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Campo de formulario
-                                              </label>
-                                              <select
-                                                id={`rubric-criterion-match-field-${stageCode}-${criterionIndex}`}
-                                                value={criterion.fieldKey ?? ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    fieldKey: event.target.value,
-                                                  }))
-                                                }
-                                              >
-                                                <option value="">Selecciona un campo</option>
-                                                {fieldKeyOptions.map((option) => (
-                                                  <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-match-file-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Archivo OCR
-                                              </label>
-                                              <select
-                                                id={`rubric-criterion-match-file-${stageCode}-${criterionIndex}`}
-                                                value={criterion.fileKey ?? ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    fileKey: event.target.value,
-                                                  }))
-                                                }
-                                              >
-                                                <option value="">Selecciona un archivo</option>
-                                                {fileKeyOptions.map((option) => (
-                                                  <option key={option.value} value={option.value}>
-                                                    {option.label}
-                                                  </option>
-                                                ))}
-                                              </select>
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-match-path-${stageCode}-${criterionIndex}`}
-                                              >
-                                                JSON path OCR
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-match-path-${stageCode}-${criterionIndex}`}
-                                                type="text"
-                                                value={criterion.jsonPath ?? ""}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    jsonPath: event.target.value,
-                                                  }))
-                                                }
-                                              />
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-match-sensitive-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Coincidencia
-                                              </label>
-                                              <select
-                                                id={`rubric-criterion-match-sensitive-${stageCode}-${criterionIndex}`}
-                                                value={criterion.caseSensitive ? "strict" : "ignore_case"}
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    caseSensitive: event.target.value === "strict",
-                                                  }))
-                                                }
-                                              >
-                                                <option value="ignore_case">Ignorar mayúsculas/minúsculas</option>
-                                                <option value="strict">Exacta (case-sensitive)</option>
-                                              </select>
-                                            </div>
-                                            <div className="switch-wrapper">
-                                              <div>
-                                                <div className="admin-switch-label">
-                                                  Normalizar espacios antes de comparar
-                                                </div>
-                                              </div>
-                                              <label className="switch">
-                                                <input
-                                                  type="checkbox"
-                                                  checked={criterion.normalizeWhitespace !== false}
+                                          {criterion.kind === "field_in" ? (
+                                            <>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-fieldin-key-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Campo objetivo
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-fieldin-key-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.fieldKey ?? ""
+                                                  }
                                                   onChange={(event) =>
                                                     updateGuidedRubricCriterion(
                                                       criterionIndex,
                                                       (currentCriterion) => ({
                                                         ...currentCriterion,
-                                                        normalizeWhitespace: event.target.checked,
+                                                        fieldKey:
+                                                          event.target.value,
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="">
+                                                    Selecciona un campo
+                                                  </option>
+                                                  {fieldKeyOptions.map(
+                                                    (option) => (
+                                                      <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                      >
+                                                        {option.label}
+                                                      </option>
+                                                    ),
+                                                  )}
+                                                </select>
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-fieldin-sensitive-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Coincidencia
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-fieldin-sensitive-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.caseSensitive
+                                                      ? "strict"
+                                                      : "ignore_case"
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        caseSensitive:
+                                                          event.target.value ===
+                                                          "strict",
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="ignore_case">
+                                                    Ignorar
+                                                    mayúsculas/minúsculas
+                                                  </option>
+                                                  <option value="strict">
+                                                    Exacta (case-sensitive)
+                                                  </option>
+                                                </select>
+                                              </div>
+                                              <div className="form-field full">
+                                                <label
+                                                  htmlFor={`rubric-criterion-fieldin-values-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Valores permitidos (separados
+                                                  por coma)
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-fieldin-values-${stageCode}-${criterionIndex}`}
+                                                  type="text"
+                                                  value={formatCommaSeparatedList(
+                                                    criterion.allowedValues,
+                                                  )}
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        allowedValues:
+                                                          parseCommaSeparatedList(
+                                                            event.target.value,
+                                                          ),
+                                                      }),
+                                                    )
+                                                  }
+                                                  placeholder="peru, chile"
+                                                />
+                                              </div>
+                                            </>
+                                          ) : null}
+
+                                          {criterion.kind ===
+                                          "number_between" ? (
+                                            <>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-number-key-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Campo numérico
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-number-key-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.fieldKey ?? ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        fieldKey:
+                                                          event.target.value,
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="">
+                                                    Selecciona un campo
+                                                  </option>
+                                                  {numberFieldOptions.map(
+                                                    (option) => (
+                                                      <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                      >
+                                                        {option.label}
+                                                      </option>
+                                                    ),
+                                                  )}
+                                                </select>
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-number-min-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Mínimo
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-number-min-${stageCode}-${criterionIndex}`}
+                                                  type="number"
+                                                  value={
+                                                    typeof criterion.min ===
+                                                    "number"
+                                                      ? String(criterion.min)
+                                                      : ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        min:
+                                                          event.target.value.trim() ===
+                                                          ""
+                                                            ? undefined
+                                                            : Number(
+                                                                event.target
+                                                                  .value,
+                                                              ),
                                                       }),
                                                     )
                                                   }
                                                 />
-                                                <span className="slider" />
-                                              </label>
-                                            </div>
-                                          </>
-                                        ) : null}
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-number-max-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Máximo
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-number-max-${stageCode}-${criterionIndex}`}
+                                                  type="number"
+                                                  value={
+                                                    typeof criterion.max ===
+                                                    "number"
+                                                      ? String(criterion.max)
+                                                      : ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        max:
+                                                          event.target.value.trim() ===
+                                                          ""
+                                                            ? undefined
+                                                            : Number(
+                                                                event.target
+                                                                  .value,
+                                                              ),
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                            </>
+                                          ) : null}
 
-                                        {criterion.kind === "file_upload_count_between" ? (
-                                          <>
+                                          {criterion.kind ===
+                                          "file_uploaded" ? (
                                             <div className="form-field full">
                                               <label
-                                                htmlFor={`rubric-criterion-count-filekeys-${stageCode}-${criterionIndex}`}
+                                                htmlFor={`rubric-criterion-file-key-${stageCode}-${criterionIndex}`}
                                               >
-                                                Claves de archivo (separadas por coma)
+                                                Campo de archivo
                                               </label>
-                                              <input
-                                                id={`rubric-criterion-count-filekeys-${stageCode}-${criterionIndex}`}
-                                                type="text"
-                                                value={formatCommaSeparatedList(criterion.fileKeys)}
+                                              <select
+                                                id={`rubric-criterion-file-key-${stageCode}-${criterionIndex}`}
+                                                value={criterion.fileKey ?? ""}
                                                 onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    fileKeys: parseCommaSeparatedList(event.target.value),
-                                                  }))
-                                                }
-                                              />
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-count-min-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Cantidad mínima
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-count-min-${stageCode}-${criterionIndex}`}
-                                                type="number"
-                                                min={0}
-                                                step={1}
-                                                value={
-                                                  typeof criterion.minCount === "number"
-                                                    ? String(criterion.minCount)
-                                                    : ""
-                                                }
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    minCount:
-                                                      event.target.value.trim() === ""
-                                                        ? undefined
-                                                        : Number(event.target.value),
-                                                  }))
-                                                }
-                                              />
-                                            </div>
-                                            <div className="form-field">
-                                              <label
-                                                htmlFor={`rubric-criterion-count-max-${stageCode}-${criterionIndex}`}
-                                              >
-                                                Cantidad máxima
-                                              </label>
-                                              <input
-                                                id={`rubric-criterion-count-max-${stageCode}-${criterionIndex}`}
-                                                type="number"
-                                                min={0}
-                                                step={1}
-                                                value={
-                                                  typeof criterion.maxCount === "number"
-                                                    ? String(criterion.maxCount)
-                                                    : ""
-                                                }
-                                                onChange={(event) =>
-                                                  updateGuidedRubricCriterion(criterionIndex, (currentCriterion) => ({
-                                                    ...currentCriterion,
-                                                    maxCount:
-                                                      event.target.value.trim() === ""
-                                                        ? undefined
-                                                        : Number(event.target.value),
-                                                  }))
-                                                }
-                                              />
-                                            </div>
-                                          </>
-                                        ) : null}
-
-                                        {criterion.kind === "any_of" ? (
-                                          <div className="form-field full">
-                                            <label
-                                              htmlFor={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
-                                            >
-                                              Condiciones alternativas (JSON)
-                                            </label>
-                                            <textarea
-                                              id={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
-                                              rows={6}
-                                              value={JSON.stringify(criterion.conditions ?? [], null, 2)}
-                                              onChange={(event) => {
-                                                try {
-                                                  const parsed = JSON.parse(event.target.value) as unknown;
-                                                  if (!Array.isArray(parsed)) {
-                                                    return;
-                                                  }
                                                   updateGuidedRubricCriterion(
                                                     criterionIndex,
                                                     (currentCriterion) => ({
                                                       ...currentCriterion,
-                                                      conditions:
-                                                        parsed as EligibilityRubricCriterion["conditions"],
+                                                      fileKey:
+                                                        event.target.value,
                                                     }),
-                                                  );
-                                                } catch {
-                                                  // Keep current value until JSON is valid.
+                                                  )
                                                 }
-                                              }}
-                                              style={{ fontFamily: "monospace" }}
-                                            />
-                                            <div className="form-hint">
-                                              Usa condiciones <code>field_present</code>, <code>file_uploaded</code>,{" "}
-                                              <code>number_between</code>, <code>ocr_field_in</code>,{" "}
-                                              <code>ocr_field_not_in</code> o <code>field_matches_ocr</code>.
+                                              >
+                                                <option value="">
+                                                  Selecciona un archivo
+                                                </option>
+                                                {fileKeyOptions.map(
+                                                  (option) => (
+                                                    <option
+                                                      key={option.value}
+                                                      value={option.value}
+                                                    >
+                                                      {option.label}
+                                                    </option>
+                                                  ),
+                                                )}
+                                              </select>
                                             </div>
-                                          </div>
-                                        ) : null}
+                                          ) : null}
+
+                                          {criterion.kind ===
+                                          "recommendations_complete" ? (
+                                            <>
+                                              <div className="form-field full">
+                                                <label>Roles requeridos</label>
+                                                <div
+                                                  style={{
+                                                    display: "flex",
+                                                    gap: "12px",
+                                                    flexWrap: "wrap",
+                                                  }}
+                                                >
+                                                  <label
+                                                    style={{
+                                                      display: "flex",
+                                                      gap: "6px",
+                                                      alignItems: "center",
+                                                    }}
+                                                  >
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={criterionRoles.has(
+                                                        "mentor",
+                                                      )}
+                                                      onChange={(event) => {
+                                                        const nextRoles =
+                                                          new Set(
+                                                            criterionRoles,
+                                                          );
+                                                        if (
+                                                          event.target.checked
+                                                        ) {
+                                                          nextRoles.add(
+                                                            "mentor",
+                                                          );
+                                                        } else {
+                                                          nextRoles.delete(
+                                                            "mentor",
+                                                          );
+                                                        }
+                                                        updateGuidedRubricCriterion(
+                                                          criterionIndex,
+                                                          (
+                                                            currentCriterion,
+                                                          ) => ({
+                                                            ...currentCriterion,
+                                                            roles:
+                                                              Array.from(
+                                                                nextRoles,
+                                                              ),
+                                                          }),
+                                                        );
+                                                      }}
+                                                    />
+                                                    Mentor
+                                                  </label>
+                                                  <label
+                                                    style={{
+                                                      display: "flex",
+                                                      gap: "6px",
+                                                      alignItems: "center",
+                                                    }}
+                                                  >
+                                                    <input
+                                                      type="checkbox"
+                                                      checked={criterionRoles.has(
+                                                        "friend",
+                                                      )}
+                                                      onChange={(event) => {
+                                                        const nextRoles =
+                                                          new Set(
+                                                            criterionRoles,
+                                                          );
+                                                        if (
+                                                          event.target.checked
+                                                        ) {
+                                                          nextRoles.add(
+                                                            "friend",
+                                                          );
+                                                        } else {
+                                                          nextRoles.delete(
+                                                            "friend",
+                                                          );
+                                                        }
+                                                        updateGuidedRubricCriterion(
+                                                          criterionIndex,
+                                                          (
+                                                            currentCriterion,
+                                                          ) => ({
+                                                            ...currentCriterion,
+                                                            roles:
+                                                              Array.from(
+                                                                nextRoles,
+                                                              ),
+                                                          }),
+                                                        );
+                                                      }}
+                                                    />
+                                                    Friend
+                                                  </label>
+                                                </div>
+                                              </div>
+                                              <div className="switch-wrapper">
+                                                <div>
+                                                  <div className="admin-switch-label">
+                                                    Verificar que fueron
+                                                    solicitadas
+                                                  </div>
+                                                </div>
+                                                <label className="switch">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={
+                                                      criterion.requireRequested !==
+                                                      false
+                                                    }
+                                                    onChange={(event) =>
+                                                      updateGuidedRubricCriterion(
+                                                        criterionIndex,
+                                                        (currentCriterion) => ({
+                                                          ...currentCriterion,
+                                                          requireRequested:
+                                                            event.target
+                                                              .checked,
+                                                        }),
+                                                      )
+                                                    }
+                                                  />
+                                                  <span className="slider" />
+                                                </label>
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-min-responses-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Respuestas mínimas por carta
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-min-responses-${stageCode}-${criterionIndex}`}
+                                                  type="number"
+                                                  min={0}
+                                                  max={20}
+                                                  step={1}
+                                                  value={
+                                                    typeof criterion.minFilledResponses ===
+                                                    "number"
+                                                      ? String(
+                                                          criterion.minFilledResponses,
+                                                        )
+                                                      : "0"
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        minFilledResponses:
+                                                          Number(
+                                                            event.target.value,
+                                                          ) || 0,
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                            </>
+                                          ) : null}
+
+                                          {criterion.kind ===
+                                          "ocr_confidence" ? (
+                                            <>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-ocr-key-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Campo de archivo OCR
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-ocr-key-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.fileKey ?? ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        fileKey:
+                                                          event.target.value,
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="">
+                                                    Selecciona un archivo
+                                                  </option>
+                                                  {fileKeyOptions.map(
+                                                    (option) => (
+                                                      <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                      >
+                                                        {option.label}
+                                                      </option>
+                                                    ),
+                                                  )}
+                                                </select>
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-ocr-confidence-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Confianza mínima (0 a 1)
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-ocr-confidence-${stageCode}-${criterionIndex}`}
+                                                  type="number"
+                                                  min={0}
+                                                  max={1}
+                                                  step={0.01}
+                                                  value={
+                                                    typeof criterion.minConfidence ===
+                                                    "number"
+                                                      ? String(
+                                                          criterion.minConfidence,
+                                                        )
+                                                      : ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        minConfidence:
+                                                          event.target.value.trim() ===
+                                                          ""
+                                                            ? undefined
+                                                            : Number(
+                                                                event.target
+                                                                  .value,
+                                                              ),
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                            </>
+                                          ) : null}
+
+                                          {criterion.kind === "ocr_field_in" ||
+                                          criterion.kind ===
+                                            "ocr_field_not_in" ? (
+                                            <>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-ocr-value-key-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Campo de archivo OCR
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-ocr-value-key-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.fileKey ?? ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        fileKey:
+                                                          event.target.value,
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="">
+                                                    Selecciona un archivo
+                                                  </option>
+                                                  {fileKeyOptions.map(
+                                                    (option) => (
+                                                      <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                      >
+                                                        {option.label}
+                                                      </option>
+                                                    ),
+                                                  )}
+                                                </select>
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-ocr-value-path-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  JSON path OCR
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-ocr-value-path-${stageCode}-${criterionIndex}`}
+                                                  type="text"
+                                                  value={
+                                                    criterion.jsonPath ?? ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        jsonPath:
+                                                          event.target.value,
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-ocr-value-sensitive-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Coincidencia
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-ocr-value-sensitive-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.caseSensitive
+                                                      ? "strict"
+                                                      : "ignore_case"
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        caseSensitive:
+                                                          event.target.value ===
+                                                          "strict",
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="ignore_case">
+                                                    Ignorar
+                                                    mayúsculas/minúsculas
+                                                  </option>
+                                                  <option value="strict">
+                                                    Exacta (case-sensitive)
+                                                  </option>
+                                                </select>
+                                              </div>
+                                              <div className="form-field full">
+                                                <label
+                                                  htmlFor={`rubric-criterion-ocr-values-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  {criterion.kind ===
+                                                  "ocr_field_in"
+                                                    ? "Valores permitidos (coma)"
+                                                    : "Valores que disparan revisión (coma)"}
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-ocr-values-${stageCode}-${criterionIndex}`}
+                                                  type="text"
+                                                  value={
+                                                    criterion.kind ===
+                                                    "ocr_field_in"
+                                                      ? formatCommaSeparatedList(
+                                                          criterion.allowedValues,
+                                                        )
+                                                      : formatCommaSeparatedList(
+                                                          criterion.disallowedValues,
+                                                        )
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => {
+                                                        if (
+                                                          currentCriterion.kind ===
+                                                          "ocr_field_in"
+                                                        ) {
+                                                          return {
+                                                            ...currentCriterion,
+                                                            allowedValues:
+                                                              parseCommaSeparatedList(
+                                                                event.target
+                                                                  .value,
+                                                              ),
+                                                          };
+                                                        }
+                                                        return {
+                                                          ...currentCriterion,
+                                                          disallowedValues:
+                                                            parseCommaSeparatedList(
+                                                              event.target
+                                                                .value,
+                                                            ),
+                                                        };
+                                                      },
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                            </>
+                                          ) : null}
+
+                                          {criterion.kind ===
+                                          "field_matches_ocr" ? (
+                                            <>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-match-field-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Campo de formulario
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-match-field-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.fieldKey ?? ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        fieldKey:
+                                                          event.target.value,
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="">
+                                                    Selecciona un campo
+                                                  </option>
+                                                  {fieldKeyOptions.map(
+                                                    (option) => (
+                                                      <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                      >
+                                                        {option.label}
+                                                      </option>
+                                                    ),
+                                                  )}
+                                                </select>
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-match-file-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Archivo OCR
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-match-file-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.fileKey ?? ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        fileKey:
+                                                          event.target.value,
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="">
+                                                    Selecciona un archivo
+                                                  </option>
+                                                  {fileKeyOptions.map(
+                                                    (option) => (
+                                                      <option
+                                                        key={option.value}
+                                                        value={option.value}
+                                                      >
+                                                        {option.label}
+                                                      </option>
+                                                    ),
+                                                  )}
+                                                </select>
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-match-path-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  JSON path OCR
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-match-path-${stageCode}-${criterionIndex}`}
+                                                  type="text"
+                                                  value={
+                                                    criterion.jsonPath ?? ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        jsonPath:
+                                                          event.target.value,
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-match-sensitive-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Coincidencia
+                                                </label>
+                                                <select
+                                                  id={`rubric-criterion-match-sensitive-${stageCode}-${criterionIndex}`}
+                                                  value={
+                                                    criterion.caseSensitive
+                                                      ? "strict"
+                                                      : "ignore_case"
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        caseSensitive:
+                                                          event.target.value ===
+                                                          "strict",
+                                                      }),
+                                                    )
+                                                  }
+                                                >
+                                                  <option value="ignore_case">
+                                                    Ignorar
+                                                    mayúsculas/minúsculas
+                                                  </option>
+                                                  <option value="strict">
+                                                    Exacta (case-sensitive)
+                                                  </option>
+                                                </select>
+                                              </div>
+                                              <div className="switch-wrapper">
+                                                <div>
+                                                  <div className="admin-switch-label">
+                                                    Normalizar espacios antes de
+                                                    comparar
+                                                  </div>
+                                                </div>
+                                                <label className="switch">
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={
+                                                      criterion.normalizeWhitespace !==
+                                                      false
+                                                    }
+                                                    onChange={(event) =>
+                                                      updateGuidedRubricCriterion(
+                                                        criterionIndex,
+                                                        (currentCriterion) => ({
+                                                          ...currentCriterion,
+                                                          normalizeWhitespace:
+                                                            event.target
+                                                              .checked,
+                                                        }),
+                                                      )
+                                                    }
+                                                  />
+                                                  <span className="slider" />
+                                                </label>
+                                              </div>
+                                            </>
+                                          ) : null}
+
+                                          {criterion.kind ===
+                                          "file_upload_count_between" ? (
+                                            <>
+                                              <div className="form-field full">
+                                                <label
+                                                  htmlFor={`rubric-criterion-count-filekeys-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Claves de archivo (separadas
+                                                  por coma)
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-count-filekeys-${stageCode}-${criterionIndex}`}
+                                                  type="text"
+                                                  value={formatCommaSeparatedList(
+                                                    criterion.fileKeys,
+                                                  )}
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        fileKeys:
+                                                          parseCommaSeparatedList(
+                                                            event.target.value,
+                                                          ),
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-count-min-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Cantidad mínima
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-count-min-${stageCode}-${criterionIndex}`}
+                                                  type="number"
+                                                  min={0}
+                                                  step={1}
+                                                  value={
+                                                    typeof criterion.minCount ===
+                                                    "number"
+                                                      ? String(
+                                                          criterion.minCount,
+                                                        )
+                                                      : ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        minCount:
+                                                          event.target.value.trim() ===
+                                                          ""
+                                                            ? undefined
+                                                            : Number(
+                                                                event.target
+                                                                  .value,
+                                                              ),
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                              <div className="form-field">
+                                                <label
+                                                  htmlFor={`rubric-criterion-count-max-${stageCode}-${criterionIndex}`}
+                                                >
+                                                  Cantidad máxima
+                                                </label>
+                                                <input
+                                                  id={`rubric-criterion-count-max-${stageCode}-${criterionIndex}`}
+                                                  type="number"
+                                                  min={0}
+                                                  step={1}
+                                                  value={
+                                                    typeof criterion.maxCount ===
+                                                    "number"
+                                                      ? String(
+                                                          criterion.maxCount,
+                                                        )
+                                                      : ""
+                                                  }
+                                                  onChange={(event) =>
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        maxCount:
+                                                          event.target.value.trim() ===
+                                                          ""
+                                                            ? undefined
+                                                            : Number(
+                                                                event.target
+                                                                  .value,
+                                                              ),
+                                                      }),
+                                                    )
+                                                  }
+                                                />
+                                              </div>
+                                            </>
+                                          ) : null}
+
+                                          {criterion.kind === "any_of" ? (
+                                            <div className="form-field full">
+                                              <label
+                                                htmlFor={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
+                                              >
+                                                Condiciones alternativas (JSON)
+                                              </label>
+                                              <textarea
+                                                id={`rubric-criterion-anyof-${stageCode}-${criterionIndex}`}
+                                                rows={6}
+                                                value={JSON.stringify(
+                                                  criterion.conditions ?? [],
+                                                  null,
+                                                  2,
+                                                )}
+                                                onChange={(event) => {
+                                                  try {
+                                                    const parsed = JSON.parse(
+                                                      event.target.value,
+                                                    ) as unknown;
+                                                    if (
+                                                      !Array.isArray(parsed)
+                                                    ) {
+                                                      return;
+                                                    }
+                                                    updateGuidedRubricCriterion(
+                                                      criterionIndex,
+                                                      (currentCriterion) => ({
+                                                        ...currentCriterion,
+                                                        conditions:
+                                                          parsed as EligibilityRubricCriterion["conditions"],
+                                                      }),
+                                                    );
+                                                  } catch {
+                                                    // Keep current value until JSON is valid.
+                                                  }
+                                                }}
+                                                style={{
+                                                  fontFamily: "monospace",
+                                                }}
+                                              />
+                                              <div className="form-hint">
+                                                Usa condiciones{" "}
+                                                <code>field_present</code>,{" "}
+                                                <code>file_uploaded</code>,{" "}
+                                                <code>number_between</code>,{" "}
+                                                <code>ocr_field_in</code>,{" "}
+                                                <code>ocr_field_not_in</code> o{" "}
+                                                <code>field_matches_ocr</code>.
+                                              </div>
+                                            </div>
+                                          ) : null}
+                                        </div>
                                       </div>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })}
+                                    )}
+                                  </div>
+                                );
+                              },
+                            )}
 
                             <div className="rubric-add-criterion">
                               <div className="rubric-add-criterion-row">
@@ -4113,12 +5790,16 @@ export function StageConfigEditor({
                                   value={newRubricCriterionKind}
                                   onChange={(event) =>
                                     setNewRubricCriterionKind(
-                                      event.target.value as EligibilityRubricCriterion["kind"],
+                                      event.target
+                                        .value as EligibilityRubricCriterion["kind"],
                                     )
                                   }
                                 >
                                   {RUBRIC_KIND_OPTIONS.map((option) => (
-                                    <option key={option.value} value={option.value}>
+                                    <option
+                                      key={option.value}
+                                      value={option.value}
+                                    >
                                       {option.label}
                                     </option>
                                   ))}
@@ -4126,22 +5807,29 @@ export function StageConfigEditor({
                                 <button
                                   type="button"
                                   className="btn btn-outline"
-                                  onClick={() => addGuidedRubricCriterion(newRubricCriterionKind)}
+                                  onClick={() =>
+                                    addGuidedRubricCriterion(
+                                      newRubricCriterionKind,
+                                    )
+                                  }
                                 >
                                   + Agregar criterio
                                 </button>
                               </div>
                             </div>
 
-                            {settingsEligibilityRubricDraft.criteria.length > 0 && (
+                            {settingsEligibilityRubricDraft.criteria.length >
+                              0 && (
                               <div className="rubric-summary">
-                                {settingsEligibilityRubricDraft.criteria.length} criterio(s) configurados
+                                {settingsEligibilityRubricDraft.criteria.length}{" "}
+                                criterio(s) configurados
                               </div>
                             )}
                           </>
                         ) : (
                           <div className="rubric-empty-state">
-                            Rúbrica desactivada. No se ejecutarán reglas automáticas en esta etapa.
+                            Rúbrica desactivada. No se ejecutarán reglas
+                            automáticas en esta etapa.
                           </div>
                         )}
                       </div>
@@ -4154,18 +5842,25 @@ export function StageConfigEditor({
                           id={`eligibility-rubric-${stageCode}`}
                           rows={14}
                           value={settingsEligibilityRubricJson}
-                          onChange={(event) => handleRubricJsonInputChange(event.target.value)}
+                          onChange={(event) =>
+                            handleRubricJsonInputChange(event.target.value)
+                          }
                           style={{ fontFamily: "monospace" }}
                         />
                         <div className="form-hint">
-                          Usa criterios como <code>field_present</code>, <code>file_uploaded</code>,{" "}
-                          <code>recommendations_complete</code> y <code>ocr_confidence</code>. Cada
-                          criterio define <code>onFail</code> y <code>onMissingData</code>.
+                          Usa criterios como <code>field_present</code>,{" "}
+                          <code>file_uploaded</code>,{" "}
+                          <code>recommendations_complete</code> y{" "}
+                          <code>ocr_confidence</code>. Cada criterio define{" "}
+                          <code>onFail</code> y <code>onMissingData</code>.
                         </div>
                       </>
                     )}
                     {settingsEligibilityRubricErrors.length > 0 ? (
-                      <div className="admin-feedback error" style={{ marginTop: "10px" }}>
+                      <div
+                        className="admin-feedback error"
+                        style={{ marginTop: "10px" }}
+                      >
                         {`Errores de rúbrica: ${settingsEligibilityRubricErrors
                           .slice(0, 4)
                           .join(" | ")}`}
@@ -4174,18 +5869,19 @@ export function StageConfigEditor({
                   </div>
                 </div>
               </div>
-
-
             </div>
           )}
 
           {activeTab === "automations" && (
             <div id="tab-automations" className="tab-content active">
-              <div className="builder-section-title">Automatizaciones de correo</div>
+              <div className="builder-section-title">
+                Automatizaciones de correo
+              </div>
               <div className="admin-stage-comms-toolbar">
                 <p className="admin-stage-comms-copy">
-                  Estas plantillas se disparan automáticamente por evento. Para envíos manuales o
-                  broadcasts, usa el centro de comunicaciones del proceso.
+                  Estas plantillas se disparan automáticamente por evento. Para
+                  envíos manuales o broadcasts, usa el centro de comunicaciones
+                  del proceso.
                 </p>
                 <div className="admin-stage-comms-toolbar-actions">
                   <button
@@ -4195,19 +5891,33 @@ export function StageConfigEditor({
                   >
                     Abrir centro de comunicaciones
                   </button>
-                  <button className="btn btn-outline" onClick={addAutomation}>+ Nueva Notificación</button>
+                  <button className="btn btn-outline" onClick={addAutomation}>
+                    + Nueva Notificación
+                  </button>
                 </div>
               </div>
 
               {automations.map((automation) => (
                 <div className="comm-card" key={automation.localId}>
                   <div className="comm-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                    <svg
+                      width="20"
+                      height="20"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                    >
+                      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                      <polyline points="22,6 12,13 2,6" />
+                    </svg>
                   </div>
                   <div className="comm-content">
                     <div className="editor-grid">
                       <div className="form-field automation-event-field">
-                        <label htmlFor={`event-${automation.localId}`}>Evento</label>
+                        <label htmlFor={`event-${automation.localId}`}>
+                          Evento
+                        </label>
                         <select
                           id={`event-${automation.localId}`}
                           value={automation.trigger_event}
@@ -4215,19 +5925,29 @@ export function StageConfigEditor({
                             setAutomations((current) =>
                               current.map((item) =>
                                 item.localId === automation.localId
-                                  ? { ...item, trigger_event: event.target.value as StageAutomationTemplate["trigger_event"] }
+                                  ? {
+                                      ...item,
+                                      trigger_event: event.target
+                                        .value as StageAutomationTemplate["trigger_event"],
+                                    }
                                   : item,
                               ),
                             )
                           }
                         >
-                          <option value="application_submitted">Postulación enviada</option>
-                          <option value="stage_result">Resultado de etapa</option>
+                          <option value="application_submitted">
+                            Postulación enviada
+                          </option>
+                          <option value="stage_result">
+                            Resultado de etapa
+                          </option>
                         </select>
                       </div>
                       <div className="form-field automation-toggle-field">
                         <div className="automation-toggle-control">
-                          <span className="automation-toggle-label">Habilitada</span>
+                          <span className="automation-toggle-label">
+                            Habilitada
+                          </span>
                           <label className="switch">
                             <input
                               type="checkbox"
@@ -4236,7 +5956,10 @@ export function StageConfigEditor({
                                 setAutomations((current) =>
                                   current.map((item) =>
                                     item.localId === automation.localId
-                                      ? { ...item, is_enabled: event.target.checked }
+                                      ? {
+                                          ...item,
+                                          is_enabled: event.target.checked,
+                                        }
                                       : item,
                                   ),
                                 )
@@ -4260,7 +5983,12 @@ export function StageConfigEditor({
                           onChange={(event) =>
                             setAutomations((current) =>
                               current.map((item) =>
-                                item.localId === automation.localId ? { ...item, template_subject: event.target.value } : item,
+                                item.localId === automation.localId
+                                  ? {
+                                      ...item,
+                                      template_subject: event.target.value,
+                                    }
+                                  : item,
                               ),
                             )
                           }
@@ -4280,7 +6008,12 @@ export function StageConfigEditor({
                           onChange={(event) =>
                             setAutomations((current) =>
                               current.map((item) =>
-                                item.localId === automation.localId ? { ...item, template_body: event.target.value } : item,
+                                item.localId === automation.localId
+                                  ? {
+                                      ...item,
+                                      template_body: event.target.value,
+                                    }
+                                  : item,
                               ),
                             )
                           }
@@ -4298,7 +6031,9 @@ export function StageConfigEditor({
                             disabled={previewLoading === automation.id}
                             title="Vista previa del correo"
                           >
-                            {previewLoading === automation.id ? "Cargando…" : "Vista previa"}
+                            {previewLoading === automation.id
+                              ? "Cargando…"
+                              : "Vista previa"}
                           </button>
                           <button
                             type="button"
@@ -4306,11 +6041,12 @@ export function StageConfigEditor({
                             style={{
                               fontSize: "13px",
                               padding: "5px 12px",
-                              color: testSendResult[automation.id] === "sent"
-                                ? "var(--success)"
-                                : testSendResult[automation.id] === "error"
-                                ? "var(--danger)"
-                                : undefined,
+                              color:
+                                testSendResult[automation.id] === "sent"
+                                  ? "var(--success)"
+                                  : testSendResult[automation.id] === "error"
+                                    ? "var(--danger)"
+                                    : undefined,
                             }}
                             onClick={() => handleTestSendEmail(automation.id)}
                             disabled={testSendLoading === automation.id}
@@ -4319,10 +6055,10 @@ export function StageConfigEditor({
                             {testSendLoading === automation.id
                               ? "Enviando…"
                               : testSendResult[automation.id] === "sent"
-                              ? "✓ Enviado"
-                              : testSendResult[automation.id] === "error"
-                              ? "✗ Error"
-                              : "Enviar prueba"}
+                                ? "✓ Enviado"
+                                : testSendResult[automation.id] === "error"
+                                  ? "✗ Error"
+                                  : "Enviar prueba"}
                           </button>
                         </>
                       )}
@@ -4331,7 +6067,17 @@ export function StageConfigEditor({
                         onClick={() => removeAutomation(automation.localId)}
                         title="Eliminar automatización"
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        <svg
+                          width="16"
+                          height="16"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
                       </button>
                     </div>
                   </div>
@@ -4342,7 +6088,10 @@ export function StageConfigEditor({
 
           {activeTab === "communications" && (
             <div id="tab-communications" className="tab-content active">
-              <AdminCommunicationsCenter cycleId={cycleId} defaultStageCode={stageCode} />
+              <AdminCommunicationsCenter
+                cycleId={cycleId}
+                defaultStageCode={stageCode}
+              />
             </div>
           )}
 
@@ -4351,13 +6100,17 @@ export function StageConfigEditor({
               <AdminOcrTestbed
                 cycleId={cycleId}
                 stageCode={stageCode}
-                modelOptions={Object.entries(MODEL_REGISTRY).map(([id, meta]) => ({
-                  id,
-                  name: meta.name,
-                }))}
+                modelOptions={Object.entries(MODEL_REGISTRY).map(
+                  ([id, meta]) => ({
+                    id,
+                    name: meta.name,
+                  }),
+                )}
                 defaultPrompt={DEFAULT_OCR_PROMPT}
                 defaultSystemPrompt={DEFAULT_OCR_SYSTEM_PROMPT}
-                defaultExtractionInstructions={DEFAULT_OCR_EXTRACTION_INSTRUCTIONS}
+                defaultExtractionInstructions={
+                  DEFAULT_OCR_EXTRACTION_INSTRUCTIONS
+                }
                 defaultSchemaTemplate={DEFAULT_OCR_SCHEMA_TEMPLATE}
               />
             </div>
@@ -4369,7 +6122,9 @@ export function StageConfigEditor({
                 <div className="stat-card">
                   <div className="stat-title">Campos totales</div>
                   <div className="stat-value">{fields.length}</div>
-                  <div className="stat-trend neutral">Definidos para esta etapa</div>
+                  <div className="stat-trend neutral">
+                    Definidos para esta etapa
+                  </div>
                 </div>
                 <div className="stat-card">
                   <div className="stat-title">Campos obligatorios</div>
@@ -4381,7 +6136,10 @@ export function StageConfigEditor({
                 <div className="stat-card">
                   <div className="stat-title">Automatizaciones activas</div>
                   <div className="stat-value">
-                    {automations.filter((automation) => automation.is_enabled).length}
+                    {
+                      automations.filter((automation) => automation.is_enabled)
+                        .length
+                    }
                   </div>
                   <div className="stat-trend neutral">Correos habilitados</div>
                 </div>
@@ -4392,7 +6150,10 @@ export function StageConfigEditor({
                 <div className="funnel-bar">
                   <div className="funnel-label">Campos definidos</div>
                   <div className="funnel-track">
-                    <div className="funnel-fill" style={{ width: "100%" }}></div>
+                    <div
+                      className="funnel-fill"
+                      style={{ width: "100%" }}
+                    ></div>
                   </div>
                   <div className="funnel-value">{fields.length}</div>
                 </div>
@@ -4406,7 +6167,8 @@ export function StageConfigEditor({
                           fields.length === 0
                             ? "0%"
                             : `${Math.round(
-                                (fields.filter((field) => field.is_active).length /
+                                (fields.filter((field) => field.is_active)
+                                  .length /
                                   fields.length) *
                                   100,
                               )}%`,
@@ -4427,7 +6189,8 @@ export function StageConfigEditor({
                           fields.length === 0
                             ? "0%"
                             : `${Math.round(
-                                (fields.filter((field) => field.is_required).length /
+                                (fields.filter((field) => field.is_required)
+                                  .length /
                                   fields.length) *
                                   100,
                               )}%`,
@@ -4487,8 +6250,16 @@ export function StageConfigEditor({
               }}
             >
               <div>
-                <p style={{ fontWeight: 700, margin: 0, fontSize: "15px" }}>Vista previa del correo</p>
-                <p style={{ margin: "2px 0 0", fontSize: "12px", color: "var(--muted)" }}>
+                <p style={{ fontWeight: 700, margin: 0, fontSize: "15px" }}>
+                  Vista previa del correo
+                </p>
+                <p
+                  style={{
+                    margin: "2px 0 0",
+                    fontSize: "12px",
+                    color: "var(--muted)",
+                  }}
+                >
                   Asunto: {previewData.subject}
                 </p>
               </div>

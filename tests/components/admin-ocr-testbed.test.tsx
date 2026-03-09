@@ -73,7 +73,9 @@ describe("AdminOcrTestbed", () => {
     );
 
     await screen.findByText("history.pdf");
-    expect(screen.getByRole("button", { name: "Ejecutar prueba" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Ejecutar prueba" }),
+    ).toBeDisabled();
   });
 
   it("loads history without rendering bulky instruction cards", async () => {
@@ -95,7 +97,9 @@ describe("AdminOcrTestbed", () => {
 
     expect(await screen.findByText("Prompt Studio")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Contexto" }));
-    expect(screen.getByRole("button", { name: "Ayuda sobre el modelo" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Ayuda sobre el modelo" }),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Qué procesa hoy")).not.toBeInTheDocument();
     expect(await screen.findByText("history.pdf")).toBeInTheDocument();
   });
@@ -110,76 +114,8 @@ describe("AdminOcrTestbed", () => {
         new Response(JSON.stringify({ run: latestRun }), { status: 201 }),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ runs: [latestRun, historyRun] }), { status: 200 }),
-      );
-
-    const { container } = render(
-      <AdminOcrTestbed
-        cycleId="cycle-1"
-        stageCode="documents"
-        modelOptions={modelOptions}
-        defaultPrompt="Prompt base"
-        defaultSystemPrompt="System prompt"
-        defaultExtractionInstructions="Extraer hallazgos"
-        defaultSchemaTemplate='{"summary":"string"}'
-      />,
-    );
-
-    await screen.findByText("history.pdf");
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(["fake pdf"], "current.pdf", { type: "application/pdf" });
-    fireEvent.change(fileInput, { target: { files: [file] } });
-
-    fireEvent.change(screen.getByLabelText("System prompt adicional", { selector: "textarea" }), {
-      target: { value: "Nuevo system prompt" },
-    });
-    fireEvent.change(screen.getByLabelText("Instrucciones base", { selector: "textarea" }), {
-      target: { value: "Nuevo prompt base" },
-    });
-    fireEvent.change(screen.getByLabelText("Instrucciones de extracción", { selector: "textarea" }), {
-      target: { value: "Extrae solo señales de riesgo" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Esquema y parámetros" }));
-    fireEvent.change(screen.getByLabelText("Esquema JSON esperado", { selector: "textarea" }), {
-      target: { value: '{"summary":"string","findings":["string"]}' },
-    });
-    fireEvent.change(screen.getByLabelText("Temperature"), {
-      target: { value: "0.4" },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Ejecutar prueba" }));
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/ocr-testbed",
-        expect.objectContaining({ method: "POST" }),
-      );
-    });
-
-    const postCall = fetchMock.mock.calls.find(([url]) => url === "/api/ocr-testbed");
-    const body = postCall?.[1] && (postCall[1] as RequestInit).body;
-    expect(body).toBeInstanceOf(FormData);
-    const formData = body as FormData;
-    expect(formData.get("systemPrompt")).toBe("Nuevo system prompt");
-    expect(formData.get("promptTemplate")).toBe("Nuevo prompt base");
-    expect(formData.get("extractionInstructions")).toBe("Extrae solo señales de riesgo");
-    expect(formData.get("expectedSchemaTemplate")).toBe('{"summary":"string","findings":["string"]}');
-    expect(formData.get("temperature")).toBe("0.4");
-    expect(formData.get("strictSchema")).toBe("true");
-
-    expect(await screen.findByRole("heading", { name: "Resultado actual" })).toBeInTheDocument();
-    expect(await screen.findByText("Comparación")).toBeInTheDocument();
-    expect(await screen.findByText("Comparativa rápida")).toBeInTheDocument();
-    expect(await screen.findAllByText(/señal\(es\) de prompt injection/)).toHaveLength(2);
-  });
-
-  it("shows standard error callout details when running Prompt Studio fails", async () => {
-    vi.spyOn(globalThis, "fetch")
-      .mockResolvedValueOnce(new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ message: "No se pudo ejecutar OCR.", errorId: "err-ocr-run" }), {
-          status: 500,
+        new Response(JSON.stringify({ runs: [latestRun, historyRun] }), {
+          status: 200,
         }),
       );
 
@@ -197,83 +133,117 @@ describe("AdminOcrTestbed", () => {
 
     await screen.findByText("history.pdf");
 
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(["fake pdf"], "resume.pdf", { type: "application/pdf" });
+    const fileInputs = container.querySelectorAll('input[type="file"]');
+    const fileInput = fileInputs[0] as HTMLInputElement;
+    const referenceInput = fileInputs[1] as HTMLInputElement;
+    const file = new File(["fake pdf"], "current.pdf", {
+      type: "application/pdf",
+    });
     fireEvent.change(fileInput, { target: { files: [file] } });
+    fireEvent.change(referenceInput, {
+      target: {
+        files: [
+          new File(["fake image"], "reference-1.png", { type: "image/png" }),
+          new File(["fake pdf"], "reference-2.pdf", {
+            type: "application/pdf",
+          }),
+        ],
+      },
+    });
+
+    fireEvent.change(
+      screen.getByLabelText("System prompt adicional", {
+        selector: "textarea",
+      }),
+      {
+        target: { value: "Nuevo system prompt" },
+      },
+    );
+    fireEvent.change(
+      screen.getByLabelText("Instrucciones base", { selector: "textarea" }),
+      {
+        target: { value: "Nuevo prompt base" },
+      },
+    );
+    fireEvent.change(
+      screen.getByLabelText("Instrucciones de extracción", {
+        selector: "textarea",
+      }),
+      {
+        target: { value: "Extrae solo señales de riesgo" },
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Esquema y parámetros" }),
+    );
+    fireEvent.change(
+      screen.getByLabelText("Esquema JSON esperado", { selector: "textarea" }),
+      {
+        target: { value: '{"summary":"string","findings":["string"]}' },
+      },
+    );
+    fireEvent.change(screen.getByLabelText("Temperature"), {
+      target: { value: "0.4" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Ejecutar prueba" }));
 
-    expect(await screen.findByText("No se pudo ejecutar OCR.")).toBeInTheDocument();
-    expect(screen.getByText("Error ID: err-ocr-run")).toBeInTheDocument();
-  });
-
-  it("blocks execution locally when the schema JSON is malformed", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),
-    );
-
-    const { container } = render(
-      <AdminOcrTestbed
-        cycleId="cycle-1"
-        stageCode="documents"
-        modelOptions={modelOptions}
-        defaultPrompt="Prompt base"
-        defaultSystemPrompt="System prompt"
-        defaultExtractionInstructions="Extraer hallazgos"
-        defaultSchemaTemplate='{"summary":"string"}'
-      />,
-    );
-
-    await screen.findByText("history.pdf");
-
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(["fake pdf"], "resume.pdf", { type: "application/pdf" });
-    fireEvent.change(fileInput, { target: { files: [file] } });
-
-    fireEvent.click(screen.getByRole("button", { name: "Esquema y parámetros" }));
-    fireEvent.change(screen.getByLabelText("Esquema JSON esperado", { selector: "textarea" }), {
-      target: { value: '{"summary":"string"' },
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/ocr-testbed",
+        expect.objectContaining({ method: "POST" }),
+      );
     });
 
-    expect(await screen.findByText(/after property value in JSON/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ejecutar prueba" })).toBeDisabled();
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const postCall = fetchMock.mock.calls.find(
+      ([url]) => url === "/api/ocr-testbed",
+    );
+    const body = postCall?.[1] && (postCall[1] as RequestInit).body;
+    expect(body).toBeInstanceOf(FormData);
+    const formData = body as FormData;
+    expect(formData.get("systemPrompt")).toBe("Nuevo system prompt");
+    expect(formData.get("promptTemplate")).toBe("Nuevo prompt base");
+    expect(formData.get("extractionInstructions")).toBe(
+      "Extrae solo señales de riesgo",
+    );
+    expect(formData.get("expectedSchemaTemplate")).toBe(
+      '{"summary":"string","findings":["string"]}',
+    );
+    expect(formData.getAll("referenceFiles")).toHaveLength(2);
+    expect((formData.getAll("referenceFiles")[0] as File).name).toBe(
+      "reference-1.png",
+    );
+    expect((formData.getAll("referenceFiles")[1] as File).name).toBe(
+      "reference-2.pdf",
+    );
+    expect(formData.get("temperature")).toBe("0.4");
+    expect(formData.get("strictSchema")).toBe("true");
+
+    expect(
+      await screen.findByRole("heading", { name: "Resultado actual" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Comparación")).toBeInTheDocument();
+    expect(await screen.findByText("Comparativa rápida")).toBeInTheDocument();
+    expect(
+      await screen.findAllByText(/señal\(es\) de prompt injection/),
+    ).toHaveLength(2);
   });
 
-  it("shows standard error details when history loading fails", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(JSON.stringify({ message: "No se pudo cargar historial.", errorId: "err-ocr-history" }), {
-        status: 500,
-      }),
-    );
-
-    render(
-      <AdminOcrTestbed
-        cycleId="cycle-1"
-        stageCode="documents"
-        modelOptions={modelOptions}
-        defaultPrompt="Prompt base"
-        defaultSystemPrompt="System prompt"
-        defaultExtractionInstructions="Extraer hallazgos"
-        defaultSchemaTemplate='{"summary":"string"}'
-      />,
-    );
-
-    expect(await screen.findByText("No se pudo cargar historial.")).toBeInTheDocument();
-    expect(screen.getByText("Error ID: err-ocr-history")).toBeInTheDocument();
-  });
-
-  it("submits strictSchema=false when strict mode checkbox is disabled", async () => {
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
+  it("shows standard error callout details when running Prompt Studio fails", async () => {
+    vi.spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ run: latestRun }), { status: 201 }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ runs: [latestRun, historyRun] }), { status: 200 }),
+        new Response(
+          JSON.stringify({
+            message: "No se pudo ejecutar OCR.",
+            errorId: "err-ocr-run",
+          }),
+          {
+            status: 500,
+          },
+        ),
       );
 
     const { container } = render(
@@ -290,11 +260,141 @@ describe("AdminOcrTestbed", () => {
 
     await screen.findByText("history.pdf");
 
-    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(["fake pdf"], "resume.pdf", { type: "application/pdf" });
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["fake pdf"], "resume.pdf", {
+      type: "application/pdf",
+    });
     fireEvent.change(fileInput, { target: { files: [file] } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Esquema y parámetros" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ejecutar prueba" }));
+
+    expect(
+      await screen.findByText("No se pudo ejecutar OCR."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Error ID: err-ocr-run")).toBeInTheDocument();
+  });
+
+  it("blocks execution locally when the schema JSON is malformed", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),
+      );
+
+    const { container } = render(
+      <AdminOcrTestbed
+        cycleId="cycle-1"
+        stageCode="documents"
+        modelOptions={modelOptions}
+        defaultPrompt="Prompt base"
+        defaultSystemPrompt="System prompt"
+        defaultExtractionInstructions="Extraer hallazgos"
+        defaultSchemaTemplate='{"summary":"string"}'
+      />,
+    );
+
+    await screen.findByText("history.pdf");
+
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["fake pdf"], "resume.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Esquema y parámetros" }),
+    );
+    fireEvent.change(
+      screen.getByLabelText("Esquema JSON esperado", { selector: "textarea" }),
+      {
+        target: { value: '{"summary":"string"' },
+      },
+    );
+
+    expect(
+      await screen.findByText(/after property value in JSON/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Ejecutar prueba" }),
+    ).toBeDisabled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows standard error details when history loading fails", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          message: "No se pudo cargar historial.",
+          errorId: "err-ocr-history",
+        }),
+        {
+          status: 500,
+        },
+      ),
+    );
+
+    render(
+      <AdminOcrTestbed
+        cycleId="cycle-1"
+        stageCode="documents"
+        modelOptions={modelOptions}
+        defaultPrompt="Prompt base"
+        defaultSystemPrompt="System prompt"
+        defaultExtractionInstructions="Extraer hallazgos"
+        defaultSchemaTemplate='{"summary":"string"}'
+      />,
+    );
+
+    expect(
+      await screen.findByText("No se pudo cargar historial."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Error ID: err-ocr-history")).toBeInTheDocument();
+  });
+
+  it("submits strictSchema=false when strict mode checkbox is disabled", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ runs: [historyRun] }), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ run: latestRun }), { status: 201 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ runs: [latestRun, historyRun] }), {
+          status: 200,
+        }),
+      );
+
+    const { container } = render(
+      <AdminOcrTestbed
+        cycleId="cycle-1"
+        stageCode="documents"
+        modelOptions={modelOptions}
+        defaultPrompt="Prompt base"
+        defaultSystemPrompt="System prompt"
+        defaultExtractionInstructions="Extraer hallazgos"
+        defaultSchemaTemplate='{"summary":"string"}'
+      />,
+    );
+
+    await screen.findByText("history.pdf");
+
+    const fileInput = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    const file = new File(["fake pdf"], "resume.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(fileInput, { target: { files: [file] } });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Esquema y parámetros" }),
+    );
     fireEvent.click(
       screen.getByRole("checkbox", {
         name: "Fallar si la respuesta no cumple exactamente el esquema",
@@ -310,7 +410,9 @@ describe("AdminOcrTestbed", () => {
       );
     });
 
-    const postCall = fetchMock.mock.calls.find(([url]) => url === "/api/ocr-testbed");
+    const postCall = fetchMock.mock.calls.find(
+      ([url]) => url === "/api/ocr-testbed",
+    );
     const body = postCall?.[1] && (postCall[1] as RequestInit).body;
     expect(body).toBeInstanceOf(FormData);
     const formData = body as FormData;

@@ -13,7 +13,7 @@ const catalogFields = [
     defaultSelected: true,
   },
   {
-    key: "essay",
+    key: "payload.essay",
     label: "Ensayo",
     helperText: "Respuesta larga",
     kind: "payload",
@@ -27,7 +27,7 @@ const presets = [
   {
     id: "preset-1",
     name: "Revision corta",
-    selectedFields: ["essay", "applicantEmail"],
+    selectedFields: ["payload.essay", "applicantEmail"],
     updatedAt: "2026-03-03T00:00:00.000Z",
   },
 ] as const;
@@ -41,27 +41,61 @@ afterEach(() => {
 });
 
 describe("AdminExportBuilder", () => {
-  it("loads the catalog, applies a preset, and renders a preview", async () => {
+  it("loads the catalog, applies a preset, and renders a matrix preview", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(okJson({ fields: catalogFields, presets }))
       .mockResolvedValueOnce(
-        new Response("Ensayo,Correo\nTexto 1,ana@example.com\nTexto 2,luis@example.com\n", {
-          status: 200,
-          headers: { "Content-Type": "text/csv" },
+        okJson({
+          preview: {
+            sheetName: "Postulantes",
+            applicantHeaders: ["Ana Perez (ana@example.com)", "Luis Diaz (luis@example.com)"],
+            rows: [
+              {
+                label: "Correo",
+                values: ["ana@example.com", "luis@example.com"],
+              },
+              {
+                label: "Ensayo",
+                values: ["Texto 1", "Texto 2"],
+              },
+            ],
+          },
+          totalFiltered: 2,
+          exportedApplicants: 2,
+          sheetCount: 1,
         }),
       );
 
-    render(<AdminExportBuilder cycleId="cycle-1" stageCode="documents" />);
+    render(<AdminExportBuilder cycleId="11111111-1111-4111-8111-111111111111" stageCode="documents" />);
 
     expect(await screen.findByText("Revision corta")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Revision corta" }));
-    fireEvent.click(screen.getByRole("button", { name: "Vista previa (5 filas)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Vista previa" }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        "/api/exports?cycleId=cycle-1&stageCode=documents&format=csv&fields=essay%2CapplicantEmail&limit=5",
+        "/api/exports",
+        expect.objectContaining({
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "preview",
+            cycleId: "11111111-1111-4111-8111-111111111111",
+            stageCode: "documents",
+            status: null,
+            eligibility: "all",
+            query: null,
+            selectedFields: ["payload.essay", "applicantEmail"],
+            format: "xlsx",
+            targetMode: "filtered",
+            selectedApplicationIds: undefined,
+            groupAssignments: undefined,
+            randomSample: undefined,
+            groupedExportMode: "single-sheet",
+          }),
+        }),
       );
     });
 
@@ -80,7 +114,7 @@ describe("AdminExportBuilder", () => {
           preset: {
             id: "preset-2",
             name: "Preset equipo",
-            selectedFields: ["applicantEmail", "essay"],
+            selectedFields: ["applicantEmail", "payload.essay"],
             updatedAt: "2026-03-03T01:00:00.000Z",
           },
         }),
@@ -92,14 +126,14 @@ describe("AdminExportBuilder", () => {
             {
               id: "preset-2",
               name: "Preset equipo",
-              selectedFields: ["applicantEmail", "essay"],
+              selectedFields: ["applicantEmail", "payload.essay"],
               updatedAt: "2026-03-03T01:00:00.000Z",
             },
           ],
         }),
       );
 
-    render(<AdminExportBuilder cycleId="cycle-1" />);
+    render(<AdminExportBuilder cycleId="11111111-1111-4111-8111-111111111111" />);
 
     await screen.findByRole("button", { name: "Guardar preset" });
 
@@ -114,10 +148,10 @@ describe("AdminExportBuilder", () => {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            cycleId: "cycle-1",
+            cycleId: "11111111-1111-4111-8111-111111111111",
             presetId: null,
             name: "Preset equipo",
-            selectedFields: ["applicantEmail", "essay"],
+            selectedFields: ["applicantEmail", "payload.essay"],
           }),
         }),
       );

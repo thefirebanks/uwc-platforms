@@ -41,7 +41,7 @@ function makeWizardReadyFields(): CycleStageField[] {
         enabled: true,
         extractionInstructions: "Extrae datos de identidad.",
         expectedSchemaTemplate:
-          "{\"fullName\":\"string\",\"birthYear\":\"int\",\"documentType\":\"string\",\"documentIssue\":\"string\"}",
+          '{"fullName":"string","birthYear":"int","documentType":"string","documentIssue":"string"}',
         expectedOutputFields: [
           { key: "fullName", type: "text" },
           { key: "birthYear", type: "number" },
@@ -149,7 +149,7 @@ function makeWizardReadyFieldsWithTechnicalOcr(): CycleStageField[] {
       ai_parser_config: {
         ...parserConfig,
         expectedSchemaTemplate:
-          "{\"fullName\":\"string\",\"birthYear\":\"int\",\"documentType\":\"string\",\"documentIssue\":\"string\",\"confidence\":\"float\",\"summary\":\"string\"}",
+          '{"fullName":"string","birthYear":"int","documentType":"string","documentIssue":"string","confidence":"float","summary":"string"}',
         expectedOutputFields: [
           { key: "fullName", type: "text" },
           { key: "birthYear", type: "number" },
@@ -277,7 +277,9 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Añadir nuevo campo" }));
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -346,20 +348,27 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Añadir nuevo campo" })[0]!);
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Añadir nuevo campo" })[0]!,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
     const request = fetchMock.mock.calls.at(-1)?.[1];
-    const payload = request && typeof request === "object" && "body" in request
-      ? JSON.parse(String(request.body))
-      : null;
+    const payload =
+      request && typeof request === "object" && "body" in request
+        ? JSON.parse(String(request.body))
+        : null;
 
     expect(payload?.fields).toHaveLength(3);
-    expect(payload?.fields?.map((field: { sortOrder: number }) => field.sortOrder)).toEqual([1, 2, 3]);
+    expect(
+      payload?.fields?.map((field: { sortOrder: number }) => field.sortOrder),
+    ).toEqual([1, 2, 3]);
   });
 
   it("shows per-section add controls and the add-section action", () => {
@@ -411,8 +420,12 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    expect(screen.getAllByRole("button", { name: "Añadir nuevo campo" }).length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /\+ Añadir nueva sección/i })).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("button", { name: "Añadir nuevo campo" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: /\+ Añadir nueva sección/i }),
+    ).toBeInTheDocument();
   });
 
   it("allows deleting the fallback section and persists an empty sections list", async () => {
@@ -453,16 +466,21 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    const deleteButtons = screen.getAllByRole("button", { name: "Eliminar sección" });
+    const deleteButtons = screen.getAllByRole("button", {
+      name: "Eliminar sección",
+    });
     expect(deleteButtons[0]).not.toBeDisabled();
     fireEvent.click(deleteButtons[0]!);
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const request = fetchMock.mock.calls.at(-1)?.[1];
-    const payload = request && typeof request === "object" && "body" in request
-      ? JSON.parse(String(request.body))
-      : null;
+    const payload =
+      request && typeof request === "object" && "body" in request
+        ? JSON.parse(String(request.body))
+        : null;
 
     expect(payload?.sections).toEqual([]);
   });
@@ -542,13 +560,16 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Añadir nuevo campo" }));
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
     const request = fetchMock.mock.calls.at(-1)?.[1];
-    const payload = request && typeof request === "object" && "body" in request
-      ? JSON.parse(String(request.body))
-      : null;
+    const payload =
+      request && typeof request === "object" && "body" in request
+        ? JSON.parse(String(request.body))
+        : null;
 
     expect(payload?.sections?.[0]?.title).toBe("Sección 1");
   });
@@ -602,7 +623,9 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Guardar Campo" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Guardar Campo" }),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Fecha de nacimiento")).toBeInTheDocument();
   });
 
@@ -674,7 +697,9 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Ajustes y Reglas$/i }),
+    );
     fireEvent.change(screen.getByLabelText("Nombre de la etapa"), {
       target: { value: "Formulario Principal (editado)" },
     });
@@ -687,7 +712,9 @@ describe("StageConfigEditor", () => {
       "Hay cambios sin guardar en Ajustes y Reglas. Previsualizar también los guarda.",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -737,11 +764,19 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    expect(screen.queryByText(/Paso inicial: Instrucciones/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Paso inicial: Instrucciones/i),
+    ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
-    expect(screen.getByLabelText(/Instrucciones de la etapa \(Markdown\)/i)).toBeInTheDocument();
-    expect(screen.queryByLabelText(/Prompt OCR de la etapa/i)).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Ajustes y Reglas$/i }),
+    );
+    expect(
+      screen.getByLabelText(/Instrucciones de la etapa \(Markdown\)/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByLabelText(/Prompt OCR de la etapa/i),
+    ).not.toBeInTheDocument();
   });
 
   it("labels the automation tab clearly instead of generic communications", () => {
@@ -762,14 +797,28 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: /^Automatizaciones$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Comunicaciones$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Prompt Studio$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Automatizaciones$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Comunicaciones$/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Prompt Studio$/i }),
+    ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Automatizaciones$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /\+ Nueva Notificación/i }));
-    expect(screen.getByLabelText(/Variables disponibles para el asunto/i)).toBeInTheDocument();
-    expect(screen.queryByText("Variables para plantillas automáticas")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Automatizaciones$/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /\+ Nueva Notificación/i }),
+    );
+    expect(
+      screen.getByLabelText(/Variables disponibles para el asunto/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Variables para plantillas automáticas"),
+    ).not.toBeInTheDocument();
   });
 
   it("opens Prompt Studio inside the same stage shell from Ajustes y Reglas", async () => {
@@ -802,13 +851,17 @@ describe("StageConfigEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Prompt Studio$/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /^Prompt Studio$/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: /^Prompt Studio$/i }),
+      ).toBeInTheDocument();
       expect(screen.getByText(/Sin pruebas anteriores\./i)).toBeInTheDocument();
     });
   });
 
   it("renames a section from the section toolbar pencil action", () => {
-    const promptMock = vi.spyOn(window, "prompt").mockReturnValue("Identidad actualizada");
+    const promptMock = vi
+      .spyOn(window, "prompt")
+      .mockReturnValue("Identidad actualizada");
 
     render(
       <StageConfigEditor
@@ -856,10 +909,17 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getAllByRole("button", { name: "Editar nombre de sección" })[0]!);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Editar nombre de sección" })[0]!,
+    );
 
-    expect(promptMock).toHaveBeenCalledWith("Nuevo nombre de la sección", "Datos personales");
-    expect(screen.getByText("Sección 1: Identidad actualizada")).toBeInTheDocument();
+    expect(promptMock).toHaveBeenCalledWith(
+      "Nuevo nombre de la sección",
+      "Datos personales",
+    );
+    expect(
+      screen.getByText("Sección 1: Identidad actualizada"),
+    ).toBeInTheDocument();
   });
 
   it("appends a newly created section at the end of the section list", () => {
@@ -950,10 +1010,14 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /\+ Añadir nueva sección/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /\+ Añadir nueva sección/i }),
+    );
 
     const sectionHeadings = Array.from(
-      container.querySelectorAll(".admin-stage-section-heading-row .builder-section-title"),
+      container.querySelectorAll(
+        ".admin-stage-section-heading-row .builder-section-title",
+      ),
     )
       .map((node) => node.textContent?.trim() ?? "")
       .filter(Boolean);
@@ -1026,10 +1090,14 @@ describe("StageConfigEditor", () => {
     );
 
     fireEvent.click(screen.getByText("Nombre completo"));
-    const groupNameInput = screen.getByLabelText(/Nombre de grupo \(opcional\)/i);
+    const groupNameInput = screen.getByLabelText(
+      /Nombre de grupo \(opcional\)/i,
+    );
     fireEvent.change(groupNameInput, { target: { value: "Identidad" } });
     fireEvent.blur(groupNameInput);
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalled();
@@ -1079,11 +1147,17 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Automatizaciones$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /Abrir centro de comunicaciones/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Automatizaciones$/i }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: /Abrir centro de comunicaciones/i }),
+    );
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: /Centro de comunicaciones/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("heading", { name: /Centro de comunicaciones/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -1109,7 +1183,11 @@ describe("StageConfigEditor", () => {
           ],
           automations: [],
           customSections: [
-            { id: "custom-section-1", title: "Sección personalizada", order: 1 },
+            {
+              id: "custom-section-1",
+              title: "Sección personalizada",
+              order: 1,
+            },
           ],
           fieldSectionAssignments: {
             customSectionField8: "custom-section-1",
@@ -1250,14 +1328,20 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /\+ Añadir nueva sección/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /\+ Añadir nueva sección/i }),
+    );
     fireEvent.change(screen.getByLabelText("Nombre de la sección"), {
       target: { value: "Sección personalizada" },
     });
     fireEvent.click(
-      screen.getByRole("button", { name: "Añadir nuevo campo en esta sección" }),
+      screen.getByRole("button", {
+        name: "Añadir nuevo campo en esta sección",
+      }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
@@ -1274,40 +1358,64 @@ describe("StageConfigEditor", () => {
       ]),
     );
     // Verify the new field has a sectionKey matching the new section
-    const newField = payload?.fields?.find((f: { fieldKey: string }) => f.fieldKey?.startsWith("custom"));
+    const newField = payload?.fields?.find((f: { fieldKey: string }) =>
+      f.fieldKey?.startsWith("custom"),
+    );
     expect(newField).toBeTruthy();
   });
 
   it("persists per-file AI parser config and clears it when field type changes", async () => {
-    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
-      Promise.resolve(
-        new Response(
-          JSON.stringify({
-            fields: [
-              {
-                id: "field-file",
-                cycle_id: "cycle-1",
-                stage_code: "documents",
-                field_key: "identificationDocument",
-                field_label: "Documento de identidad",
-                field_type: "file",
-                is_required: true,
-                placeholder: null,
-                help_text: null,
-                sort_order: 1,
-                is_active: true,
-                section_id: null,
-                created_at: "2026-01-01T00:00:00.000Z",
-              },
-            ],
-            sections: [makeOtherSection()],
-            automations: [],
-            ocrPromptTemplate: "Prompt OCR",
-          }),
-          { status: 200 },
-        ),
-      ),
-    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation((input) => {
+        const url = String(input);
+        if (url.includes("/ai-reference-files")) {
+          return Promise.resolve(
+            new Response(
+              JSON.stringify({
+                referenceFiles: [
+                  {
+                    fileName: "reference-template.pdf",
+                    mimeType: "application/pdf",
+                    path: "stage-ai-references/cycle-1/documents/reference-template.pdf",
+                    sizeBytes: 1024,
+                    uploadedAt: "2026-03-09T00:00:00.000Z",
+                  },
+                ],
+              }),
+              { status: 201 },
+            ),
+          );
+        }
+
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              fields: [
+                {
+                  id: "field-file",
+                  cycle_id: "cycle-1",
+                  stage_code: "documents",
+                  field_key: "identificationDocument",
+                  field_label: "Documento de identidad",
+                  field_type: "file",
+                  is_required: true,
+                  placeholder: null,
+                  help_text: null,
+                  sort_order: 1,
+                  is_active: true,
+                  section_id: null,
+                  created_at: "2026-01-01T00:00:00.000Z",
+                },
+              ],
+              sections: [makeOtherSection()],
+              automations: [],
+              ocrPromptTemplate: "Prompt OCR",
+            }),
+            { status: 200 },
+          ),
+        );
+      });
 
     render(
       <StageConfigEditor
@@ -1344,16 +1452,48 @@ describe("StageConfigEditor", () => {
 
     fireEvent.click(screen.getByText("Documento de identidad"));
     fireEvent.click(
-      screen.getByRole("checkbox", { name: /Habilitar parsing IA para Documento de identidad/i }),
+      screen.getByRole("checkbox", {
+        name: /Habilitar parsing IA para Documento de identidad/i,
+      }),
     );
-    fireEvent.change(screen.getByRole("textbox", { name: /Instrucciones de extracción/i }), {
-      target: { value: "Extrae solo número de documento y nombre completo." },
-    });
+    fireEvent.change(
+      screen.getByRole("textbox", { name: /Instrucciones de extracción/i }),
+      {
+        target: { value: "Extrae solo número de documento y nombre completo." },
+      },
+    );
+    fireEvent.change(
+      screen.getByLabelText(
+        /Subir referencias OCR para Documento de identidad/i,
+      ),
+      {
+        target: {
+          files: [
+            new File(["ref"], "reference-template.pdf", {
+              type: "application/pdf",
+            }),
+          ],
+        },
+      },
+    );
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/cycles/cycle-1/stages/template-docs/ai-reference-files",
+        expect.objectContaining({ method: "POST" }),
+      ),
+    );
     fireEvent.click(screen.getByText(/Opciones avanzadas/i));
-    fireEvent.change(screen.getByRole("textbox", { name: /Esquema JSON esperado \(avanzado\)/i }), {
-      target: { value: "{\"document_number\":\"string\",\"birth-year\":\"int\"}" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.change(
+      screen.getByRole("textbox", {
+        name: /Esquema JSON esperado \(avanzado\)/i,
+      }),
+      {
+        target: { value: '{"document_number":"string","birth-year":"int"}' },
+      },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalled());
 
@@ -1365,8 +1505,18 @@ describe("StageConfigEditor", () => {
 
     expect(firstPayload?.fields?.[0]?.aiParser).toMatchObject({
       enabled: true,
-      extractionInstructions: "Extrae solo número de documento y nombre completo.",
-      expectedSchemaTemplate: "{\"document_number\":\"string\",\"birth-year\":\"int\"}",
+      extractionInstructions:
+        "Extrae solo número de documento y nombre completo.",
+      expectedSchemaTemplate: '{"document_number":"string","birth-year":"int"}',
+      referenceFiles: [
+        {
+          fileName: "reference-template.pdf",
+          mimeType: "application/pdf",
+          path: "stage-ai-references/cycle-1/documents/reference-template.pdf",
+          sizeBytes: 1024,
+          uploadedAt: "2026-03-09T00:00:00.000Z",
+        },
+      ],
       expectedOutputFields: [
         { key: "document_number", type: "text" },
         { key: "birth-year", type: "number" },
@@ -1377,12 +1527,16 @@ describe("StageConfigEditor", () => {
     fireEvent.change(screen.getByLabelText(/Tipo de campo/i), {
       target: { value: "short_text" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
     const secondRequest = fetchMock.mock.calls.at(-1)?.[1];
     const secondPayload =
-      secondRequest && typeof secondRequest === "object" && "body" in secondRequest
+      secondRequest &&
+      typeof secondRequest === "object" &&
+      "body" in secondRequest
         ? JSON.parse(String(secondRequest.body))
         : null;
     expect(secondPayload?.fields?.[0]?.aiParser).toBeNull();
@@ -1424,7 +1578,9 @@ describe("StageConfigEditor", () => {
 
     fireEvent.click(screen.getByText("Nombre completo"));
     expect(
-      screen.queryByRole("checkbox", { name: /Habilitar parsing IA para Nombre completo/i }),
+      screen.queryByRole("checkbox", {
+        name: /Habilitar parsing IA para Nombre completo/i,
+      }),
     ).not.toBeInTheDocument();
   });
 
@@ -1446,7 +1602,9 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Ajustes y Reglas$/i }),
+    );
     expect(screen.getByRole("button", { name: "Visual" })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: "JSON" })).not.toBeDisabled();
     expect(screen.getByRole("button", { name: "Validar" })).not.toBeDisabled();
@@ -1470,7 +1628,9 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Ajustes y Reglas$/i }),
+    );
 
     // Default is Visual mode — Visual button should be primary
     const visualBtn = screen.getByRole("button", { name: "Visual" });
@@ -1484,11 +1644,13 @@ describe("StageConfigEditor", () => {
     expect(visualBtn.className).toContain("btn-outline");
 
     // JSON textarea should be visible
-    const textarea = document.querySelector("textarea[id^='eligibility-rubric-']");
+    const textarea = document.querySelector(
+      "textarea[id^='eligibility-rubric-']",
+    );
     expect(textarea).toBeInTheDocument();
   });
 
-  it("auto-populates default criteria when no saved rubric exists", () => {
+  it("shows template generator with UWC Peru preset fields", () => {
     render(
       <StageConfigEditor
         cycleId="cycle-1"
@@ -1506,25 +1668,25 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Ajustes y Reglas$/i }),
+    );
 
-    // Template generator should NOT be present
-    expect(document.querySelector(".rubric-template-details")).not.toBeInTheDocument();
+    // Template generator should be present as a collapsible details element
+    const details = document.querySelector(".rubric-template-details");
+    expect(details).toBeInTheDocument();
 
-    // Criteria should be auto-populated in the visual builder
-    const criterionCards = document.querySelectorAll(".rubric-criterion-card");
-    expect(criterionCards.length).toBeGreaterThan(0);
-
-    // Verify via JSON mode that criteria are pre-populated
-    fireEvent.click(screen.getByRole("button", { name: "JSON" }));
-    const textarea = document.querySelector("textarea[id^='eligibility-rubric-']") as HTMLTextAreaElement | null;
-    expect(textarea).not.toBeNull();
-    const rubricValue = JSON.parse(textarea!.value);
-    expect(rubricValue.enabled).toBe(true);
-    expect(rubricValue.criteria.length).toBeGreaterThan(0);
+    // Key template fields should be present
+    expect(document.querySelector("#tpl-name-documents")).toBeInTheDocument();
+    expect(
+      document.querySelector("#tpl-average-documents"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Generar rúbrica desde plantilla/i }),
+    ).toBeInTheDocument();
   });
 
-  it("persists auto-populated default criteria via save", async () => {
+  it("generates rubric from template and persists it via save", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -1561,23 +1723,30 @@ describe("StageConfigEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Ajustes y Reglas$/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Ajustes y Reglas$/i }),
+    );
 
-    // Criteria should already be auto-populated — verify via JSON mode
+    // Click the template generator button to populate rubric from defaults
+    fireEvent.click(
+      screen.getByRole("button", { name: /Generar rúbrica desde plantilla/i }),
+    );
+
+    // After generation, the rubric should be enabled — switch to JSON to verify content
     fireEvent.click(screen.getByRole("button", { name: "JSON" }));
-    const textarea = document.querySelector("textarea[id^='eligibility-rubric-']") as HTMLTextAreaElement | null;
+    const textarea = document.querySelector(
+      "textarea[id^='eligibility-rubric-']",
+    ) as HTMLTextAreaElement | null;
     expect(textarea).not.toBeNull();
     const rubricValue = JSON.parse(textarea!.value);
     expect(rubricValue.enabled).toBe(true);
     expect(rubricValue.criteria.length).toBeGreaterThan(0);
 
-    // Make a small edit to trigger "unsaved changes" (change stage name)
+    // Switch back to Visual and save
     fireEvent.click(screen.getByRole("button", { name: "Visual" }));
-    const stageNameInput = document.querySelector("#stage-name-documents") as HTMLInputElement;
-    fireEvent.change(stageNameInput, { target: { value: "Formulario Principal Editado" } });
-
-    // Save
-    fireEvent.click(screen.getByRole("button", { name: "Guardar configuración" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Guardar configuración" }),
+    );
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -1594,6 +1763,8 @@ describe("StageConfigEditor", () => {
 
     // The rubric should be persisted in settings
     expect(payload?.settings?.eligibilityRubric?.enabled).toBe(true);
-    expect(payload?.settings?.eligibilityRubric?.criteria?.length).toBeGreaterThan(0);
+    expect(
+      payload?.settings?.eligibilityRubric?.criteria?.length,
+    ).toBeGreaterThan(0);
   });
 });

@@ -44,7 +44,9 @@ describe("listOcrTestRuns", () => {
     };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await expect(listOcrTestRuns({ supabase: supabase as any, cycleId: "cycle-1" })).resolves.toEqual([]);
+    await expect(
+      listOcrTestRuns({ supabase: supabase as any, cycleId: "cycle-1" }),
+    ).resolves.toEqual([]);
   });
 });
 
@@ -105,6 +107,14 @@ describe("runOcrTest", () => {
         return new TextEncoder().encode("doc").buffer;
       },
     } as File;
+    const referenceFile = {
+      name: "reference.png",
+      type: "image/png",
+      size: 12,
+      async arrayBuffer() {
+        return new TextEncoder().encode("reference").buffer;
+      },
+    } as File;
 
     const result = await runOcrTest({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -114,6 +124,7 @@ describe("runOcrTest", () => {
         stageCode: "documents",
         actorId: "admin-1",
         file,
+        referenceFiles: [referenceFile],
         promptTemplate: "Prompt base",
         extractionInstructions: "Extraer hallazgos",
         strictSchema: true,
@@ -133,7 +144,24 @@ describe("runOcrTest", () => {
           fileName: "test.pdf",
           mimeType: "application/pdf",
         }),
+        referenceDocuments: [
+          expect.objectContaining({
+            fileName: "reference.png",
+            mimeType: "image/png",
+          }),
+        ],
       }),
     );
+    expect(
+      (
+        result.raw_response as {
+          requestConfig?: { referenceFiles?: Array<{ fileName: string }> };
+        }
+      ).requestConfig?.referenceFiles,
+    ).toEqual([
+      expect.objectContaining({
+        fileName: "reference.png",
+      }),
+    ]);
   });
 });
