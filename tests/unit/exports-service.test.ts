@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import { AppError } from "@/lib/errors/app-error";
 import {
   buildApplicationsCsv,
+  buildMatrixCsvExport,
+  buildMatrixExportWorkbook,
   getApplicationExportPackage,
   normalizeApplicationFiles,
   parseApplicationExportFilters,
+  prepareMatrixExportGroups,
   resolveNestedExportValue,
   validateSelectedExportFields,
+  buildRandomSampleGroups,
 } from "@/lib/server/exports-service";
 
 describe("parseApplicationExportFilters", () => {
@@ -22,13 +26,15 @@ describe("parseApplicationExportFilters", () => {
   it("parses valid filters", () => {
     const filters = parseApplicationExportFilters(
       new URLSearchParams(
-        "cycleId=11111111-1111-4111-8111-111111111111&stageCode=documents&eligibility=pending",
+        "cycleId=11111111-1111-4111-8111-111111111111&stageCode=documents&eligibility=pending&q=ana&applicationIds=11111111-1111-4111-8111-111111111111",
       ),
     );
 
     expect(filters.cycleId).toBe("11111111-1111-4111-8111-111111111111");
     expect(filters.stageCode).toBe("documents");
     expect(filters.eligibility).toBe("pending");
+    expect(filters.query).toBe("ana");
+    expect(filters.applicationIds).toEqual(["11111111-1111-4111-8111-111111111111"]);
   });
 
   it("rejects conflicting status and eligibility filters", () => {
@@ -137,6 +143,127 @@ describe("validateSelectedExportFields", () => {
         },
       }),
     ).toThrowError(AppError);
+  });
+});
+
+describe("buildRandomSampleGroups", () => {
+  it("creates deterministic groups when a random function is provided", () => {
+    const calls = [0.1, 0.9, 0.2, 0.8, 0.3, 0.7];
+    let index = 0;
+
+    const groups = buildRandomSampleGroups({
+      items: ["a", "b", "c", "d", "e", "f"],
+      groupCount: 2,
+      applicantsPerGroup: 2,
+      random: () => calls[index++] ?? 0.5,
+    });
+
+    expect(groups).toHaveLength(2);
+    expect(groups[0]).toHaveLength(2);
+    expect(groups[1]).toHaveLength(2);
+    expect(groups.flat()).toHaveLength(4);
+  });
+});
+
+describe("matrix export builders", () => {
+  const catalog = {
+    fields: [
+      {
+        key: "applicantName",
+        label: "Nombre",
+        helperText: null,
+        kind: "core" as const,
+        groupKey: "core",
+        groupLabel: "Base",
+        defaultSelected: true,
+      },
+      {
+        key: "payload.region",
+        label: "Region",
+        helperText: null,
+        kind: "payload" as const,
+        groupKey: "payload",
+        groupLabel: "Formulario",
+        defaultSelected: false,
+      },
+    ],
+    presets: [],
+  };
+
+  const records = [
+    {
+      application: {
+        id: "11111111-1111-4111-8111-111111111111",
+        applicant_id: "applicant-1",
+        cycle_id: "cycle-1",
+        stage_code: "documents",
+        status: "submitted" as const,
+        payload: { fullName: "Ana Perez", region: "Cusco" },
+        files: {},
+        validation_notes: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+      applicant: { email: "ana@example.com", full_name: "Ana Perez" },
+      cycle: { name: "Proceso 2026" },
+      recommendations: [],
+    },
+    {
+      application: {
+        id: "22222222-2222-4222-8222-222222222222",
+        applicant_id: "applicant-2",
+        cycle_id: "cycle-1",
+        stage_code: "documents",
+        status: "submitted" as const,
+        payload: { fullName: "Luis Torres", region: "Lima" },
+        files: {},
+        validation_notes: null,
+        created_at: "2026-01-01T00:00:00.000Z",
+        updated_at: "2026-01-01T00:00:00.000Z",
+      },
+      applicant: { email: "luis@example.com", full_name: "Luis Torres" },
+      cycle: { name: "Proceso 2026" },
+      recommendations: [],
+    },
+  ];
+
+  it("includes a group row when manual assignments are provided", () => {
+    const prepared = prepareMatrixExportGroups({
+      records,
+      targetMode: "manual",
+      selectedApplicationIds: records.map((record) => record.application.id),
+      groupAssignments: [
+        {
+          applicationId: records[0].application.id,
+          groupKey: "group-1",
+          groupLabel: "Grupo 1",
+        },
+        {
+          applicationId: records[1].application.id,
+          groupKey: "group-2",
+          groupLabel: "Grupo 2",
+        },
+      ],
+    });
+
+    const workbook = buildMatrixExportWorkbook({
+      groups: prepared.groups,
+      selectedFields: ["applicantName", "payload.region"],
+      catalog,
+      groupedExportMode: "single-sheet",
+      includeGroupRow: prepared.includeGroupRow,
+    });
+
+    expect(workbook.sheets).toHaveLength(1);
+    expect(workbook.sheets[0].rows[0]).toMatchObject({
+      label: "Grupo",
+      values: ["Grupo 1", "Grupo 2"],
+    });
+
+    const csv = buildMatrixCsvExport(workbook.sheets[0]);
+    expect(csv).toContain('"Campo","Ana Perez (ana@example.com)"');
+    expect(csv).toContain('"Grupo","Grupo 1","Grupo 2"');
+    expect(csv).toContain('"Region","Cusco","Lima"');
   });
 });
 
