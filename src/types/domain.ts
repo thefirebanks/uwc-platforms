@@ -32,7 +32,13 @@ export type OcrModelId = string; // Registry-defined; known values: "gemini-flas
 
 export type BuiltinStageCode = "documents" | "exam_placeholder";
 export type StageCode = BuiltinStageCode | (string & {});
-export type StageFieldType = "short_text" | "long_text" | "number" | "date" | "email" | "file";
+export type StageFieldType =
+  | "short_text"
+  | "long_text"
+  | "number"
+  | "date"
+  | "email"
+  | "file";
 export type StageAutomationTrigger = "application_submitted" | "stage_result";
 export type CommunicationStatus = "queued" | "processing" | "sent" | "failed";
 export type RecommenderRole = "mentor" | "friend";
@@ -152,6 +158,13 @@ export interface StageFieldAiParserConfig {
   systemPrompt?: string | null;
   extractionInstructions: string;
   expectedSchemaTemplate: string;
+  referenceFiles?: Array<{
+    fileName: string;
+    mimeType: string;
+    path: string;
+    sizeBytes?: number | null;
+    uploadedAt?: string | null;
+  }>;
   expectedOutputFields?: Array<{
     key: string;
     type: "text" | "number" | "decimal" | "date" | "boolean";
@@ -254,7 +267,10 @@ export interface RubricBlueprintV1 {
     minAverageGrade: number;
     recommendationCompleteness: "strict_form_valid" | "minimum_answers";
     recommendationMinAnswers: number;
-    gradesCombinationRule: "single_or_review" | "single_or_not_eligible" | "allow_multiple";
+    gradesCombinationRule:
+      | "single_or_review"
+      | "single_or_not_eligible"
+      | "allow_multiple";
     idExceptionRule: "review" | "not_eligible";
   };
 }

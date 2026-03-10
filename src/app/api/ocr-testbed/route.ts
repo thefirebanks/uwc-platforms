@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { AppError } from "@/lib/errors/app-error";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
+import {
+  OCR_REFERENCE_FILE_LIMIT,
+  inferMimeTypeFromPath,
+  isSupportedOcrReferenceMimeType,
+} from "@/lib/ocr/field-ai-parser";
 import { requireAuth } from "@/lib/server/auth";
 import { listOcrTestRuns, runOcrTest } from "@/lib/server/ocr-testbed-service";
 import { DEFAULT_MODEL_ID, MODEL_REGISTRY } from "@/lib/server/ocr";
@@ -23,7 +28,12 @@ export async function GET(request: NextRequest) {
       const stageCode = params.get("stageCode") ?? undefined;
       const limit = Math.min(Number(params.get("limit") ?? "20"), 100);
 
-      const runs = await listOcrTestRuns({ supabase, cycleId, stageCode, limit });
+      const runs = await listOcrTestRuns({
+        supabase,
+        cycleId,
+        stageCode,
+        limit,
+      });
       return NextResponse.json({ runs });
     },
     { operation: "ocr_testbed.list" },
@@ -37,6 +47,11 @@ export async function POST(request: NextRequest) {
 
       const formData = await request.formData();
       const file = formData.get("file");
+      const referenceFiles = formData
+        .getAll("referenceFiles")
+        .filter(
+          (entry: FormDataEntryValue): entry is File => entry instanceof File,
+        );
       const stageCode = formData.get("stageCode")?.toString();
       const cycleId = formData.get("cycleId")?.toString() ?? null;
       const modelId = formData.get("modelId")?.toString() ?? DEFAULT_MODEL_ID;
@@ -46,7 +61,8 @@ export async function POST(request: NextRequest) {
         formData.get("extractionInstructions")?.toString() ??
         promptTemplate ??
         null;
-      const expectedSchemaTemplate = formData.get("expectedSchemaTemplate")?.toString() ?? null;
+      const expectedSchemaTemplate =
+        formData.get("expectedSchemaTemplate")?.toString() ?? null;
       const temperature = parseOptionalNumber(formData.get("temperature"));
       const topP = parseOptionalNumber(formData.get("topP"));
       const maxTokens = parseOptionalNumber(formData.get("maxTokens"));
@@ -56,6 +72,30 @@ export async function POST(request: NextRequest) {
         throw new AppError({
           message: "Missing file in OCR test request",
           userMessage: "Debes subir un archivo para probar.",
+          status: 400,
+        });
+      }
+
+      if (referenceFiles.length > OCR_REFERENCE_FILE_LIMIT) {
+        throw new AppError({
+          message: `Too many OCR reference files: ${referenceFiles.length}`,
+          userMessage: `Solo puedes adjuntar hasta ${OCR_REFERENCE_FILE_LIMIT} archivos de referencia por prueba.`,
+          status: 400,
+        });
+      }
+
+      if (
+        referenceFiles.some((referenceFile: File) => {
+          const mimeType =
+            referenceFile.type?.trim() ||
+            inferMimeTypeFromPath(referenceFile.name);
+          return !isSupportedOcrReferenceMimeType(mimeType);
+        })
+      ) {
+        throw new AppError({
+          message: "Unsupported OCR reference file type in prompt studio",
+          userMessage:
+            "Los archivos de referencia deben ser PDF, JPG, PNG o WEBP.",
           status: 400,
         });
       }
@@ -106,6 +146,7 @@ export async function POST(request: NextRequest) {
           stageCode,
           actorId: profile.id,
           file,
+          referenceFiles,
           promptTemplate,
           modelId,
           systemPrompt,

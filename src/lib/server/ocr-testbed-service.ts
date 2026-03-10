@@ -2,7 +2,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { Buffer } from "node:buffer";
 import { randomUUID } from "node:crypto";
 import { AppError } from "@/lib/errors/app-error";
-import { runOcrCheck, DEFAULT_MODEL_ID, DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
+import {
+  runOcrCheck,
+  DEFAULT_MODEL_ID,
+  DEFAULT_OCR_MAX_TOKENS,
+} from "@/lib/server/ocr";
 import type { Database, Json } from "@/types/supabase";
 import type { OcrTestRun } from "@/types/domain";
 
@@ -20,6 +24,7 @@ export type RunOcrTestInput = {
   stageCode: string;
   actorId: string;
   file: File;
+  referenceFiles?: File[];
   promptTemplate: string;
   modelId?: string | null;
   systemPrompt?: string | null;
@@ -47,6 +52,7 @@ export async function runOcrTest({
     stageCode,
     actorId,
     file,
+    referenceFiles = [],
     promptTemplate,
     modelId,
     systemPrompt,
@@ -59,7 +65,8 @@ export async function runOcrTest({
   } = input;
 
   /* Sanitise file name */
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "archivo";
+  const safeName =
+    file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "archivo";
   const storagePath = `${STORAGE_PREFIX}/${actorId}/${Date.now()}-${safeName}`;
 
   /* Upload to storage */
@@ -88,6 +95,16 @@ export async function runOcrTest({
       mimeType: file.type || "application/octet-stream",
       dataBase64: Buffer.from(fileBuffer).toString("base64"),
     },
+    referenceDocuments: await Promise.all(
+      referenceFiles.map(async (referenceFile) => {
+        const referenceBuffer = await referenceFile.arrayBuffer();
+        return {
+          fileName: referenceFile.name,
+          mimeType: referenceFile.type || "application/octet-stream",
+          dataBase64: Buffer.from(referenceBuffer).toString("base64"),
+        };
+      }),
+    ),
     promptTemplate,
     modelId,
     systemPrompt,
@@ -99,6 +116,22 @@ export async function runOcrTest({
     strictSchema,
   });
   const durationMs = Date.now() - start;
+  const requestConfig = {
+    promptTemplate: promptTemplate.trim(),
+    systemPrompt: systemPrompt?.trim() || null,
+    extractionInstructions: extractionInstructions?.trim() || promptTemplate,
+    expectedSchemaTemplate: expectedSchemaTemplate?.trim() || null,
+    referenceFiles: referenceFiles.map((referenceFile) => ({
+      fileName: referenceFile.name,
+      mimeType: referenceFile.type || "application/octet-stream",
+      sizeBytes: referenceFile.size,
+    })),
+    temperature: typeof temperature === "number" ? temperature : 0.2,
+    topP: typeof topP === "number" ? topP : 0.9,
+    maxTokens:
+      typeof maxTokens === "number" ? maxTokens : DEFAULT_OCR_MAX_TOKENS,
+    strictSchema: Boolean(strictSchema),
+  };
 
   /* Persist test run */
   const { data: runRow, error: insertError } = await supabase
@@ -115,16 +148,7 @@ export async function runOcrTest({
       confidence: ocrResult.confidence,
       raw_response: {
         ...(ocrResult.rawResponse as Record<string, unknown>),
-        requestConfig: {
-          promptTemplate: promptTemplate.trim(),
-          systemPrompt: systemPrompt?.trim() || null,
-          extractionInstructions: extractionInstructions?.trim() || promptTemplate,
-          expectedSchemaTemplate: expectedSchemaTemplate?.trim() || null,
-          temperature: typeof temperature === "number" ? temperature : 0.2,
-          topP: typeof topP === "number" ? topP : 0.9,
-          maxTokens: typeof maxTokens === "number" ? maxTokens : DEFAULT_OCR_MAX_TOKENS,
-          strictSchema: Boolean(strictSchema),
-        },
+        requestConfig,
       } as unknown as Json,
       duration_ms: durationMs,
     })
@@ -146,6 +170,7 @@ export async function runOcrTest({
         confidence: ocrResult.confidence,
         raw_response: {
           ...(ocrResult.rawResponse as Record<string, unknown>),
+          requestConfig,
           persistenceSkipped: true,
         },
         duration_ms: durationMs,

@@ -12,6 +12,9 @@ const searchParamsSchema = z.object({
   status: z
     .enum(["draft", "submitted", "eligible", "ineligible", "advanced"])
     .optional(),
+  eligibility: z
+    .enum(["all", "eligible", "ineligible", "pending", "advanced"])
+    .default("all"),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(200).default(50),
   sortBy: z
