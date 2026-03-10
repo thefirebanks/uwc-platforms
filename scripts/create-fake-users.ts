@@ -17,26 +17,38 @@ const DEV_HOST_PATTERN = /(localhost|127\.0\.0\.1)/i;
 const DEMO_APPLICANTS = [
   {
     email: "applicant.demo@uwcperu.org",
-    fullName: "Applicant Demo",
+    fullName: "FERNANDEZ TORRES CARLOS ALBERTO",
     payload: {
-      fullName: "Applicant Demo",
-      dateOfBirth: "2009-03-14",
+      fullName: "FERNANDEZ TORRES CARLOS ALBERTO",
+      dateOfBirth: "2009-06-15",
       nationality: "Peruana",
-      schoolName: "Colegio Demo",
-      gradeAverage: 16.2,
+      schoolName: "Colegio Demo Lima",
+      gradeAverage: 16.5,
       essay: "Este texto demo existe para facilitar pruebas de la etapa inicial del MVP.",
     },
   },
   {
     email: "applicant.demo2@uwcperu.org",
-    fullName: "Applicant Demo Dos",
+    fullName: "QUISPE MAMANI MARIA JOSE",
     payload: {
-      fullName: "Applicant Demo Dos",
-      dateOfBirth: "2008-11-02",
+      fullName: "QUISPE MAMANI MARIA JOSE",
+      dateOfBirth: "2009-03-02",
       nationality: "Peruana",
       schoolName: "Colegio Demo Sur",
-      gradeAverage: 17.1,
+      gradeAverage: 15.0,
       essay: "Segundo perfil demo para probar búsquedas, exportes y operaciones admin en desarrollo.",
+    },
+  },
+  {
+    email: "applicant.demo3@uwcperu.org",
+    fullName: "RAMIREZ GUTIERREZ ANA SOFIA",
+    payload: {
+      fullName: "RAMIREZ GUTIERREZ ANA SOFIA",
+      dateOfBirth: "2012-09-10",
+      nationality: "Peruana",
+      schoolName: "Colegio Demo Norte",
+      gradeAverage: 12.0,
+      essay: "Tercer perfil demo para probar el resultado no elegible en la rubrica automatica.",
     },
   },
 ] as const;
