@@ -51,19 +51,35 @@ function errorJson(body: unknown, status = 400) {
   return new Response(JSON.stringify(body), { status });
 }
 
-/** Helper: get the catalog panel element */
+/** Click the "Personalizar campos" tab to reveal the 3-panel layout. */
+function switchToCustomMode() {
+  fireEvent.click(screen.getByRole("button", { name: "Personalizar campos" }));
+}
+
+/** Get the catalog panel element (only visible in custom mode). */
 function getCatalogPanel() {
   return screen.getByText("① Elige campos").closest(".export-builder__catalog-panel") as HTMLElement;
 }
 
-/** Helper: get the selected-fields (panel 2) element */
+/** Get the selected-fields panel element (only visible in custom mode). */
 function getSelectedPanel() {
   return screen.getByText("② Ordena").closest(".export-builder__selected-panel") as HTMLElement;
 }
 
-/** Wait for the catalog to finish loading (two defaultSelected fields → badge "2 de 2"). */
+/**
+ * Wait for the catalog to finish loading in custom mode.
+ * Both defaultSelected fields are in "Datos base" → badge shows "2 de 2".
+ */
 async function waitForCatalog() {
   await screen.findByText("2 de 2");
+}
+
+/**
+ * Wait for the catalog to finish loading in quick mode.
+ * After load, the preset-meta shows "N campo(s) seleccionados".
+ */
+async function waitForQuickLoad() {
+  await screen.findByText(/campo.* seleccionado/);
 }
 
 afterEach(() => {
@@ -80,6 +96,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     const panel2 = getSelectedPanel();
@@ -97,6 +114,7 @@ describe("AdminExportBuilder", () => {
 
   it("shows 'Selecciona un proceso' when cycleId is absent", () => {
     render(<AdminExportBuilder />);
+    // Quick mode shows the message in the preset-meta area
     expect(
       screen.getByText("Selecciona un proceso para habilitar la exportación."),
     ).toBeInTheDocument();
@@ -104,9 +122,55 @@ describe("AdminExportBuilder", () => {
 
   it("disables Todos/Ninguno and the catalog search when no cycleId", () => {
     render(<AdminExportBuilder />);
+    switchToCustomMode(); // These controls are only in custom mode
     expect(screen.getByRole("button", { name: "Todos" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Ninguno" })).toBeDisabled();
     expect(screen.getByRole("textbox", { name: "Buscar campo" })).toBeDisabled();
+  });
+
+  // ── Quick mode ─────────────────────────────────────────────────────────────
+
+  it("quick mode: auto-applies the first preset on load and shows its name", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
+      okJson({ fields: catalogFields, presets }),
+    );
+
+    render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+
+    // Quick mode default: first preset name shown
+    expect(await screen.findByText("Revision corta")).toBeInTheDocument();
+    // Field count matches preset
+    expect(screen.getByText("2 campos seleccionados")).toBeInTheDocument();
+  });
+
+  it("quick mode: Descargar button downloads with the preset fields", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(okJson({ fields: catalogFields, presets }))
+      .mockResolvedValueOnce(
+        new Response(new Blob(["data"], { type: "application/vnd.ms-excel" }), {
+          status: 200,
+          headers: {
+            "Content-Type": "application/vnd.ms-excel",
+            "Content-Disposition": 'attachment; filename="export.xlsx"',
+          },
+        }),
+      );
+
+    vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:mock"), revokeObjectURL: vi.fn() });
+
+    render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    await waitForQuickLoad();
+
+    fireEvent.click(screen.getByRole("button", { name: /Descargar/ }));
+
+    await waitFor(() => {
+      const body = JSON.parse(
+        (fetchMock.mock.calls[1][1] as { body: string }).body,
+      ) as Record<string, unknown>;
+      expect(body.action).toBe("download");
+      expect(body.selectedFields).toEqual(["payload.essay", "applicantEmail"]);
+    });
   });
 
   // ── Preset application ────────────────────────────────────────────────────
@@ -132,8 +196,9 @@ describe("AdminExportBuilder", () => {
       );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} stageCode="documents" />);
+    switchToCustomMode();
 
-    // Preset pill appears in the top bar
+    // Preset pill appears in the top bar after catalog loads
     const presetBtn = await screen.findByRole("button", { name: "Revision corta" });
     expect(presetBtn).toBeInTheDocument();
 
@@ -186,7 +251,7 @@ describe("AdminExportBuilder", () => {
       );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
-    await waitForCatalog();
+    await waitForQuickLoad(); // Quick mode: wait for field count to appear
 
     fireEvent.click(screen.getByRole("button", { name: "Vista previa" }));
 
@@ -214,6 +279,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     const catalog = getCatalogPanel();
@@ -239,6 +305,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     // Default order: Correo (index 0), Nombre (index 1)
@@ -267,6 +334,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     expect(screen.getByRole("button", { name: "Mover Correo arriba" })).toBeDisabled();
@@ -283,6 +351,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     fireEvent.click(screen.getByRole("button", { name: "Todos" }));
@@ -298,6 +367,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     fireEvent.click(screen.getByRole("button", { name: "Ninguno" }));
@@ -315,6 +385,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     const searchInput = screen.getByRole("textbox", { name: "Buscar campo" });
@@ -337,6 +408,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     const searchInput = screen.getByRole("textbox", { name: "Buscar campo" });
@@ -353,6 +425,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await waitForCatalog();
 
     // "Datos base": 2 of 2 selected → "2 de 2"
@@ -398,6 +471,7 @@ describe("AdminExportBuilder", () => {
       );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await screen.findByRole("button", { name: "Guardar preset" });
 
     fireEvent.click(screen.getByRole("button", { name: "Guardar preset" }));
@@ -429,6 +503,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    switchToCustomMode();
     await screen.findByRole("button", { name: "Guardar preset" });
 
     fireEvent.click(screen.getByRole("button", { name: "Ninguno" }));
@@ -455,7 +530,7 @@ describe("AdminExportBuilder", () => {
     vi.stubGlobal("URL", { createObjectURL: vi.fn(() => "blob:mock"), revokeObjectURL: vi.fn() });
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
-    await waitForCatalog();
+    await waitForQuickLoad(); // No presets → defaultSelected fields, quick mode
 
     fireEvent.click(screen.getByRole("button", { name: /Descargar/ }));
 
@@ -477,7 +552,7 @@ describe("AdminExportBuilder", () => {
       );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
-    await waitForCatalog();
+    await waitForQuickLoad();
 
     fireEvent.click(screen.getByRole("button", { name: /Descargar/ }));
 
@@ -492,6 +567,7 @@ describe("AdminExportBuilder", () => {
     );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
+    // Quick mode shows catalogError in the preset-meta area
     expect(await screen.findByText("Sin acceso al catalogo.")).toBeInTheDocument();
   });
 
@@ -511,7 +587,7 @@ describe("AdminExportBuilder", () => {
       );
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} stageCode="documents" />);
-    await waitForCatalog();
+    await waitForQuickLoad(); // Quick mode: stageCode filter is the select in the quick panel
 
     fireEvent.click(screen.getByRole("button", { name: "Vista previa" }));
 

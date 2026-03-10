@@ -61,6 +61,7 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
   const [isSavingPreset, setIsSavingPreset] = useState(false);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
 
+  const [exportMode, setExportMode] = useState<"quick" | "custom">("quick");
   const [catalogSearch, setCatalogSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<string>(stageCode ?? "all");
@@ -136,11 +137,18 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
       const nextPresets = body.presets ?? [];
       setCatalogFields(nextFields);
       setPresets(nextPresets);
-      setSelectedFields((current) =>
-        current.length > 0
-          ? current.filter((fieldKey) => nextFields.some((field) => field.key === fieldKey))
-          : nextFields.filter((field) => field.defaultSelected).map((field) => field.key),
-      );
+      setSelectedFields((current) => {
+        if (current.length > 0) {
+          return current.filter((fieldKey) => nextFields.some((field) => field.key === fieldKey));
+        }
+        // Auto-apply first preset (used as the "quick export" default)
+        if (nextPresets.length > 0) return nextPresets[0].selectedFields;
+        return nextFields.filter((field) => field.defaultSelected).map((field) => field.key);
+      });
+      setActivePresetId((currentId) => {
+        if (!currentId && nextPresets.length > 0) return nextPresets[0].id;
+        return currentId;
+      });
     } catch (error) {
       setCatalogError(error instanceof Error ? error.message : "Error desconocido.");
     } finally {
@@ -424,33 +432,142 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
   return (
     <div className="export-builder">
 
-      {/* ── Top bar: title + presets + Todos/Ninguno ── */}
+      {/* ── Mode bar ── */}
+      <div className="export-builder__mode-bar">
+        <button
+          type="button"
+          className={`export-builder__mode-btn${exportMode === "quick" ? " active" : ""}`}
+          onClick={() => setExportMode("quick")}
+        >
+          Exportación rápida
+        </button>
+        <button
+          type="button"
+          className={`export-builder__mode-btn${exportMode === "custom" ? " active" : ""}`}
+          onClick={() => setExportMode("custom")}
+        >
+          Personalizar campos
+        </button>
+      </div>
+
+      {/* ── Quick export panel ── */}
+      {exportMode === "quick" && (
+        <div className="export-builder__quick">
+          <div className="export-builder__quick-body">
+
+            {/* Preset info */}
+            <div className="export-builder__quick-preset">
+              <div className="export-builder__quick-preset-name">
+                {loadingCatalog
+                  ? "Cargando…"
+                  : activePresetId
+                    ? (presets.find((p) => p.id === activePresetId)?.name ?? "Preset")
+                    : "Campos por defecto"}
+              </div>
+              <div className="export-builder__quick-preset-meta">
+                {!cycleId
+                  ? "Selecciona un proceso para habilitar la exportación."
+                  : catalogError
+                    ? catalogError
+                    : `${selectedFields.length} campo${selectedFields.length !== 1 ? "s" : ""} seleccionados`}
+              </div>
+            </div>
+
+            {/* Filters */}
+            <div className="export-builder__quick-filters">
+              <div className="export-builder__quick-filter-field">
+                <span className="export-builder__quick-filter-label">Etapa</span>
+                <select
+                  className="filter-select"
+                  value={stageFilter}
+                  onChange={(e) => setStageFilter(e.target.value)}
+                >
+                  <option value="all">Todas las etapas</option>
+                  <option value="documents">1. Formulario Principal</option>
+                  <option value="exam_placeholder">2. Examen Académico</option>
+                </select>
+              </div>
+              <div className="export-builder__quick-filter-field">
+                <span className="export-builder__quick-filter-label">Estado</span>
+                <select
+                  className="filter-select"
+                  value={statusFilter}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setStatusFilter(value);
+                    if (value !== "all") setEligibilityFilter("all");
+                  }}
+                >
+                  <option value="all">Todos los estados</option>
+                  <option value="draft">En progreso</option>
+                  <option value="submitted">Submitted</option>
+                  <option value="eligible">Completado</option>
+                  <option value="ineligible">No elegible</option>
+                  <option value="advanced">Avanzado</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Download actions */}
+            <div className="export-builder__quick-actions">
+              <button
+                className="btn btn-primary"
+                onClick={() => void handleDownload()}
+                disabled={isDownloading || selectedFields.length === 0 || !cycleId}
+              >
+                {isDownloading ? "Descargando…" : `Descargar ${format.toUpperCase()}`}
+              </button>
+              <button
+                className="btn btn-secondary"
+                onClick={() => void handlePreview()}
+                disabled={isPreviewing || selectedFields.length === 0 || !cycleId}
+              >
+                {isPreviewing ? "Cargando…" : "Vista previa"}
+              </button>
+              {downloadError ? (
+                <div className="error-callout" role="alert" style={{ width: "100%", marginTop: "0.25rem" }}>{downloadError}</div>
+              ) : null}
+            </div>
+
+            {/* Link to custom mode */}
+            <div className="export-builder__quick-footer">
+              <button
+                type="button"
+                className="export-builder__quick-customize-link"
+                onClick={() => setExportMode("custom")}
+              >
+                Personalizar campos →
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Custom mode: top bar + 3-panel ── */}
+      {exportMode === "custom" && <>
+
+      {/* Top bar: presets + Todos/Ninguno */}
       <div className="export-builder__topbar">
         <div className="export-builder__topbar-left">
-          <div>
-            <h3 className="export-builder__title">Exportar Postulaciones</h3>
-            <p className="export-builder__subtitle">
-              Plantilla vertical: una fila por campo, una columna por postulante.
-            </p>
-          </div>
-
-          {presets.length > 0 && (
-            <>
-              <div className="export-builder__topbar-divider" />
-              <div className="export-builder__topbar-presets">
-                <span className="export-builder__preset-label">Preset:</span>
-                {presets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className={`export-builder__preset-pill${activePresetId === preset.id ? " active" : ""}`}
-                    onClick={() => applyPreset(preset)}
-                  >
-                    {preset.name}
-                  </button>
-                ))}
-              </div>
-            </>
+          {presets.length > 0 ? (
+            <div className="export-builder__topbar-presets">
+              <span className="export-builder__preset-label">Preset:</span>
+              {presets.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className={`export-builder__preset-pill${activePresetId === preset.id ? " active" : ""}`}
+                  onClick={() => applyPreset(preset)}
+                >
+                  {preset.name}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <span className="export-builder__preset-label">
+              {loadingCatalog ? "Cargando…" : "Sin presets guardados"}
+            </span>
           )}
         </div>
 
@@ -897,6 +1014,8 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
 
       </div>
 
+      </> /* end exportMode === "custom" */}
+
       {/* ── Preview table ── */}
       {(previewData ?? previewError) ? (
         <div className="export-builder__preview">
@@ -917,24 +1036,20 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
                 <thead>
                   <tr>
                     <th>Campo</th>
-                    {previewData.applicantHeaders.map((header) => (
-                      <th key={header}>{header}</th>
-                    ))}
+                    {previewData.applicantHeaders.map((header) => {
+                      // Strip "(email)" suffix for display — email visible on hover via title
+                      const nameOnly = header.replace(/\s*\([^)]*\)$/, "").trim();
+                      return <th key={header} title={header}>{nameOnly || header}</th>;
+                    })}
                   </tr>
                 </thead>
                 <tbody>
                   {previewData.rows.map((row) => (
                     <tr key={row.label}>
-                      <td style={{ fontWeight: 700 }}>{row.label}</td>
+                      <td>{row.label}</td>
                       {row.values.map((value, index) => (
                         <td
                           key={`${row.label}-${previewData.applicantHeaders[index] ?? index}`}
-                          style={{
-                            maxWidth: 220,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
                           title={value}
                         >
                           {value}

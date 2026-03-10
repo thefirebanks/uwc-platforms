@@ -453,21 +453,13 @@ export function AdminCandidatesDashboard({
             <div
               role="tablist"
               aria-label="Vistas de candidatos"
-              style={{
-                display: "inline-flex",
-                gap: "0.35rem",
-                padding: "0.25rem",
-                border: "1px solid var(--sand)",
-                borderRadius: "999px",
-                background: "rgba(255,255,255,0.03)",
-              }}
+              className="view-switcher"
             >
               <button
                 type="button"
                 role="tab"
                 aria-selected={activeView === "list"}
-                className={`btn ${activeView === "list" ? "btn-primary" : "btn-ghost"}`}
-                style={{ borderRadius: "999px" }}
+                className={`view-switcher__tab${activeView === "list" ? " active" : ""}`}
                 onClick={() => setActiveView("list")}
               >
                 Listado
@@ -476,8 +468,7 @@ export function AdminCandidatesDashboard({
                 type="button"
                 role="tab"
                 aria-selected={activeView === "export"}
-                className={`btn ${activeView === "export" ? "btn-primary" : "btn-ghost"}`}
-                style={{ borderRadius: "999px" }}
+                className={`view-switcher__tab${activeView === "export" ? " active" : ""}`}
                 onClick={() => setActiveView("export")}
               >
                 Exportar datos
@@ -494,17 +485,15 @@ export function AdminCandidatesDashboard({
                 {selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}
               </span>
             ) : null}
-            {activeView === "list" ? (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => void handleRunRubric()}
-                disabled={rubricRunning || cycleFilter === "all"}
-                title={cycleFilter === "all" ? "Selecciona un proceso para ejecutar." : undefined}
-              >
-                {rubricRunning ? "Ejecutando rúbrica..." : "Ejecutar rúbrica automática"}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => void handleRunRubric()}
+              disabled={rubricRunning || cycleFilter === "all"}
+              title={cycleFilter === "all" ? "Selecciona un proceso para ejecutar." : undefined}
+            >
+              {rubricRunning ? "Ejecutando rúbrica..." : "Ejecutar rúbrica automática"}
+            </button>
           </div>
         </div>
       </div>
