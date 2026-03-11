@@ -32,6 +32,7 @@ import {
   type ResolvedSection,
 } from "@/lib/stages/applicant-sections";
 import { isBooleanField, getBooleanFieldLabels } from "@/lib/stages/field-sub-groups";
+import { roleLabel } from "@/lib/utils/domain-labels";
 
 interface ApiError {
   message: string;
@@ -498,13 +499,6 @@ function statusTone(status: RecommendationStatus, language: AppLanguage) {
   return { label: isEnglish ? "Pending" : "Pendiente", color: "#6B7280", bg: "#F3F4F6" };
 }
 
-function roleLabel(role: RecommenderRole, language: AppLanguage) {
-  if (role === "mentor") {
-    return language === "en" ? "Tutor/Teacher/Mentor" : "Tutor/Profesor/Mentor";
-  }
-
-  return language === "en" ? "Friend (non-family)" : "Amigo (no familiar)";
-}
 
 function formatSaveStatusLabel(saveState: SaveState, lastSavedAt: string | null, language: AppLanguage) {
   const isEnglish = language === "en";

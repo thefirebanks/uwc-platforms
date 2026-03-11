@@ -62,6 +62,7 @@ import {
   parseEligibilityRubricConfig,
   validateEligibilityRubricConfig,
 } from "@/lib/rubric/eligibility-rubric";
+import { toDateInputValue } from "@/lib/utils/date-formatters";
 
 interface ApiError {
   message: string;
@@ -580,13 +581,6 @@ function getFieldIcon(fieldType: CycleStageField["field_type"]) {
   }
 }
 
-function toDateInputValue(value: string | null) {
-  if (!value) {
-    return "";
-  }
-
-  return value.slice(0, 10);
-}
 
 function getNewFieldSeedForSection({
   sectionKey,
