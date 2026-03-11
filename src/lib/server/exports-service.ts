@@ -1,3 +1,4 @@
+import * as XLSX from "xlsx";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
@@ -1307,110 +1308,55 @@ export function buildMatrixCsvExport(sheet: MatrixExportSheet) {
   return [header, ...lines].join("\n");
 }
 
-function appendMatrixSheetToWorkbook({
-  workbook,
-  sheetData,
-}: {
-  workbook: { addWorksheet: (name: string) => unknown };
-  sheetData: MatrixExportSheet;
-}) {
-  const worksheet = workbook.addWorksheet(sheetData.name) as {
-    columns: Array<Record<string, unknown>>;
-    views: Array<Record<string, unknown>>;
-    getRow: (rowNumber: number) => {
-      getCell: (columnNumber: number) => {
-        value: unknown;
-        font?: Record<string, unknown>;
-        alignment?: Record<string, unknown>;
-        fill?: Record<string, unknown>;
-      };
-      height?: number;
-    };
-  };
+function buildMatrixWorksheet(sheetData: MatrixExportSheet): XLSX.WorkSheet {
   const columnCount = Math.max(sheetData.applicantHeaders.length, 1);
-  const columns = [{ width: 28 }];
 
-  for (let index = 0; index < columnCount; index += 1) {
-    columns.push({ width: 32 });
-    if (index < columnCount - 1) {
-      columns.push({ width: 4.25 });
+  // Build header row: ["Campo", "Applicant1", "", "Applicant2", "", ...]
+  const headerRow: (string | null)[] = ["Campo"];
+  sheetData.applicantHeaders.forEach((header, i) => {
+    headerRow.push(header);
+    if (i < sheetData.applicantHeaders.length - 1) {
+      headerRow.push(null); // spacer column
     }
-  }
-
-  worksheet.columns = columns;
-  worksheet.views = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
-
-  const headerRow = worksheet.getRow(1);
-  headerRow.getCell(1).value = "Campo";
-  headerRow.getCell(1).font = { bold: true };
-  headerRow.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
-  headerRow.getCell(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFE7E0D0" },
-  };
-
-  sheetData.applicantHeaders.forEach((header, index) => {
-    const columnIndex = 2 + index * 2;
-    const cell = headerRow.getCell(columnIndex);
-    cell.value = header;
-    cell.font = { bold: true };
-    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-    cell.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFF3EEE5" },
-    };
   });
-  headerRow.height = 28;
 
-  sheetData.rows.forEach((row, rowIndex) => {
-    const worksheetRow = worksheet.getRow(rowIndex + 2);
-    const labelCell = worksheetRow.getCell(1);
-    labelCell.value = row.label;
-    labelCell.font = { bold: true };
-    labelCell.alignment = { horizontal: "center", vertical: "top", wrapText: true };
-
-    if (row.label === "Grupo") {
-      labelCell.fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFFCE8C8" },
-      };
-    }
-
-    row.values.forEach((value, valueIndex) => {
-      const columnIndex = 2 + valueIndex * 2;
-      const valueCell = worksheetRow.getCell(columnIndex);
-      valueCell.value = value;
-      valueCell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
-      if (row.label === "Grupo") {
-        valueCell.font = { bold: true };
-        valueCell.fill = {
-          type: "pattern",
-          pattern: "solid",
-          fgColor: { argb: "FFFFF2D8" },
-        };
+  // Build data rows
+  const dataRows: (string | null)[][] = sheetData.rows.map((row) => {
+    const cells: (string | null)[] = [row.label];
+    row.values.forEach((value, i) => {
+      cells.push(value ?? null);
+      if (i < row.values.length - 1) {
+        cells.push(null); // spacer column
       }
     });
+    return cells;
   });
+
+  const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
+
+  // Column widths: [label=28, applicant=32, spacer=4, applicant=32, ...]
+  const cols: XLSX.ColInfo[] = [{ wch: 28 }];
+  for (let i = 0; i < columnCount; i++) {
+    cols.push({ wch: 32 });
+    if (i < columnCount - 1) {
+      cols.push({ wch: 4 });
+    }
+  }
+  ws["!cols"] = cols;
+
+  // Freeze first row and first column
+  ws["!views"] = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+
+  return ws;
 }
 
 export async function buildMatrixExportXlsx(workbookData: MatrixExportWorkbook): Promise<Buffer> {
-  const ExcelJS = (await import("exceljs")).default;
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "UWC Peru Platform";
-  workbook.created = new Date();
-
+  const wb = XLSX.utils.book_new();
   for (const sheetData of workbookData.sheets) {
-    appendMatrixSheetToWorkbook({
-      workbook,
-      sheetData,
-    });
+    const ws = buildMatrixWorksheet(sheetData);
+    XLSX.utils.book_append_sheet(wb, ws, sheetData.name);
   }
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
 export async function buildGroupedExportZip({
@@ -1420,33 +1366,8 @@ export async function buildGroupedExportZip({
   workbookData: MatrixExportWorkbook;
   format: "csv" | "xlsx";
 }) {
-  const archiverImport = await import("archiver");
-  const createArchive = (archiverImport.default ?? archiverImport) as (
-    format: "zip",
-    options?: { zlib?: { level?: number } },
-  ) => {
-    append: (source: Buffer | string, data: { name: string }) => void;
-    finalize: () => Promise<void>;
-    on: (event: "error", listener: (error: Error) => void) => void;
-    pipe: (stream: NodeJS.WritableStream) => void;
-  };
-  const { PassThrough } = await import("node:stream");
-  const output = new PassThrough();
-  const chunks: Buffer[] = [];
-
-  output.on("data", (chunk) => {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  });
-
-  const archive = createArchive("zip", { zlib: { level: 9 } });
-
-  const completion = new Promise<Buffer>((resolve, reject) => {
-    output.on("end", () => resolve(Buffer.concat(chunks)));
-    output.on("error", reject);
-    archive.on("error", reject);
-  });
-
-  archive.pipe(output);
+  const { zipSync } = await import("fflate");
+  const files: Record<string, Uint8Array> = {};
 
   for (const sheet of workbookData.sheets) {
     const safeName = sheet.name.replace(/\s+/g, "-").toLowerCase();
@@ -1455,16 +1376,15 @@ export async function buildGroupedExportZip({
         grouped: workbookData.grouped,
         sheets: [sheet],
       });
-      archive.append(buffer, { name: `${safeName}.xlsx` });
+      files[`${safeName}.xlsx`] = new Uint8Array(buffer);
     } else {
-      archive.append(buildMatrixCsvExport(sheet), { name: `${safeName}.csv` });
+      const csv = buildMatrixCsvExport(sheet);
+      files[`${safeName}.csv`] = new TextEncoder().encode(csv);
     }
   }
 
-  await archive.finalize();
-  output.end();
-
-  return completion;
+  const zipped = zipSync(files, { level: 9 });
+  return Buffer.from(zipped);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -1480,89 +1400,41 @@ export async function buildApplicationsXlsx(
   rows: ApplicationExportRow[],
   columnKeys?: Array<keyof ApplicationExportRow>,
 ): Promise<Buffer> {
-  const ExcelJS = (await import("exceljs")).default;
   const selectedKeys = columnKeys ?? EXPORTABLE_COLUMNS.map((c) => c.key);
   const keyToLabel = new Map(EXPORTABLE_COLUMNS.map((c) => [c.key, c.label]));
 
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "UWC Peru Platform";
-  workbook.created = new Date();
-
-  const sheet = workbook.addWorksheet("Postulaciones");
-
-  /* Header row */
-  sheet.columns = selectedKeys.map((key) => ({
-    header: keyToLabel.get(key) ?? String(key),
-    key: String(key),
-    width: 22,
-  }));
-
-  /* Style header row */
-  sheet.getRow(1).font = { bold: true };
-  sheet.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFD6E4F7" },
-  };
-
-  /* Data rows */
-  for (const row of rows) {
-    const record: Record<string, string | number | boolean> = {};
-    for (const key of selectedKeys) {
+  const headers = selectedKeys.map((key) => keyToLabel.get(key) ?? String(key));
+  const dataRows = rows.map((row) =>
+    selectedKeys.map((key) => {
       const raw = row[key];
-      record[String(key)] = typeof raw === "boolean" ? String(raw) : (raw as string | number);
-    }
-    sheet.addRow(record);
-  }
+      return typeof raw === "boolean" ? String(raw) : (raw as string | number);
+    }),
+  );
 
-  /* Auto-filter on header */
-  sheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: selectedKeys.length },
-  };
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+  ws["!cols"] = selectedKeys.map(() => ({ wch: 22 }));
+  const lastCol = XLSX.utils.encode_col(selectedKeys.length - 1);
+  ws["!autofilter"] = { ref: `A1:${lastCol}1` };
 
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Postulaciones");
+
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
 export async function buildDynamicExportXlsx(table: {
   headers: string[];
   rows: string[][];
 }): Promise<Buffer> {
-  const ExcelJS = (await import("exceljs")).default;
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "UWC Peru Platform";
-  workbook.created = new Date();
+  const ws = XLSX.utils.aoa_to_sheet([table.headers, ...table.rows]);
+  ws["!cols"] = table.headers.map(() => ({ wch: 24 }));
+  const lastCol = XLSX.utils.encode_col(table.headers.length - 1);
+  ws["!autofilter"] = { ref: `A1:${lastCol}1` };
 
-  const sheet = workbook.addWorksheet("Postulaciones");
-  sheet.columns = table.headers.map((header) => ({
-    header,
-    key: header,
-    width: 24,
-  }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Postulaciones");
 
-  sheet.getRow(1).font = { bold: true };
-  sheet.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFF0E7D8" },
-  };
-
-  for (const row of table.rows) {
-    const record: Record<string, string> = {};
-    table.headers.forEach((header, index) => {
-      record[header] = row[index] ?? "";
-    });
-    sheet.addRow(record);
-  }
-
-  sheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: table.headers.length },
-  };
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
 export async function getApplicationExportPackage({
