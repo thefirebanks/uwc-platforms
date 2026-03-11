@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Export Mockup C – Inline Steps</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --maroon: #c14a6b;
+      --maroon-dark: #a33656;
+      --maroon-soft: rgba(193, 74, 107, 0.15);
+      --ink: #f2ece7;
+      --ink-light: #c0b8b2;
+      --sand: #3b3532;
+      --sand-light: #2e2a28;
+      --muted: #b8aea8;
+      --surface: #1d1b1a;
+      --radius: 8px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      background: #141211;
+      color: var(--ink);
+      padding: 2rem;
+    }
+
+    .option-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+    .option-badge span {
+      background: var(--maroon);
+      color: white;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 0.4rem 0.85rem;
+      border-radius: var(--radius);
+      border: none;
+      font-size: 0.83rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font);
+    }
+    .btn-primary { background: var(--maroon); color: white; }
+    .btn-secondary { background: var(--sand); color: var(--ink); }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid transparent; }
+    .btn-outline { background: transparent; color: var(--ink); border: 1px solid var(--sand); }
+    .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.78rem; }
+    .btn-xs { padding: 0.2rem 0.4rem; font-size: 0.72rem; }
+
+    /* ── Export Builder ── */
+    .export-builder {
+      max-width: 1100px;
+      display: grid;
+      gap: 0.75rem;
+    }
+
+    /* Top bar */
+    .export-topbar {
+      background: var(--surface);
+      border: 1px solid var(--sand);
+      border-radius: var(--radius);
+      padding: 0.85rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .export-topbar-left { display: flex; align-items: center; gap: 1rem; }
+    .export-topbar-title { font-size: 0.95rem; font-weight: 700; }
+    .export-topbar-subtitle { font-size: 0.78rem; color: var(--muted); }
+    .export-topbar-divider {
+      width: 1px; height: 28px;
+      background: var(--sand);
+      flex-shrink: 0;
+    }
+    .export-topbar-right { display: flex; gap: 0.5rem; align-items: center; }
+
+    /* Preset pills in topbar */
+    .topbar-presets {
+      display: flex;
+      gap: 0.3rem;
+      align-items: center;
+    }
+    .preset-label { font-size: 0.7rem; color: var(--muted); white-space: nowrap; }
+    .preset-pill {
+      border: 1px solid var(--sand);
+      border-radius: 20px;
+      padding: 0.18rem 0.6rem;
+      font-size: 0.71rem;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--font);
+    }
+    .preset-pill.active { background: var(--maroon); border-color: var(--maroon); color: white; }
+
+    /* 3-panel layout */
+    .export-panels {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) 1px minmax(0, 1fr) 1px minmax(240px, auto);
+      gap: 0;
+      background: var(--surface);
+      border: 1px solid var(--sand);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-divider {
+      background: var(--sand);
+      width: 1px;
+    }
+
+    /* Field catalog panel */
+    .catalog-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .panel-header {
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--sand);
+      background: var(--sand-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      flex-shrink: 0;
+    }
+    .panel-header-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .panel-header-actions { display: flex; gap: 0.3rem; }
+
+    .panel-search {
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--sand);
+      flex-shrink: 0;
+    }
+    .search-input {
+      width: 100%;
+      background: var(--sand-light);
+      border: 1px solid var(--sand);
+      border-radius: 6px;
+      color: var(--ink);
+      font-family: var(--font);
+      font-size: 0.82rem;
+      padding: 0.42rem 0.65rem;
+    }
+    .search-input::placeholder { color: var(--muted); }
+
+    .catalog-scroll {
+      padding: 0.75rem;
+      display: grid;
+      gap: 0.5rem;
+      overflow-y: auto;
+      max-height: 520px;
+    }
+
+    .catalog-group { border: 1px solid var(--sand); border-radius: 6px; overflow: hidden; }
+    .catalog-group-header {
+      padding: 0.42rem 0.75rem;
+      background: var(--sand-light);
+      font-size: 0.69rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .catalog-fields {
+      padding: 0.55rem 0.75rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.2rem 0.75rem;
+    }
+    .field-check {
+      display: flex;
+      gap: 0.4rem;
+      align-items: center;
+      cursor: pointer;
+      padding: 0.18rem 0;
+    }
+    .field-check input { accent-color: var(--maroon); }
+    .field-check-text { font-size: 0.82rem; }
+
+    /* Selected fields panel (middle) */
+    .selected-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .selected-scroll {
+      flex: 1;
+      padding: 0.75rem;
+      display: grid;
+      gap: 0.3rem;
+      overflow-y: auto;
+      max-height: 520px;
+      align-content: start;
+    }
+
+    .field-item {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.38rem 0.55rem;
+      border: 1px solid var(--sand);
+      border-radius: 6px;
+    }
+    .field-item-drag { color: var(--muted); font-size: 0.72rem; cursor: grab; }
+    .field-item-info { flex: 1; min-width: 0; }
+    .field-item-label {
+      font-weight: 600;
+      font-size: 0.81rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .field-item-group { font-size: 0.68rem; color: var(--muted); }
+    .field-item-actions { display: flex; gap: 0.1rem; flex-shrink: 0; }
+
+    /* Controls panel */
+    .controls-panel {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .controls-scroll {
+      flex: 1;
+      overflow-y: auto;
+      max-height: 520px;
+    }
+
+    .controls-section {
+      padding: 0.75rem 0.85rem;
+      border-bottom: 1px solid var(--sand);
+      display: grid;
+      gap: 0.5rem;
+    }
+    .controls-section:last-child { border-bottom: none; }
+    .controls-section-title {
+      font-size: 0.69rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.15rem;
+    }
+
+    .filter-select, .filter-input {
+      width: 100%;
+      background: var(--sand-light);
+      border: 1px solid var(--sand);
+      border-radius: 6px;
+      color: var(--ink);
+      font-family: var(--font);
+      font-size: 0.82rem;
+      padding: 0.4rem 0.6rem;
+    }
+    .filter-input::placeholder { color: var(--muted); }
+
+    .radio-option {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+      font-size: 0.82rem;
+    }
+    .radio-option input { accent-color: var(--maroon); }
+    .radio-group { display: grid; gap: 0.3rem; }
+
+    .format-row {
+      display: flex;
+      gap: 0.85rem;
+      flex-wrap: wrap;
+    }
+
+    .controls-footer {
+      padding: 0.85rem;
+      border-top: 1px solid var(--sand);
+      display: grid;
+      gap: 0.45rem;
+      flex-shrink: 0;
+    }
+
+    /* Selected count bar */
+    .selected-count-bar {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--sand);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      background: var(--sand-light);
+    }
+    .selected-count-text { font-size: 0.72rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="option-badge"><span>C</span> 3-Panel — Catalog · Selected · Controls side by side</div>
+
+<div class="export-builder">
+
+  <!-- Top bar with title + presets -->
+  <div class="export-topbar">
+    <div class="export-topbar-left">
+      <div>
+        <div class="export-topbar-title">Exportar Postulaciones</div>
+        <div class="export-topbar-subtitle">Plantilla vertical · una fila por campo · una columna por postulante</div>
+      </div>
+      <div class="export-topbar-divider"></div>
+      <div class="topbar-presets">
+        <span class="preset-label">Preset:</span>
+        <button class="preset-pill active">Exportación básica</button>
+        <button class="preset-pill">Hoja de vida</button>
+        <button class="btn btn-ghost btn-sm">+ Guardar</button>
+      </div>
+    </div>
+    <div class="export-topbar-right">
+      <button class="btn btn-ghost btn-sm">Todos</button>
+      <button class="btn btn-ghost btn-sm">Ninguno</button>
+    </div>
+  </div>
+
+  <!-- 3-panel grid -->
+  <div class="export-panels">
+
+    <!-- Panel 1: Field Catalog -->
+    <div class="catalog-panel">
+      <div class="panel-header">
+        <span class="panel-header-title">① Elige campos</span>
+      </div>
+      <div class="panel-search">
+        <input class="search-input" type="text" placeholder="Buscar campo…" />
+      </div>
+      <div class="catalog-scroll">
+
+        <div class="catalog-group">
+          <div class="catalog-group-header">Información base</div>
+          <div class="catalog-fields">
+            <label class="field-check"><input type="checkbox" checked /><span class="field-check-text">ID Postulación</span></label>
+            <label class="field-check"><input type="checkbox" checked /><span class="field-check-text">Nombre</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Email</span></label>
+            <label class="field-check"><input type="checkbox" checked /><span class="field-check-text">Etapa</span></label>
+            <label class="field-check"><input type="checkbox" checked /><span class="field-check-text">Estado</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Fecha Creación</span></label>
+          </div>
+        </div>
+
+        <div class="catalog-group">
+          <div class="catalog-group-header">Etapa 1 · Datos Personales</div>
+          <div class="catalog-fields">
+            <label class="field-check"><input type="checkbox" checked /><span class="field-check-text">Nombre(s)</span></label>
+            <label class="field-check"><input type="checkbox" checked /><span class="field-check-text">Ap. Paterno</span></label>
+            <label class="field-check"><input type="checkbox" checked /><span class="field-check-text">Ap. Materno</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Nacimiento</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Género</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">DNI</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Teléfono</span></label>
+          </div>
+        </div>
+
+        <div class="catalog-group">
+          <div class="catalog-group-header">Etapa 1 · Documentos</div>
+          <div class="catalog-fields">
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Copia DNI</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Fotografía</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Certificado</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Autorización</span></label>
+          </div>
+        </div>
+
+        <div class="catalog-group">
+          <div class="catalog-group-header">Etapa 1 · Colegio</div>
+          <div class="catalog-fields">
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Nombre colegio</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Tipo</span></label>
+            <label class="field-check"><input type="checkbox" /><span class="field-check-text">Región</span></label>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <!-- Panel 2: Selected Fields order -->
+    <div class="selected-panel">
+      <div class="panel-header">
+        <span class="panel-header-title">② Ordena</span>
+        <button class="btn btn-outline btn-xs">Guardar preset</button>
+      </div>
+      <div class="selected-count-bar">
+        <span class="selected-count-text">8 campos seleccionados · arrastra para reordenar</span>
+      </div>
+      <div class="selected-scroll">
+        <div class="field-item">
+          <span class="field-item-drag">⠿</span>
+          <div class="field-item-info">
+            <div class="field-item-label">ID Postulación</div>
+            <div class="field-item-group">Información base</div>
+          </div>
+          <div class="field-item-actions">
+            <button class="btn btn-ghost btn-xs" disabled>↑</button>
+            <button class="btn btn-ghost btn-xs">↓</button>
+          </div>
+        </div>
+        <div class="field-item">
+          <span class="field-item-drag">⠿</span>
+          <div class="field-item-info">
+            <div class="field-item-label">Nombre Postulante</div>
+            <div class="field-item-group">Información base</div>
+          </div>
+          <div class="field-item-actions">
+            <button class="btn btn-ghost btn-xs">↑</button>
+            <button class="btn btn-ghost btn-xs">↓</button>
+          </div>
+        </div>
+        <div class="field-item">
+          <span class="field-item-drag">⠿</span>
+          <div class="field-item-info">
+            <div class="field-item-label">Etapa</div>
+            <div class="field-item-group">Información base</div>
+          </div>
+          <div class="field-item-actions">
+            <button class="btn btn-ghost btn-xs">↑</button>
+            <button class="btn btn-ghost btn-xs">↓</button>
+          </div>
+        </div>
+        <div class="field-item">
+          <span class="field-item-drag">⠿</span>
+          <div class="field-item-info">
+            <div class="field-item-label">Estado</div>
+            <div class="field-item-group">Información base</div>
+          </div>
+          <div class="field-item-actions">
+            <button class="btn btn-ghost btn-xs">↑</button>
+            <button class="btn btn-ghost btn-xs">↓</button>
+          </div>
+        </div>
+        <div class="field-item">
+          <span class="field-item-drag">⠿</span>
+          <div class="field-item-info">
+            <div class="field-item-label">Nombre(s)</div>
+            <div class="field-item-group">Etapa 1 · Datos Personales</div>
+          </div>
+          <div class="field-item-actions">
+            <button class="btn btn-ghost btn-xs">↑</button>
+            <button class="btn btn-ghost btn-xs">↓</button>
+          </div>
+        </div>
+        <div class="field-item">
+          <span class="field-item-drag">⠿</span>
+          <div class="field-item-info">
+            <div class="field-item-label">Apellido Paterno</div>
+            <div class="field-item-group">Etapa 1 · Datos Personales</div>
+          </div>
+          <div class="field-item-actions">
+            <button class="btn btn-ghost btn-xs">↑</button>
+            <button class="btn btn-ghost btn-xs">↓</button>
+          </div>
+        </div>
+        <div class="field-item">
+          <span class="field-item-drag">⠿</span>
+          <div class="field-item-info">
+            <div class="field-item-label">Apellido Materno</div>
+            <div class="field-item-group">Etapa 1 · Datos Personales</div>
+          </div>
+          <div class="field-item-actions">
+            <button class="btn btn-ghost btn-xs">↑</button>
+            <button class="btn btn-ghost btn-xs">↓</button>
+          </div>
+        </div>
+        <div class="field-item">
+          <span class="field-item-drag">⠿</span>
+          <div class="field-item-info">
+            <div class="field-item-label">Fecha Creación</div>
+            <div class="field-item-group">Información base</div>
+          </div>
+          <div class="field-item-actions">
+            <button class="btn btn-ghost btn-xs">↑</button>
+            <button class="btn btn-ghost btn-xs" disabled>↓</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-divider"></div>
+
+    <!-- Panel 3: Filters + Download -->
+    <div class="controls-panel">
+      <div class="panel-header">
+        <span class="panel-header-title">③ Filtros y descarga</span>
+      </div>
+      <div class="controls-scroll">
+
+        <div class="controls-section">
+          <div class="controls-section-title">Buscar postulantes</div>
+          <input class="filter-input" type="text" placeholder="Nombre o email…" />
+          <select class="filter-select">
+            <option>Todas las etapas</option>
+            <option>1. Formulario Principal</option>
+          </select>
+          <select class="filter-select">
+            <option>Todos los estados</option>
+            <option>Completado</option>
+            <option>En progreso</option>
+          </select>
+          <select class="filter-select">
+            <option>Todas las elegibilidades</option>
+            <option>Solo elegibles</option>
+            <option>Solo no elegibles</option>
+          </select>
+        </div>
+
+        <div class="controls-section">
+          <div class="controls-section-title">Quiénes exportar</div>
+          <div class="radio-group">
+            <label class="radio-option"><input type="radio" name="mode" checked /> Todos los filtrados</label>
+            <label class="radio-option"><input type="radio" name="mode" /> Selección manual</label>
+            <label class="radio-option"><input type="radio" name="mode" /> Muestra aleatoria</label>
+          </div>
+        </div>
+
+        <div class="controls-section">
+          <div class="controls-section-title">Formato</div>
+          <div class="format-row">
+            <label class="radio-option"><input type="radio" name="fmt" checked /> Excel (.xlsx)</label>
+            <label class="radio-option"><input type="radio" name="fmt" /> CSV</label>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="controls-footer">
+        <button class="btn btn-secondary">Vista previa</button>
+        <button class="btn btn-primary">Descargar XLSX</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>

@@ -3,7 +3,7 @@
 This plan is specifically designed to improve the admin experience next while preserving the applicant UI parity work already completed.
 
 Related safeguards:
-- `TODOS_FOR_ADMIN_VIEW.md`
+- `docs/TODOS_FOR_ADMIN_VIEW.md`
 - `docs/APPLICANT_EDIT_MODE_FLOWS.md`
 - `docs/CODEBASE_NAVIGATION.md`
 

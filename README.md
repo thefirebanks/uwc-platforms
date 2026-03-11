@@ -6,6 +6,17 @@ Platform for UWC Peru selection management with:
 - Multi-stage flow (`documents` -> `exam_placeholder`)
 - Structured runtime logs (Cloudflare-ready), audit trail, and reportable error IDs
 
+## Quick Start
+```bash
+bun install
+cp .env.example .env.local
+bun run dev
+```
+
+Then open [http://localhost:3000](http://localhost:3000).
+
+For first-time local setup (Supabase link, migrations, demo seed users, OAuth/Gmail/Gemini env vars), continue to **Detailed Local Setup** below.
+
 ## Tech Stack
 - Next.js 16 + TypeScript + Tailwind
 - Material UI (hybrid custom look)
@@ -60,7 +71,7 @@ Platform for UWC Peru selection management with:
 - Bug report endpoint for non-technical users
 - Audit logging for key actions
 
-## Local Setup
+## Detailed Local Setup
 1. Install dependencies:
 ```bash
 bun install
