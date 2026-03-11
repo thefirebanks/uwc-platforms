@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { unzipSync } from "fflate";
 import { AppError } from "@/lib/errors/app-error";
 import {
+  buildApplicationsXlsx,
   buildApplicationsCsv,
   buildMatrixCsvExport,
   buildMatrixExportWorkbook,
+  buildMatrixExportXlsx,
+  buildDynamicExportXlsx,
   getApplicationExportPackage,
   normalizeApplicationFiles,
   parseApplicationExportFilters,
@@ -12,6 +16,15 @@ import {
   validateSelectedExportFields,
   buildRandomSampleGroups,
 } from "@/lib/server/exports-service";
+
+function readZipEntryText(files: Record<string, Uint8Array>, path: string) {
+  const resolvedKey = Object.keys(files).find((key) => key === path || key.endsWith(path));
+  const entry = resolvedKey ? files[resolvedKey] : undefined;
+  if (!entry) {
+    throw new Error(`Missing ${path} in xlsx archive. Keys: ${Object.keys(files).join(", ")}`);
+  }
+  return new TextDecoder().decode(entry);
+}
 
 describe("parseApplicationExportFilters", () => {
   it("applies defaults", () => {
@@ -45,6 +58,79 @@ describe("parseApplicationExportFilters", () => {
         ),
       ),
     ).toThrowError(AppError);
+  });
+});
+
+describe("xlsx export styling", () => {
+  it("applies matrix sheet styles, spacer width and freeze panes", async () => {
+    const workbook = {
+      grouped: true,
+      sheets: [
+        {
+          name: "Postulaciones",
+          applicantHeaders: ["Ana Perez (ana@example.com)", "Luis Torres (luis@example.com)"],
+          rows: [
+            { label: "Grupo", values: ["Grupo 1", "Grupo 2"] },
+            { label: "Region", values: ["Cusco", "Lima"] },
+          ],
+        },
+      ],
+    };
+
+    const buffer = await buildMatrixExportXlsx(workbook);
+    const files = unzipSync(new Uint8Array(buffer));
+    const sheetXml = readZipEntryText(files, "xl/worksheets/sheet1.xml");
+    const stylesXml = readZipEntryText(files, "xl/styles.xml");
+
+    expect(sheetXml).toMatch(/<pane[^>]*xSplit="1"[^>]*ySplit="1"[^>]*topLeftCell="B2"[^>]*state="frozen"\/>/);
+    expect(sheetXml).toMatch(/<col min="3" max="3" width="3\.[0-9]+" customWidth="1"\/>/);
+    expect(stylesXml).toContain("FFE7E1D8");
+    expect(stylesXml).toContain("FFF1EEEA");
+    expect(stylesXml).toContain("FFEAF0F8");
+  });
+
+  it("freezes the header row in application exports", async () => {
+    const buffer = await buildApplicationsXlsx(
+      [
+        {
+          applicationId: "app-1",
+          cycleId: "cycle-1",
+          cycleName: "Proceso 2026",
+          applicantId: "applicant-1",
+          applicantEmail: "ana@example.com",
+          applicantName: "Ana Perez",
+          stageCode: "documents",
+          status: "submitted",
+          validationNotes: "",
+          mentorRecommendationSubmitted: true,
+          friendRecommendationSubmitted: false,
+          recommendationCompletion: "incomplete",
+          fileCount: 1,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      ["applicationId", "applicantName", "status"],
+    );
+
+    const files = unzipSync(new Uint8Array(buffer));
+    const sheetXml = readZipEntryText(files, "xl/worksheets/sheet1.xml");
+
+    expect(sheetXml).toMatch(/<pane[^>]*ySplit="1"[^>]*topLeftCell="A2"[^>]*state="frozen"\/>/);
+    expect(sheetXml).toMatch(/<autoFilter ref="A1:C[0-9]+"\/>/);
+  });
+
+  it("freezes first row and column in dynamic exports", async () => {
+    const buffer = await buildDynamicExportXlsx({
+      headers: ["Campo", "Valor"],
+      rows: [["Estado", "submitted"]],
+    });
+
+    const files = unzipSync(new Uint8Array(buffer));
+    const sheetXml = readZipEntryText(files, "xl/worksheets/sheet1.xml");
+
+    expect(sheetXml).toMatch(/<pane[^>]*xSplit="1"[^>]*ySplit="1"[^>]*topLeftCell="B2"[^>]*state="frozen"\/>/);
+    expect(sheetXml).toMatch(/<autoFilter ref="A1:B[0-9]+"\/>/);
   });
 });
 

@@ -1,4 +1,4 @@
-import * as XLSX from "xlsx";
+import * as XLSX from "xlsx-js-style";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
@@ -179,6 +179,169 @@ export type ApplicationExportContext = {
   cycle: Pick<CycleRow, "name"> | null;
   recommendations: RecommendationLite[];
 };
+
+type ExcelColor = { rgb: string };
+
+type ExcelBorderSide = {
+  style: "thin" | "medium";
+  color: ExcelColor;
+};
+
+type ExcelCellStyle = {
+  font?: {
+    bold?: boolean;
+    color?: ExcelColor;
+    sz?: number;
+  };
+  fill?: {
+    patternType?: "solid";
+    fgColor?: ExcelColor;
+    bgColor?: ExcelColor;
+  };
+  alignment?: {
+    horizontal?: "left" | "center";
+    vertical?: "top" | "center";
+    wrapText?: boolean;
+  };
+  border?: {
+    top?: ExcelBorderSide;
+    right?: ExcelBorderSide;
+    bottom?: ExcelBorderSide;
+    left?: ExcelBorderSide;
+  };
+};
+
+const BORDER_COLOR = { rgb: "FFD2CCC4" };
+const THIN_BORDER: ExcelBorderSide = { style: "thin", color: BORDER_COLOR };
+const MEDIUM_BORDER: ExcelBorderSide = { style: "medium", color: { rgb: "FFC4BDB3" } };
+
+const HEADER_STYLE: ExcelCellStyle = {
+  font: { bold: true, sz: 12, color: { rgb: "FF1F1A17" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFE7E1D8" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: { top: MEDIUM_BORDER, right: THIN_BORDER, bottom: MEDIUM_BORDER, left: THIN_BORDER },
+};
+
+const FIELD_COLUMN_STYLE: ExcelCellStyle = {
+  font: { bold: true, sz: 12, color: { rgb: "FF1F1A17" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFF1EEEA" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: { top: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER },
+};
+
+const DATA_STYLE: ExcelCellStyle = {
+  font: { sz: 12, color: { rgb: "FF1F1A17" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFFFFFFF" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: { top: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER },
+};
+
+const SPACER_STYLE: ExcelCellStyle = {
+  fill: { patternType: "solid", fgColor: { rgb: "FFF7F5F2" } },
+  border: { top: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER },
+};
+
+const GROUP_ROW_STYLE: ExcelCellStyle = {
+  font: { bold: true, color: { rgb: "FF39465B" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFEAF0F8" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: { top: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER },
+};
+
+function setExcelCellStyle(ws: XLSX.WorkSheet, row: number, col: number, style: ExcelCellStyle) {
+  const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+  const cell = ws[cellAddress];
+  if (!cell) {
+    return;
+  }
+  (cell as XLSX.CellObject & { s?: ExcelCellStyle }).s = style;
+}
+
+type WorksheetFreezeConfig = {
+  xSplit?: number;
+  ySplit?: number;
+};
+
+function buildPaneXml({ xSplit, ySplit }: WorksheetFreezeConfig): string | null {
+  const normalizedX = Math.max(0, Math.trunc(xSplit ?? 0));
+  const normalizedY = Math.max(0, Math.trunc(ySplit ?? 0));
+  if (normalizedX === 0 && normalizedY === 0) {
+    return null;
+  }
+
+  const topLeftCell = XLSX.utils.encode_cell({ r: normalizedY, c: normalizedX });
+  const activePane = normalizedX > 0 && normalizedY > 0
+    ? "bottomRight"
+    : normalizedX > 0
+      ? "topRight"
+      : "bottomLeft";
+
+  const attrs = [
+    normalizedX > 0 ? `xSplit="${normalizedX}"` : null,
+    normalizedY > 0 ? `ySplit="${normalizedY}"` : null,
+    `topLeftCell="${topLeftCell}"`,
+    `activePane="${activePane}"`,
+    'state="frozen"',
+  ].filter(Boolean);
+
+  return `<pane ${attrs.join(" ")}/>`;
+}
+
+function applyPaneToWorksheetXml(xml: string, paneXml: string): string {
+  if (/<sheetView[^>]*>\s*<pane[^>]*>/.test(xml) || /<sheetView[^>]*>\s*<pane[^>]*\/>/.test(xml)) {
+    return xml;
+  }
+
+  if (/<sheetView[^>]*\/>/.test(xml)) {
+    return xml.replace(/<sheetView([^>]*)\/>/, `<sheetView$1>${paneXml}</sheetView>`);
+  }
+
+  return xml.replace(/<sheetView([^>]*)>/, `<sheetView$1>${paneXml}`);
+}
+
+async function applyWorksheetFreezes(
+  buffer: Buffer,
+  freezeConfigs: WorksheetFreezeConfig[],
+): Promise<Buffer> {
+  if (freezeConfigs.length === 0) {
+    return buffer;
+  }
+
+  const { unzipSync, zipSync, strFromU8 } = await import("fflate");
+  const unpacked = unzipSync(new Uint8Array(buffer));
+  const files: Record<string, Uint8Array> = {};
+  for (const [path, content] of Object.entries(unpacked)) {
+    files[path] = new Uint8Array(content);
+  }
+  let changed = false;
+
+  freezeConfigs.forEach((freeze, index) => {
+    const paneXml = buildPaneXml(freeze);
+    if (!paneXml) {
+      return;
+    }
+
+    const sheetPath = `xl/worksheets/sheet${index + 1}.xml`;
+    const existing = files[sheetPath];
+    if (!existing) {
+      return;
+    }
+
+    const xml = strFromU8(existing);
+    const updated = applyPaneToWorksheetXml(xml, paneXml);
+    if (updated !== xml) {
+      const EncodedArray = (existing.constructor as typeof Uint8Array);
+      files[sheetPath] = new EncodedArray(new TextEncoder().encode(updated));
+      changed = true;
+    }
+  });
+
+  if (!changed) {
+    return buffer;
+  }
+
+  return Buffer.from(zipSync(files, { level: 9 }));
+}
 
 export const EXPORTABLE_COLUMNS: ExportableColumn[] = [
   { key: "applicationId", label: "ID Postulación" },
@@ -1334,18 +1497,52 @@ function buildMatrixWorksheet(sheetData: MatrixExportSheet): XLSX.WorkSheet {
 
   const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
 
-  // Column widths: [label=28, applicant=32, spacer=4, applicant=32, ...]
+  // Column widths: [label=28, applicant=32, spacer=2.4, applicant=32, ...]
   const cols: XLSX.ColInfo[] = [{ wch: 28 }];
+  const spacerColumns = new Set<number>();
   for (let i = 0; i < columnCount; i++) {
     cols.push({ wch: 32 });
     if (i < columnCount - 1) {
-      cols.push({ wch: 4 });
+      cols.push({ wch: 2.4 });
+      spacerColumns.add(cols.length - 1);
     }
   }
   ws["!cols"] = cols;
+  ws["!rows"] = [{ hpt: 34 }, ...sheetData.rows.map(() => ({ hpt: 28 }))];
 
   // Freeze first row and first column
   ws["!views"] = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+  ws["!autofilter"] = {
+    ref: `A1:${XLSX.utils.encode_col(cols.length - 1)}1`,
+  };
+
+  const isGroupRow = (rowIndex: number) =>
+    rowIndex === 1 && sheetData.rows[0]?.label.toLowerCase() === "grupo";
+
+  for (let col = 0; col < cols.length; col++) {
+    const isSpacer = spacerColumns.has(col);
+    setExcelCellStyle(ws, 0, col, isSpacer ? SPACER_STYLE : HEADER_STYLE);
+  }
+
+  for (let row = 1; row <= sheetData.rows.length; row++) {
+    const groupRow = isGroupRow(row);
+    for (let col = 0; col < cols.length; col++) {
+      const isSpacer = spacerColumns.has(col);
+      if (isSpacer) {
+        setExcelCellStyle(ws, row, col, SPACER_STYLE);
+        continue;
+      }
+      if (groupRow) {
+        setExcelCellStyle(ws, row, col, GROUP_ROW_STYLE);
+        continue;
+      }
+      if (col === 0) {
+        setExcelCellStyle(ws, row, col, FIELD_COLUMN_STYLE);
+        continue;
+      }
+      setExcelCellStyle(ws, row, col, DATA_STYLE);
+    }
+  }
 
   return ws;
 }
@@ -1356,7 +1553,11 @@ export async function buildMatrixExportXlsx(workbookData: MatrixExportWorkbook):
     const ws = buildMatrixWorksheet(sheetData);
     XLSX.utils.book_append_sheet(wb, ws, sheetData.name);
   }
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  const raw = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return applyWorksheetFreezes(
+    raw,
+    workbookData.sheets.map(() => ({ xSplit: 1, ySplit: 1 })),
+  );
 }
 
 export async function buildGroupedExportZip({
@@ -1413,13 +1614,24 @@ export async function buildApplicationsXlsx(
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
   ws["!cols"] = selectedKeys.map(() => ({ wch: 22 }));
+  ws["!rows"] = [{ hpt: 30 }, ...dataRows.map(() => ({ hpt: 24 }))];
   const lastCol = XLSX.utils.encode_col(selectedKeys.length - 1);
   ws["!autofilter"] = { ref: `A1:${lastCol}1` };
+  ws["!views"] = [{ state: "frozen", ySplit: 1 }];
+
+  for (let col = 0; col < selectedKeys.length; col++) {
+    setExcelCellStyle(ws, 0, col, HEADER_STYLE);
+  }
+  for (let row = 1; row <= dataRows.length; row++) {
+    for (let col = 0; col < selectedKeys.length; col++) {
+      setExcelCellStyle(ws, row, col, col === 0 ? FIELD_COLUMN_STYLE : DATA_STYLE);
+    }
+  }
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Postulaciones");
-
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  const raw = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return applyWorksheetFreezes(raw, [{ ySplit: 1 }]);
 }
 
 export async function buildDynamicExportXlsx(table: {
@@ -1428,13 +1640,24 @@ export async function buildDynamicExportXlsx(table: {
 }): Promise<Buffer> {
   const ws = XLSX.utils.aoa_to_sheet([table.headers, ...table.rows]);
   ws["!cols"] = table.headers.map(() => ({ wch: 24 }));
+  ws["!rows"] = [{ hpt: 30 }, ...table.rows.map(() => ({ hpt: 24 }))];
   const lastCol = XLSX.utils.encode_col(table.headers.length - 1);
   ws["!autofilter"] = { ref: `A1:${lastCol}1` };
+  ws["!views"] = [{ state: "frozen", ySplit: 1, xSplit: 1 }];
+
+  for (let col = 0; col < table.headers.length; col++) {
+    setExcelCellStyle(ws, 0, col, HEADER_STYLE);
+  }
+  for (let row = 1; row <= table.rows.length; row++) {
+    for (let col = 0; col < table.headers.length; col++) {
+      setExcelCellStyle(ws, row, col, col === 0 ? FIELD_COLUMN_STYLE : DATA_STYLE);
+    }
+  }
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Postulaciones");
-
-  return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  const raw = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return applyWorksheetFreezes(raw, [{ xSplit: 1, ySplit: 1 }]);
 }
 
 export async function getApplicationExportPackage({

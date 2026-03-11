@@ -474,7 +474,7 @@ describe("AdminExportBuilder", () => {
 
     render(<AdminExportBuilder cycleId={CYCLE_ID} />);
     switchToCustomMode();
-    await screen.findByRole("button", { name: "Guardar preset" });
+    await waitForCatalog();
 
     fireEvent.click(screen.getByRole("button", { name: "Guardar preset" }));
 

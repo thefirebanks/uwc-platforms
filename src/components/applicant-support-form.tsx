@@ -120,6 +120,8 @@ export function ApplicantSupportForm({
         onClose={() => setOpen(false)}
         style={{
           position: "fixed",
+          inset: 0,
+          margin: "auto",
           border: "none",
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-md)",
