@@ -76,10 +76,12 @@ async function waitForCatalog() {
 
 /**
  * Wait for the catalog to finish loading in quick mode.
- * After load, the preset-meta shows "N campo(s) seleccionados".
+ * After load, quick download should be enabled (selected fields resolved).
  */
 async function waitForQuickLoad() {
-  await screen.findByText(/campo.* seleccionado/);
+  await waitFor(() => {
+    expect(screen.getByRole("button", { name: /Descargar/i })).toBeEnabled();
+  });
 }
 
 afterEach(() => {
