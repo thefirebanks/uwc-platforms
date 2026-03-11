@@ -3,6 +3,7 @@ import { AppError } from "@/lib/errors/app-error";
 import {
   closeSupportTicket,
   createSupportTicket,
+  followUpSupportTicket,
   replySupportTicket,
 } from "@/lib/server/support-service";
 
@@ -14,6 +15,7 @@ vi.mock("@/lib/supabase/admin", () => ({
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 type ReplyTicketSupabase = Parameters<typeof replySupportTicket>[0]["supabase"];
+type FollowUpTicketSupabase = Parameters<typeof followUpSupportTicket>[0]["supabase"];
 type CloseTicketSupabase = Parameters<typeof closeSupportTicket>[0]["supabase"];
 type AdminSupabase = ReturnType<typeof getSupabaseAdminClient>;
 
@@ -254,7 +256,8 @@ describe("replySupportTicket", () => {
 
     // Ticket status updated
     expect(result.status).toBe("replied");
-    expect(result.admin_reply).toBe("Debes subir tu DNI y partida de nacimiento.");
+    expect(result.admin_reply).toContain("Debes subir tu DNI y partida de nacimiento.");
+    expect(result.admin_reply).toContain("Equipo UWC");
     expect(result.replied_by).toBe("admin-1");
 
     // Communication log inserted with applicant-visible flag
@@ -266,6 +269,55 @@ describe("replySupportTicket", () => {
         application_id: BASE_TICKET.application_id,
         sent_by: "admin-1",
       }),
+    );
+  });
+});
+
+/* ================================================================== */
+describe("followUpSupportTicket", () => {
+  it("appends applicant follow-up and reopens ticket", async () => {
+    const baseTicket = {
+      ...BASE_TICKET,
+      status: "replied",
+    };
+    const supabase = createUpdateTicketMock(baseTicket) as unknown as FollowUpTicketSupabase;
+    vi.mocked(getSupabaseAdminClient).mockReturnValue(
+      createUpdateTicketMock(baseTicket) as unknown as AdminSupabase,
+    );
+
+    const result = await followUpSupportTicket({
+      supabase,
+      ticketId: "ticket-1",
+      applicantId: "applicant-1",
+      message: "Quisiera compartir un detalle adicional sobre mis documentos.",
+    });
+
+    expect(result.status).toBe("open");
+    expect(result.body).toContain("Postulante");
+    expect(result.body).toContain("Quisiera compartir un detalle adicional sobre mis documentos.");
+  });
+
+  it("rejects follow-up on closed tickets", async () => {
+    const supabase = createUpdateTicketMock({
+      ...BASE_TICKET,
+      status: "closed",
+    }) as unknown as FollowUpTicketSupabase;
+    vi.mocked(getSupabaseAdminClient).mockReturnValue(
+      createUpdateTicketMock({
+        ...BASE_TICKET,
+        status: "closed",
+      }) as unknown as AdminSupabase,
+    );
+
+    await expect(
+      followUpSupportTicket({
+        supabase,
+        ticketId: "ticket-1",
+        applicantId: "applicant-1",
+        message: "¿Podrían reabrir esta consulta?",
+      }),
+    ).rejects.toSatisfy(
+      (err: unknown) => err instanceof AppError && (err as AppError).status === 422,
     );
   });
 });

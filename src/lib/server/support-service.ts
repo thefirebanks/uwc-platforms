@@ -7,6 +7,7 @@ import type { SupportTicketStatus } from "@/types/domain";
 type SupportTicketRow = Database["public"]["Tables"]["support_tickets"]["Row"];
 
 const MAX_OPEN_TICKETS = 3;
+const THREAD_SEPARATOR = "\n\n---\n\n";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -23,6 +24,67 @@ export type AdminTicketRow = SupportTicketRow & {
   applicant_name: string | null;
   applicant_email: string | null;
 };
+
+type ThreadAppendInput = {
+  existingText: string | null;
+  existingAt: string | null;
+  existingAuthorLabel: string;
+  newMessage: string;
+  newAuthorLabel: string;
+  newAt: string;
+};
+
+function formatThreadEntry({
+  authoredAt,
+  authorLabel,
+  message,
+}: {
+  authoredAt: string;
+  authorLabel: string;
+  message: string;
+}) {
+  return `[${authoredAt}] ${authorLabel}\n${message.trim()}`;
+}
+
+function appendThreadMessage({
+  existingText,
+  existingAt,
+  existingAuthorLabel,
+  newMessage,
+  newAuthorLabel,
+  newAt,
+}: ThreadAppendInput) {
+  const trimmedExisting = existingText?.trim() ?? "";
+  if (!trimmedExisting) {
+    return formatThreadEntry({
+      authoredAt: newAt,
+      authorLabel: newAuthorLabel,
+      message: newMessage,
+    });
+  }
+
+  const structuredLooksLikeThread =
+    /^\[[^\]]+\]\s.+\n[\s\S]+$/.test(trimmedExisting) ||
+    trimmedExisting.includes(`${THREAD_SEPARATOR}[`);
+
+  if (structuredLooksLikeThread) {
+    return `${trimmedExisting}${THREAD_SEPARATOR}${formatThreadEntry({
+      authoredAt: newAt,
+      authorLabel: newAuthorLabel,
+      message: newMessage,
+    })}`;
+  }
+
+  return `${formatThreadEntry({
+    authoredAt: existingAt ?? newAt,
+    authorLabel: existingAuthorLabel,
+    message: trimmedExisting,
+  })}${THREAD_SEPARATOR}${formatThreadEntry({
+    authoredAt: newAt,
+    authorLabel: newAuthorLabel,
+    message: newMessage,
+  })}`;
+}
 
 /* -------------------------------------------------------------------------- */
 /*  Create ticket                                                             */
@@ -186,11 +248,35 @@ export async function replySupportTicket({
   repliedBy: string;
 }): Promise<SupportTicketRow> {
   const repliedAt = new Date().toISOString();
+  const { data: existingTicket, error: existingTicketError } = await supabase
+    .from("support_tickets")
+    .select("*")
+    .eq("id", ticketId)
+    .single();
+  const existingTicketRow = (existingTicket as SupportTicketRow | null) ?? null;
+
+  if (existingTicketError || !existingTicketRow) {
+    throw new AppError({
+      message: "Support ticket not found for reply",
+      userMessage: "No se encontró la consulta.",
+      status: 404,
+      details: existingTicketError,
+    });
+  }
+
+  const adminThread = appendThreadMessage({
+    existingText: existingTicketRow.admin_reply,
+    existingAt: existingTicketRow.replied_at,
+    existingAuthorLabel: "Equipo UWC",
+    newMessage: adminReply,
+    newAuthorLabel: "Equipo UWC",
+    newAt: repliedAt,
+  });
 
   const { data: ticket, error: updateError } = await supabase
     .from("support_tickets")
     .update({
-      admin_reply: adminReply,
+      admin_reply: adminThread,
       replied_by: repliedBy,
       replied_at: repliedAt,
       status: "replied" as SupportTicketStatus,
@@ -226,6 +312,80 @@ export async function replySupportTicket({
   });
 
   return updatedTicket;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Applicant follow-up                                                       */
+/* -------------------------------------------------------------------------- */
+
+export async function followUpSupportTicket({
+  supabase,
+  ticketId,
+  applicantId,
+  message,
+}: {
+  supabase: SupabaseClient<Database>;
+  ticketId: string;
+  applicantId: string;
+  message: string;
+}): Promise<SupportTicketRow> {
+  const { data: existingTicket, error: ticketError } = await supabase
+    .from("support_tickets")
+    .select("*")
+    .eq("id", ticketId)
+    .eq("applicant_id", applicantId)
+    .single();
+  const existingTicketRow = (existingTicket as SupportTicketRow | null) ?? null;
+
+  if (ticketError || !existingTicketRow) {
+    throw new AppError({
+      message: "Support ticket not found for applicant follow-up",
+      userMessage: "No se encontró la consulta.",
+      status: 404,
+      details: ticketError,
+    });
+  }
+
+  if (existingTicketRow.status === "closed") {
+    throw new AppError({
+      message: "Cannot follow up on closed support ticket",
+      userMessage: "La consulta está cerrada y no admite más mensajes.",
+      status: 422,
+    });
+  }
+
+  const now = new Date().toISOString();
+  const bodyThread = appendThreadMessage({
+    existingText: existingTicketRow.body,
+    existingAt: existingTicketRow.created_at,
+    existingAuthorLabel: "Postulante",
+    newMessage: message,
+    newAuthorLabel: "Postulante",
+    newAt: now,
+  });
+
+  const adminSupabase = getSupabaseAdminClient();
+  const { data: ticket, error: updateError } = await adminSupabase
+    .from("support_tickets")
+    .update({
+      body: bodyThread,
+      status: "open" as SupportTicketStatus,
+    })
+    .eq("id", ticketId)
+    .eq("applicant_id", applicantId)
+    .select("*")
+    .single();
+
+  if (updateError || !ticket) {
+    throw new AppError({
+      message: "Failed saving applicant support follow-up",
+      userMessage: "No se pudo enviar tu seguimiento.",
+      status: 500,
+      details: updateError,
+    });
+  }
+
+  return ticket as SupportTicketRow;
 }
 
 /* -------------------------------------------------------------------------- */

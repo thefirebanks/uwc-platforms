@@ -50,6 +50,9 @@ describe("AdminApplicationViewer", () => {
       if (url.includes("/api/applications/app-1/files")) {
         return Promise.resolve(okJson({ files: [] }));
       }
+      if (url.includes("/api/applications/app-1/evaluation")) {
+        return Promise.resolve(okJson({ evaluations: [] }));
+      }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
 
@@ -87,6 +90,9 @@ describe("AdminApplicationViewer", () => {
       }
       if (url.includes("/api/applications/app-1/files")) {
         return Promise.resolve(okJson({ files: [] }));
+      }
+      if (url.includes("/api/applications/app-1/evaluation")) {
+        return Promise.resolve(okJson({ evaluations: [] }));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
@@ -157,6 +163,9 @@ describe("AdminApplicationViewer", () => {
           }),
         );
       }
+      if (url.includes("/api/applications/app-1/evaluation")) {
+        return Promise.resolve(okJson({ evaluations: [] }));
+      }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
 
@@ -175,7 +184,7 @@ describe("AdminApplicationViewer", () => {
     const fileCard = await screen.findByTestId("admin-file-card-identificationDocument");
     expect(fileCard).toHaveStyle({ background: "var(--surface)" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Recomendaciones" }));
+    fireEvent.click(screen.getByRole("button", { name: "Recs." }));
     const recommendationCard = await screen.findByTestId("admin-recommendation-card-rec-1");
     expect(recommendationCard).toHaveStyle({ background: "var(--surface)" });
   });
@@ -209,6 +218,9 @@ describe("AdminApplicationViewer", () => {
             ],
           }),
         );
+      }
+      if (url.includes("/api/applications/app-1/evaluation")) {
+        return Promise.resolve(okJson({ evaluations: [] }));
       }
       if (url.includes("/api/applications/app-1/ocr-check")) {
         expect(init?.method).toBe("POST");
@@ -275,6 +287,9 @@ describe("AdminApplicationViewer", () => {
           }),
         );
       }
+      if (url.includes("/api/applications/app-1/evaluation")) {
+        return Promise.resolve(okJson({ evaluations: [] }));
+      }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
 
@@ -322,6 +337,9 @@ describe("AdminApplicationViewer", () => {
             ],
           }),
         );
+      }
+      if (url.includes("/api/applications/app-1/evaluation")) {
+        return Promise.resolve(okJson({ evaluations: [] }));
       }
       if (url.includes("/api/applications/app-1/ocr-check")) {
         return Promise.resolve(

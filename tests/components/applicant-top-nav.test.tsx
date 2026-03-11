@@ -11,6 +11,7 @@ vi.mock("next/navigation", () => ({
     push: pushMock,
     refresh: refreshMock,
   }),
+  usePathname: () => "/applicant",
 }));
 
 vi.mock("@/components/language-provider", () => ({
@@ -49,11 +50,15 @@ describe("ApplicantTopNav", () => {
       <ApplicantTopNav
         accountDisplayName="Comité Selección"
         accountEmail="informes@pe.uwc.org"
+        currentProcessHref="/applicant/process/cycle-1"
       />,
     );
 
     expect(screen.getByText("Sesión actual")).toBeInTheDocument();
     expect(screen.getByText("Comité Selección")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Inicio" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Proceso actual" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Soporte" })).toBeInTheDocument();
 
     const menuButton = screen.getByRole("button", { name: "Menu" });
     Object.defineProperty(menuButton, "getBoundingClientRect", {

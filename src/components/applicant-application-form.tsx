@@ -2117,6 +2117,7 @@ export function ApplicantApplicationForm({
       <ApplicantTopNav
         accountDisplayName={accountDisplayName}
         accountEmail={accountEmail}
+        currentProcessHref={`/applicant/process/${cycleId}`}
         draftStatusLabel={draftStatusLabel}
         draftStatusDot={sidebarDraftDot}
         modeStatusLabel={modeStatusLabel}

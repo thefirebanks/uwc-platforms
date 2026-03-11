@@ -36,7 +36,7 @@ function truncate(text: string, max = 160) {
 export function ApplicantCommunicationsDashboard({
   applicationId,
 }: {
-  applicationId: string;
+  applicationId?: string;
 }) {
   const [comms, setComms] = useState<CommLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +51,8 @@ export function ApplicantCommunicationsDashboard({
           setLoading(true);
           setError(null);
         }
-        return fetch(`/api/applicant/communications?applicationId=${applicationId}`);
+        const query = applicationId ? `?applicationId=${applicationId}` : "";
+        return fetch(`/api/applicant/communications${query}`);
       })
       .then(async (res) => {
         if (!res.ok) {
