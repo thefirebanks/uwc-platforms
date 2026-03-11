@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, Newsreader } from "next/font/google";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v16-appRouter";
 import { AppThemeProvider } from "@/components/app-theme-provider";
+import { ErrorBoundary } from "@/components/error-boundary";
 import "./globals.css";
 
 const newsreader = Newsreader({
@@ -28,7 +29,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="es">
       <body suppressHydrationWarning className={`${newsreader.variable} ${dmSans.variable}`}>
         <AppRouterCacheProvider options={{ key: "mui", enableCssLayer: true }}>
-          <AppThemeProvider>{children}</AppThemeProvider>
+          <AppThemeProvider>
+            <ErrorBoundary>{children}</ErrorBoundary>
+          </AppThemeProvider>
         </AppRouterCacheProvider>
       </body>
     </html>
