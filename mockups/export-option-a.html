@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Export Mockup A – Clean Split</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --maroon: #c14a6b;
+      --maroon-dark: #a33656;
+      --ink: #f2ece7;
+      --ink-light: #c0b8b2;
+      --sand: #3b3532;
+      --sand-light: #2e2a28;
+      --muted: #b8aea8;
+      --surface: #1d1b1a;
+      --radius: 8px;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      background: #141211;
+      color: var(--ink);
+      padding: 2rem;
+    }
+
+    /* ── Option Label ── */
+    .option-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 1rem;
+    }
+    .option-badge span {
+      background: var(--maroon);
+      color: white;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.7rem;
+    }
+
+    /* ── Export Builder Shell ── */
+    .export-builder {
+      display: grid;
+      gap: 1rem;
+      max-width: 1100px;
+    }
+
+    .export-builder__panel {
+      background: var(--surface);
+      border: 1px solid var(--sand);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+
+    /* ── Panel Header ── */
+    .export-builder__header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      padding-bottom: 1rem;
+      margin-bottom: 1rem;
+      border-bottom: 1px solid var(--sand);
+    }
+    .export-builder__title {
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 0.2rem;
+    }
+    .export-builder__subtitle {
+      font-size: 0.79rem;
+      color: var(--muted);
+    }
+    .export-builder__header-actions {
+      display: flex;
+      gap: 0.4rem;
+      flex-shrink: 0;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      padding: 0.4rem 0.85rem;
+      border-radius: var(--radius);
+      border: none;
+      font-size: 0.83rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font);
+    }
+    .btn-primary { background: var(--maroon); color: white; }
+    .btn-secondary { background: var(--sand); color: var(--ink); }
+    .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--sand); }
+    .btn-outline { background: transparent; color: var(--ink); border: 1px solid var(--sand); }
+    .btn-sm { padding: 0.3rem 0.65rem; font-size: 0.78rem; }
+    .btn-xs { padding: 0.2rem 0.4rem; font-size: 0.72rem; }
+
+    /* ── Main 2-col layout ── */
+    .export-builder__main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
+      gap: 1.25rem;
+      align-items: start;
+    }
+
+    /* ── Field Catalog ── */
+    .export-builder__catalog {
+      display: grid;
+      gap: 0.6rem;
+    }
+    .export-builder__group {
+      border: 1px solid var(--sand);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .export-builder__group-header {
+      padding: 0.45rem 0.85rem;
+      background: var(--sand-light);
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .export-builder__columns {
+      padding: 0.7rem 0.85rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+      gap: 0.3rem 1rem;
+    }
+    .export-builder__col-label {
+      display: flex;
+      gap: 0.45rem;
+      align-items: center;
+      cursor: pointer;
+      padding: 0.2rem 0;
+    }
+    .export-builder__col-label input[type="checkbox"] {
+      accent-color: var(--maroon);
+      flex-shrink: 0;
+    }
+    .export-builder__col-label-text {
+      font-size: 0.83rem;
+      line-height: 1.3;
+      color: var(--ink);
+    }
+
+    /* ── Sticky Sidebar ── */
+    .export-builder__sidebar {
+      display: grid;
+      gap: 0.65rem;
+      position: sticky;
+      top: 1.5rem;
+      max-height: calc(100vh - 3rem);
+      overflow-y: auto;
+    }
+
+    .export-builder__section {
+      border: 1px solid var(--sand);
+      border-radius: var(--radius);
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .export-builder__section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.5rem 0.85rem;
+      background: var(--sand-light);
+      gap: 0.5rem;
+    }
+    .export-builder__section-title {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .export-builder__section-badge {
+      background: var(--sand);
+      color: var(--muted);
+      border-radius: 20px;
+      padding: 0.1rem 0.45rem;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .export-builder__section-body {
+      padding: 0.85rem;
+      display: grid;
+      gap: 0.6rem;
+    }
+
+    /* Selected fields */
+    .export-builder__field-list {
+      display: grid;
+      gap: 0.3rem;
+    }
+    .export-builder__field-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 0.6rem;
+      border: 1px solid var(--sand);
+      border-radius: 6px;
+    }
+    .export-builder__field-item-info { flex: 1; min-width: 0; }
+    .export-builder__field-item-label {
+      font-weight: 600;
+      font-size: 0.82rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .export-builder__field-item-group {
+      font-size: 0.69rem;
+      color: var(--muted);
+    }
+    .export-builder__field-item-actions {
+      display: flex;
+      gap: 0.15rem;
+      flex-shrink: 0;
+    }
+
+    /* Presets */
+    .export-builder__presets {
+      display: flex;
+      gap: 0.35rem;
+      flex-wrap: wrap;
+    }
+    .preset-pill {
+      border: 1px solid var(--sand);
+      border-radius: 20px;
+      padding: 0.2rem 0.6rem;
+      font-size: 0.73rem;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-family: var(--font);
+    }
+    .preset-pill.active {
+      background: var(--maroon);
+      border-color: var(--maroon);
+      color: white;
+    }
+
+    /* Format options */
+    .export-builder__format-option {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      cursor: pointer;
+      font-size: 0.84rem;
+    }
+    .export-builder__format-option input { accent-color: var(--maroon); }
+
+    .export-builder__format-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .export-builder__btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.5rem;
+    }
+
+    /* Filters */
+    .filter-input {
+      width: 100%;
+      background: var(--sand-light);
+      border: 1px solid var(--sand);
+      border-radius: 6px;
+      color: var(--ink);
+      font-family: var(--font);
+      font-size: 0.83rem;
+      padding: 0.45rem 0.7rem;
+    }
+    .filter-input::placeholder { color: var(--muted); }
+    select.filter-input { cursor: pointer; }
+
+    .field-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .options-group { display: grid; gap: 0.4rem; }
+
+    .muted { color: var(--muted); font-size: 0.8rem; }
+  </style>
+</head>
+<body>
+
+<div class="option-badge"><span>A</span> Clean Split — Sticky sidebar, compact catalog</div>
+
+<div class="export-builder">
+  <div class="export-builder__panel">
+
+    <!-- Header -->
+    <div class="export-builder__header">
+      <div>
+        <div class="export-builder__title">Exportar Postulaciones</div>
+        <div class="export-builder__subtitle">Plantilla vertical: una fila por campo, una columna por postulante.</div>
+      </div>
+      <div class="export-builder__header-actions">
+        <button class="btn btn-ghost btn-sm">Todos</button>
+        <button class="btn btn-ghost btn-sm">Ninguno</button>
+      </div>
+    </div>
+
+    <!-- Main 2-col -->
+    <div class="export-builder__main">
+
+      <!-- LEFT: Field Catalog -->
+      <div class="export-builder__catalog">
+
+        <div class="export-builder__group">
+          <div class="export-builder__group-header">Información base</div>
+          <div class="export-builder__columns">
+            <label class="export-builder__col-label"><input type="checkbox" checked /><span class="export-builder__col-label-text">ID Postulación</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" checked /><span class="export-builder__col-label-text">Nombre Postulante</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Email Postulante</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" checked /><span class="export-builder__col-label-text">Etapa</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" checked /><span class="export-builder__col-label-text">Estado</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Notas de Validación</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Rec. Mentor Enviada</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Fecha Creación</span></label>
+          </div>
+        </div>
+
+        <div class="export-builder__group">
+          <div class="export-builder__group-header">Etapa 1 · Datos Personales</div>
+          <div class="export-builder__columns">
+            <label class="export-builder__col-label"><input type="checkbox" checked /><span class="export-builder__col-label-text">Nombre(s)</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" checked /><span class="export-builder__col-label-text">Apellido Paterno</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" checked /><span class="export-builder__col-label-text">Apellido Materno</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Fecha de Nacimiento</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Género</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Número de DNI</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Teléfono</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Ciudad</span></label>
+          </div>
+        </div>
+
+        <div class="export-builder__group">
+          <div class="export-builder__group-header">Etapa 1 · Documentos y Archivos</div>
+          <div class="export-builder__columns">
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Copia de DNI</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Fotografía personal</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Certificado de Estudios</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Autorización firmada</span></label>
+          </div>
+        </div>
+
+        <div class="export-builder__group">
+          <div class="export-builder__group-header">Etapa 1 · Colegio e Institución</div>
+          <div class="export-builder__columns">
+            <label class="export-builder__col-label"><input type="checkbox" checked /><span class="export-builder__col-label-text">Nombre del colegio</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Tipo de colegio</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Región</span></label>
+            <label class="export-builder__col-label"><input type="checkbox" /><span class="export-builder__col-label-text">Año de graduación</span></label>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- RIGHT: Sticky Sidebar -->
+      <div class="export-builder__sidebar">
+
+        <!-- Selected Fields -->
+        <div class="export-builder__section">
+          <div class="export-builder__section-header">
+            <span class="export-builder__section-title">Campos seleccionados</span>
+            <div style="display:flex;gap:0.4rem;align-items:center;">
+              <span class="export-builder__section-badge">6</span>
+              <button class="btn btn-outline btn-xs">Guardar preset</button>
+            </div>
+          </div>
+          <div class="export-builder__section-body">
+            <div class="export-builder__presets">
+              <button class="preset-pill active">Exportación básica</button>
+              <button class="preset-pill">Hoja de vida completa</button>
+            </div>
+            <div class="export-builder__field-list">
+              <div class="export-builder__field-item">
+                <div class="export-builder__field-item-info">
+                  <div class="export-builder__field-item-label">ID Postulación</div>
+                  <div class="export-builder__field-item-group">Información base</div>
+                </div>
+                <div class="export-builder__field-item-actions">
+                  <button class="btn btn-ghost btn-xs" disabled>↑</button>
+                  <button class="btn btn-ghost btn-xs">↓</button>
+                </div>
+              </div>
+              <div class="export-builder__field-item">
+                <div class="export-builder__field-item-info">
+                  <div class="export-builder__field-item-label">Nombre Postulante</div>
+                  <div class="export-builder__field-item-group">Información base</div>
+                </div>
+                <div class="export-builder__field-item-actions">
+                  <button class="btn btn-ghost btn-xs">↑</button>
+                  <button class="btn btn-ghost btn-xs">↓</button>
+                </div>
+              </div>
+              <div class="export-builder__field-item">
+                <div class="export-builder__field-item-info">
+                  <div class="export-builder__field-item-label">Nombre(s)</div>
+                  <div class="export-builder__field-item-group">Etapa 1 · Datos Personales</div>
+                </div>
+                <div class="export-builder__field-item-actions">
+                  <button class="btn btn-ghost btn-xs">↑</button>
+                  <button class="btn btn-ghost btn-xs">↓</button>
+                </div>
+              </div>
+              <div class="export-builder__field-item">
+                <div class="export-builder__field-item-info">
+                  <div class="export-builder__field-item-label">Apellido Paterno</div>
+                  <div class="export-builder__field-item-group">Etapa 1 · Datos Personales</div>
+                </div>
+                <div class="export-builder__field-item-actions">
+                  <button class="btn btn-ghost btn-xs">↑</button>
+                  <button class="btn btn-ghost btn-xs">↓</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- What to Export -->
+        <div class="export-builder__section">
+          <div class="export-builder__section-header">
+            <span class="export-builder__section-title">Qué exportar</span>
+          </div>
+          <div class="export-builder__section-body">
+            <input class="filter-input" type="text" placeholder="Buscar por nombre o email" />
+            <select class="filter-input">
+              <option>Todas las etapas</option>
+              <option>1. Formulario Principal</option>
+            </select>
+            <select class="filter-input">
+              <option>Todos los estados</option>
+              <option>Completado</option>
+              <option>En progreso</option>
+            </select>
+            <div class="options-group">
+              <label class="export-builder__format-option"><input type="radio" name="mode" checked /> <span>Todos los filtrados</span></label>
+              <label class="export-builder__format-option"><input type="radio" name="mode" /> <span>Selección manual</span></label>
+              <label class="export-builder__format-option"><input type="radio" name="mode" /> <span>Muestra aleatoria por grupos</span></label>
+            </div>
+          </div>
+        </div>
+
+        <!-- How to Download -->
+        <div class="export-builder__section">
+          <div class="export-builder__section-header">
+            <span class="export-builder__section-title">Cómo descargar</span>
+          </div>
+          <div class="export-builder__section-body">
+            <div>
+              <div class="field-label" style="margin-bottom:0.4rem;">Formato</div>
+              <div class="export-builder__format-row">
+                <label class="export-builder__format-option"><input type="radio" name="fmt" checked /> Excel (.xlsx)</label>
+                <label class="export-builder__format-option"><input type="radio" name="fmt" /> CSV</label>
+              </div>
+            </div>
+            <div class="export-builder__btn-row">
+              <button class="btn btn-secondary">Vista previa</button>
+              <button class="btn btn-primary">Descargar XLSX</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -10,12 +10,13 @@ import type { SelectionProcess } from "@/types/domain";
 export default async function AdminCandidatesPage({
   searchParams,
 }: {
-  searchParams?: Promise<{
-    cycleId?: string | string[];
-    q?: string | string[];
-    applicationId?: string | string[];
-  }>;
-}) {
+    searchParams?: Promise<{
+      cycleId?: string | string[];
+      q?: string | string[];
+      applicationId?: string | string[];
+      tab?: string | string[];
+    }>;
+  }) {
   const profile = await getSessionProfileOrRedirect();
 
   if (profile.role !== "admin") {
@@ -48,6 +49,9 @@ export default async function AdminCandidatesPage({
   const requestedApplicationId = Array.isArray(resolvedSearchParams.applicationId)
     ? resolvedSearchParams.applicationId[0]
     : resolvedSearchParams.applicationId;
+  const requestedTab = Array.isArray(resolvedSearchParams.tab)
+    ? resolvedSearchParams.tab[0]
+    : resolvedSearchParams.tab;
 
   let resolvedFocusApplicationId = "";
   let focusApplicationCycleId: string | null = null;
@@ -78,12 +82,19 @@ export default async function AdminCandidatesPage({
       : focusApplicationCycleId && cycleOptions.some((c) => c.id === focusApplicationCycleId)
         ? focusApplicationCycleId
         : (activeCycle?.id ?? "all");
+  const defaultView =
+    resolvedFocusApplicationId.length > 0
+      ? "list"
+      : requestedTab === "export"
+        ? "export"
+        : "list";
 
   return (
     <AdminCandidatesDashboard
       cycleOptions={cycleOptions}
       defaultCycleId={normalizedInitialCycleId}
       defaultSearch={normalizedSearch}
+      defaultView={defaultView}
       focusApplicationId={resolvedFocusApplicationId}
     />
   );

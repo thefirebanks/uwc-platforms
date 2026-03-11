@@ -44,6 +44,17 @@ export default async function ApplicantPage() {
       : await cyclesQuery.eq("is_active", true);
 
   const applicationIds = ((applications ?? []) as ApplicantApplicationSummary[]).map((a) => a.id);
+  const applicationRows = (applications as ApplicantApplicationSummary[] | null) ?? [];
+  const cycleRows = (cycles as SelectionProcess[] | null) ?? [];
+  const activeCycleIds = new Set(cycleRows.filter((cycle) => cycle.is_active).map((cycle) => cycle.id));
+  const activeApplication = applicationRows.find((app) => activeCycleIds.has(app.cycle_id)) ?? null;
+  const latestApplication = applicationRows[0] ?? null;
+  const currentProcessHref =
+    activeApplication?.cycle_id
+      ? `/applicant/process/${activeApplication.cycle_id}`
+      : latestApplication?.cycle_id
+        ? `/applicant/process/${latestApplication.cycle_id}`
+        : null;
 
   // eslint-disable-next-line react-hooks/purity -- server component; Date.now() is safe here
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -77,6 +88,7 @@ export default async function ApplicantPage() {
       <ApplicantTopNav
         accountDisplayName={profile.full_name ?? null}
         accountEmail={profile.email}
+        currentProcessHref={currentProcessHref}
       />
       <Box sx={{ pt: "var(--topbar-height)" }}>
         <Container maxWidth="lg" sx={{ py: 4 }}>

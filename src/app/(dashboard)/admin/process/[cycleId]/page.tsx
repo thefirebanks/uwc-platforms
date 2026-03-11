@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
-import { AdminDashboard } from "@/components/admin-dashboard";
 import { getSessionProfileOrRedirect } from "@/lib/server/session";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { Application, CycleStageTemplate, SelectionProcess } from "@/types/domain";
+import type { CycleStageTemplate } from "@/types/domain";
 
 export default async function AdminProcessPage({
   params,
@@ -26,6 +25,9 @@ export default async function AdminProcessPage({
   if (requestedSection === "applications") {
     redirect(`/admin/candidates?cycleId=${cycleId}`);
   }
+  if (requestedSection === "export") {
+    redirect(`/admin/candidates?cycleId=${cycleId}&tab=export`);
+  }
   if (requestedSection === "communications") {
     redirect(`/admin/process/${cycleId}/stage/documents?tab=communications`);
   }
@@ -33,35 +35,18 @@ export default async function AdminProcessPage({
     redirect(`/admin/process/${cycleId}/stage/documents?tab=prompt_studio`);
   }
   const supabase = await getSupabaseServerClient();
-  const { data: cycle } = await supabase.from("cycles").select("*").eq("id", cycleId).maybeSingle();
+  const { data: templateRows } = await supabase
+    .from("cycle_stage_templates")
+    .select("id, stage_code, sort_order")
+    .eq("cycle_id", cycleId)
+    .order("sort_order", { ascending: true });
+  const templates = (templateRows as Pick<CycleStageTemplate, "id" | "stage_code" | "sort_order">[] | null) ?? [];
+  const preferredTemplate =
+    templates.find((template) => template.stage_code === "documents") ?? templates[0];
 
-  if (!cycle) {
+  if (!preferredTemplate) {
     redirect("/admin/processes");
   }
 
-  const [{ data: applications }, { data: templates }] = await Promise.all([
-    supabase
-      .from("applications")
-      .select("*")
-      .eq("cycle_id", cycleId)
-      .order("updated_at", { ascending: false }),
-    supabase
-      .from("cycle_stage_templates")
-      .select("*")
-      .eq("cycle_id", cycleId)
-      .order("sort_order", { ascending: true }),
-  ]);
-
-  return (
-    <AdminDashboard
-      initialApplications={(applications as Application[] | null) ?? []}
-      cycleTemplates={(templates as CycleStageTemplate[] | null) ?? []}
-      cycle={cycle as SelectionProcess}
-      initialWorkspaceSection={
-        requestedSection === "stages" ? "stages"
-          : requestedSection === "export" ? "export"
-          : "process_config"
-      }
-    />
-  );
+  redirect(`/admin/process/${cycleId}/stage/${preferredTemplate.id}`);
 }

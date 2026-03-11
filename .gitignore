@@ -44,6 +44,7 @@ next-env.d.ts
 
 # local automation artifacts
 .playwright-cli/
+.playwright-mcp/
 test-results/
 playwright-report/
 output/

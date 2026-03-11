@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import {
   AppBar,
@@ -32,6 +32,7 @@ import {
 export function ApplicantTopNav({
   accountDisplayName,
   accountEmail,
+  currentProcessHref = null,
   draftStatusLabel,
   draftStatusDot,
   modeStatusLabel,
@@ -39,12 +40,14 @@ export function ApplicantTopNav({
 }: {
   accountDisplayName?: string | null;
   accountEmail?: string | null;
+  currentProcessHref?: string | null;
   draftStatusLabel?: string;
   draftStatusDot?: "success" | "warning" | "error" | "info";
   modeStatusLabel?: string;
   modeStatusDot?: "success" | "warning" | "error" | "info";
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { t, language, setLanguage, canUseEnglish } = useAppLanguage();
   const { mode, toggleMode } = useThemeMode();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -52,6 +55,27 @@ export function ApplicantTopNav({
   const [editedProfileName, setEditedProfileName] = useState<string | null>(null);
   const profileName = editedProfileName ?? accountDisplayName?.trim() ?? "";
   const isMenuOpen = Boolean(anchorEl);
+  const navItems = [
+    {
+      href: "/applicant",
+      label: "Inicio",
+      isActive: pathname === "/applicant",
+    },
+    ...(currentProcessHref
+      ? [
+          {
+            href: currentProcessHref,
+            label: "Proceso actual",
+            isActive: pathname?.startsWith("/applicant/process/") ?? false,
+          },
+        ]
+      : []),
+    {
+      href: "/applicant/support",
+      label: "Soporte",
+      isActive: pathname?.startsWith("/applicant/support") ?? false,
+    },
+  ];
 
   const isDark = mode === "dark";
   const getDotColor = (dot?: "success" | "warning" | "error" | "info") =>
@@ -125,6 +149,11 @@ export function ApplicantTopNav({
     setProfileDialogOpen(true);
   }
 
+  function handleNavClick(href: string) {
+    handleMenuClose();
+    router.push(href);
+  }
+
   function handleProfileClose() {
     setProfileDialogOpen(false);
   }
@@ -171,6 +200,42 @@ export function ApplicantTopNav({
         >
           UWC Selection
         </Typography>
+
+        <Stack
+          direction="row"
+          spacing={0.75}
+          sx={{
+            ml: 2.5,
+            display: { xs: "none", lg: "flex" },
+          }}
+        >
+          {navItems.map((item) => (
+            <Box
+              key={item.href}
+              component={Link}
+              href={item.href}
+              sx={{
+                textDecoration: "none",
+                fontSize: "0.82rem",
+                fontWeight: item.isActive ? 700 : 600,
+                color: item.isActive ? "var(--uwc-maroon)" : "var(--ink-light)",
+                px: 1.4,
+                py: 0.8,
+                borderRadius: "999px",
+                border: item.isActive ? "1px solid var(--uwc-maroon)" : "1px solid transparent",
+                bgcolor: item.isActive ? "var(--uwc-maroon-soft)" : "transparent",
+                transition: "all 160ms ease",
+                "&:hover": {
+                  color: "var(--ink)",
+                  bgcolor: "var(--cream)",
+                  borderColor: "var(--sand)",
+                },
+              }}
+            >
+              {item.label}
+            </Box>
+          ))}
+        </Stack>
 
         <Box sx={{ flexGrow: 1 }} />
 
@@ -322,6 +387,16 @@ export function ApplicantTopNav({
             },
           }}
         >
+          {navItems.map((item) => (
+            <MenuItem key={`mobile-${item.href}`} onClick={() => handleNavClick(item.href)}>
+              <Typography sx={{ flex: 1, fontWeight: item.isActive ? 700 : 500 }}>
+                {item.label}
+              </Typography>
+            </MenuItem>
+          ))}
+
+          <Divider sx={{ my: 0.5 }} />
+
           {accountMenuHeader}
 
           <MenuItem onClick={handleProfileOpen}>

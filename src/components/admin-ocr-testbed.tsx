@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { ErrorCallout } from "@/components/error-callout";
 import { FieldHint } from "@/components/field-hint";
+import { OCR_REFERENCE_FILE_LIMIT } from "@/lib/ocr/field-ai-parser";
 import { DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
 import type { OcrTestRun } from "@/types/domain";
 
@@ -27,6 +35,11 @@ type OcrRequestConfig = {
   systemPrompt?: string | null;
   extractionInstructions?: string | null;
   expectedSchemaTemplate?: string | null;
+  referenceFiles?: Array<{
+    fileName?: string | null;
+    mimeType?: string | null;
+    sizeBytes?: number | null;
+  }>;
   temperature?: number;
   topP?: number;
   maxTokens?: number;
@@ -43,9 +56,9 @@ type EditorSection = "context" | "prompts" | "schema";
 function isApiError(value: unknown): value is ApiError {
   return Boolean(
     value &&
-      typeof value === "object" &&
-      "message" in value &&
-      typeof (value as { message?: unknown }).message === "string",
+    typeof value === "object" &&
+    "message" in value &&
+    typeof (value as { message?: unknown }).message === "string",
   );
 }
 
@@ -88,6 +101,11 @@ function formatDuration(ms: number | null) {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(0)} KB`;
+}
+
 function confidenceColor(confidence: number | null) {
   if (confidence === null) return "var(--muted)";
   if (confidence >= 0.75) return "var(--success, #1e7e34)";
@@ -104,7 +122,9 @@ function getSchemaValidation(run: OcrTestRun): OcrSchemaValidation | null {
 
 function getInjectionSignals(run: OcrTestRun) {
   const candidate = run.raw_response?.injectionSignals;
-  return Array.isArray(candidate) ? candidate.filter((item): item is string => typeof item === "string") : [];
+  return Array.isArray(candidate)
+    ? candidate.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 function getRequestConfig(run: OcrTestRun): OcrRequestConfig | null {
@@ -124,13 +144,16 @@ export function AdminOcrTestbed({
   defaultSchemaTemplate = "",
 }: Props) {
   const [file, setFile] = useState<File | null>(null);
+  const [referenceFiles, setReferenceFiles] = useState<File[]>([]);
   const [modelId, setModelId] = useState(modelOptions[0]?.id ?? "gemini-flash");
   const [systemPrompt, setSystemPrompt] = useState(defaultSystemPrompt);
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [extractionInstructions, setExtractionInstructions] = useState(
     defaultExtractionInstructions ?? defaultPrompt,
   );
-  const [expectedSchemaTemplate, setExpectedSchemaTemplate] = useState(defaultSchemaTemplate);
+  const [expectedSchemaTemplate, setExpectedSchemaTemplate] = useState(
+    defaultSchemaTemplate,
+  );
   const [stageName, setStageName] = useState(stageCode ?? "documents");
   const [temperature, setTemperature] = useState("0.2");
   const [topP, setTopP] = useState("0.9");
@@ -138,6 +161,7 @@ export function AdminOcrTestbed({
   const [strictSchema, setStrictSchema] = useState(true);
   const [editorSection, setEditorSection] = useState<EditorSection>("prompts");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const referenceFileInputRef = useRef<HTMLInputElement>(null);
 
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<OcrTestRun | null>(null);
@@ -160,13 +184,19 @@ export function AdminOcrTestbed({
       if (!res.ok) {
         throw normalizeApiError(json, "Error al cargar historial.");
       }
-      const runs = (((json as { runs?: OcrTestRun[] } | null) ?? {}).runs ?? []) as OcrTestRun[];
+      const runs = (((json as { runs?: OcrTestRun[] } | null) ?? {}).runs ??
+        []) as OcrTestRun[];
       setHistory(runs);
     } catch (err) {
       setHistoryError(
         isApiError(err)
           ? err
-          : { message: err instanceof Error ? err.message : "Error al cargar historial." },
+          : {
+              message:
+                err instanceof Error
+                  ? err.message
+                  : "Error al cargar historial.",
+            },
       );
     } finally {
       setHistoryLoading(false);
@@ -208,7 +238,9 @@ export function AdminOcrTestbed({
       JSON.parse(expectedSchemaTemplate);
       return null;
     } catch (error) {
-      return error instanceof Error ? error.message : "El esquema JSON no es válido.";
+      return error instanceof Error
+        ? error.message
+        : "El esquema JSON no es válido.";
     }
   }, [expectedSchemaTemplate]);
 
@@ -225,15 +257,23 @@ export function AdminOcrTestbed({
       errors.push("Completa el contexto/etapa antes de ejecutar la prueba.");
     }
     if (!prompt.trim()) {
-      errors.push("Completa las instrucciones base antes de ejecutar la prueba.");
+      errors.push(
+        "Completa las instrucciones base antes de ejecutar la prueba.",
+      );
     }
     if (!extractionInstructions.trim()) {
-      errors.push("Completa las instrucciones de extracción antes de ejecutar la prueba.");
+      errors.push(
+        "Completa las instrucciones de extracción antes de ejecutar la prueba.",
+      );
     }
     if (!expectedSchemaTemplate.trim()) {
-      errors.push("Define un esquema JSON esperado antes de ejecutar la prueba.");
+      errors.push(
+        "Define un esquema JSON esperado antes de ejecutar la prueba.",
+      );
     } else if (schemaTemplateError) {
-      errors.push("Corrige el esquema JSON esperado antes de ejecutar la prueba.");
+      errors.push(
+        "Corrige el esquema JSON esperado antes de ejecutar la prueba.",
+      );
     }
 
     return errors;
@@ -255,7 +295,9 @@ export function AdminOcrTestbed({
 
     const selectedFile = file;
     if (!selectedFile) {
-      setRunError({ message: "Adjunta un archivo antes de ejecutar la prueba." });
+      setRunError({
+        message: "Adjunta un archivo antes de ejecutar la prueba.",
+      });
       return;
     }
 
@@ -273,6 +315,9 @@ export function AdminOcrTestbed({
       formData.append("systemPrompt", systemPrompt);
       formData.append("extractionInstructions", extractionInstructions);
       formData.append("expectedSchemaTemplate", expectedSchemaTemplate);
+      for (const referenceFile of referenceFiles) {
+        formData.append("referenceFiles", referenceFile);
+      }
       formData.append("temperature", temperature);
       formData.append("topP", topP);
       formData.append("maxTokens", maxTokens);
@@ -287,13 +332,20 @@ export function AdminOcrTestbed({
       if (!res.ok) {
         throw normalizeApiError(json, "Error al ejecutar Prompt Studio.");
       }
-      setResult(((json as { run?: OcrTestRun } | null) ?? {}).run as OcrTestRun);
+      setResult(
+        ((json as { run?: OcrTestRun } | null) ?? {}).run as OcrTestRun,
+      );
       await loadHistory();
     } catch (err) {
       setRunError(
         isApiError(err)
           ? err
-          : { message: err instanceof Error ? err.message : "Error al ejecutar Prompt Studio." },
+          : {
+              message:
+                err instanceof Error
+                  ? err.message
+                  : "Error al ejecutar Prompt Studio.",
+            },
       );
     } finally {
       setIsRunning(false);
@@ -304,10 +356,40 @@ export function AdminOcrTestbed({
     setFile(event.target.files?.[0] ?? null);
   }
 
+  function appendReferenceFiles(incomingFiles: FileList | File[]) {
+    const nextFiles = Array.from(incomingFiles);
+    if (nextFiles.length === 0) {
+      return;
+    }
+
+    setReferenceFiles((current) => {
+      const deduped = new Map<string, File>();
+      for (const referenceFile of [...current, ...nextFiles]) {
+        deduped.set(
+          `${referenceFile.name}:${referenceFile.size}:${referenceFile.type}:${referenceFile.lastModified}`,
+          referenceFile,
+        );
+      }
+      return [...deduped.values()].slice(0, OCR_REFERENCE_FILE_LIMIT);
+    });
+  }
+
+  function handleReferenceFileChange(
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) {
+    appendReferenceFiles(event.target.files ?? []);
+    event.target.value = "";
+  }
+
   function handleDrop(event: React.DragEvent) {
     event.preventDefault();
     const dropped = event.dataTransfer.files[0];
     if (dropped) setFile(dropped);
+  }
+
+  function handleReferenceDrop(event: React.DragEvent) {
+    event.preventDefault();
+    appendReferenceFiles(event.dataTransfer.files);
   }
 
   function handleDragOver(event: React.DragEvent) {
@@ -318,6 +400,7 @@ export function AdminOcrTestbed({
     const schemaValidation = getSchemaValidation(run);
     const injectionSignals = getInjectionSignals(run);
     const requestConfig = getRequestConfig(run);
+    const requestReferenceFiles = requestConfig?.referenceFiles ?? [];
 
     return (
       <div className="ocr-testbed__result card">
@@ -332,9 +415,14 @@ export function AdminOcrTestbed({
                 } as CSSProperties
               }
             >
-              Confianza: {run.confidence !== null ? `${(run.confidence * 100).toFixed(0)}%` : "N/A"}
+              Confianza:{" "}
+              {run.confidence !== null
+                ? `${(run.confidence * 100).toFixed(0)}%`
+                : "N/A"}
             </span>
-            <span className="ocr-testbed__duration">⏱ {formatDuration(run.duration_ms)}</span>
+            <span className="ocr-testbed__duration">
+              ⏱ {formatDuration(run.duration_ms)}
+            </span>
             <span className="ocr-testbed__model-badge">
               {modelNameById.get(run.model_id) ?? run.model_id}
             </span>
@@ -344,7 +432,9 @@ export function AdminOcrTestbed({
         <p className="ocr-testbed__summary">{run.summary}</p>
 
         <div className="admin-chip-row ocr-testbed__chip-row">
-          <span className={`status-pill ${schemaValidation?.valid ? "complete" : "rejected"}`}>
+          <span
+            className={`status-pill ${schemaValidation?.valid ? "complete" : "rejected"}`}
+          >
             {schemaValidation?.valid ? "Schema OK" : "Schema inválido"}
           </span>
           <span className="status-pill admin-chip-neutral">
@@ -353,12 +443,18 @@ export function AdminOcrTestbed({
           <span className="status-pill admin-chip-neutral">
             {requestConfig?.strictSchema ? "Strict schema" : "Schema flexible"}
           </span>
+          <span className="status-pill admin-chip-neutral">
+            Referencias: {requestReferenceFiles.length}
+          </span>
         </div>
 
         {schemaValidation?.errors && schemaValidation.errors.length > 0 ? (
           <div className="ocr-testbed__notes">
             {schemaValidation.errors.map((errorText, index) => (
-              <div key={`${run.id}-schema-${index}`} className="form-hint ocr-testbed__note">
+              <div
+                key={`${run.id}-schema-${index}`}
+                className="form-hint ocr-testbed__note"
+              >
                 {errorText}
               </div>
             ))}
@@ -368,7 +464,10 @@ export function AdminOcrTestbed({
         {injectionSignals.length > 0 ? (
           <div className="ocr-testbed__notes">
             {injectionSignals.map((signal, index) => (
-              <div key={`${run.id}-signal-${index}`} className="form-hint ocr-testbed__note">
+              <div
+                key={`${run.id}-signal-${index}`}
+                className="form-hint ocr-testbed__note"
+              >
                 {signal}
               </div>
             ))}
@@ -377,24 +476,34 @@ export function AdminOcrTestbed({
 
         {requestConfig ? (
           <div className="form-hint ocr-testbed__request-meta">
-            Temp {requestConfig.temperature ?? "—"} | Top-P {requestConfig.topP ?? "—"} | Max
-            tokens {requestConfig.maxTokens ?? "—"}
+            Temp {requestConfig.temperature ?? "—"} | Top-P{" "}
+            {requestConfig.topP ?? "—"} | Max tokens{" "}
+            {requestConfig.maxTokens ?? "—"} | Refs{" "}
+            {requestReferenceFiles.length}
           </div>
         ) : null}
 
-        <button className="btn btn-ghost btn-sm" onClick={() => setShowRaw((value) => !value)}>
+        <button
+          className="btn btn-ghost btn-sm"
+          onClick={() => setShowRaw((value) => !value)}
+        >
           {showRaw ? "Ocultar JSON completo" : "Ver JSON completo"}
         </button>
 
         {showRaw ? (
-          <pre className="ocr-testbed__raw">{JSON.stringify(run.raw_response, null, 2)}</pre>
+          <pre className="ocr-testbed__raw">
+            {JSON.stringify(run.raw_response, null, 2)}
+          </pre>
         ) : null}
       </div>
     );
   }
 
   const confidenceDelta =
-    result && comparisonRun && result.confidence !== null && comparisonRun.confidence !== null
+    result &&
+    comparisonRun &&
+    result.confidence !== null &&
+    comparisonRun.confidence !== null
       ? result.confidence - comparisonRun.confidence
       : null;
 
@@ -410,7 +519,9 @@ export function AdminOcrTestbed({
           onClick={() => fileInputRef.current?.click()}
           role="button"
           tabIndex={0}
-          onKeyDown={(event) => event.key === "Enter" && fileInputRef.current?.click()}
+          onKeyDown={(event) =>
+            event.key === "Enter" && fileInputRef.current?.click()
+          }
           aria-label="Subir archivo de prueba"
         >
           <input
@@ -435,7 +546,107 @@ export function AdminOcrTestbed({
           )}
         </div>
 
-        <div className="ocr-testbed__tabs" role="tablist" aria-label="Secciones de Prompt Studio">
+        <input
+          ref={referenceFileInputRef}
+          type="file"
+          accept=".pdf,.jpg,.jpeg,.png,.webp"
+          multiple
+          style={{ display: "none" }}
+          onChange={handleReferenceFileChange}
+          aria-label="Subir archivos de referencia"
+        />
+        <div
+          className={`ocr-testbed__reference-dropzone${
+            referenceFiles.length > 0
+              ? " ocr-testbed__reference-dropzone--filled"
+              : ""
+          }`}
+          onDrop={handleReferenceDrop}
+          onDragOver={handleDragOver}
+          onClick={() => referenceFileInputRef.current?.click()}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) =>
+            (event.key === "Enter" || event.key === " ") &&
+            referenceFileInputRef.current?.click()
+          }
+          aria-label="Subir archivos de referencia"
+        >
+          <div>
+            <div className="ocr-testbed__reference-title">
+              Archivos de referencia opcionales
+            </div>
+            <div className="ocr-testbed__reference-hint">
+              Adjunta PDFs o imágenes extra para dar contexto visual al OCR. No
+              reemplazan el documento principal.
+            </div>
+          </div>
+          <div className="ocr-testbed__reference-actions">
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              onClick={(event) => {
+                event.stopPropagation();
+                referenceFileInputRef.current?.click();
+              }}
+            >
+              Añadir referencias
+            </button>
+            {referenceFiles.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setReferenceFiles([]);
+                }}
+              >
+                Limpiar
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {referenceFiles.length > 0 ? (
+          <div
+            className="ocr-testbed__file-list"
+            aria-label="Lista de archivos de referencia"
+          >
+            {referenceFiles.map((referenceFile, index) => (
+              <div
+                key={`${referenceFile.name}-${referenceFile.size}-${referenceFile.lastModified}`}
+                className="ocr-testbed__file-pill"
+              >
+                <span>
+                  {referenceFile.name}
+                  <span className="ocr-testbed__file-pill-meta">
+                    {" "}
+                    ({formatFileSize(referenceFile.size)})
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  aria-label={`Eliminar referencia ${index + 1}`}
+                  onClick={() =>
+                    setReferenceFiles((current) =>
+                      current.filter(
+                        (candidate) => candidate !== referenceFile,
+                      ),
+                    )
+                  }
+                >
+                  Quitar
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+
+        <div
+          className="ocr-testbed__tabs"
+          role="tablist"
+          aria-label="Secciones de Prompt Studio"
+        >
           <button
             type="button"
             className={`ocr-testbed__tab${editorSection === "context" ? " is-active" : ""}`}
@@ -466,8 +677,9 @@ export function AdminOcrTestbed({
                 <label className="field-label" htmlFor="ocr-model">
                   Modelo{" "}
                   <FieldHint label="Ayuda sobre el modelo">
-                    El modelo indicado aquí es el que procesa el archivo que subes en esta prueba.
-                    Hoy la opción por defecto usa Gemini 3 Flash Preview.
+                    El modelo indicado aquí es el que procesa el archivo que
+                    subes en esta prueba. Hoy la opción por defecto usa Gemini 3
+                    Flash Preview.
                   </FieldHint>
                 </label>
                 <select
@@ -488,8 +700,9 @@ export function AdminOcrTestbed({
                 <label className="field-label" htmlFor="ocr-stage">
                   Contexto / etapa{" "}
                   <FieldHint label="Ayuda sobre el contexto">
-                    Es solo una etiqueta para guardar historial y comparar corridas. No selecciona
-                    archivos del proceso automáticamente.
+                    Es solo una etiqueta para guardar historial y comparar
+                    corridas. No selecciona archivos del proceso
+                    automáticamente.
                   </FieldHint>
                 </label>
                 <input
@@ -510,8 +723,8 @@ export function AdminOcrTestbed({
               <label className="field-label" htmlFor="ocr-system-prompt">
                 System prompt adicional{" "}
                 <FieldHint label="Ayuda sobre system prompt">
-                  Define cómo debe comportarse el modelo al razonar. No describe el documento ni
-                  reemplaza el esquema.
+                  Define cómo debe comportarse el modelo al razonar. No describe
+                  el documento ni reemplaza el esquema.
                 </FieldHint>
               </label>
               <textarea
@@ -528,8 +741,8 @@ export function AdminOcrTestbed({
               <label className="field-label" htmlFor="ocr-prompt">
                 Instrucciones base{" "}
                 <FieldHint label="Ayuda sobre instrucciones base">
-                  Describe la tarea general que debe resolver esta corrida sobre el archivo
-                  adjunto.
+                  Describe la tarea general que debe resolver esta corrida sobre
+                  el archivo adjunto.
                 </FieldHint>
               </label>
               <textarea
@@ -546,7 +759,8 @@ export function AdminOcrTestbed({
               <label className="field-label" htmlFor="ocr-extraction">
                 Instrucciones de extracción{" "}
                 <FieldHint label="Ayuda sobre instrucciones de extracción">
-                  Especifica los campos o señales exactas que quieres devolver dentro del JSON.
+                  Especifica los campos o señales exactas que quieres devolver
+                  dentro del JSON.
                 </FieldHint>
               </label>
               <textarea
@@ -554,7 +768,9 @@ export function AdminOcrTestbed({
                 className="form-input"
                 rows={4}
                 value={extractionInstructions}
-                onChange={(event) => setExtractionInstructions(event.target.value)}
+                onChange={(event) =>
+                  setExtractionInstructions(event.target.value)
+                }
                 placeholder="Qué debe extraer, resumir y validar."
               />
             </div>
@@ -567,7 +783,8 @@ export function AdminOcrTestbed({
               <label className="field-label" htmlFor="ocr-schema">
                 Esquema JSON esperado{" "}
                 <FieldHint label="Ayuda sobre el esquema JSON">
-                  Usa JSON válido. Puedes definir tipos con ejemplos o atajos como
+                  Usa JSON válido. Puedes definir tipos con ejemplos o atajos
+                  como
                   {' "string", "int", "number" y "boolean".'}
                 </FieldHint>
               </label>
@@ -576,11 +793,15 @@ export function AdminOcrTestbed({
                 className="form-input ocr-testbed__code-input"
                 rows={12}
                 value={expectedSchemaTemplate}
-                onChange={(event) => setExpectedSchemaTemplate(event.target.value)}
+                onChange={(event) =>
+                  setExpectedSchemaTemplate(event.target.value)
+                }
                 placeholder='{"summary":"string","confidence":0,"findings":["string"]}'
               />
               {schemaTemplateError ? (
-                <div className="ocr-testbed__inline-error">{schemaTemplateError}</div>
+                <div className="ocr-testbed__inline-error">
+                  {schemaTemplateError}
+                </div>
               ) : null}
             </div>
 
@@ -674,8 +895,13 @@ export function AdminOcrTestbed({
             <span className="status-pill admin-chip-neutral">
               Archivo comparado: {comparisonRun.file_name}
             </span>
-            <span className={`status-pill ${confidenceDelta !== null && confidenceDelta >= 0 ? "complete" : "rejected"}`}>
-              Delta confianza: {confidenceDelta === null ? "—" : `${(confidenceDelta * 100).toFixed(0)} pts`}
+            <span
+              className={`status-pill ${confidenceDelta !== null && confidenceDelta >= 0 ? "complete" : "rejected"}`}
+            >
+              Delta confianza:{" "}
+              {confidenceDelta === null
+                ? "—"
+                : `${(confidenceDelta * 100).toFixed(0)} pts`}
             </span>
           </div>
         </div>
@@ -684,7 +910,9 @@ export function AdminOcrTestbed({
       <div className="ocr-testbed__history card">
         <h4>Historial de pruebas (últimas 10)</h4>
 
-        {historyLoading ? <p className="muted-text">Cargando historial…</p> : null}
+        {historyLoading ? (
+          <p className="muted-text">Cargando historial…</p>
+        ) : null}
         {historyError ? (
           <ErrorCallout
             message={historyError.message}
@@ -708,7 +936,9 @@ export function AdminOcrTestbed({
                   <div className="ocr-testbed__history-item-top">
                     <div>
                       <h5 title={run.file_name}>{run.file_name}</h5>
-                      <div className="form-hint">{formatDate(run.created_at)}</div>
+                      <div className="form-hint">
+                        {formatDate(run.created_at)}
+                      </div>
                     </div>
                     <button
                       className="btn btn-ghost btn-sm"
@@ -722,9 +952,15 @@ export function AdminOcrTestbed({
                     <span className="status-pill admin-chip-neutral">
                       {modelNameById.get(run.model_id) ?? run.model_id}
                     </span>
-                    <span className="status-pill admin-chip-neutral">{run.stage_code}</span>
-                    <span className={`status-pill ${schemaValidation?.valid ? "complete" : "rejected"}`}>
-                      {schemaValidation?.valid ? "Schema OK" : "Schema inválido"}
+                    <span className="status-pill admin-chip-neutral">
+                      {run.stage_code}
+                    </span>
+                    <span
+                      className={`status-pill ${schemaValidation?.valid ? "complete" : "rejected"}`}
+                    >
+                      {schemaValidation?.valid
+                        ? "Schema OK"
+                        : "Schema inválido"}
                     </span>
                     <span className="status-pill admin-chip-neutral">
                       {injectionSignals.length} señal(es)
@@ -735,8 +971,9 @@ export function AdminOcrTestbed({
                   </div>
                   {requestConfig ? (
                     <div className="ocr-testbed__history-secondary">
-                      Temp {requestConfig.temperature ?? "—"} | Top-P {requestConfig.topP ?? "—"} |
-                      Max tokens {requestConfig.maxTokens ?? "—"}
+                      Temp {requestConfig.temperature ?? "—"} | Top-P{" "}
+                      {requestConfig.topP ?? "—"} | Max tokens{" "}
+                      {requestConfig.maxTokens ?? "—"}
                     </div>
                   ) : null}
                 </article>

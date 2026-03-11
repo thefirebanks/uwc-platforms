@@ -1,6 +1,8 @@
+import * as XLSX from "xlsx-js-style";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { AppError } from "@/lib/errors/app-error";
+import { getApplicationName } from "@/lib/server/application-service";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
 import type { Database, Json } from "@/types/supabase";
@@ -24,6 +26,8 @@ export type ApplicationExportFilters = {
   stageCode?: StageCode;
   status?: ApplicationStatus;
   eligibility: "all" | "eligible" | "ineligible" | "pending" | "advanced";
+  query?: string;
+  applicationIds?: string[];
 };
 
 export type ApplicationExportRow = {
@@ -127,6 +131,36 @@ export type ExportCatalog = {
   presets: ExportPresetSummary[];
 };
 
+export type ExportTargetMode = "filtered" | "manual" | "randomSample";
+export type GroupedExportMode = "single-sheet" | "multi-sheet" | "separate-files";
+
+export type GroupAssignment = {
+  applicationId: string;
+  groupKey: string;
+  groupLabel: string;
+};
+
+export type RandomSampleConfig = {
+  groupCount: number;
+  applicantsPerGroup: number;
+};
+
+export type MatrixExportFieldRow = {
+  label: string;
+  values: string[];
+};
+
+export type MatrixExportSheet = {
+  name: string;
+  applicantHeaders: string[];
+  rows: MatrixExportFieldRow[];
+};
+
+export type MatrixExportWorkbook = {
+  sheets: MatrixExportSheet[];
+  grouped: boolean;
+};
+
 export type ApplicationExportContext = {
   application: Pick<
     ApplicationRow,
@@ -145,6 +179,169 @@ export type ApplicationExportContext = {
   cycle: Pick<CycleRow, "name"> | null;
   recommendations: RecommendationLite[];
 };
+
+type ExcelColor = { rgb: string };
+
+type ExcelBorderSide = {
+  style: "thin" | "medium";
+  color: ExcelColor;
+};
+
+type ExcelCellStyle = {
+  font?: {
+    bold?: boolean;
+    color?: ExcelColor;
+    sz?: number;
+  };
+  fill?: {
+    patternType?: "solid";
+    fgColor?: ExcelColor;
+    bgColor?: ExcelColor;
+  };
+  alignment?: {
+    horizontal?: "left" | "center";
+    vertical?: "top" | "center";
+    wrapText?: boolean;
+  };
+  border?: {
+    top?: ExcelBorderSide;
+    right?: ExcelBorderSide;
+    bottom?: ExcelBorderSide;
+    left?: ExcelBorderSide;
+  };
+};
+
+const BORDER_COLOR = { rgb: "FFD2CCC4" };
+const THIN_BORDER: ExcelBorderSide = { style: "thin", color: BORDER_COLOR };
+const MEDIUM_BORDER: ExcelBorderSide = { style: "medium", color: { rgb: "FFC4BDB3" } };
+
+const HEADER_STYLE: ExcelCellStyle = {
+  font: { bold: true, sz: 12, color: { rgb: "FF1F1A17" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFE7E1D8" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: { top: MEDIUM_BORDER, right: THIN_BORDER, bottom: MEDIUM_BORDER, left: THIN_BORDER },
+};
+
+const FIELD_COLUMN_STYLE: ExcelCellStyle = {
+  font: { bold: true, sz: 12, color: { rgb: "FF1F1A17" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFF1EEEA" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: { top: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER },
+};
+
+const DATA_STYLE: ExcelCellStyle = {
+  font: { sz: 12, color: { rgb: "FF1F1A17" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFFFFFFF" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: { top: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER },
+};
+
+const SPACER_STYLE: ExcelCellStyle = {
+  fill: { patternType: "solid", fgColor: { rgb: "FFF7F5F2" } },
+  border: { top: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER },
+};
+
+const GROUP_ROW_STYLE: ExcelCellStyle = {
+  font: { bold: true, color: { rgb: "FF39465B" } },
+  fill: { patternType: "solid", fgColor: { rgb: "FFEAF0F8" } },
+  alignment: { horizontal: "center", vertical: "center", wrapText: true },
+  border: { top: THIN_BORDER, right: THIN_BORDER, bottom: THIN_BORDER, left: THIN_BORDER },
+};
+
+function setExcelCellStyle(ws: XLSX.WorkSheet, row: number, col: number, style: ExcelCellStyle) {
+  const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+  const cell = ws[cellAddress];
+  if (!cell) {
+    return;
+  }
+  (cell as XLSX.CellObject & { s?: ExcelCellStyle }).s = style;
+}
+
+type WorksheetFreezeConfig = {
+  xSplit?: number;
+  ySplit?: number;
+};
+
+function buildPaneXml({ xSplit, ySplit }: WorksheetFreezeConfig): string | null {
+  const normalizedX = Math.max(0, Math.trunc(xSplit ?? 0));
+  const normalizedY = Math.max(0, Math.trunc(ySplit ?? 0));
+  if (normalizedX === 0 && normalizedY === 0) {
+    return null;
+  }
+
+  const topLeftCell = XLSX.utils.encode_cell({ r: normalizedY, c: normalizedX });
+  const activePane = normalizedX > 0 && normalizedY > 0
+    ? "bottomRight"
+    : normalizedX > 0
+      ? "topRight"
+      : "bottomLeft";
+
+  const attrs = [
+    normalizedX > 0 ? `xSplit="${normalizedX}"` : null,
+    normalizedY > 0 ? `ySplit="${normalizedY}"` : null,
+    `topLeftCell="${topLeftCell}"`,
+    `activePane="${activePane}"`,
+    'state="frozen"',
+  ].filter(Boolean);
+
+  return `<pane ${attrs.join(" ")}/>`;
+}
+
+function applyPaneToWorksheetXml(xml: string, paneXml: string): string {
+  if (/<sheetView[^>]*>\s*<pane[^>]*>/.test(xml) || /<sheetView[^>]*>\s*<pane[^>]*\/>/.test(xml)) {
+    return xml;
+  }
+
+  if (/<sheetView[^>]*\/>/.test(xml)) {
+    return xml.replace(/<sheetView([^>]*)\/>/, `<sheetView$1>${paneXml}</sheetView>`);
+  }
+
+  return xml.replace(/<sheetView([^>]*)>/, `<sheetView$1>${paneXml}`);
+}
+
+async function applyWorksheetFreezes(
+  buffer: Buffer,
+  freezeConfigs: WorksheetFreezeConfig[],
+): Promise<Buffer> {
+  if (freezeConfigs.length === 0) {
+    return buffer;
+  }
+
+  const { unzipSync, zipSync, strFromU8 } = await import("fflate");
+  const unpacked = unzipSync(new Uint8Array(buffer));
+  const files: Record<string, Uint8Array> = {};
+  for (const [path, content] of Object.entries(unpacked)) {
+    files[path] = new Uint8Array(content);
+  }
+  let changed = false;
+
+  freezeConfigs.forEach((freeze, index) => {
+    const paneXml = buildPaneXml(freeze);
+    if (!paneXml) {
+      return;
+    }
+
+    const sheetPath = `xl/worksheets/sheet${index + 1}.xml`;
+    const existing = files[sheetPath];
+    if (!existing) {
+      return;
+    }
+
+    const xml = strFromU8(existing);
+    const updated = applyPaneToWorksheetXml(xml, paneXml);
+    if (updated !== xml) {
+      const EncodedArray = (existing.constructor as typeof Uint8Array);
+      files[sheetPath] = new EncodedArray(new TextEncoder().encode(updated));
+      changed = true;
+    }
+  });
+
+  if (!changed) {
+    return buffer;
+  }
+
+  return Buffer.from(zipSync(files, { level: 9 }));
+}
 
 export const EXPORTABLE_COLUMNS: ExportableColumn[] = [
   { key: "applicationId", label: "ID Postulación" },
@@ -231,6 +428,110 @@ function getCoreExportValue(row: ApplicationExportRow, key: keyof ApplicationExp
 function clean(value: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : undefined;
+}
+
+function normalizeSearchInput(raw: string) {
+  return raw.replace(/\s+/g, " ").trim();
+}
+
+function stripDiacritics(value: string) {
+  return value.normalize("NFD").replace(/\p{M}+/gu, "");
+}
+
+function sanitizeSearchQuery(raw: string) {
+  return raw
+    .replace(/[<>:;!@#$%^&*()[\]{}|\\]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function searchProfilesByFallback({
+  supabase,
+  rawQuery,
+}: {
+  supabase: SupabaseClient<Database>;
+  rawQuery: string;
+}) {
+  const normalized = normalizeSearchInput(rawQuery);
+  if (!normalized) {
+    return [];
+  }
+
+  const queryVariants = Array.from(
+    new Set([
+      normalized,
+      stripDiacritics(normalized),
+      normalized.toLowerCase(),
+      stripDiacritics(normalized.toLowerCase()),
+    ]),
+  ).filter(Boolean);
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, email, full_name");
+
+  if (error) {
+    throw new AppError({
+      message: "Profile fallback search failed during export",
+      userMessage: "No se pudieron aplicar los filtros de búsqueda para la exportación.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  const matched = (data ?? []).filter((profile) => {
+    const haystack = `${profile.full_name ?? ""} ${profile.email ?? ""}`;
+    const normalizedHaystack = stripDiacritics(haystack.toLowerCase());
+    return queryVariants.some((variant) =>
+      normalizedHaystack.includes(stripDiacritics(variant.toLowerCase())),
+    );
+  });
+
+  return matched.map((profile) => profile.id);
+}
+
+async function resolveMatchingProfileIds({
+  supabase,
+  rawQuery,
+}: {
+  supabase: SupabaseClient<Database>;
+  rawQuery?: string;
+}) {
+  const query = clean(rawQuery ?? null);
+  if (!query) {
+    return null;
+  }
+
+  const normalized = normalizeSearchInput(query);
+  const sanitized = sanitizeSearchQuery(normalized);
+  if (!sanitized) {
+    return [];
+  }
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id")
+    .textSearch("search_vector", sanitized, {
+      type: "websearch",
+      config: "spanish",
+    });
+
+  if (error) {
+    return searchProfilesByFallback({
+      supabase,
+      rawQuery: normalized,
+    });
+  }
+
+  const ids = (data ?? []).map((profile) => profile.id);
+  if (ids.length > 0) {
+    return ids;
+  }
+
+  return searchProfilesByFallback({
+    supabase,
+    rawQuery: normalized,
+  });
 }
 
 function parseUuid(raw: string | null, fieldName: string) {
@@ -371,6 +672,15 @@ export function parseApplicationExportFilters(
   const stageCode = parseStage(searchParams.get("stageCode"));
   const status = parseStatus(searchParams.get("status"));
   const eligibility = parseEligibility(searchParams.get("eligibility"));
+  const query = clean(searchParams.get("q"));
+  const applicationIds = Array.from(
+    new Set(
+      (searchParams.get("applicationIds") ?? "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
+  );
 
   if (status && eligibility !== "all") {
     throw new AppError({
@@ -385,6 +695,8 @@ export function parseApplicationExportFilters(
     stageCode,
     status,
     eligibility,
+    query,
+    applicationIds: applicationIds.length > 0 ? applicationIds : undefined,
   };
 }
 
@@ -562,6 +874,20 @@ export async function getApplicationsForExport({
   filters: ApplicationExportFilters;
   maxRows?: number;
 }) {
+  const matchingProfileIds = await resolveMatchingProfileIds({
+    supabase,
+    rawQuery: filters.query,
+  });
+
+  if (matchingProfileIds && matchingProfileIds.length === 0) {
+    return {
+      rows: [],
+      records: [],
+      total: 0,
+      truncated: false,
+    };
+  }
+
   let query = supabase.from("applications").select(
     "id, applicant_id, cycle_id, stage_code, status, payload, files, validation_notes, created_at, updated_at",
     { count: "exact" },
@@ -577,6 +903,14 @@ export async function getApplicationsForExport({
 
   if (filters.status) {
     query = query.eq("status", filters.status);
+  }
+
+  if (filters.applicationIds && filters.applicationIds.length > 0) {
+    query = query.in("id", filters.applicationIds);
+  }
+
+  if (matchingProfileIds) {
+    query = query.in("applicant_id", matchingProfileIds);
   }
 
   query = mapEligibilityFilters(query, filters.eligibility);
@@ -814,6 +1148,446 @@ export function buildDynamicCsvExport(table: { headers: string[]; rows: string[]
   return [header, ...lines].join("\n");
 }
 
+function buildApplicantHeader(record: ApplicationExportContext) {
+  const name = getApplicationName(
+    {
+      id: record.application.id,
+      applicant_id: record.application.applicant_id,
+      cycle_id: record.application.cycle_id,
+      stage_code: record.application.stage_code,
+      status: record.application.status,
+      payload: (record.application.payload ?? {}) as Record<string, string | number | boolean | null>,
+      files: {},
+      validation_notes: record.application.validation_notes,
+      error_report_count: 0,
+      created_at: record.application.created_at,
+      updated_at: record.application.updated_at,
+    },
+    record.applicant?.full_name ?? "Postulante",
+  );
+  const email = record.applicant?.email?.trim();
+
+  return email && email !== name ? `${name} (${email})` : name;
+}
+
+function sortRecordsForExport(records: ApplicationExportContext[]) {
+  return [...records].sort((left, right) =>
+    buildApplicantHeader(left).localeCompare(buildApplicantHeader(right), "es"),
+  );
+}
+
+function sanitizeWorksheetName(name: string, fallback: string) {
+  const cleaned = name.replace(/[\[\]\*\/\\:\?]/g, " ").replace(/\s+/g, " ").trim();
+  const finalName = cleaned || fallback;
+  return finalName.slice(0, 31);
+}
+
+function resolveFieldValueForRecord({
+  record,
+  fieldKey,
+}: {
+  record: ApplicationExportContext;
+  fieldKey: string;
+}) {
+  const coreRow: ApplicationExportRow = {
+    applicationId: record.application.id,
+    cycleId: record.application.cycle_id,
+    cycleName: record.cycle?.name ?? "(sin nombre)",
+    applicantId: record.application.applicant_id,
+    applicantEmail: record.applicant?.email ?? "(sin email)",
+    applicantName: getApplicationName(
+      {
+        id: record.application.id,
+        applicant_id: record.application.applicant_id,
+        cycle_id: record.application.cycle_id,
+        stage_code: record.application.stage_code,
+        status: record.application.status,
+        payload: (record.application.payload ?? {}) as Record<string, string | number | boolean | null>,
+        files: {},
+        validation_notes: record.application.validation_notes,
+        error_report_count: 0,
+        created_at: record.application.created_at,
+        updated_at: record.application.updated_at,
+      },
+      record.applicant?.full_name ?? "(sin nombre)",
+    ),
+    stageCode: record.application.stage_code,
+    status: record.application.status,
+    validationNotes: record.application.validation_notes ?? "",
+    mentorRecommendationSubmitted: record.recommendations.some(
+      (item) => item.role === "mentor" && item.status === "submitted",
+    ),
+    friendRecommendationSubmitted: record.recommendations.some(
+      (item) => item.role === "friend" && item.status === "submitted",
+    ),
+    recommendationCompletion:
+      record.recommendations.some((item) => item.role === "mentor" && item.status === "submitted") &&
+      record.recommendations.some((item) => item.role === "friend" && item.status === "submitted")
+        ? "complete"
+        : "incomplete",
+    fileCount: countFiles(record.application.files),
+    createdAt: record.application.created_at,
+    updatedAt: record.application.updated_at,
+  };
+
+  if (fieldKey.startsWith("payload.")) {
+    return resolveNestedExportValue(
+      (record.application.payload ?? {}) as Record<string, unknown>,
+      fieldKey.replace(/^payload\./, ""),
+    );
+  }
+
+  return getCoreExportValue(coreRow, fieldKey as keyof ApplicationExportRow);
+}
+
+export function buildRandomSampleGroups<T>({
+  items,
+  groupCount,
+  applicantsPerGroup,
+  random = Math.random,
+}: {
+  items: T[];
+  groupCount: number;
+  applicantsPerGroup: number;
+  random?: () => number;
+}) {
+  const totalRequested = groupCount * applicantsPerGroup;
+  if (groupCount < 1 || applicantsPerGroup < 1) {
+    throw new AppError({
+      message: "Invalid random sample dimensions",
+      userMessage: "La muestra aleatoria debe tener al menos un grupo y un postulante por grupo.",
+      status: 400,
+    });
+  }
+
+  if (totalRequested > items.length) {
+    throw new AppError({
+      message: "Random sample larger than candidate pool",
+      userMessage: "No hay suficientes postulantes filtrados para completar la muestra aleatoria.",
+      status: 400,
+    });
+  }
+
+  const shuffled = [...items];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(random() * (index + 1));
+    const current = shuffled[index];
+    shuffled[index] = shuffled[swapIndex];
+    shuffled[swapIndex] = current;
+  }
+
+  const sampled = shuffled.slice(0, totalRequested);
+
+  return Array.from({ length: groupCount }, (_, groupIndex) => {
+    const start = groupIndex * applicantsPerGroup;
+    return sampled.slice(start, start + applicantsPerGroup);
+  });
+}
+
+export function prepareMatrixExportGroups({
+  records,
+  targetMode,
+  selectedApplicationIds,
+  groupAssignments,
+  randomSample,
+  random = Math.random,
+}: {
+  records: ApplicationExportContext[];
+  targetMode: ExportTargetMode;
+  selectedApplicationIds?: string[];
+  groupAssignments?: GroupAssignment[];
+  randomSample?: RandomSampleConfig;
+  random?: () => number;
+}) {
+  const sortedRecords = sortRecordsForExport(records);
+  const selectedIdSet = new Set(selectedApplicationIds ?? []);
+  const assignmentMap = new Map(
+    (groupAssignments ?? []).map((assignment) => [assignment.applicationId, assignment]),
+  );
+
+  if (targetMode === "randomSample") {
+    if (!randomSample) {
+      throw new AppError({
+        message: "Missing random sample configuration",
+        userMessage: "Configura la cantidad de grupos y postulantes por grupo.",
+        status: 400,
+      });
+    }
+
+    const sampledGroups = buildRandomSampleGroups({
+      items: sortedRecords,
+      groupCount: randomSample.groupCount,
+      applicantsPerGroup: randomSample.applicantsPerGroup,
+      random,
+    });
+
+    return {
+      includeGroupRow: true,
+      groups: sampledGroups.map((groupRecords, index) => ({
+        key: `group-${index + 1}`,
+        label: `Grupo ${index + 1}`,
+        records: sortRecordsForExport(groupRecords),
+      })),
+    };
+  }
+
+  const scopedRecords = targetMode === "manual"
+    ? sortedRecords.filter((record) => selectedIdSet.has(record.application.id))
+    : sortedRecords;
+
+  if (scopedRecords.length === 0) {
+    throw new AppError({
+      message: "No applications selected for export",
+      userMessage: "Selecciona al menos un postulante para exportar.",
+      status: 400,
+    });
+  }
+
+  if (assignmentMap.size === 0) {
+    return {
+      includeGroupRow: false,
+      groups: [
+        {
+          key: "all",
+          label: "Postulantes",
+          records: scopedRecords,
+        },
+      ],
+    };
+  }
+
+  const groupsByKey = new Map<string, { key: string; label: string; records: ApplicationExportContext[] }>();
+
+  for (const record of scopedRecords) {
+    const assignment = assignmentMap.get(record.application.id) ?? {
+      applicationId: record.application.id,
+      groupKey: "group-1",
+      groupLabel: "Grupo 1",
+    };
+
+    if (!groupsByKey.has(assignment.groupKey)) {
+      groupsByKey.set(assignment.groupKey, {
+        key: assignment.groupKey,
+        label: assignment.groupLabel.trim() || assignment.groupKey,
+        records: [],
+      });
+    }
+
+    groupsByKey.get(assignment.groupKey)?.records.push(record);
+  }
+
+  const groups = Array.from(groupsByKey.values())
+    .map((group) => ({
+      ...group,
+      records: sortRecordsForExport(group.records),
+    }))
+    .filter((group) => group.records.length > 0);
+
+  return {
+    includeGroupRow: true,
+    groups,
+  };
+}
+
+export function buildMatrixExportWorkbook({
+  groups,
+  selectedFields,
+  catalog,
+  groupedExportMode,
+  includeGroupRow,
+}: {
+  groups: Array<{ key: string; label: string; records: ApplicationExportContext[] }>;
+  selectedFields: string[];
+  catalog: ExportCatalog;
+  groupedExportMode: GroupedExportMode;
+  includeGroupRow: boolean;
+}): MatrixExportWorkbook {
+  const normalizedFields = validateSelectedExportFields({
+    selectedFields,
+    catalog,
+  });
+  const labelByField = new Map(catalog.fields.map((field) => [field.key, field.label]));
+
+  const buildRows = (records: ApplicationExportContext[], groupLabels?: string[]): MatrixExportFieldRow[] => {
+    const rows: MatrixExportFieldRow[] = [];
+
+    if (includeGroupRow && groupLabels) {
+      rows.push({
+        label: "Grupo",
+        values: groupLabels,
+      });
+    }
+
+    for (const fieldKey of normalizedFields) {
+      rows.push({
+        label: labelByField.get(fieldKey) ?? fieldKey,
+        values: records.map((record) =>
+          resolveFieldValueForRecord({
+            record,
+            fieldKey,
+          })),
+      });
+    }
+
+    return rows;
+  };
+
+  if (groupedExportMode === "single-sheet") {
+    const mergedRecords = groups.flatMap((group) => group.records);
+    const mergedGroupLabels = groups.flatMap((group) =>
+      group.records.map(() => group.label),
+    );
+
+    return {
+      grouped: includeGroupRow,
+      sheets: [
+        {
+          name: "Postulantes",
+          applicantHeaders: mergedRecords.map((record) => buildApplicantHeader(record)),
+          rows: buildRows(mergedRecords, includeGroupRow ? mergedGroupLabels : undefined),
+        },
+      ],
+    };
+  }
+
+  return {
+    grouped: includeGroupRow,
+    sheets: groups.map((group, index) => ({
+      name: sanitizeWorksheetName(group.label, `Grupo ${index + 1}`),
+      applicantHeaders: group.records.map((record) => buildApplicantHeader(record)),
+      rows: buildRows(
+        group.records,
+        includeGroupRow ? group.records.map(() => group.label) : undefined,
+      ),
+    })),
+  };
+}
+
+export function buildMatrixCsvExport(sheet: MatrixExportSheet) {
+  const header = ["Campo", ...sheet.applicantHeaders].map((value) => csvCell(value)).join(",");
+  const lines = sheet.rows.map((row) =>
+    [row.label, ...row.values].map((value) => csvCell(value)).join(","),
+  );
+  return [header, ...lines].join("\n");
+}
+
+function buildMatrixWorksheet(sheetData: MatrixExportSheet): XLSX.WorkSheet {
+  const columnCount = Math.max(sheetData.applicantHeaders.length, 1);
+
+  // Build header row: ["Campo", "Applicant1", "", "Applicant2", "", ...]
+  const headerRow: (string | null)[] = ["Campo"];
+  sheetData.applicantHeaders.forEach((header, i) => {
+    headerRow.push(header);
+    if (i < sheetData.applicantHeaders.length - 1) {
+      headerRow.push(null); // spacer column
+    }
+  });
+
+  // Build data rows
+  const dataRows: (string | null)[][] = sheetData.rows.map((row) => {
+    const cells: (string | null)[] = [row.label];
+    row.values.forEach((value, i) => {
+      cells.push(value ?? null);
+      if (i < row.values.length - 1) {
+        cells.push(null); // spacer column
+      }
+    });
+    return cells;
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet([headerRow, ...dataRows]);
+
+  // Column widths: [label=28, applicant=32, spacer=2.4, applicant=32, ...]
+  const cols: XLSX.ColInfo[] = [{ wch: 28 }];
+  const spacerColumns = new Set<number>();
+  for (let i = 0; i < columnCount; i++) {
+    cols.push({ wch: 32 });
+    if (i < columnCount - 1) {
+      cols.push({ wch: 2.4 });
+      spacerColumns.add(cols.length - 1);
+    }
+  }
+  ws["!cols"] = cols;
+  ws["!rows"] = [{ hpt: 34 }, ...sheetData.rows.map(() => ({ hpt: 28 }))];
+
+  // Freeze first row and first column
+  ws["!views"] = [{ state: "frozen", xSplit: 1, ySplit: 1 }];
+  ws["!autofilter"] = {
+    ref: `A1:${XLSX.utils.encode_col(cols.length - 1)}1`,
+  };
+
+  const isGroupRow = (rowIndex: number) =>
+    rowIndex === 1 && sheetData.rows[0]?.label.toLowerCase() === "grupo";
+
+  for (let col = 0; col < cols.length; col++) {
+    const isSpacer = spacerColumns.has(col);
+    setExcelCellStyle(ws, 0, col, isSpacer ? SPACER_STYLE : HEADER_STYLE);
+  }
+
+  for (let row = 1; row <= sheetData.rows.length; row++) {
+    const groupRow = isGroupRow(row);
+    for (let col = 0; col < cols.length; col++) {
+      const isSpacer = spacerColumns.has(col);
+      if (isSpacer) {
+        setExcelCellStyle(ws, row, col, SPACER_STYLE);
+        continue;
+      }
+      if (groupRow) {
+        setExcelCellStyle(ws, row, col, GROUP_ROW_STYLE);
+        continue;
+      }
+      if (col === 0) {
+        setExcelCellStyle(ws, row, col, FIELD_COLUMN_STYLE);
+        continue;
+      }
+      setExcelCellStyle(ws, row, col, DATA_STYLE);
+    }
+  }
+
+  return ws;
+}
+
+export async function buildMatrixExportXlsx(workbookData: MatrixExportWorkbook): Promise<Buffer> {
+  const wb = XLSX.utils.book_new();
+  for (const sheetData of workbookData.sheets) {
+    const ws = buildMatrixWorksheet(sheetData);
+    XLSX.utils.book_append_sheet(wb, ws, sheetData.name);
+  }
+  const raw = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return applyWorksheetFreezes(
+    raw,
+    workbookData.sheets.map(() => ({ xSplit: 1, ySplit: 1 })),
+  );
+}
+
+export async function buildGroupedExportZip({
+  workbookData,
+  format,
+}: {
+  workbookData: MatrixExportWorkbook;
+  format: "csv" | "xlsx";
+}) {
+  const { zipSync } = await import("fflate");
+  const files: Record<string, Uint8Array> = {};
+
+  for (const sheet of workbookData.sheets) {
+    const safeName = sheet.name.replace(/\s+/g, "-").toLowerCase();
+    if (format === "xlsx") {
+      const buffer = await buildMatrixExportXlsx({
+        grouped: workbookData.grouped,
+        sheets: [sheet],
+      });
+      files[`${safeName}.xlsx`] = new Uint8Array(buffer);
+    } else {
+      const csv = buildMatrixCsvExport(sheet);
+      files[`${safeName}.csv`] = new TextEncoder().encode(csv);
+    }
+  }
+
+  const zipped = zipSync(files, { level: 9 });
+  return Buffer.from(zipped);
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Excel export                                                               */
 /* -------------------------------------------------------------------------- */
@@ -827,89 +1601,63 @@ export async function buildApplicationsXlsx(
   rows: ApplicationExportRow[],
   columnKeys?: Array<keyof ApplicationExportRow>,
 ): Promise<Buffer> {
-  const ExcelJS = (await import("exceljs")).default;
   const selectedKeys = columnKeys ?? EXPORTABLE_COLUMNS.map((c) => c.key);
   const keyToLabel = new Map(EXPORTABLE_COLUMNS.map((c) => [c.key, c.label]));
 
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "UWC Peru Platform";
-  workbook.created = new Date();
-
-  const sheet = workbook.addWorksheet("Postulaciones");
-
-  /* Header row */
-  sheet.columns = selectedKeys.map((key) => ({
-    header: keyToLabel.get(key) ?? String(key),
-    key: String(key),
-    width: 22,
-  }));
-
-  /* Style header row */
-  sheet.getRow(1).font = { bold: true };
-  sheet.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFD6E4F7" },
-  };
-
-  /* Data rows */
-  for (const row of rows) {
-    const record: Record<string, string | number | boolean> = {};
-    for (const key of selectedKeys) {
+  const headers = selectedKeys.map((key) => keyToLabel.get(key) ?? String(key));
+  const dataRows = rows.map((row) =>
+    selectedKeys.map((key) => {
       const raw = row[key];
-      record[String(key)] = typeof raw === "boolean" ? String(raw) : (raw as string | number);
+      return typeof raw === "boolean" ? String(raw) : (raw as string | number);
+    }),
+  );
+
+  const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+  ws["!cols"] = selectedKeys.map(() => ({ wch: 22 }));
+  ws["!rows"] = [{ hpt: 30 }, ...dataRows.map(() => ({ hpt: 24 }))];
+  const lastCol = XLSX.utils.encode_col(selectedKeys.length - 1);
+  ws["!autofilter"] = { ref: `A1:${lastCol}1` };
+  ws["!views"] = [{ state: "frozen", ySplit: 1 }];
+
+  for (let col = 0; col < selectedKeys.length; col++) {
+    setExcelCellStyle(ws, 0, col, HEADER_STYLE);
+  }
+  for (let row = 1; row <= dataRows.length; row++) {
+    for (let col = 0; col < selectedKeys.length; col++) {
+      setExcelCellStyle(ws, row, col, col === 0 ? FIELD_COLUMN_STYLE : DATA_STYLE);
     }
-    sheet.addRow(record);
   }
 
-  /* Auto-filter on header */
-  sheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: selectedKeys.length },
-  };
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Postulaciones");
+  const raw = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return applyWorksheetFreezes(raw, [{ ySplit: 1 }]);
 }
 
 export async function buildDynamicExportXlsx(table: {
   headers: string[];
   rows: string[][];
 }): Promise<Buffer> {
-  const ExcelJS = (await import("exceljs")).default;
-  const workbook = new ExcelJS.Workbook();
-  workbook.creator = "UWC Peru Platform";
-  workbook.created = new Date();
+  const ws = XLSX.utils.aoa_to_sheet([table.headers, ...table.rows]);
+  ws["!cols"] = table.headers.map(() => ({ wch: 24 }));
+  ws["!rows"] = [{ hpt: 30 }, ...table.rows.map(() => ({ hpt: 24 }))];
+  const lastCol = XLSX.utils.encode_col(table.headers.length - 1);
+  ws["!autofilter"] = { ref: `A1:${lastCol}1` };
+  ws["!views"] = [{ state: "frozen", ySplit: 1, xSplit: 1 }];
 
-  const sheet = workbook.addWorksheet("Postulaciones");
-  sheet.columns = table.headers.map((header) => ({
-    header,
-    key: header,
-    width: 24,
-  }));
-
-  sheet.getRow(1).font = { bold: true };
-  sheet.getRow(1).fill = {
-    type: "pattern",
-    pattern: "solid",
-    fgColor: { argb: "FFF0E7D8" },
-  };
-
-  for (const row of table.rows) {
-    const record: Record<string, string> = {};
-    table.headers.forEach((header, index) => {
-      record[header] = row[index] ?? "";
-    });
-    sheet.addRow(record);
+  for (let col = 0; col < table.headers.length; col++) {
+    setExcelCellStyle(ws, 0, col, HEADER_STYLE);
+  }
+  for (let row = 1; row <= table.rows.length; row++) {
+    for (let col = 0; col < table.headers.length; col++) {
+      setExcelCellStyle(ws, row, col, col === 0 ? FIELD_COLUMN_STYLE : DATA_STYLE);
+    }
   }
 
-  sheet.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: 1, column: table.headers.length },
-  };
-
-  const buffer = await workbook.xlsx.writeBuffer();
-  return Buffer.from(buffer);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Postulaciones");
+  const raw = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  return applyWorksheetFreezes(raw, [{ xSplit: 1, ySplit: 1 }]);
 }
 
 export async function getApplicationExportPackage({

@@ -6,10 +6,15 @@ const DEMO_CYCLE_ID = "98b2f8e4-7266-44b0-acb2-566e2fb2d50e";
 
 test.describe("Admin communications + prompt studio workflows", () => {
   test.beforeEach(async () => {
-    test.skip(!bypassReady, "Requires NEXT_PUBLIC_ENABLE_DEV_BYPASS=true and demo credentials");
+    test.skip(
+      !bypassReady,
+      "Requires NEXT_PUBLIC_ENABLE_DEV_BYPASS=true and demo credentials",
+    );
   });
 
-  test("communications tab supports direct preview, confirm, and send flow", async ({ page }) => {
+  test("communications tab supports direct preview, confirm, and send flow", async ({
+    page,
+  }) => {
     const sendPayloads: Array<Record<string, unknown>> = [];
 
     await loginAsAdmin(page);
@@ -38,7 +43,8 @@ test.describe("Admin communications + prompt studio workflows", () => {
     });
 
     await page.route("**/api/communications/send", async (route) => {
-      const payload = (route.request().postDataJSON() as Record<string, unknown>) ?? {};
+      const payload =
+        (route.request().postDataJSON() as Record<string, unknown>) ?? {};
       sendPayloads.push(payload);
 
       if (payload.dryRun) {
@@ -64,14 +70,24 @@ test.describe("Admin communications + prompt studio workflows", () => {
       });
     });
 
-    await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=communications`);
+    await page.goto(
+      `/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=communications`,
+    );
 
-    await expect(page.getByRole("heading", { name: /Centro de comunicaciones/i })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: /Centro de comunicaciones/i }),
+    ).toBeVisible();
 
-    await page.getByLabel("Correo puntual (opcional)").fill("  dafirebanks@gmail.com  ");
-    await page.getByRole("button", { name: "Vista previa de audiencia" }).click();
+    await page
+      .getByLabel("Correo puntual (opcional)")
+      .fill("  dafirebanks@gmail.com  ");
+    await page
+      .getByRole("button", { name: "Vista previa de audiencia" })
+      .click();
 
-    await expect(page.getByText("Audiencia estimada: 1 destinatario(s)")).toBeVisible();
+    await expect(
+      page.getByText("Audiencia estimada: 1 destinatario(s)"),
+    ).toBeVisible();
     await expect(page.getByText("Hola destinatario de prueba")).toBeVisible();
 
     await page.getByRole("button", { name: "Preparar envío" }).click();
@@ -80,7 +96,9 @@ test.describe("Admin communications + prompt studio workflows", () => {
     ).toBeVisible();
 
     await page.getByRole("button", { name: "Confirmar envío" }).click();
-    await expect(page.getByText("Correo enviado a dafirebanks@gmail.com.")).toBeVisible();
+    await expect(
+      page.getByText("Correo enviado a dafirebanks@gmail.com."),
+    ).toBeVisible();
 
     expect(sendPayloads.length).toBeGreaterThanOrEqual(3);
     for (const payload of sendPayloads.filter((item) => item.broadcast)) {
@@ -108,13 +126,19 @@ test.describe("Admin communications + prompt studio workflows", () => {
       raw_response: {
         schemaValidation: { valid: true, errors: [] },
         injectionSignals: [],
-        requestConfig: { strictSchema: true, temperature: 0.2, topP: 0.9, maxTokens: 1600 },
+        requestConfig: {
+          strictSchema: true,
+          temperature: 0.2,
+          topP: 0.9,
+          maxTokens: 1600,
+        },
       },
       duration_ms: 850,
       created_at: "2026-03-03T00:00:00.000Z",
     };
 
     let runs: Array<Record<string, unknown>> = [initialRun];
+    let postBodyText = "";
 
     await page.route("**/api/ocr-testbed**", async (route) => {
       if (route.request().method() === "GET") {
@@ -125,6 +149,8 @@ test.describe("Admin communications + prompt studio workflows", () => {
         });
         return;
       }
+
+      postBodyText = route.request().postDataBuffer()?.toString("utf8") ?? "";
 
       const latestRun = {
         ...initialRun,
@@ -151,28 +177,58 @@ test.describe("Admin communications + prompt studio workflows", () => {
       });
     });
 
-    await page.goto(`/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=prompt_studio`);
-    await expect(page.getByRole("heading", { name: "Prompt Studio" })).toBeVisible();
+    await page.goto(
+      `/admin/process/${DEMO_CYCLE_ID}/stage/documents?tab=prompt_studio`,
+    );
+    await expect(
+      page.getByRole("heading", { name: "Prompt Studio" }),
+    ).toBeVisible();
 
     await page.getByRole("button", { name: "Esquema y parámetros" }).click();
     await page
       .getByLabel("Esquema JSON esperado")
-      .fill('{"summary":"string","confidence":"int","injectionSignals":["string"]}');
+      .fill(
+        '{"summary":"string","confidence":"int","injectionSignals":["string"]}',
+      );
 
     await page
       .locator('input[type="file"]')
+      .first()
       .setInputFiles({
         name: "resume.pdf",
         mimeType: "application/pdf",
         buffer: Buffer.from("fake pdf"),
       });
+    await page
+      .locator('input[type="file"]')
+      .nth(1)
+      .setInputFiles([
+        {
+          name: "reference-1.png",
+          mimeType: "image/png",
+          buffer: Buffer.from("fake image"),
+        },
+        {
+          name: "reference-2.pdf",
+          mimeType: "application/pdf",
+          buffer: Buffer.from("fake reference"),
+        },
+      ]);
 
     await page.getByRole("button", { name: "Ejecutar prueba" }).click();
 
-    await expect(page.getByRole("heading", { name: "Resultado actual" })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Resultado actual" }),
+    ).toBeVisible();
     await expect(page.getByText("Comparación")).toBeVisible();
     await expect(page.getByText("Comparativa rápida")).toBeVisible();
     await expect(page.getByText("Archivo actual: resume.pdf")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "history.pdf" })).toBeVisible();
+    await expect(page.getByText("reference-1.png")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "history.pdf" }),
+    ).toBeVisible();
+    expect(postBodyText).toContain('name="referenceFiles"');
+    expect(postBodyText).toContain('filename="reference-1.png"');
+    expect(postBodyText).toContain('filename="reference-2.pdf"');
   });
 });

@@ -78,5 +78,5 @@ Quick map for navigating the repo during UI and form work.
   segmented control sizing and selected-state polish
 - `src/lib/stages/field-sub-groups.ts`:
   card header icons (visual match to mockup)
-- `TODOS_FOR_ADMIN_VIEW.md`:
+- `docs/TODOS_FOR_ADMIN_VIEW.md`:
   follow-ups for admin/editor compatibility

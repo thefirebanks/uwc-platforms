@@ -51,7 +51,9 @@ export async function withErrorHandling(
       {
         requestId,
         operation,
-        error,
+        err: error instanceof Error ? error : undefined,
+        errorString: String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
         durationMs: Date.now() - startedAt,
       },
       "Unhandled request error",

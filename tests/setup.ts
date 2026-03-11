@@ -1,5 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { vi } from "vitest";
+
+// CI runners can be slow — give waitFor more breathing room
+configure({ asyncUtilTimeout: 4000 });
 
 // Mock Next.js navigation
 vi.mock("next/navigation", () => ({
