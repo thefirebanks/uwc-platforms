@@ -4,6 +4,7 @@ This folder contains the shared product and engineering source of truth for the 
 
 ## Core Documents
 - `docs/BRAINSTORMING.md`: Raw product brainstorming and context.
+- `docs/DEVELOPER_SETUP_AND_OPERATIONS.md`: Detailed developer setup, deployment, and operations reference.
 - `docs/TODOS_FOR_ADMIN_VIEW.md`: Follow-up list for admin-view parity and rendering boundaries.
 - `docs/V1_IMPROVEMENTS_PART2.md`: V1 workstream plan with priorities and acceptance criteria.
 - `docs/POTENTIAL_REFACTOR.md`: Deep refactor audit and prioritized technical debt list.
