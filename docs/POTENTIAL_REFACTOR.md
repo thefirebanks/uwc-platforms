@@ -1,7 +1,9 @@
 # Potential Refactoring Opportunities
 
 > Deep code review of the UWC Peru Selection Platform.
-> Generated: 2026-02-26 | Updated: 2026-03-01
+> Generated: 2026-02-26 | Updated: 2026-03-10
+>
+> See also: `.claude/CLAUDE.md` for dev policies and `src/lib/*/AGENTS.md` for module guides.
 
 ---
 
