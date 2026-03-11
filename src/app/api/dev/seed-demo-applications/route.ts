@@ -328,6 +328,9 @@ async function resetApplicant(
       supabase.from("exam_imports").delete().in("application_id", applicationIds),
       supabase.from("communication_logs").delete().in("application_id", applicationIds),
       supabase.from("audit_events").delete().in("application_id", applicationIds),
+      // support_tickets also cascade-deletes when application is deleted,
+      // but explicit deletion avoids FK ordering surprises
+      supabase.from("support_tickets").delete().in("application_id", applicationIds),
     ]);
   }
 
@@ -569,6 +572,31 @@ async function seedDemoApplicant(
       userMessage: "No se pudo enviar la postulación demo.",
       status: 500,
       details: submitError,
+    });
+  }
+
+  // Seed a demo support ticket for applicants that have something to ask about
+  if (profile.expectedOutcome === "needs_review") {
+    // Demo 2 (REVISIÓN MANUAL): open ticket waiting for admin response
+    await supabase.from("support_tickets").insert({
+      application_id: applicationId,
+      applicant_id: applicantId,
+      subject: "Consulta sobre el estado de mi postulación",
+      body: "Hola, quisiera consultar sobre el estado de mi postulación. Completé todos los documentos requeridos, pero noto que mi solicitud aparece en revisión. ¿Pueden indicarme qué está siendo revisado y si necesito enviar algo adicional? Muchas gracias.",
+      status: "open",
+    });
+  } else if (profile.expectedOutcome === "not_eligible") {
+    // Demo 3 (NO ELEGIBLE): ticket with admin reply explaining the outcome
+    const now = new Date().toISOString();
+    await supabase.from("support_tickets").insert({
+      application_id: applicationId,
+      applicant_id: applicantId,
+      subject: "¿Por qué mi postulación fue marcada como no elegible?",
+      body: "Buenas tardes, acabo de recibir la notificación de que mi postulación no cumple los requisitos. Me gustaría entender las razones para poder mejorar en futuras convocatorias. ¿Pueden darme más detalles? Gracias.",
+      status: "replied",
+      admin_reply: "Estimada Ana Sofía, gracias por contactarnos. Luego de revisar tu postulación, identificamos que no cumple con dos de los criterios de elegibilidad de esta convocatoria: el promedio de notas mínimo requerido y el rango de edad. Te animamos a postular en futuras convocatorias cuando cumplas los requisitos. El equipo de UWC Perú estará encantado de apoyarte. Saludos.",
+      replied_by: adminActorId,
+      replied_at: now,
     });
   }
 
