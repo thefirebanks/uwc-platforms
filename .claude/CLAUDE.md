@@ -126,6 +126,18 @@ export async function POST(request: Request) {
 - OCR provider: Gemini Flash via `src/lib/server/ocr.ts`
 - Email provider: Gmail API via `src/lib/server/email-provider.ts`
 
+## Critical User Flows (must never regress)
+
+These flows are covered by E2E and component tests. Any change that touches these paths should verify they still work.
+
+1. **Applicant submits application** — Login → fill form fields → upload documents → register recommenders → review → submit. Key files: `applicant-application-form.tsx`, `applicant-document-upload-section.tsx`, `applicant-recommenders-section.tsx`, `API: /api/applications/*`
+2. **Admin configures stage** — Create cycle → add stage → configure fields (drag-drop reorder, sections) → set automations → set rubric → save. Key files: `stage-config-editor.tsx`, `stage-automation-manager.tsx`, `stage-stats-panel.tsx`, `API: /api/cycles/*/stages/*`
+3. **Rubric evaluation** — Admin triggers manual eval or auto-eval fires → rubric service evaluates each applicant → outcomes (eligible/not_eligible/needs_review) written. Key files: `src/lib/server/eligibility-rubric-service.ts`, `src/lib/rubric/eligibility-rubric.ts`, `API: /api/applications/rubric-evaluate`
+4. **OCR document parsing** — File uploaded → OCR triggered → Gemini Flash extracts fields → results stored in `application_ocr_checks`. Key files: `src/lib/server/ocr.ts`, `src/lib/ocr/expected-output-schema.ts`, `API: /api/applications/*/ocr`
+5. **Recommender completes form** — Receives email invite → opens token URL → fills recommendation form → submits. Key files: `recommender-form.tsx`, `src/lib/server/recommendations-service.ts`, `API: /api/recommendations/*`
+6. **Admin reviews candidates** — Dashboard → filter by status → view applicant detail → override status. Key files: `admin-candidates-dashboard.tsx`, `API: /api/applications/*/status`
+7. **Email automations** — Stage event fires (submit/result) → automation template matched → variables interpolated → email sent via Gmail API. Key files: `src/lib/server/email-provider.ts`, `src/lib/server/automations-service.ts`, `API: /api/communications/*`
+
 ## Documentation
 
 - Operational specs: `docs/` directory (see `docs/README.md` for index)
