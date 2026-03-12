@@ -86,9 +86,7 @@ export function ApplicantDocumentUploadSection({
 
       <Stack spacing={3}>
         {fileStageFields.map((field) => {
-          const rawValue =
-            ((applicationFiles as Record<string, ApplicationFileValue> | undefined)?.[field.field_key] ??
-              null) as ApplicationFileValue | null;
+          const rawValue = applicationFiles?.[field.field_key] ?? null;
           const fileEntry = parseFileEntry(rawValue);
           const fileName = fileEntry?.original_name ?? null;
 

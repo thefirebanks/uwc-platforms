@@ -149,7 +149,7 @@ export function ApplicantRecommendersSection({
       <Stack spacing={2}>
         {(["mentor", "friend"] as const).map((role, idx) => {
           const current = activeRecommendersByRole.get(role) ?? null;
-          const tone = current ? statusTone(current.status, language) : statusTone("invited", language);
+          const tone = current ? statusTone(current.status, language) : null;
 
           return (
             <Box key={role} sx={{ border: "1px solid var(--sand)", borderRadius: "var(--radius-lg, 12px)", p: 2.5 }}>
@@ -180,7 +180,7 @@ export function ApplicantRecommendersSection({
                       : copy("Sin registrar", "Not registered")}
                   </Typography>
                 </Box>
-                {current ? (
+                {current && tone ? (
                   <Chip
                     label={tone.label}
                     size="small"

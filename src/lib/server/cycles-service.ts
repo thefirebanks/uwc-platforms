@@ -22,35 +22,36 @@ type ApplicationSummaryRow = Pick<
 // ---------------------------------------------------------------------------
 
 export async function listCyclesForAdmin(supabase: SupabaseClient<Database>) {
-  const { data: cyclesData, error: cyclesError } = await supabase
-    .from("cycles")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const [cyclesResult, applicationsResult] = await Promise.all([
+    supabase
+      .from("cycles")
+      .select("*")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("applications")
+      .select("cycle_id"),
+  ]);
 
-  if (cyclesError) {
+  if (cyclesResult.error) {
     throw new AppError({
       message: "Failed loading cycles",
       userMessage: "No se pudieron cargar los procesos de selección.",
       status: 500,
-      details: cyclesError,
+      details: cyclesResult.error,
     });
   }
 
-  const { data: applicationsData, error: applicationsError } = await supabase
-    .from("applications")
-    .select("cycle_id");
-
-  if (applicationsError) {
+  if (applicationsResult.error) {
     throw new AppError({
       message: "Failed loading applications for cycles summary",
       userMessage: "No se pudieron cargar los procesos de selección.",
       status: 500,
-      details: applicationsError,
+      details: applicationsResult.error,
     });
   }
 
-  const cycles = (cyclesData as CycleRow[] | null) ?? [];
-  const applications = (applicationsData as ApplicationCycleRow[] | null) ?? [];
+  const cycles = (cyclesResult.data as CycleRow[] | null) ?? [];
+  const applications = (applicationsResult.data as ApplicationCycleRow[] | null) ?? [];
   const cycleCounts = new Map<string, number>();
   for (const row of applications) {
     cycleCounts.set(row.cycle_id, (cycleCounts.get(row.cycle_id) ?? 0) + 1);
@@ -68,37 +69,38 @@ export async function listCyclesForApplicant(
   supabase: SupabaseClient<Database>,
   applicantId: string,
 ) {
-  const { data: cyclesData, error: cyclesError } = await supabase
-    .from("cycles")
-    .select("*")
-    .order("created_at", { ascending: false });
+  const [cyclesResult, applicationsResult] = await Promise.all([
+    supabase
+      .from("cycles")
+      .select("*")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("applications")
+      .select("id, cycle_id, status, stage_code, updated_at")
+      .eq("applicant_id", applicantId),
+  ]);
 
-  if (cyclesError) {
+  if (cyclesResult.error) {
     throw new AppError({
       message: "Failed loading cycles",
       userMessage: "No se pudieron cargar los procesos de selección.",
       status: 500,
-      details: cyclesError,
+      details: cyclesResult.error,
     });
   }
 
-  const { data: myApplications, error: myApplicationsError } = await supabase
-    .from("applications")
-    .select("id, cycle_id, status, stage_code, updated_at")
-    .eq("applicant_id", applicantId);
-
-  if (myApplicationsError) {
+  if (applicationsResult.error) {
     throw new AppError({
       message: "Failed loading applicant applications summary",
       userMessage: "No se pudieron cargar tus procesos de selección.",
       status: 500,
-      details: myApplicationsError,
+      details: applicationsResult.error,
     });
   }
 
   return {
-    cycles: (cyclesData as CycleRow[] | null) ?? [],
-    applications: (myApplications as ApplicationSummaryRow[] | null) ?? [],
+    cycles: (cyclesResult.data as CycleRow[] | null) ?? [],
+    applications: (applicationsResult.data as ApplicationSummaryRow[] | null) ?? [],
   };
 }
 
@@ -173,9 +175,10 @@ export async function createCycle(
   }
 
   // Bootstrap default fields
+  const defaultFields = buildDefaultCycleStageFields({ cycleId: cycle.id });
   const { error: fieldsError } = await supabase
     .from("cycle_stage_fields")
-    .insert(buildDefaultCycleStageFields({ cycleId: cycle.id }));
+    .insert(defaultFields);
 
   if (fieldsError) {
     throw new AppError({
@@ -188,9 +191,10 @@ export async function createCycle(
   }
 
   // Bootstrap default automations
+  const defaultAutomations = buildDefaultStageAutomationTemplates({ cycleId: cycle.id });
   const { error: automationsError } = await supabase
     .from("stage_automation_templates")
-    .insert(buildDefaultStageAutomationTemplates({ cycleId: cycle.id }));
+    .insert(defaultAutomations);
 
   if (automationsError) {
     throw new AppError({
@@ -214,5 +218,10 @@ export async function createCycle(
       .eq("id", cycle.id);
   }
 
-  return { cycle, templatesCreated: defaultTemplates.length };
+  return {
+    cycle,
+    templatesCreated: defaultTemplates.length,
+    fieldsCreated: defaultFields.length,
+    automationsCreated: defaultAutomations.length,
+  };
 }

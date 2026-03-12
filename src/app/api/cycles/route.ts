@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      const { cycle, templatesCreated } = await createCycle(supabase, {
+      const { cycle, templatesCreated, fieldsCreated, automationsCreated } = await createCycle(supabase, {
         name: parsed.data.name,
         year: parsed.data.year,
         isActive: parsed.data.isActive,
@@ -67,8 +67,8 @@ export async function POST(request: NextRequest) {
           year: parsed.data.year,
           isActive: parsed.data.isActive,
           templatesCreated,
-          fieldsCreated: 7,
-          automationsCreated: 2,
+          fieldsCreated,
+          automationsCreated,
         },
         requestId,
       });

@@ -19,6 +19,8 @@ export function ApplicantPreparationChecklist({
   requiredDocumentLabels,
   copy,
 }: ApplicantPreparationChecklistProps) {
+  const hasInstructions = Boolean(stageInstructions?.trim().length);
+
   return (
     <Box
       sx={{
@@ -28,15 +30,7 @@ export function ApplicantPreparationChecklist({
         p: { xs: 2, sm: 2.5 },
       }}
     >
-      {!stageInstructions?.trim().length ? (
-        <Typography color="text.secondary" sx={{ mb: 1.2, fontSize: "0.85rem" }}>
-          {copy(
-            "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
-            "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
-          )}
-        </Typography>
-      ) : null}
-      {stageInstructions?.trim().length ? (
+      {hasInstructions ? (
         <Box
           sx={{
             color: "var(--ink)",
@@ -69,10 +63,16 @@ export function ApplicantPreparationChecklist({
               borderRadius: "4px",
             },
           }}
-          dangerouslySetInnerHTML={{ __html: renderSafeMarkdown(stageInstructions) }}
+          dangerouslySetInnerHTML={{ __html: renderSafeMarkdown(stageInstructions!) }}
         />
       ) : (
-        <Stack spacing={0.55}>
+        <Stack spacing={0.75}>
+          <Typography color="text.secondary" sx={{ mb: 0.4, fontSize: "0.85rem" }}>
+            {copy(
+              "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
+              "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
+            )}
+          </Typography>
           <Typography variant="body2">
             {copy(
               "1. Ten listos documentos en PDF/JPG/PNG (idealmente menos de 10MB).",

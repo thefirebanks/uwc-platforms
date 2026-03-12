@@ -49,11 +49,12 @@ export function StageAutomationManager({
     )
       ? "stage_result"
       : "application_submitted";
+    const newLocalId = `new-${crypto.randomUUID()}`;
     setAutomations((current) => [
       ...current,
       {
-        id: `new-${crypto.randomUUID()}`,
-        localId: `new-${crypto.randomUUID()}`,
+        id: newLocalId,
+        localId: newLocalId,
         cycle_id: cycleId,
         stage_code: stageCode,
         trigger_event: baseTrigger,
