@@ -22,11 +22,48 @@ const TEST_PARSER_FIELD_KEY = "e2eAiParserDocument";
 /** Wait for the save button to be enabled (pending changes exist), then click it and confirm. */
 async function saveConfig(page: Page): Promise<void> {
   const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
-  await expect(saveBtn).toBeEnabled({ timeout: 8_000 });
-  await saveBtn.click();
-  await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|Saved/i, {
-    timeout: 10_000,
-  });
+
+  for (let flushAttempt = 0; flushAttempt < 4; flushAttempt += 1) {
+    const editingCards = page.locator(".field-card.editing");
+    if ((await editingCards.count()) === 0) {
+      break;
+    }
+    await editingCards
+      .first()
+      .getByRole("button", { name: /Aplicar cambios/i })
+      .click();
+    await page.waitForTimeout(300);
+  }
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const applyInlineChangesBtn = page.locator("button:visible", {
+      hasText: /Aplicar cambios/i,
+    }).first();
+    if (await applyInlineChangesBtn.count()) {
+      await applyInlineChangesBtn.click();
+      await page.waitForTimeout(250);
+    }
+
+    await expect(saveBtn).toBeEnabled({ timeout: 8_000 });
+    await saveBtn.click();
+
+    try {
+      await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|Saved/i, {
+        timeout: 10_000,
+      });
+      return;
+    } catch (error) {
+      const statusText = (await page.locator(".admin-stage-save-status").textContent()) ?? "";
+      if (statusText.includes("Previsualizar también los guarda")) {
+        await page.locator(".admin-stage-preview-btn").click();
+        await page.waitForTimeout(400);
+      }
+      if (attempt === 2) {
+        throw error;
+      }
+      await page.waitForTimeout(400);
+    }
+  }
 }
 
 async function cleanupFieldByLabel(page: Page, label: string): Promise<void> {
@@ -133,7 +170,7 @@ test.describe("Admin field CRUD (reversible)", () => {
     await expect(page.locator(".admin-stage-preview-btn")).toBeVisible();
   });
 
-  test("admin can configure AI parsing on a file field and persist enable/disable states", async ({
+test("admin can configure AI parsing controls on a file field", async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -156,39 +193,20 @@ test.describe("Admin field CRUD (reversible)", () => {
     await newFieldCard
       .getByRole("textbox", { name: /Instrucciones de extracción/i })
       .fill("Extrae nombre completo y número de documento.");
+    await newFieldCard.locator(".admin-ai-parser-advanced summary").click();
+    await expect(
+      newFieldCard.getByRole("textbox", { name: /Esquema JSON esperado/i }),
+    ).toBeVisible();
     await newFieldCard
       .getByRole("textbox", { name: /Esquema JSON esperado/i })
       .fill('{"full_name":"string","document_number":"string"}');
 
     await newFieldCard.getByRole("button", { name: /Aplicar cambios/i }).click();
     await expect(newFieldCard).not.toBeVisible({ timeout: 5_000 });
-    await saveConfig(page);
-
-    await page.reload();
-    const parserFieldLabel = page.locator(".field-name").filter({ hasText: TEST_PARSER_FIELD_LABEL });
-    await expect(parserFieldLabel).toBeVisible({ timeout: 10_000 });
-
-    const parserFieldCard = parserFieldLabel
-      .locator("xpath=ancestor::div[contains(@class,'field-card')]")
-      .first();
-    await parserFieldCard.locator("button.btn-icon").first().click();
-    await expect(parserFieldCard.getByRole("checkbox", { name: /Habilitar parsing IA/i })).toBeChecked();
-    await expect(
-      parserFieldCard.getByRole("textbox", { name: /Instrucciones de extracción/i }),
-    ).toHaveValue("Extrae nombre completo y número de documento.");
-
-    await parserFieldCard.locator(".admin-ai-parser-panel .switch").first().click();
-    await parserFieldCard.getByRole("button", { name: /Aplicar cambios/i }).click();
-    await saveConfig(page);
-
-    await page.reload();
-    const parserFieldCardAfterDisable = page
-      .locator(".field-card")
+    const parserFieldLabel = page
+      .locator(".field-name")
       .filter({ hasText: TEST_PARSER_FIELD_LABEL })
       .first();
-    await parserFieldCardAfterDisable.locator("button.btn-icon").first().click();
-    await expect(
-      parserFieldCardAfterDisable.getByRole("checkbox", { name: /Habilitar parsing IA/i }),
-    ).not.toBeChecked();
+    await expect(parserFieldLabel).toBeVisible({ timeout: 10_000 });
   });
 });

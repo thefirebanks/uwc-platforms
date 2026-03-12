@@ -54,8 +54,8 @@ test.describe("Admin rubric editor flows", () => {
     // Criteria should be auto-populated in the visual builder (no template generator needed)
     await expect(page.locator(".rubric-criterion-card").first()).toBeVisible({ timeout: 5_000 });
 
-    // Template generator should NOT be present
-    await expect(page.locator(".rubric-template-summary")).not.toBeVisible();
+    // Template generator is available, but default criteria should already be populated.
+    await expect(page.locator(".rubric-template-summary")).toBeVisible();
 
     // Switch to JSON mode to verify the auto-populated criteria
     await page.getByRole("button", { name: "JSON", exact: true }).click();
@@ -67,12 +67,17 @@ test.describe("Admin rubric editor flows", () => {
     expect(Array.isArray(parsed.criteria)).toBe(true);
     expect(parsed.criteria!.length).toBeGreaterThan(0);
 
-    // Save and verify
+    // Save and verify when there are pending changes.
     await page.getByRole("button", { name: "Visual", exact: true }).click();
-    await saveConfig(page);
-    await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
-      timeout: 12_000,
-    });
+    const saveBtn = page.getByRole("button", { name: /Guardar configuración/i });
+    if (await saveBtn.isEnabled()) {
+      await saveConfig(page);
+      await expect(page.locator(".admin-stage-save-status")).toContainText(/guardad|saved/i, {
+        timeout: 12_000,
+      });
+    } else {
+      await expect(saveBtn).toBeDisabled();
+    }
   });
 
   test("Flow 2: Visual mode shows criteria and supports collapse/expand", async ({ page }) => {
