@@ -11,7 +11,7 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
  *   reviewer  → /reviewer
  *   applicant → /applicant
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Only guard dashboard paths
