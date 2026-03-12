@@ -286,11 +286,6 @@ const ID_DOC_EXPECTED_SCHEMA = JSON.stringify({
 /*  Reset helper (matches logic in reset-demo-applicant)                      */
 /* -------------------------------------------------------------------------- */
 
-type ApplicationRowForReset = {
-  id: string;
-  files: Json;
-};
-
 function collectStoredFilePaths(files: Json): string[] {
   if (!files || typeof files !== "object" || Array.isArray(files)) return [];
   return Object.values(files as Record<string, Json>).flatMap((entry) => {
