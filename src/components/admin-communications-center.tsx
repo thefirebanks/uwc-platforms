@@ -5,6 +5,7 @@ import type { Application, CommunicationLog, StageCode } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
 import { FieldHint } from "@/components/field-hint";
+import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
 
 interface ApiError {
   message: string;
@@ -79,20 +80,24 @@ export function AdminCommunicationsCenter({
     setIsCommunicationLoading(true);
 
     try {
-      const response = await fetch(`/api/communications?cycleId=${cycleId}&limit=8`);
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
-
+      const body = await fetchApi<{
+        logs?: CommunicationLog[];
+        campaigns?: CommunicationCampaignSummary[];
+        summary?: Partial<typeof EMPTY_COMMUNICATION_SUMMARY>;
+      }>(`/api/communications?cycleId=${cycleId}&limit=8`);
       setCommunications(body.logs ?? []);
       setCampaigns(body.campaigns ?? []);
       setCommunicationSummary({
         ...EMPTY_COMMUNICATION_SUMMARY,
         ...(body.summary ?? {}),
       });
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "No se pudieron cargar las comunicaciones.",
+        ),
+      );
     } finally {
       setIsCommunicationLoading(false);
     }
@@ -146,25 +151,26 @@ export function AdminCommunicationsCenter({
     setError(null);
     setStatusMessage(null);
 
-    const response = await fetch("/api/communications/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        cycleId,
-        stageCode: defaultStageCode,
-        triggerEvent: "stage_result",
-      }),
-    });
+    try {
+      const body = await fetchApi<{ sent: number }>("/api/communications/send", {
+        method: "POST",
+        body: JSON.stringify({
+          cycleId,
+          stageCode: defaultStageCode,
+          triggerEvent: "stage_result",
+        }),
+      });
 
-    const body = await response.json();
-
-    if (!response.ok) {
-      setError(body);
-      return;
+      setStatusMessage(`Comunicaciones registradas: ${body.sent}.`);
+      await refreshCommunications();
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "No se pudieron encolar las comunicaciones.",
+        ),
+      );
     }
-
-    setStatusMessage(`Comunicaciones registradas: ${body.sent}.`);
-    await refreshCommunications();
   }
 
   async function processCommunications(targetStatus: "queued" | "failed") {
@@ -173,26 +179,30 @@ export function AdminCommunicationsCenter({
     setProcessingTargetStatus(targetStatus);
 
     try {
-      const response = await fetch("/api/communications/process", {
+      const body = await fetchApi<{
+        processed: number;
+        sent: number;
+        failed: number;
+      }>("/api/communications/process", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cycleId,
           targetStatus,
           limit: 30,
         }),
       });
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
 
       setStatusMessage(
         `Procesadas: ${body.processed}. Enviadas: ${body.sent}. Fallidas: ${body.failed}.`,
       );
       await refreshCommunications();
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "No se pudo procesar la cola de comunicaciones.",
+        ),
+      );
     } finally {
       setProcessingTargetStatus(null);
     }
@@ -204,10 +214,11 @@ export function AdminCommunicationsCenter({
     setIsBroadcastPreviewing(true);
 
     try {
-      const [previewResponse, countResponse] = await Promise.all([
-        fetch("/api/communications/preview", {
+      const [previewBody, countBody] = await Promise.all([
+        fetchApi<{ subject?: string; bodyHtml?: string }>(
+          "/api/communications/preview",
+          {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             subjectTemplate: broadcastSubject,
             bodyTemplate: broadcastBody,
@@ -218,35 +229,29 @@ export function AdminCommunicationsCenter({
                 }
               : undefined,
           }),
-        }),
-        fetch("/api/communications/send", {
+          },
+        ),
+        fetchApi<{ recipientCount?: number }>(
+          "/api/communications/send",
+          {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             dryRun: true,
             broadcast: getBroadcastPayload(),
           }),
-        }),
+          },
+        ),
       ]);
-
-      const previewBody = await previewResponse.json();
-      const countBody = await countResponse.json();
-
-      if (!previewResponse.ok) {
-        setError(previewBody);
-        return;
-      }
-
-      if (!countResponse.ok) {
-        setError(countBody);
-        return;
-      }
 
       setBroadcastReadyCount(null);
       setBroadcastReadyDeduplicated(false);
       setBroadcastPreviewSubject(previewBody.subject ?? broadcastSubject);
       setBroadcastPreviewHtml(previewBody.bodyHtml ?? null);
       setBroadcastRecipientCount(Number(countBody.recipientCount ?? 0));
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(requestError, "No se pudo generar la previsualización."),
+      );
     } finally {
       setIsBroadcastPreviewing(false);
     }
@@ -258,24 +263,21 @@ export function AdminCommunicationsCenter({
     setIsBroadcastTesting(true);
 
     try {
-      const response = await fetch("/api/communications/test-send", {
+      await fetchApi("/api/communications/test-send", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           subjectTemplate: broadcastSubject,
           bodyTemplate: broadcastBody,
         }),
       });
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
 
       setBroadcastReadyCount(null);
       setBroadcastReadyDeduplicated(false);
       setStatusMessage("Se envió un correo de prueba a tu bandeja.");
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(requestError, "No se pudo enviar el correo de prueba."),
+      );
     } finally {
       setIsBroadcastTesting(false);
     }
@@ -287,20 +289,16 @@ export function AdminCommunicationsCenter({
     setIsBroadcastSending(true);
 
     try {
-      const dryRunResponse = await fetch("/api/communications/send", {
+      const dryRunBody = await fetchApi<{ recipientCount?: number; deduplicated?: boolean }>(
+        "/api/communications/send",
+        {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dryRun: true,
           broadcast: getBroadcastPayload(),
         }),
-      });
-      const dryRunBody = await dryRunResponse.json();
-
-      if (!dryRunResponse.ok) {
-        setError(dryRunBody);
-        return;
-      }
+        },
+      );
 
       const recipientCount = Number(dryRunBody.recipientCount ?? 0);
       setBroadcastRecipientCount(recipientCount);
@@ -322,6 +320,10 @@ export function AdminCommunicationsCenter({
             ? `Confirmar envío inmediato a ${directRecipientEmail.trim()}.`
             : `Confirmar envío inmediato a ${recipientCount} destinatario(s).`,
       );
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(requestError, "No se pudo preparar el envío de la campaña."),
+      );
     } finally {
       setIsBroadcastSending(false);
     }
@@ -337,19 +339,15 @@ export function AdminCommunicationsCenter({
     setIsBroadcastSending(true);
 
     try {
-      const response = await fetch("/api/communications/send", {
+      const body = await fetchApi<{ deliveryMode?: string; recipientCount?: number }>(
+        "/api/communications/send",
+        {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           broadcast: getBroadcastPayload(),
         }),
-      });
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
+        },
+      );
 
       setBroadcastReadyCount(null);
       setBroadcastReadyDeduplicated(false);
@@ -362,6 +360,10 @@ export function AdminCommunicationsCenter({
         );
         await refreshCommunications();
       }
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(requestError, "No se pudo enviar la campaña."),
+      );
     } finally {
       setIsBroadcastSending(false);
     }

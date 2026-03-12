@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import type { RecommendationStatus, RecommenderRole } from "@/types/domain";
 import { roleLabel, getRecommendationStatusLabel } from "@/lib/utils/domain-labels";
+import {
+  fetchApi,
+  toNormalizedApiError,
+} from "@/lib/client/api-client";
 
 type PublicRecommendation = {
   id: string;
@@ -103,11 +107,9 @@ export function RecommenderForm({ token }: { token: string }) {
       setError(null);
 
       try {
-        const infoResponse = await fetch(`/api/recommendations/public/${token}`);
-        const infoBody = await infoResponse.json();
-        if (!infoResponse.ok) {
-          throw new Error(infoBody?.message ?? "No se pudo cargar el enlace.");
-        }
+        const infoBody = await fetchApi<{
+          recommendation: PublicRecommendation;
+        }>(`/api/recommendations/public/${token}`);
 
         if (!ignore) {
           setPublicInfo(infoBody.recommendation as PublicRecommendation);
@@ -121,26 +123,35 @@ export function RecommenderForm({ token }: { token: string }) {
           return;
         }
 
-        const sessionResponse = await fetch(`/api/recommendations/public/${token}/session`, {
-          headers: {
-            "x-recommender-session": storedSession,
-          },
-        });
-
-        if (!sessionResponse.ok) {
+        try {
+          const sessionBody = await fetchApi<{
+            recommendation: SessionRecommendation;
+          }>(`/api/recommendations/public/${token}/session`, {
+            headers: {
+              "x-recommender-session": storedSession,
+            },
+          });
+          if (!ignore) {
+            setSessionToken(storedSession);
+            setSessionInfo(sessionBody.recommendation as SessionRecommendation);
+            setFormState(
+              fromResponses(
+                (sessionBody.recommendation as SessionRecommendation).responses,
+              ),
+            );
+          }
+        } catch {
           window.localStorage.removeItem(getStorageKey(token));
           return;
         }
-
-        const sessionBody = await sessionResponse.json();
-        if (!ignore) {
-          setSessionToken(storedSession);
-          setSessionInfo(sessionBody.recommendation as SessionRecommendation);
-          setFormState(fromResponses((sessionBody.recommendation as SessionRecommendation).responses));
-        }
       } catch (loadError) {
         if (!ignore) {
-          setError(loadError instanceof Error ? loadError.message : "Error cargando recomendación.");
+          setError(
+            toNormalizedApiError(
+              loadError,
+              "Error cargando recomendación.",
+            ).message,
+          );
         }
       } finally {
         if (!ignore) {
@@ -170,15 +181,17 @@ export function RecommenderForm({ token }: { token: string }) {
     setSuccess(null);
     setRequestingOtp(true);
     try {
-      const response = await fetch(`/api/recommendations/public/${token}/otp`, {
+      const body = await fetchApi<{ maskedEmail: string }>(
+        `/api/recommendations/public/${token}/otp`,
+        {
         method: "POST",
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        setError(body?.message ?? "No se pudo enviar OTP.");
-        return;
-      }
+        },
+      );
       setSuccess(`Código OTP enviado a ${body.maskedEmail}.`);
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(requestError, "No se pudo enviar OTP.").message,
+      );
     } finally {
       setRequestingOtp(false);
     }
@@ -189,16 +202,13 @@ export function RecommenderForm({ token }: { token: string }) {
     setSuccess(null);
     setVerifyingOtp(true);
     try {
-      const response = await fetch(`/api/recommendations/public/${token}/verify`, {
+      const body = await fetchApi<{
+        sessionToken: string;
+        recommendation: SessionRecommendation;
+      }>(`/api/recommendations/public/${token}/verify`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ otpCode }),
       });
-      const body = await response.json();
-      if (!response.ok) {
-        setError(body?.message ?? "No se pudo validar OTP.");
-        return;
-      }
 
       const nextSession = String(body.sessionToken);
       const recommendation = body.recommendation as SessionRecommendation;
@@ -210,6 +220,10 @@ export function RecommenderForm({ token }: { token: string }) {
       setSessionInfo(recommendation);
       setFormState(fromResponses(recommendation.responses));
       setSuccess("OTP validado correctamente.");
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(requestError, "No se pudo validar OTP.").message,
+      );
     } finally {
       setVerifyingOtp(false);
     }
@@ -223,22 +237,26 @@ export function RecommenderForm({ token }: { token: string }) {
     setSuccess(null);
     setSavingDraft(true);
     try {
-      const response = await fetch(`/api/recommendations/public/${token}/draft`, {
+      const body = await fetchApi<{ recommendation: SessionRecommendation }>(
+        `/api/recommendations/public/${token}/draft`,
+        {
         method: "PATCH",
         headers: {
-          "Content-Type": "application/json",
           "x-recommender-session": sessionToken,
         },
         body: JSON.stringify(formState),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        setError(body?.message ?? "No se pudo guardar borrador.");
-        return;
-      }
+        },
+      );
 
       setSessionInfo(body.recommendation as SessionRecommendation);
       setSuccess("Borrador guardado.");
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "No se pudo guardar borrador.",
+        ).message,
+      );
     } finally {
       setSavingDraft(false);
     }
@@ -252,25 +270,29 @@ export function RecommenderForm({ token }: { token: string }) {
     setSuccess(null);
     setSubmitting(true);
     try {
-      const response = await fetch(`/api/recommendations/public/${token}/submit`, {
+      const body = await fetchApi<{ recommendation: SessionRecommendation }>(
+        `/api/recommendations/public/${token}/submit`,
+        {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "x-recommender-session": sessionToken,
         },
         body: JSON.stringify(formState),
-      });
-      const body = await response.json();
-      if (!response.ok) {
-        setError(body?.message ?? "No se pudo enviar recomendación.");
-        return;
-      }
+        },
+      );
       setSessionInfo(body.recommendation as SessionRecommendation);
       setSuccess("Recomendación enviada correctamente.");
       if (typeof window !== "undefined") {
         window.localStorage.removeItem(getStorageKey(token));
       }
       setSessionToken(null);
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "No se pudo enviar recomendación.",
+        ).message,
+      );
     } finally {
       setSubmitting(false);
     }

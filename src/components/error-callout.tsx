@@ -8,6 +8,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useAppLanguage } from "@/components/language-provider";
+import { fetchApiResponse } from "@/lib/client/api-client";
 
 export function ErrorCallout({
   title,
@@ -31,13 +32,15 @@ export function ErrorCallout({
     }
 
     setIsSubmitting(true);
-    await fetch("/api/errors/report", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ errorId, context, notes }),
-    });
-    setIsSubmitting(false);
-    setSubmitted(true);
+    try {
+      await fetchApiResponse("/api/errors/report", {
+        method: "POST",
+        body: JSON.stringify({ errorId, context, notes }),
+      });
+      setSubmitted(true);
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (

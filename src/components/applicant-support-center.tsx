@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
 import type { SupportTicketStatus } from "@/types/domain";
 
 type TicketRow = {
@@ -146,13 +147,7 @@ export function ApplicantSupportCenter({
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/support");
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setError(json.userMessage ?? "No se pudo cargar tus consultas.");
-        return;
-      }
-      const json = (await res.json()) as { tickets?: TicketRow[] };
+      const json = await fetchApi<{ tickets?: TicketRow[] }>("/api/support");
       const rows = json.tickets ?? [];
       setTickets(rows);
       setSelectedTicketId((current) => {
@@ -161,6 +156,13 @@ export function ApplicantSupportCenter({
         }
         return rows[0]?.id ?? null;
       });
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "No se pudo cargar tus consultas.",
+        ).message,
+      );
     } finally {
       setLoading(false);
     }
@@ -180,28 +182,26 @@ export function ApplicantSupportCenter({
     setSendingNew(true);
     setFormMessage(null);
     try {
-      const res = await fetch("/api/support", {
+      const json = await fetchApi<{ ticket?: TicketRow }>("/api/support", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           applicationId: defaultApplicationId,
           subject,
           body: newBody,
         }),
       });
-
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setFormMessage(json.userMessage ?? "No se pudo crear la consulta.");
-        return;
-      }
-
-      const json = (await res.json()) as { ticket?: TicketRow };
       setSubject("");
       setNewBody("");
       setSelectedTicketId(json.ticket?.id ?? null);
       setFormMessage("Consulta enviada correctamente.");
       await loadTickets();
+    } catch (requestError) {
+      setFormMessage(
+        toNormalizedApiError(
+          requestError,
+          "No se pudo crear la consulta.",
+        ).message,
+      );
     } finally {
       setSendingNew(false);
     }
@@ -216,21 +216,21 @@ export function ApplicantSupportCenter({
     setSendingFollowUp(true);
     setFormMessage(null);
     try {
-      const res = await fetch(`/api/support/${selectedTicket.id}/follow-up`, {
+      await fetchApi(`/api/support/${selectedTicket.id}/follow-up`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ body: followUpBody }),
       });
-
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setFormMessage(json.userMessage ?? "No se pudo enviar el seguimiento.");
-        return;
-      }
 
       setFollowUpBody("");
       setFormMessage("Seguimiento enviado.");
       await loadTickets();
+    } catch (requestError) {
+      setFormMessage(
+        toNormalizedApiError(
+          requestError,
+          "No se pudo enviar el seguimiento.",
+        ).message,
+      );
     } finally {
       setSendingFollowUp(false);
     }

@@ -11,6 +11,11 @@ import {
 import { ErrorCallout } from "@/components/error-callout";
 import { FieldHint } from "@/components/field-hint";
 import { OCR_REFERENCE_FILE_LIMIT } from "@/lib/ocr/field-ai-parser";
+import {
+  fetchApi,
+  fetchApiResponse,
+  toNormalizedApiError,
+} from "@/lib/client/api-client";
 import { DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
 import type { OcrTestRun } from "@/types/domain";
 
@@ -52,39 +57,6 @@ type ApiError = {
 };
 
 type EditorSection = "context" | "prompts" | "schema";
-
-function isApiError(value: unknown): value is ApiError {
-  return Boolean(
-    value &&
-    typeof value === "object" &&
-    "message" in value &&
-    typeof (value as { message?: unknown }).message === "string",
-  );
-}
-
-function normalizeApiError(value: unknown, fallbackMessage: string): ApiError {
-  if (value && typeof value === "object") {
-    const message =
-      typeof (value as { message?: unknown }).message === "string"
-        ? (value as { message: string }).message
-        : fallbackMessage;
-    const errorId =
-      typeof (value as { errorId?: unknown }).errorId === "string"
-        ? (value as { errorId: string }).errorId
-        : undefined;
-    return { message, errorId };
-  }
-
-  return { message: fallbackMessage };
-}
-
-async function readJsonSafely(response: Response) {
-  try {
-    return (await response.json()) as unknown;
-  } catch {
-    return null;
-  }
-}
 
 function formatDate(value: string) {
   return new Date(value).toLocaleDateString("es-PE", {
@@ -179,24 +151,13 @@ export function AdminOcrTestbed({
     try {
       const params = new URLSearchParams({ limit: "10" });
       if (cycleId) params.set("cycleId", cycleId);
-      const res = await fetch(`/api/ocr-testbed?${params.toString()}`);
-      const json = await readJsonSafely(res);
-      if (!res.ok) {
-        throw normalizeApiError(json, "Error al cargar historial.");
-      }
-      const runs = (((json as { runs?: OcrTestRun[] } | null) ?? {}).runs ??
-        []) as OcrTestRun[];
-      setHistory(runs);
+      const json = await fetchApi<{ runs?: OcrTestRun[] }>(
+        `/api/ocr-testbed?${params.toString()}`,
+      );
+      setHistory(json.runs ?? []);
     } catch (err) {
       setHistoryError(
-        isApiError(err)
-          ? err
-          : {
-              message:
-                err instanceof Error
-                  ? err.message
-                  : "Error al cargar historial.",
-            },
+        toNormalizedApiError(err, "Error al cargar historial."),
       );
     } finally {
       setHistoryLoading(false);
@@ -324,28 +285,16 @@ export function AdminOcrTestbed({
       formData.append("strictSchema", String(strictSchema));
       if (cycleId) formData.append("cycleId", cycleId);
 
-      const res = await fetch("/api/ocr-testbed", {
+      const res = await fetchApiResponse("/api/ocr-testbed", {
         method: "POST",
         body: formData,
       });
-      const json = await readJsonSafely(res);
-      if (!res.ok) {
-        throw normalizeApiError(json, "Error al ejecutar Prompt Studio.");
-      }
-      setResult(
-        ((json as { run?: OcrTestRun } | null) ?? {}).run as OcrTestRun,
-      );
+      const json = (await res.json()) as { run?: OcrTestRun } | null;
+      setResult(json?.run ?? null);
       await loadHistory();
     } catch (err) {
       setRunError(
-        isApiError(err)
-          ? err
-          : {
-              message:
-                err instanceof Error
-                  ? err.message
-                  : "Error al ejecutar Prompt Studio.",
-            },
+        toNormalizedApiError(err, "Error al ejecutar Prompt Studio."),
       );
     } finally {
       setIsRunning(false);

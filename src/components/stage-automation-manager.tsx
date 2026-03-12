@@ -4,6 +4,7 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import type { StageAutomationTemplate } from "@/types/domain";
 import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
 import { FieldHint } from "@/components/field-hint";
+import { fetchApi, fetchApiResponse } from "@/lib/client/api-client";
 
 type EditableAutomation = StageAutomationTemplate & {
   localId: string;
@@ -78,14 +79,16 @@ export function StageAutomationManager({
     if (!automationId || previewLoading) return;
     setPreviewLoading(automationId);
     try {
-      const res = await fetch("/api/communications/preview", {
+      const data = await fetchApi<{ subject: string; bodyHtml: string }>(
+        "/api/communications/preview",
+        {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ automationTemplateId: automationId }),
-      });
-      if (!res.ok) return;
-      const data = (await res.json()) as { subject: string; bodyHtml: string };
+        },
+      );
       onPreviewData(data);
+    } catch {
+      // Preview failures are surfaced in the communications center.
     } finally {
       setPreviewLoading(null);
     }
@@ -95,15 +98,20 @@ export function StageAutomationManager({
     if (!automationId || testSendLoading) return;
     setTestSendLoading(automationId);
     try {
-      const res = await fetch("/api/communications/test-send", {
+      await fetchApiResponse("/api/communications/test-send", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ automationTemplateId: automationId }),
       });
       setTestSendResult((prev) => ({
         ...prev,
-        [automationId]: res.ok ? "sent" : "error",
+        [automationId]: "sent",
       }));
+    } catch {
+      setTestSendResult((prev) => ({
+        ...prev,
+        [automationId]: "error",
+      }));
+    } finally {
       setTimeout(() => {
         setTestSendResult((prev) => {
           const next = { ...prev };
@@ -111,7 +119,6 @@ export function StageAutomationManager({
           return next;
         });
       }, 4000);
-    } finally {
       setTestSendLoading(null);
     }
   }

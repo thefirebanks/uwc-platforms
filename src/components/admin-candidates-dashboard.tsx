@@ -7,6 +7,7 @@ import {
   getStageLabel,
   getApplicationStatusLabel,
 } from "@/lib/utils/domain-labels";
+import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -219,21 +220,19 @@ export function AdminCandidatesDashboard({
 
     void (async () => {
       try {
-        const r = await fetch(`/api/applications/search?${params}`, { signal: controller.signal });
-        const body = await r.json();
-        if (!r.ok) {
-          throw new Error(
-            typeof body?.userMessage === "string" ? body.userMessage : (body?.message ?? "Error al buscar candidatos"),
-          );
-        }
-        const data = body as SearchResult;
+        const data = await fetchApi<SearchResult>(
+          `/api/applications/search?${params}`,
+          { signal: controller.signal },
+        );
         setRows(data.rows);
         setTotal(data.total);
         setTotalPages(data.totalPages);
         setLoading(false);
       } catch (err) {
         if (err instanceof Error && err.name === "AbortError") return;
-        setFetchError(String(err instanceof Error ? err.message : err));
+        setFetchError(
+          toNormalizedApiError(err, "Error al buscar candidatos").message,
+        );
         setLoading(false);
       }
     })();
@@ -251,16 +250,13 @@ export function AdminCandidatesDashboard({
     const controller = new AbortController();
     setStage1Loading(true);
 
-    fetch(`/api/applications/stage1-funnel?cycleId=${cycleFilter}`, {
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("Stage 1 funnel failed");
-        }
-        return response.json();
-      })
-      .then((body: { summary: Stage1FunnelSummary; applications: Stage1FunnelApplication[] }) => {
+    fetchApi<{ summary: Stage1FunnelSummary; applications: Stage1FunnelApplication[] }>(
+      `/api/applications/stage1-funnel?cycleId=${cycleFilter}`,
+      {
+        signal: controller.signal,
+      },
+    )
+      .then((body) => {
         setStage1Summary(body.summary);
         setStage1ByApplication(
           Object.fromEntries(body.applications.map((entry) => [entry.applicationId, entry])),
@@ -330,9 +326,14 @@ export function AdminCandidatesDashboard({
       setBulkLoading(true);
       setBulkMessage(null);
       try {
-        const res = await fetch("/api/applications/bulk-transition", {
+        const body = await fetchApi<{
+          result: {
+            transitioned: number;
+            skipped: number;
+            errors: unknown[];
+          };
+        }>("/api/applications/bulk-transition", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             cycleId: filterCycle,
             fromStage,
@@ -341,15 +342,19 @@ export function AdminCandidatesDashboard({
             reason,
           }),
         });
-        if (!res.ok) throw new Error("Bulk transition failed");
-        const { result } = await res.json();
+        const { result } = body;
         setBulkMessage(
           `${result.transitioned} avanzados, ${result.skipped} omitidos, ${result.errors.length} errores.`,
         );
         setSelectedIds(new Set());
         setFetchTrigger((current) => current + 1);
-      } catch {
-        setBulkMessage("Error al realizar la transicion masiva.");
+      } catch (requestError) {
+        setBulkMessage(
+          toNormalizedApiError(
+            requestError,
+            "Error al realizar la transicion masiva.",
+          ).message,
+        );
       } finally {
         setBulkLoading(false);
       }
@@ -375,25 +380,23 @@ export function AdminCandidatesDashboard({
     setRubricMessageTone("success");
 
     try {
-      const response = await fetch("/api/applications/rubric-evaluate", {
+      const body = await fetchApi<{
+        result: {
+          evaluated: number;
+          outcomes: {
+            eligible: number;
+            not_eligible: number;
+            needs_review: number;
+          };
+        };
+      }>("/api/applications/rubric-evaluate", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cycleId: cycleFilter,
           stageCode: targetStage,
           trigger: "manual",
         }),
       });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(
-          typeof body?.message === "string"
-            ? body.message
-            : typeof body?.userMessage === "string"
-              ? body.userMessage
-              : "No se pudo ejecutar la rúbrica automática.",
-        );
-      }
 
       setRubricMessage(
         `${body.result.evaluated} evaluadas: ${body.result.outcomes.eligible} elegibles, ${body.result.outcomes.not_eligible} no elegibles, ${body.result.outcomes.needs_review} a revisión.`,
@@ -401,7 +404,12 @@ export function AdminCandidatesDashboard({
       setRubricMessageTone("success");
       setFetchTrigger((current) => current + 1);
     } catch (error) {
-      setRubricMessage(error instanceof Error ? error.message : "Error ejecutando la rúbrica.");
+      setRubricMessage(
+        toNormalizedApiError(
+          error,
+          "No se pudo ejecutar la rúbrica automática.",
+        ).message,
+      );
       setRubricMessageTone("error");
     } finally {
       setRubricRunning(false);

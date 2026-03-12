@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ApplicationStatus, StageCode } from "@/types/domain";
+import {
+  fetchApi,
+  fetchApiResponse,
+  toNormalizedApiError,
+} from "@/lib/client/api-client";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -142,31 +147,6 @@ const PANEL_SUCCESS_BUTTON_STYLE: CSSProperties = {
   cursor: "pointer",
 };
 
-function normalizeApiError(value: unknown, fallbackMessage: string): ApiError {
-  if (value && typeof value === "object") {
-    return {
-      message:
-        typeof (value as { message?: unknown }).message === "string"
-          ? (value as { message: string }).message
-          : fallbackMessage,
-      errorId:
-        typeof (value as { errorId?: unknown }).errorId === "string"
-          ? (value as { errorId: string }).errorId
-          : undefined,
-    };
-  }
-
-  return { message: fallbackMessage };
-}
-
-async function readJsonSafely(response: Response) {
-  try {
-    return (await response.json()) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 /* -------------------------------------------------------------------------- */
 /*  Props                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -217,42 +197,27 @@ export function AdminApplicationViewer({
       return;
     }
 
-    const [exportResponse, historyResponse, filesResponse, evaluationResponse] = await Promise.all([
-      fetch(`/api/exports?applicationId=${applicationId}`),
-      fetch(`/api/applications/${applicationId}/admin-edit`),
-      fetch(`/api/applications/${applicationId}/files`),
-      fetch(`/api/applications/${applicationId}/evaluation`),
+    const [exportBody, historyBody, filesBody, evaluationBody] = await Promise.all([
+      fetchApi<ApplicationExport>(`/api/exports?applicationId=${applicationId}`),
+      fetchApi<{ history?: EditLogEntry[] }>(
+        `/api/applications/${applicationId}/admin-edit`,
+      ).catch(() => null),
+      fetchApi<{ files?: AdminFileEntry[] }>(
+        `/api/applications/${applicationId}/files`,
+      ).catch(() => null),
+      fetchApi<{
+        evaluations?: Array<
+          Omit<EvaluationData, "criteria_results"> & {
+            criteria_results: unknown;
+          }
+        >;
+      }>(`/api/applications/${applicationId}/evaluation`).catch(() => null),
     ]);
 
-    const exportBody = (await exportResponse.json().catch(() => null)) as
-      | ApplicationExport
-      | { message?: string; userMessage?: string }
-      | null;
-    if (!exportResponse.ok) {
-      throw new Error(
-        typeof exportBody === "object" &&
-          exportBody &&
-          "userMessage" in exportBody &&
-          typeof exportBody.userMessage === "string"
-          ? exportBody.userMessage
-          : "Failed to load application",
-      );
-    }
-
-    const historyBody = (await historyResponse.json().catch(() => null)) as
-      | { history?: EditLogEntry[] }
-      | null;
-    const filesBody = (await filesResponse.json().catch(() => null)) as
-      | { files?: AdminFileEntry[] }
-      | null;
-    const evaluationBody = (await evaluationResponse.json().catch(() => null)) as
-      | { evaluations?: Array<Omit<EvaluationData, "criteria_results"> & { criteria_results: unknown }> }
-      | null;
-
-    setData(exportBody as ApplicationExport);
-    setEditLog(historyResponse.ok ? historyBody?.history ?? [] : []);
-    setFiles(filesResponse.ok ? filesBody?.files ?? [] : []);
-    if (evaluationResponse.ok && evaluationBody?.evaluations) {
+    setData(exportBody);
+    setEditLog(historyBody?.history ?? []);
+    setFiles(filesBody?.files ?? []);
+    if (evaluationBody?.evaluations) {
       setEvaluations(
         evaluationBody.evaluations.map((ev) => ({
           ...ev,
@@ -292,7 +257,7 @@ export function AdminApplicationViewer({
       })
       .catch((err) => {
         if (cancelled) return;
-        setError(String(err.message ?? err));
+        setError(toNormalizedApiError(err, "No se pudo cargar la postulación.").message);
         setLoading(false);
       });
 
@@ -322,13 +287,13 @@ export function AdminApplicationViewer({
 
     setSaving(true);
     try {
-      const res = await fetch(`/api/applications/${applicationId}/admin-edit`, {
+      const { application } = await fetchApi<{ application: Partial<ApplicationExport["application"]> }>(
+        `/api/applications/${applicationId}/admin-edit`,
+        {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ changes: editChanges, reason: editReason }),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      const { application } = await res.json();
+        },
+      );
       setData((prev) =>
         prev ? { ...prev, application: { ...prev.application, ...application } } : prev,
       );
@@ -337,8 +302,10 @@ export function AdminApplicationViewer({
       setEditChanges({});
       setEditReason("");
       onApplicationUpdated();
-    } catch {
-      setError("No se pudieron guardar los cambios.");
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(requestError, "No se pudieron guardar los cambios.").message,
+      );
     } finally {
       setSaving(false);
     }
@@ -358,23 +325,24 @@ export function AdminApplicationViewer({
 
       setValidating(true);
       try {
-        const res = await fetch(
+        const { application } = await fetchApi<{
+          application: Partial<ApplicationExport["application"]>;
+        }>(
           `/api/applications/${applicationId}/validate`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ status, notes: notes || "—" }),
           },
         );
-        if (!res.ok) throw new Error("Validation failed");
-        const { application } = await res.json();
         setData((prev) =>
           prev ? { ...prev, application: { ...prev.application, ...application } } : prev,
         );
         await loadViewerData();
         onApplicationUpdated();
-      } catch {
-        setError("No se pudo registrar la validación.");
+      } catch (requestError) {
+        setError(
+          toNormalizedApiError(requestError, "No se pudo registrar la validación.").message,
+        );
       } finally {
         setValidating(false);
       }
@@ -391,23 +359,22 @@ export function AdminApplicationViewer({
 
       setTransitioning(true);
       try {
-        const res = await fetch(
+        const { application } = await fetchApi<{
+          application: Partial<ApplicationExport["application"]>;
+        }>(
           `/api/applications/${applicationId}/transition`,
           {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ toStage, reason }),
           },
         );
-        if (!res.ok) throw new Error("Transition failed");
-        const { application } = await res.json();
         setData((prev) =>
           prev ? { ...prev, application: { ...prev.application, ...application } } : prev,
         );
         await loadViewerData();
         onApplicationUpdated();
-      } catch {
-        setError("No se pudo cambiar la etapa.");
+      } catch (requestError) {
+        setError(toNormalizedApiError(requestError, "No se pudo cambiar la etapa.").message);
       } finally {
         setTransitioning(false);
       }
@@ -457,9 +424,8 @@ export function AdminApplicationViewer({
 
       setBusyFileKey(file.key);
       try {
-        const response = await fetch(`/api/applications/${applicationId}/files`, {
+        await fetchApiResponse(`/api/applications/${applicationId}/files`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fileKey: file.key,
             title,
@@ -469,14 +435,15 @@ export function AdminApplicationViewer({
           }),
         });
 
-        if (!response.ok) {
-          throw new Error("No se pudo actualizar el archivo.");
-        }
-
         await loadViewerData();
         onApplicationUpdated();
-      } catch {
-        setError("No se pudo actualizar la metadata del archivo.");
+      } catch (requestError) {
+        setError(
+          toNormalizedApiError(
+            requestError,
+            "No se pudo actualizar la metadata del archivo.",
+          ).message,
+        );
       } finally {
         setBusyFileKey(null);
       }
@@ -502,19 +469,20 @@ export function AdminApplicationViewer({
 
       setBusyFileKey(fileKey);
       try {
-        const response = await fetch(`/api/applications/${applicationId}/admin-upload`, {
+        await fetchApiResponse(`/api/applications/${applicationId}/admin-upload`, {
           method: "POST",
           body: formData,
         });
 
-        if (!response.ok) {
-          throw new Error("No se pudo cargar el archivo.");
-        }
-
         await loadViewerData();
         onApplicationUpdated();
-      } catch {
-        setError("No se pudo cargar el archivo manualmente.");
+      } catch (requestError) {
+        setError(
+          toNormalizedApiError(
+            requestError,
+            "No se pudo cargar el archivo manualmente.",
+          ).message,
+        );
       } finally {
         setBusyFileKey(null);
       }
@@ -531,38 +499,31 @@ export function AdminApplicationViewer({
       setBusyFileKey(fileKey);
       setOcrErrorByFileKey((current) => ({ ...current, [fileKey]: null }));
       try {
-        const response = await fetch(`/api/applications/${applicationId}/ocr-check`, {
+        const body = await fetchApi<{
+          summary?: string;
+          confidence?: number;
+          createdAt?: string;
+        }>(`/api/applications/${applicationId}/ocr-check`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ fileKey }),
         });
-        const body = await readJsonSafely(response);
-
-        if (!response.ok) {
-          throw normalizeApiError(body, "No se pudo ejecutar el parsing IA.");
-        }
-
-        const parsedBody = body as { summary?: string; confidence?: number; createdAt?: string } | null;
         setOcrResultByFileKey((current) => ({
           ...current,
           [fileKey]: {
             summary:
-              typeof parsedBody?.summary === "string"
-                ? parsedBody.summary
+              typeof body.summary === "string"
+                ? body.summary
                 : "Parsing completado.",
             confidence:
-              typeof parsedBody?.confidence === "number" ? parsedBody.confidence : 0,
+              typeof body.confidence === "number" ? body.confidence : 0,
             createdAt:
-              typeof parsedBody?.createdAt === "string"
-                ? parsedBody.createdAt
+              typeof body.createdAt === "string"
+                ? body.createdAt
                 : new Date().toISOString(),
           },
         }));
       } catch (error) {
-        const apiError =
-          error && typeof error === "object" && "message" in error
-            ? (error as ApiError)
-            : { message: "No se pudo ejecutar el parsing IA." };
+        const apiError = toNormalizedApiError(error, "No se pudo ejecutar el parsing IA.");
         setOcrErrorByFileKey((current) => ({ ...current, [fileKey]: apiError }));
       } finally {
         setBusyFileKey(null);
@@ -592,9 +553,8 @@ export function AdminApplicationViewer({
 
       setBusyRecommendationId(recommendationId);
       try {
-        const response = await fetch(`/api/recommendations/${recommendationId}`, {
+        await fetchApiResponse(`/api/recommendations/${recommendationId}`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             recommenderName,
             recommenderEmail,
@@ -603,13 +563,14 @@ export function AdminApplicationViewer({
           }),
         });
 
-        if (!response.ok) {
-          throw new Error("No se pudo actualizar la recomendacion.");
-        }
-
         await loadViewerData();
-      } catch {
-        setError("No se pudo actualizar la recomendacion.");
+      } catch (requestError) {
+        setError(
+          toNormalizedApiError(
+            requestError,
+            "No se pudo actualizar la recomendacion.",
+          ).message,
+        );
       } finally {
         setBusyRecommendationId(null);
       }
@@ -621,17 +582,18 @@ export function AdminApplicationViewer({
     async (recommendationId: string) => {
       setBusyRecommendationId(recommendationId);
       try {
-        const response = await fetch(`/api/recommendations/${recommendationId}/remind`, {
+        await fetchApiResponse(`/api/recommendations/${recommendationId}/remind`, {
           method: "POST",
         });
 
-        if (!response.ok) {
-          throw new Error("No se pudo enviar el recordatorio.");
-        }
-
         await loadViewerData();
-      } catch {
-        setError("No se pudo enviar el recordatorio.");
+      } catch (requestError) {
+        setError(
+          toNormalizedApiError(
+            requestError,
+            "No se pudo enviar el recordatorio.",
+          ).message,
+        );
       } finally {
         setBusyRecommendationId(null);
       }
@@ -670,18 +632,19 @@ export function AdminApplicationViewer({
 
       setBusyRecommendationId(recommendationId);
       try {
-        const response = await fetch(`/api/recommendations/${recommendationId}`, {
+        await fetchApiResponse(`/api/recommendations/${recommendationId}`, {
           method: "POST",
           body: formData,
         });
 
-        if (!response.ok) {
-          throw new Error("No se pudo registrar la recomendacion manualmente.");
-        }
-
         await loadViewerData();
-      } catch {
-        setError("No se pudo registrar la recomendacion manualmente.");
+      } catch (requestError) {
+        setError(
+          toNormalizedApiError(
+            requestError,
+            "No se pudo registrar la recomendacion manualmente.",
+          ).message,
+        );
       } finally {
         setBusyRecommendationId(null);
       }

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
 import type { SupportTicketStatus } from "@/types/domain";
 
 type TicketRow = {
@@ -34,12 +35,10 @@ export function ApplicantSupportForm({
   async function loadTickets() {
     setLoadingTickets(true);
     try {
-      const res = await fetch("/api/support");
-      if (!res.ok) {
-        return;
-      }
-      const json = (await res.json()) as { tickets?: TicketRow[] };
+      const json = await fetchApi<{ tickets?: TicketRow[] }>("/api/support");
       setTickets(json.tickets ?? []);
+    } catch {
+      // Keep current state and try again on next open.
     } finally {
       setLoadingTickets(false);
     }
@@ -65,23 +64,21 @@ export function ApplicantSupportForm({
     setSubmitting(true);
 
     try {
-      const res = await fetch("/api/support", {
+      await fetchApi("/api/support", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ applicationId, subject, body }),
       });
-
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setError(json.userMessage ?? "No se pudo enviar la consulta.");
-        return;
-      }
 
       setSubject("");
       setBody("");
       setSuccess(true);
       await loadTickets();
       setTimeout(() => setSuccess(false), 3500);
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(requestError, "No se pudo enviar la consulta.")
+          .message,
+      );
     } finally {
       setSubmitting(false);
     }

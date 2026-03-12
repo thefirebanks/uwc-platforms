@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchApi, fetchApiResponse, toNormalizedApiError } from "@/lib/client/api-client";
 import type { SupportTicketStatus } from "@/types/domain";
 
 type AdminTicket = {
@@ -67,14 +68,15 @@ export function AdminSupportDashboard() {
     setError(null);
     try {
       const url = status ? `/api/support?status=${status}` : "/api/support";
-      const res = await fetch(url);
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setError(json.userMessage ?? "Error al cargar las consultas.");
-        return;
-      }
-      const json = (await res.json()) as { tickets: AdminTicket[] };
+      const json = await fetchApi<{ tickets: AdminTicket[] }>(url);
       setTickets(json.tickets);
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "Error al cargar las consultas.",
+        ).message,
+      );
     } finally {
       setLoading(false);
     }
@@ -90,21 +92,20 @@ export function AdminSupportDashboard() {
     setSubmitting(ticketId);
     setActionError((prev) => ({ ...prev, [ticketId]: "" }));
     try {
-      const res = await fetch(`/api/support/${ticketId}/reply`, {
+      await fetchApiResponse(`/api/support/${ticketId}/reply`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ adminReply: text }),
       });
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setActionError((prev) => ({
-          ...prev,
-          [ticketId]: json.userMessage ?? "No se pudo enviar la respuesta.",
-        }));
-        return;
-      }
       setReplyText((prev) => ({ ...prev, [ticketId]: "" }));
       await loadTickets(filter === "all" ? undefined : filter);
+    } catch (requestError) {
+      setActionError((prev) => ({
+        ...prev,
+        [ticketId]: toNormalizedApiError(
+          requestError,
+          "No se pudo enviar la respuesta.",
+        ).message,
+      }));
     } finally {
       setSubmitting(null);
     }
@@ -114,19 +115,19 @@ export function AdminSupportDashboard() {
     setSubmitting(ticketId);
     setActionError((prev) => ({ ...prev, [ticketId]: "" }));
     try {
-      const res = await fetch(`/api/support/${ticketId}/close`, {
+      await fetchApiResponse(`/api/support/${ticketId}/close`, {
         method: "POST",
       });
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setActionError((prev) => ({
-          ...prev,
-          [ticketId]: json.userMessage ?? "No se pudo cerrar la consulta.",
-        }));
-        return;
-      }
       setExpandedId((prev) => (prev === ticketId ? null : prev));
       await loadTickets(filter === "all" ? undefined : filter);
+    } catch (requestError) {
+      setActionError((prev) => ({
+        ...prev,
+        [ticketId]: toNormalizedApiError(
+          requestError,
+          "No se pudo cerrar la consulta.",
+        ).message,
+      }));
     } finally {
       setSubmitting(null);
     }

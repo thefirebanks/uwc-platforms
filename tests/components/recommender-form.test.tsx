@@ -49,9 +49,8 @@ describe("RecommenderForm", () => {
       }
 
       if (url === "/api/recommendations/public/rec-token/session") {
-        expect((init as RequestInit | undefined)?.headers).toMatchObject({
-          "x-recommender-session": "session-123",
-        });
+        const headers = new Headers((init as RequestInit | undefined)?.headers);
+        expect(headers.get("x-recommender-session")).toBe("session-123");
 
         return new Response(
           JSON.stringify({
