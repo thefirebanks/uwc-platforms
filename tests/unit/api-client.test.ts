@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { fetchApi, ApiRequestError } from "@/lib/client/api-client";
+import {
+  fetchApi,
+  fetchApiResponse,
+  ApiRequestError,
+  toNormalizedApiError,
+} from "@/lib/client/api-client";
 
 describe("fetchApi", () => {
   beforeEach(() => {
@@ -66,9 +71,8 @@ describe("fetchApi", () => {
     });
 
     const [, init] = mockFetch.mock.calls[0];
-    expect((init?.headers as Record<string, string>)["Content-Type"]).toBe(
-      "application/json",
-    );
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
   });
 
   it("does not set Content-Type for GET requests without body", async () => {
@@ -79,7 +83,42 @@ describe("fetchApi", () => {
     await fetchApi("/api/test");
 
     const [, init] = mockFetch.mock.calls[0];
-    expect((init?.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Content-Type")).toBeNull();
+  });
+
+  it("preserves explicit content-type header when provided", async () => {
+    const mockFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    await fetchApi("/api/test", {
+      method: "POST",
+      headers: new Headers({ "Content-Type": "text/plain" }),
+      body: "raw",
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Content-Type")).toBe("text/plain");
+  });
+
+  it("does not force JSON content-type for FormData payloads", async () => {
+    const mockFetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    const formData = new FormData();
+    formData.append("file", "content");
+
+    await fetchApi("/api/test", {
+      method: "POST",
+      body: formData,
+    });
+
+    const [, init] = mockFetch.mock.calls[0];
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Content-Type")).toBeNull();
   });
 
   it("passes through additional fetch options", async () => {
@@ -91,5 +130,32 @@ describe("fetchApi", () => {
 
     const [, init] = mockFetch.mock.calls[0];
     expect(init?.cache).toBe("no-store");
+  });
+
+  it("returns raw response via fetchApiResponse when request succeeds", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    const response = await fetchApiResponse("/api/test");
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true });
+  });
+
+  it("normalizes ApiRequestError into ui-safe object", () => {
+    const error = new ApiRequestError(400, "abc-123", "Solicitud inválida.");
+    expect(toNormalizedApiError(error, "Fallback")).toEqual({
+      message: "Solicitud inválida.",
+      errorId: "abc-123",
+    });
+  });
+
+  it("normalizes plain payload errors into ui-safe object", () => {
+    expect(
+      toNormalizedApiError(
+        { message: "Error plano", errorId: "plain-1" },
+        "Fallback",
+      ),
+    ).toEqual({ message: "Error plano", errorId: "plain-1" });
   });
 });
