@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { RecommendationStatus, RecommenderRole } from "@/types/domain";
+import { roleLabel, getRecommendationStatusLabel } from "@/lib/utils/domain-labels";
 
 type PublicRecommendation = {
   id: string;
@@ -44,19 +45,8 @@ function getStorageKey(token: string) {
   return `uwc-recommender-session:${token}`;
 }
 
-function roleLabel(role: RecommenderRole) {
-  return role === "mentor" ? "Tutor/Profesor/Mentor" : "Amigo (no familiar)";
-}
-
-function getStatusLabel(status: RecommendationStatus) {
-  if (status === "submitted") return "Formulario enviado";
-  if (status === "in_progress") return "En progreso";
-  if (status === "opened") return "Acceso verificado";
-  if (status === "sent") return "Invitación enviada";
-  if (status === "expired") return "Enlace vencido";
-  if (status === "invalidated") return "Enlace reemplazado";
-  return "Pendiente";
-}
+// Use centralized version
+const getStatusLabel = getRecommendationStatusLabel;
 
 function fromResponses(value: Record<string, unknown> | null | undefined): FormState {
   const raw = value ?? {};

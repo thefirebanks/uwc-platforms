@@ -12,6 +12,7 @@ import {
   TextField,
 } from "@mui/material";
 import type { AppLanguage } from "@/lib/i18n/messages";
+import { fetchApi, ApiRequestError } from "@/lib/client/api-client";
 
 const COPY = {
   es: {
@@ -78,18 +79,10 @@ export function ProfileSettingsDialog({
     setErrorMessage(null);
 
     try {
-      const response = await fetch("/api/me", {
+      const payload = await fetchApi<{ fullName?: string }>("/api/me", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fullName: trimmedName }),
       });
-
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) {
-        const fallback = copy.saveFailed;
-        const userMessage = payload?.error?.userMessage;
-        throw new Error(typeof userMessage === "string" ? userMessage : fallback);
-      }
 
       const nextName =
         typeof payload?.fullName === "string" && payload.fullName.trim()
@@ -98,7 +91,11 @@ export function ProfileSettingsDialog({
       onProfileUpdated?.(nextName);
       onClose();
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : copy.saveFailed);
+      if (error instanceof ApiRequestError) {
+        setErrorMessage(error.userMessage);
+      } else {
+        setErrorMessage(error instanceof Error ? error.message : copy.saveFailed);
+      }
     } finally {
       setIsSaving(false);
     }

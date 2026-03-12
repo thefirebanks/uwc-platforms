@@ -7,6 +7,7 @@ import { sendEmail } from "@/lib/server/email-provider";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Database } from "@/types/supabase";
 import type { RecommenderRole, RecommendationStatus } from "@/types/domain";
+import { roleLabelShort } from "@/lib/utils/domain-labels";
 
 type RecommendationRow = Database["public"]["Tables"]["recommendation_requests"]["Row"];
 type RecommendationInsert = Database["public"]["Tables"]["recommendation_requests"]["Insert"];
@@ -75,9 +76,8 @@ function generateSessionToken() {
   return randomBytes(32).toString("base64url");
 }
 
-function roleLabel(role: RecommenderRole) {
-  return role === "mentor" ? "Tutor/Profesor/Mentor" : "Amigo";
-}
+// Alias for backward compatibility within this module
+const roleLabel = roleLabelShort;
 
 async function sendRawEmail({
   to,

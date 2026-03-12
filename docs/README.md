@@ -1,28 +1,31 @@
 # Docs Index
 
-This folder contains the shared product and engineering source of truth for the UWC Peru platform.
+## Active Operational Specs
+- `ARCHITECTURE.md` — system architecture and authorization model
+- `PRODUCT_SPEC.md` — functional requirements (MVP scope)
+- `DEVELOPER_SETUP_AND_OPERATIONS.md` — local setup, deployment, env vars
+- `SETUP_PROCESSES.md` — Supabase, Cloudflare, OAuth configuration
+- `WORKING_INSTRUCTIONS.md` — branch/PR/testing discipline
+- `TEST_STRATEGY.md` — test layers and coverage matrix
+- `E2E_TEST_GUIDE.md` — Playwright test details and helpers
+- `MANUAL_TEST_FLOWS.md` — manual QA flows for smoke/UAT
+- `OBSERVABILITY.md` — logging strategy and debug commands
+- `CODEBASE_NAVIGATION.md` — file map for UI/form work
 
-## Core Documents
-- `docs/BRAINSTORMING.md`: Raw product brainstorming and context.
-- `docs/DEVELOPER_SETUP_AND_OPERATIONS.md`: Detailed developer setup, deployment, and operations reference.
-- `docs/TODOS_FOR_ADMIN_VIEW.md`: Follow-up list for admin-view parity and rendering boundaries.
-- `docs/V1_IMPROVEMENTS_PART2.md`: V1 workstream plan with priorities and acceptance criteria.
-- `docs/POTENTIAL_REFACTOR.md`: Deep refactor audit and prioritized technical debt list.
-- `docs/STAGE1_PDF_FIELD_INVENTORY.md`: Inventario completo de campos de Stage 1 extraídos del PDF oficial.
-- `docs/PRODUCT_SPEC.md`: Functional requirements and non-functional requirements.
-- `docs/ARCHITECTURE.md`: Technical architecture, system boundaries, and major design decisions.
-- `docs/PLANNING.md`: Iterative rollout plan and release milestones.
-- `docs/SETUP_PROCESSES.md`: Environment setup for Supabase, Cloudflare, OAuth, CI secrets.
-- `docs/OBSERVABILITY.md`: Runtime logging strategy (Cloudflare), audit boundaries, and debug commands.
+## Domain Specs
+- `APPLICANT_EDIT_MODE_FLOWS.md` — edit/view mode rules
+- `RUBRIC_ADMIN_FLOWS.md` — rubric authoring and execution flows (24 flows with test mapping)
+- `RUBRIC_STAGE1_CRITERIA_SPEC.md` — Stage 1 eligibility criteria
 
-## Quality and Execution
-- `docs/MANUAL_TEST_FLOWS.md`: Manual end-to-end test flows for smoke/UAT.
-- `docs/TEST_STRATEGY.md`: Automated testing strategy and coverage expectations.
-- `docs/WORKING_INSTRUCTIONS.md`: Working agreements for implementation, docs updates, and testing discipline.
+## Technical Debt
+- `POTENTIAL_REFACTOR.md` — prioritized technical debt tracker (P0-P3)
+
+## Archived
+Historical planning and brainstorming docs in `docs/archived/`.
 
 ## Maintenance Rule
-Whenever requirements, architecture, auth flow, or workflows change, update the corresponding file(s) in `docs/` in the same PR.
+Update relevant docs in the same PR when behavior changes.
 
 ## Repo Defaults
-- Supabase operations for this project must use the UWC profile (`sbu`).
-- UWC project ref for this repository: `lnuugnvwjyndvxhzbuib`.
+- Supabase profile: `sbu` (UWC profile)
+- Project ref: `lnuugnvwjyndvxhzbuib`

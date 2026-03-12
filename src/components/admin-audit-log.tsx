@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AuditEventListItem } from "@/lib/server/audit-service";
 import { ErrorCallout } from "@/components/error-callout";
 import { useAppLanguage } from "@/components/language-provider";
+import { fetchApi, ApiRequestError } from "@/lib/client/api-client";
 
 interface ApiError {
   message: string;
@@ -124,27 +125,25 @@ export function AdminAuditLog() {
       setIsLoading(true);
       setError(null);
 
-      const response = await fetch(`/api/audit?${listQuery}`, { cache: "no-store" });
-      const body = (await response.json()) as AuditResponse | ApiError;
-
-      if (!isMounted) {
-        return;
-      }
-
-      if (!response.ok) {
-        setError(body as ApiError);
+      try {
+        const result = await fetchApi<AuditResponse>(`/api/audit?${listQuery}`, {
+          cache: "no-store",
+        });
+        if (!isMounted) return;
+        setEvents(result.events ?? []);
+        setTotal(result.total ?? 0);
+        setTotalPages(result.totalPages ?? 0);
+      } catch (err) {
+        if (!isMounted) return;
+        if (err instanceof ApiRequestError) {
+          setError({ message: err.userMessage, errorId: err.errorId });
+        }
         setEvents([]);
         setTotal(0);
         setTotalPages(0);
-        setIsLoading(false);
-        return;
+      } finally {
+        if (isMounted) setIsLoading(false);
       }
-
-      const result = body as AuditResponse;
-      setEvents(result.events ?? []);
-      setTotal(result.total ?? 0);
-      setTotalPages(result.totalPages ?? 0);
-      setIsLoading(false);
     }
 
     void loadAuditEvents();

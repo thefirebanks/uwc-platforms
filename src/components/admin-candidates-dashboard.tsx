@@ -3,6 +3,10 @@
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { AdminExportBuilder } from "./admin-export-builder";
 import { AdminApplicationViewer } from "./admin-application-viewer";
+import {
+  getStageLabel,
+  getApplicationStatusLabel,
+} from "@/lib/utils/domain-labels";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                     */
@@ -69,28 +73,8 @@ type Stage1FunnelSummary = {
 /*  Helpers                                                                   */
 /* -------------------------------------------------------------------------- */
 
-function getStageLabel(stageCode: string) {
-  if (stageCode === "documents") return "1. Formulario Principal";
-  if (stageCode === "exam_placeholder") return "2. Examen Academico";
-  return "Etapa personalizada";
-}
-
-function getStatusLabel(status: AdminCandidateRow["status"]) {
-  switch (status) {
-    case "draft":
-      return "En progreso";
-    case "submitted":
-      return "Submitted";
-    case "eligible":
-      return "Completado";
-    case "ineligible":
-      return "No elegible";
-    case "advanced":
-      return "Completado";
-    default:
-      return status;
-  }
-}
+// Use centralized version
+const getStatusLabel = getApplicationStatusLabel;
 
 function getStatusClass(status: AdminCandidateRow["status"]) {
   if (status === "ineligible") return "status-pill rejected";

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { CycleStageTemplate } from "@/types/domain";
+import { fetchApi } from "@/lib/client/api-client";
 
 const STORAGE_KEY = "uwc:admin-sidebar-collapsed";
 
@@ -115,14 +116,14 @@ export function AdminStageSidebar({ cycleId, cycleName, stages }: AdminStageSide
   async function handleCreateStage() {
     setIsCreatingStage(true);
     try {
-      const response = await fetch(`/api/cycles/${cycleId}/templates`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) return;
-      const body = (await response.json()) as { template: CycleStageTemplate };
+      const body = await fetchApi<{ template: CycleStageTemplate }>(
+        `/api/cycles/${cycleId}/templates`,
+        { method: "POST" },
+      );
       router.push(`/admin/process/${cycleId}/stage/${body.template.id}`);
       router.refresh();
+    } catch {
+      // Silently fail — matches previous behavior (no error UI shown)
     } finally {
       setIsCreatingStage(false);
     }
