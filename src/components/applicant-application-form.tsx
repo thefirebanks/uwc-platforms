@@ -4,7 +4,6 @@ import { startTransition, type ChangeEvent, useCallback, useEffect, useMemo, use
 import {
   Box,
   Button,
-  Chip,
   IconButton,
   MenuItem,
   Stack,
@@ -19,14 +18,15 @@ import { ApplicantActionBar } from "@/components/applicant-action-bar";
 import { ApplicantTopNav } from "@/components/applicant-top-nav";
 import { TogglePill } from "@/components/toggle-pill";
 import { GradesTable, isGradeField } from "@/components/grades-table";
-import { UploadZone } from "@/components/upload-zone";
 import type { AppLanguage } from "@/lib/i18n/messages";
 import type { Application, CycleStageField, RecommendationStatus, RecommenderRole, StageSection } from "@/types/domain";
-import { StatusBadge } from "@/components/stage-badge";
 import { ErrorCallout } from "@/components/error-callout";
+import { ApplicantPreparationChecklist } from "@/components/applicant-preparation-checklist";
+import { ApplicantReviewSubmit } from "@/components/applicant-review-submit";
+import { ApplicantDocumentUploadSection } from "@/components/applicant-document-upload-section";
+import { ApplicantRecommendersSection } from "@/components/applicant-recommenders-section";
 import { validateStagePayload } from "@/lib/stages/form-schema";
 import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
-import { renderSafeMarkdown } from "@/lib/markdown";
 import {
   groupFieldsBySections,
   type ResolvedSection,
@@ -476,28 +476,7 @@ function parseFileEntry(value: ApplicationFileValue | undefined | null) {
   };
 }
 
-function statusTone(status: RecommendationStatus, language: AppLanguage) {
-  const isEnglish = language === "en";
-  if (status === "submitted") {
-    return { label: isEnglish ? "Submitted" : "Enviado", color: "#166534", bg: "#DCFCE7" };
-  }
-  if (status === "in_progress") {
-    return { label: isEnglish ? "In progress" : "En progreso", color: "#92400E", bg: "#FEF3C7" };
-  }
-  if (status === "opened") {
-    return { label: isEnglish ? "Opened" : "Abierto", color: "#1D4ED8", bg: "#DBEAFE" };
-  }
-  if (status === "sent") {
-    return { label: isEnglish ? "Invite sent" : "Invitación enviada", color: "#0F766E", bg: "#CCFBF1" };
-  }
-  if (status === "expired") {
-    return { label: isEnglish ? "Expired" : "Vencido", color: "#991B1B", bg: "#FEE2E2" };
-  }
-  if (status === "invalidated") {
-    return { label: isEnglish ? "Replaced" : "Reemplazado", color: "#6B7280", bg: "#F3F4F6" };
-  }
-  return { label: isEnglish ? "Pending" : "Pendiente", color: "#6B7280", bg: "#F3F4F6" };
-}
+
 
 
 function formatSaveStatusLabel(saveState: SaveState, lastSavedAt: string | null, language: AppLanguage) {
@@ -2293,85 +2272,11 @@ export function ApplicantApplicationForm({
 
           {/* Form section content */}
           {currentSection?.id === PREP_SECTION_ID ? (
-            <Box
-              sx={{
-                border: "1px solid var(--sand)",
-                borderRadius: "var(--radius)",
-                bgcolor: "var(--cream)",
-                p: { xs: 2, sm: 2.5 },
-              }}
-            >
-              {!stageInstructions?.trim().length ? (
-                <Typography color="text.secondary" sx={{ mb: 1.2, fontSize: "0.85rem" }}>
-                  {copy(
-                    "Reúne los documentos y datos necesarios. Puedes salir en cualquier momento: el borrador se guarda automáticamente.",
-                    "Gather all required documents and data. You can leave anytime: the draft auto-saves.",
-                  )}
-                </Typography>
-              ) : null}
-              {stageInstructions?.trim().length ? (
-                <Box
-                  sx={{
-                    color: "var(--ink)",
-                    fontSize: "0.92rem",
-                    lineHeight: 1.7,
-                    "& h1, & h2, & h3": {
-                      fontFamily: "var(--font-display), Georgia, serif",
-                      fontWeight: 500,
-                      letterSpacing: "-0.02em",
-                      margin: "0 0 0.75rem",
-                    },
-                    "& p": {
-                      margin: "0 0 0.85rem",
-                    },
-                    "& ul": {
-                      margin: "0 0 0.85rem 1.2rem",
-                      padding: 0,
-                    },
-                    "& li": {
-                      marginBottom: "0.4rem",
-                    },
-                    "& a": {
-                      color: "var(--uwc-maroon)",
-                    },
-                    "& code": {
-                      fontFamily: "ui-monospace, SFMono-Regular, monospace",
-                      fontSize: "0.85em",
-                      background: "rgba(0,0,0,0.04)",
-                      padding: "0.05rem 0.25rem",
-                      borderRadius: "4px",
-                    },
-                  }}
-                  dangerouslySetInnerHTML={{ __html: renderSafeMarkdown(stageInstructions) }}
-                />
-              ) : (
-                <Stack spacing={0.55}>
-                  <Typography variant="body2">
-                    {copy(
-                      "1. Ten listos documentos en PDF/JPG/PNG (idealmente menos de 10MB).",
-                      "1. Prepare documents in PDF/JPG/PNG format (ideally under 10MB).",
-                    )}
-                  </Typography>
-                  <Typography variant="body2">
-                    {copy(
-                      "2. Confirma los correos de tus dos recomendadores antes de registrarlos.",
-                      "2. Confirm your two recommenders' emails before registering them.",
-                    )}
-                  </Typography>
-                  <Typography variant="body2">
-                    {copy(
-                      "3. Completa primero los campos obligatorios (marcados con *), luego revisa.",
-                      "3. Complete required fields first (marked with *), then review.",
-                    )}
-                  </Typography>
-                  {requiredDocumentLabels.length > 0 ? (
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.8 }}>
-                      {copy("Documentos obligatorios", "Required documents")}: {requiredDocumentLabels.join(", ")}.
-                    </Typography>
-                  ) : null}
-                </Stack>
-              )}
-            </Box>
+            <ApplicantPreparationChecklist
+              stageInstructions={stageInstructions}
+              requiredDocumentLabels={requiredDocumentLabels}
+              copy={copy}
+            />
           ) : null}
 
           {currentSection && currentSection.formSection && currentSection.id !== "documents_uploads" && currentSection.id !== "recommenders_flow" && currentSection.id !== "review_submit" ? (
@@ -2386,249 +2291,63 @@ export function ApplicantApplicationForm({
           ) : null}
 
           {currentSection?.id === "documents_uploads" ? (
-            <Box>
-              {currentSection.formSection?.fields.length ? (
-                <Box sx={{ mb: 2 }}>
-                  {renderEditableFields({
-                    fields: currentSection.formSection.fields,
-                    sectionId: "documents",
-                  })}
-                </Box>
-              ) : null}
-
-              <Stack spacing={3}>
-                {fileStageFields.map((field) => {
-                  const rawValue =
-                    ((application?.files as Record<string, ApplicationFileValue> | undefined)?.[field.field_key] ??
-                      null) as ApplicationFileValue | null;
-                  const fileEntry = parseFileEntry(rawValue);
-                  const fileName = fileEntry?.original_name ?? null;
-
-                  return (
-                    <UploadZone
-                      key={field.id}
-                      label={getLocalizedDisplayFieldLabel({ sectionId: "documents", field, language })}
-                      hint={getLocalizedFieldHelpText(field, language) ?? undefined}
-                      fileEntry={fileEntry ? {
-                        path: fileEntry.path,
-                        title: fileEntry.title ?? undefined,
-                        original_name: fileEntry.original_name ?? undefined,
-                        mime_type: fileEntry.mime_type ?? undefined,
-                        size_bytes: fileEntry.size_bytes ?? undefined,
-                        uploaded_at: fileEntry.uploaded_at ?? undefined,
-                      } : null}
-                      fileName={fileName}
-                      isUploading={uploadingFieldKey === field.field_key}
-                      disabled={!application?.id || !isEditingEnabled}
-                      onUpload={(event) => uploadDocument(field.field_key, event)}
-                      language={language}
-                    />
-                  );
-                })}
-              </Stack>
-              {!application?.id ? (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 2, fontSize: "0.78rem" }}>
-                  {copy("Guarda primero un borrador para habilitar la subida.", "Save a draft first to enable uploads.")}
-                </Typography>
-              ) : null}
-            </Box>
+            <ApplicantDocumentUploadSection
+              metadataContent={
+                currentSection.formSection?.fields.length
+                  ? renderEditableFields({
+                      fields: currentSection.formSection.fields,
+                      sectionId: "documents",
+                    })
+                  : undefined
+              }
+              fileStageFields={fileStageFields}
+              applicationFiles={application?.files as Record<string, string | { path: string; title?: string; original_name?: string; mime_type?: string; size_bytes?: number; uploaded_at?: string }> | undefined}
+              applicationId={application?.id ?? null}
+              uploadingFieldKey={uploadingFieldKey}
+              isEditingEnabled={isEditingEnabled}
+              language={language}
+              onUpload={(fieldKey, event) => uploadDocument(fieldKey, event)}
+              getFieldLabel={getLocalizedDisplayFieldLabel}
+              getFieldHelpText={getLocalizedFieldHelpText}
+              copy={copy}
+            />
           ) : null}
 
           {currentSection?.id === "recommenders_flow" ? (
-            <Box>
-              {currentSection.formSection?.fields.length ? (
-                <Box sx={{ mb: 2 }}>
-                  {renderEditableFields({
-                    fields: currentSection.formSection.fields,
-                    sectionId: "recommenders",
-                  })}
-                </Box>
-              ) : null}
-
-              <Stack spacing={2}>
-                {(["mentor", "friend"] as const).map((role, idx) => {
-                  const current = activeRecommendersByRole.get(role) ?? null;
-                  const tone = current ? statusTone(current.status, language) : statusTone("invited", language);
-
-                  return (
-                    <Box key={role} sx={{ border: "1px solid var(--sand)", borderRadius: "var(--radius-lg, 12px)", p: 2.5 }}>
-                      {/* Guardian-card header */}
-                      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 1.5 }}>
-                        <Box
-                          sx={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: "50%",
-                            background: "var(--sand-light, #F3EFEB)",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: "0.82rem",
-                            fontWeight: 700,
-                            color: "var(--ink-light, #5A5450)",
-                            flexShrink: 0,
-                          }}
-                        >
-                          {idx + 1}
-                        </Box>
-                        <Box sx={{ flex: 1, minWidth: 0 }}>
-                          <Typography sx={{ fontWeight: 600, fontSize: "0.88rem" }}>{roleLabel(role, language)}</Typography>
-                          <Typography sx={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                            {current
-                              ? current.email
-                              : copy("Sin registrar", "Not registered")}
-                          </Typography>
-                        </Box>
-                        {current ? (
-                          <Chip
-                            label={tone.label}
-                            size="small"
-                            sx={{ bgcolor: tone.bg, color: tone.color, fontWeight: 600, fontSize: "0.7rem" }}
-                          />
-                        ) : null}
-                      </Stack>
-
-                      <Box sx={{ display: "flex", flexDirection: "column" }}>
-                        <Typography
-                          component="div"
-                          sx={{
-                            fontSize: "0.78rem",
-                            fontWeight: 500,
-                            color: "var(--ink)",
-                            mb: "5px",
-                            lineHeight: 1.35,
-                          }}
-                        >
-                          {`${copy("Correo", "Email")} (${roleLabel(role, language)})`}
-                        </Typography>
-                        <TextField
-                          hiddenLabel
-                          value={recommenderInputs[role]}
-                          onChange={(event) =>
-                            setRecommenderInputs((prev) => ({
-                              ...prev,
-                              [role]: event.target.value,
-                            }))
-                          }
-                          fullWidth
-                          type="email"
-                          placeholder={role === "mentor" ? "mentor@school.edu" : "friend@gmail.com"}
-                          disabled={!isEditingEnabled || current?.status === "submitted"}
-                          sx={APPLICANT_TEXT_FIELD_SX}
-                          slotProps={{
-                            htmlInput: {
-                              "aria-label": `${copy("Correo", "Email")} (${roleLabel(role, language)})`,
-                            },
-                          }}
-                        />
-                      </Box>
-                      <Stack
-                        direction={{ xs: "column", sm: "row" }}
-                        spacing={1}
-                        alignItems={{ xs: "flex-start", sm: "center" }}
-                        sx={{ mt: 1.2 }}
-                      >
-                        {(() => {
-                          const normalizedCurrentEmail = normalizeEmailAddress(current?.email);
-                          const normalizedInputEmail = normalizeEmailAddress(recommenderInputs[role]);
-                          const shouldShowSaveInvite =
-                            isEditingEnabled &&
-                            current?.status !== "submitted" &&
-                            (!current || normalizedInputEmail !== normalizedCurrentEmail);
-                          const canSaveInvite = shouldShowSaveInvite && Boolean(normalizedInputEmail);
-                          const saveLabel = current
-                            ? copy("Guardar y reenviar", "Save and resend")
-                            : copy("Guardar y enviar", "Save and send");
-                          const reminderLabel = current?.inviteSentAt
-                            ? copy("Enviar recordatorio", "Send reminder")
-                            : copy("Reintentar envío", "Retry send");
-
-                          return (
-                            <>
-                              {shouldShowSaveInvite ? (
-                                <Button
-                                  variant="outlined"
-                                  onClick={() => saveRecommender(role)}
-                                  disabled={!canSaveInvite || savingRecommenderRole === role}
-                                >
-                                  {savingRecommenderRole === role
-                                    ? copy("Enviando...", "Sending...")
-                                    : saveLabel}
-                                </Button>
-                              ) : null}
-                              {current?.inviteSentAt ? (
-                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.75rem" }}>
-                                  {copy("Invitación", "Invite")}: {new Date(current.inviteSentAt).toLocaleString(locale)}
-                                </Typography>
-                              ) : null}
-                              {current?.submittedAt ? (
-                                <Typography variant="body2" color="success.main" sx={{ fontSize: "0.75rem" }}>
-                                  {copy("Formulario enviado", "Form submitted")}: {new Date(current.submittedAt).toLocaleString(locale)}
-                                </Typography>
-                              ) : null}
-                              {current && current.status !== "submitted" ? (
-                                <Button
-                                  variant="text"
-                                  onClick={() => sendReminder(current.id)}
-                                  disabled={remindingId === current.id || !isEditingEnabled}
-                                >
-                                  {remindingId === current.id ? copy("Enviando...", "Sending...") : reminderLabel}
-                                </Button>
-                              ) : null}
-                            </>
-                          );
-                        })()}
-                      </Stack>
-                    </Box>
-                  );
-                })}
-              </Stack>
-              {loadingRecommenders ? (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, fontSize: "0.78rem" }}>
-                  {copy("Cargando recomendadores guardados...", "Loading saved recommenders...")}
-                </Typography>
-              ) : null}
-              {!loadingRecommenders && application?.id && recommenders.length === 0 ? (
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5, fontSize: "0.78rem" }}>
-                  {copy("Aún no hay recomendadores registrados para esta postulación.", "There are no recommenders registered for this application yet.")}
-                </Typography>
-              ) : null}
-            </Box>
+            <ApplicantRecommendersSection
+              metadataContent={
+                currentSection.formSection?.fields.length
+                  ? renderEditableFields({
+                      fields: currentSection.formSection.fields,
+                      sectionId: "recommenders",
+                    })
+                  : undefined
+              }
+              activeRecommendersByRole={activeRecommendersByRole}
+              recommenderInputs={recommenderInputs}
+              onRecommenderInputChange={(role, value) =>
+                setRecommenderInputs((prev) => ({ ...prev, [role]: value }))
+              }
+              onSaveRecommender={saveRecommender}
+              onSendReminder={sendReminder}
+              savingRecommenderRole={savingRecommenderRole}
+              remindingId={remindingId}
+              loadingRecommenders={loadingRecommenders}
+              recommenders={recommenders}
+              applicationId={application?.id}
+              isEditingEnabled={isEditingEnabled}
+              language={language}
+              locale={locale}
+              copy={copy}
+            />
           ) : null}
 
           {currentSection?.id === "review_submit" ? (
-            <Box>
-              <Typography sx={{ fontSize: "0.65rem", fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--muted)", mb: 1 }}>
-                {copy("Progreso por secciones", "Section progress")}
-              </Typography>
-              <Typography variant="body2" sx={{ fontWeight: 600, mb: 1.5 }}>
-                {sidebarProgressLabel}
-              </Typography>
-              <Stack spacing={0.8} sx={{ mb: 3 }}>
-                {progressSteps.map((step) => (
-                  <Stack key={step.key} direction="row" alignItems="center" spacing={1}>
-                    <Box
-                      sx={{
-                        width: 8,
-                        height: 8,
-                        borderRadius: "50%",
-                        bgcolor:
-                          step.status === "complete"
-                            ? "var(--success)"
-                            : step.status === "in_progress"
-                              ? "var(--uwc-maroon)"
-                              : "var(--sand)",
-                      }}
-                    />
-                    <Typography variant="body2" sx={{ flex: 1 }}>{step.label}</Typography>
-                    <StatusBadge status={step.status} />
-                  </Stack>
-                ))}
-              </Stack>
-              <Typography color="text.secondary" sx={{ mb: 2, fontSize: "0.82rem" }}>
-                {copy("Revisa el progreso por sección y envía solo cuando estés listo.", "Review progress by section and submit only when you are ready.")}
-              </Typography>
-            </Box>
+            <ApplicantReviewSubmit
+              progressSteps={progressSteps}
+              sidebarProgressLabel={sidebarProgressLabel}
+              copy={copy}
+            />
           ) : null}
           </Box>{/* end animated section wrapper */}
         </Box>
