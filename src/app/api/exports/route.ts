@@ -8,12 +8,12 @@ import {
   buildExportCatalog,
   buildGroupedExportZip,
   buildMatrixCsvExport,
-  buildMatrixExportWorkbook,
+  buildMatrixExportResult,
   buildMatrixExportXlsx,
   getApplicationExportPackage,
   getApplicationsForExport,
   parseApplicationExportFilters,
-  prepareMatrixExportGroups,
+  parseSelectedFieldsFromQuery,
   saveExportPreset,
   validateSelectedExportFields,
 } from "@/lib/server/exports-service";
@@ -26,19 +26,6 @@ function buildFileName(format: "csv" | "xlsx" | "zip") {
 
 function buildApplicationFileName(applicationId: string) {
   return `application-${applicationId}.json`;
-}
-
-function parseSelectedFields(raw: string | null): string[] | undefined {
-  if (!raw) {
-    return undefined;
-  }
-
-  const keys = raw
-    .split(",")
-    .map((k) => k.trim())
-    .filter(Boolean);
-
-  return keys.length > 0 ? keys : undefined;
 }
 
 const presetSchema = z.object({
@@ -73,59 +60,6 @@ const exportRequestSchema = z.object({
   groupedExportMode: z.enum(["single-sheet", "multi-sheet", "separate-files"]).default("single-sheet"),
 });
 
-async function buildMatrixResponse({
-  supabase,
-  payload,
-}: {
-  supabase: Awaited<ReturnType<typeof requireAuth>>["supabase"];
-  payload: z.infer<typeof exportRequestSchema>;
-}) {
-  const filters = parseApplicationExportFilters(
-    new URLSearchParams(
-      Object.entries({
-        cycleId: payload.cycleId,
-        stageCode: payload.stageCode && payload.stageCode !== "all" ? payload.stageCode : "",
-        status: payload.status ?? "",
-        eligibility: payload.eligibility,
-        q: payload.query ?? "",
-      }).filter(([, value]) => value),
-    ),
-  );
-
-  const catalog = await buildExportCatalog({
-    supabase,
-    cycleId: payload.cycleId,
-  });
-  const selectedFields = validateSelectedExportFields({
-    selectedFields: payload.selectedFields,
-    catalog,
-  });
-  const result = await getApplicationsForExport({
-    supabase,
-    filters,
-  });
-  const prepared = prepareMatrixExportGroups({
-    records: result.records,
-    targetMode: payload.targetMode,
-    selectedApplicationIds: payload.selectedApplicationIds,
-    groupAssignments: payload.groupAssignments,
-    randomSample: payload.randomSample,
-  });
-  const workbook = buildMatrixExportWorkbook({
-    groups: prepared.groups,
-    selectedFields,
-    catalog,
-    groupedExportMode: payload.groupedExportMode,
-    includeGroupRow: prepared.includeGroupRow,
-  });
-
-  return {
-    workbook,
-    totalFiltered: result.total,
-    exportedApplicants: prepared.groups.reduce((sum, group) => sum + group.records.length, 0),
-  };
-}
-
 export async function GET(request: NextRequest) {
   return withErrorHandling(
     async () => {
@@ -134,6 +68,7 @@ export async function GET(request: NextRequest) {
       const applicationId = params.get("applicationId");
       const cycleId = params.get("cycleId");
 
+      /* Single-application JSON export */
       if (applicationId) {
         const exportPackage = await getApplicationExportPackage({
           supabase,
@@ -148,6 +83,7 @@ export async function GET(request: NextRequest) {
         });
       }
 
+      /* Export catalog */
       if (params.get("catalog") === "1") {
         if (!cycleId) {
           throw new AppError({
@@ -156,17 +92,14 @@ export async function GET(request: NextRequest) {
             status: 400,
           });
         }
-
-        const catalog = await buildExportCatalog({
-          supabase,
-          cycleId,
-        });
-
+        const catalog = await buildExportCatalog({ supabase, cycleId });
         return NextResponse.json(catalog);
       }
 
       const format = params.get("format") === "xlsx" ? "xlsx" : "csv";
-      const selectedFields = parseSelectedFields(params.get("fields") ?? params.get("columns"));
+      const selectedFields = parseSelectedFieldsFromQuery(
+        params.get("fields") ?? params.get("columns"),
+      );
       const previewLimit = Math.min(Number(params.get("limit") ?? "5000"), 5000);
 
       const filters = parseApplicationExportFilters(params);
@@ -178,43 +111,29 @@ export async function GET(request: NextRequest) {
         });
       }
 
-      const catalog = filters.cycleId
-        ? await buildExportCatalog({ supabase, cycleId: filters.cycleId })
-        : {
-            fields: [],
-            presets: [],
-          };
-      const result = await getApplicationsForExport({ supabase, filters, maxRows: previewLimit });
-
+      /* Matrix export via query params */
       if (selectedFields && filters.cycleId) {
-        const validatedFields = validateSelectedExportFields({
+        const { workbook, totalFiltered } = await buildMatrixExportResult({
+          supabase,
+          cycleId: filters.cycleId,
+          stageCode: filters.stageCode,
+          status: filters.status,
+          eligibility: filters.eligibility,
+          query: filters.query,
           selectedFields,
-          catalog,
-        });
-
-        const prepared = prepareMatrixExportGroups({
-          records: result.records,
-          targetMode: "filtered",
-        });
-        const workbook = buildMatrixExportWorkbook({
-          groups: prepared.groups,
-          selectedFields: validatedFields,
-          catalog,
-          groupedExportMode: "single-sheet",
-          includeGroupRow: prepared.includeGroupRow,
         });
         const sheet = workbook.sheets[0];
+        const truncated = totalFiltered > previewLimit;
 
         if (format === "xlsx") {
           const buffer = await buildMatrixExportXlsx(workbook);
           return new NextResponse(new Uint8Array(buffer), {
             status: 200,
             headers: {
-              "Content-Type":
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+              "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
               "Content-Disposition": `attachment; filename="${buildFileName("xlsx")}"`,
-              "X-Export-Total-Rows": String(result.total),
-              "X-Export-Truncated": String(result.truncated),
+              "X-Export-Total-Rows": String(totalFiltered),
+              "X-Export-Truncated": String(truncated),
             },
           });
         }
@@ -225,19 +144,21 @@ export async function GET(request: NextRequest) {
           headers: {
             "Content-Type": "text/csv; charset=utf-8",
             "Content-Disposition": `attachment; filename="${buildFileName("csv")}"`,
-            "X-Export-Total-Rows": String(result.total),
-            "X-Export-Truncated": String(result.truncated),
+            "X-Export-Total-Rows": String(totalFiltered),
+            "X-Export-Truncated": String(truncated),
           },
         });
       }
+
+      /* Legacy flat export */
+      const result = await getApplicationsForExport({ supabase, filters, maxRows: previewLimit });
 
       if (format === "xlsx") {
         const buffer = await buildApplicationsXlsx(result.rows);
         return new NextResponse(new Uint8Array(buffer), {
           status: 200,
           headers: {
-            "Content-Type":
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "Content-Disposition": `attachment; filename="${buildFileName("xlsx")}"`,
             "X-Export-Total-Rows": String(result.total),
             "X-Export-Truncated": String(result.truncated),
@@ -265,6 +186,7 @@ export async function POST(request: NextRequest) {
     const { profile, supabase } = await requireAuth(["admin"]);
     const body = await request.json();
 
+    /* Preset save flow */
     const presetPayload = presetSchema.safeParse(body);
     if (presetPayload.success) {
       const catalog = await buildExportCatalog({
@@ -295,6 +217,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    /* Export download/preview flow */
     const parsed = exportRequestSchema.safeParse(body);
     if (!parsed.success) {
       throw new AppError({
@@ -313,9 +236,19 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const { workbook, totalFiltered, exportedApplicants } = await buildMatrixResponse({
+    const { workbook, totalFiltered, exportedApplicants } = await buildMatrixExportResult({
       supabase,
-      payload: parsed.data,
+      cycleId: parsed.data.cycleId,
+      stageCode: parsed.data.stageCode,
+      status: parsed.data.status,
+      eligibility: parsed.data.eligibility,
+      query: parsed.data.query,
+      selectedFields: parsed.data.selectedFields,
+      targetMode: parsed.data.targetMode,
+      selectedApplicationIds: parsed.data.selectedApplicationIds,
+      groupAssignments: parsed.data.groupAssignments,
+      randomSample: parsed.data.randomSample,
+      groupedExportMode: parsed.data.groupedExportMode,
     });
 
     if (parsed.data.action === "preview") {
@@ -365,5 +298,5 @@ export async function POST(request: NextRequest) {
         "Content-Disposition": `attachment; filename="${buildFileName("csv")}"`,
       },
     });
-  }, { operation: "exports.save_preset" });
+  }, { operation: "exports.download" });
 }

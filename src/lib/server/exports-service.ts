@@ -1851,3 +1851,113 @@ export function normalizeApplicationFiles(files: Json): ApplicationFileExportEnt
 
   return entries;
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Utilities (moved from route)                                               */
+/* -------------------------------------------------------------------------- */
+
+export function parseSelectedFieldsFromQuery(
+  raw: string | null,
+): string[] | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const keys = raw
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+
+  return keys.length > 0 ? keys : undefined;
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Matrix export orchestration                                                */
+/* -------------------------------------------------------------------------- */
+
+export async function buildMatrixExportResult({
+  supabase,
+  cycleId,
+  stageCode,
+  status,
+  eligibility = "all",
+  query,
+  selectedFields: rawSelectedFields,
+  targetMode = "filtered",
+  selectedApplicationIds,
+  groupAssignments,
+  randomSample,
+  groupedExportMode = "single-sheet",
+}: {
+  supabase: SupabaseClient<Database>;
+  cycleId: string;
+  stageCode?: string | null;
+  status?: string | null;
+  eligibility?: string;
+  query?: string | null;
+  selectedFields: string[];
+  targetMode?: "filtered" | "manual" | "randomSample";
+  selectedApplicationIds?: string[];
+  groupAssignments?: Array<{
+    applicationId: string;
+    groupKey: string;
+    groupLabel: string;
+  }>;
+  randomSample?: {
+    groupCount: number;
+    applicantsPerGroup: number;
+  };
+  groupedExportMode?: "single-sheet" | "multi-sheet" | "separate-files";
+}): Promise<{
+  workbook: MatrixExportWorkbook;
+  totalFiltered: number;
+  exportedApplicants: number;
+}> {
+  const filters = parseApplicationExportFilters(
+    new URLSearchParams(
+      Object.entries({
+        cycleId,
+        stageCode: stageCode && stageCode !== "all" ? stageCode : "",
+        status: status ?? "",
+        eligibility,
+        q: query ?? "",
+      }).filter(([, value]) => value),
+    ),
+  );
+
+  const catalog = await buildExportCatalog({
+    supabase,
+    cycleId,
+  });
+  const selectedFields = validateSelectedExportFields({
+    selectedFields: rawSelectedFields,
+    catalog,
+  });
+  const result = await getApplicationsForExport({
+    supabase,
+    filters,
+  });
+  const prepared = prepareMatrixExportGroups({
+    records: result.records,
+    targetMode,
+    selectedApplicationIds,
+    groupAssignments,
+    randomSample,
+  });
+  const workbook = buildMatrixExportWorkbook({
+    groups: prepared.groups,
+    selectedFields,
+    catalog,
+    groupedExportMode,
+    includeGroupRow: prepared.includeGroupRow,
+  });
+
+  return {
+    workbook,
+    totalFiltered: result.total,
+    exportedApplicants: prepared.groups.reduce(
+      (sum, group) => sum + group.records.length,
+      0,
+    ),
+  };
+}
