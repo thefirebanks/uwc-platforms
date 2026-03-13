@@ -34,12 +34,14 @@ import { roleLabel } from "@/lib/utils/domain-labels";
 import {
   fetchApi,
   toNormalizedApiError,
+  type NormalizedApiError,
 } from "@/lib/client/api-client";
-
-interface ApiError {
-  message: string;
-  errorId?: string;
-}
+import {
+  normalizeEmailAddress,
+  parseFileEntry,
+  APPLICANT_TEXT_FIELD_SX,
+  type ApplicationFileValue,
+} from "@/lib/client/applicant-utils";
 
 type RecommenderSummary = {
   id: string;
@@ -55,17 +57,6 @@ type RecommenderSummary = {
   invalidatedAt: string | null;
   createdAt: string;
 };
-
-type ApplicationFileValue =
-  | string
-  | {
-      path: string;
-      title?: string;
-      original_name?: string;
-      mime_type?: string;
-      size_bytes?: number;
-      uploaded_at?: string;
-    };
 
 const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
 type ProgressState = "complete" | "in_progress" | "not_started";
@@ -154,10 +145,6 @@ const SPANISH_FIELD_PLACEHOLDER_BY_KEY: Partial<Record<string, string>> = {
   mentorRecommenderName: "Nombre completo",
   friendRecommenderName: "Nombre completo",
 };
-
-function normalizeEmailAddress(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
 
 const HIDDEN_FIELD_HELP_TEXT_KEYS = new Set([
   "fullName",
@@ -345,66 +332,6 @@ function getApplicantSelectOptions(fieldKey: string, language: AppLanguage) {
   return null;
 }
 
-const APPLICANT_TEXT_FIELD_SX = {
-  "& .MuiOutlinedInput-root": {
-    backgroundColor: "var(--surface, #fff)",
-    borderRadius: "var(--radius)",
-    fontSize: "0.85rem",
-    color: "var(--ink)",
-    minHeight: 40,
-    "& fieldset": {
-      borderColor: "var(--sand)",
-      borderWidth: "1.5px",
-      transition: "border-color 0.15s ease, box-shadow 0.15s ease",
-    },
-    "&:hover fieldset": {
-      borderColor: "var(--muted)",
-    },
-    "&.Mui-focused fieldset": {
-      borderColor: "var(--uwc-maroon)",
-      boxShadow: "0 0 0 3px rgba(154, 37, 69, 0.08)",
-    },
-    "&.Mui-disabled": {
-      backgroundColor: "var(--surface, #fff)",
-    },
-    "&.Mui-disabled fieldset": {
-      borderColor: "var(--sand)",
-      borderWidth: "1.5px",
-    },
-    "&.MuiInputBase-multiline": {
-      alignItems: "flex-start",
-      padding: 0,
-    },
-  },
-  "& .MuiOutlinedInput-input": {
-    padding: "9px 12px",
-    lineHeight: 1.35,
-    fontSize: "0.85rem",
-    fontFamily: "var(--font-body), 'DM Sans', sans-serif",
-  },
-  "& .MuiOutlinedInput-input::placeholder": {
-    color: "var(--muted)",
-    opacity: 1,
-    fontWeight: 300,
-  },
-  "& .MuiOutlinedInput-input.Mui-disabled": {
-    WebkitTextFillColor: "var(--muted)",
-  },
-  "& .MuiOutlinedInput-input[type='number']": {
-    MozAppearance: "textfield",
-  },
-  "& .MuiOutlinedInput-input::-webkit-outer-spin-button, & .MuiOutlinedInput-input::-webkit-inner-spin-button": {
-    WebkitAppearance: "none",
-    margin: 0,
-  },
-  "& .MuiOutlinedInput-inputMultiline, & .MuiInputBase-inputMultiline": {
-    padding: "9px 12px",
-    lineHeight: 1.5,
-    minHeight: "84px !important",
-    fontFamily: "var(--font-body), 'DM Sans', sans-serif",
-  },
-} as const;
-
 function getPayloadValue(payload: Application["payload"], key: string) {
   const raw = payload?.[key];
   if (raw === null || raw === undefined) {
@@ -450,36 +377,6 @@ function getStepState({
 
   return "not_started";
 }
-
-function parseFileEntry(value: ApplicationFileValue | undefined | null) {
-  if (!value) {
-    return null;
-  }
-
-  if (typeof value === "string") {
-    const inferredName = value.split("/").at(-1)?.replace(/^\d+-/, "") ?? value;
-    return {
-      path: value,
-      title: inferredName,
-      original_name: inferredName,
-      mime_type: "application/octet-stream",
-      size_bytes: 0,
-      uploaded_at: null as string | null,
-    };
-  }
-
-  return {
-    path: value.path,
-    title: value.title ?? value.original_name ?? value.path,
-    original_name: value.original_name ?? value.path.split("/").at(-1) ?? value.path,
-    mime_type: value.mime_type ?? "application/octet-stream",
-    size_bytes: value.size_bytes ?? 0,
-    uploaded_at: value.uploaded_at ?? null,
-  };
-}
-
-
-
 
 function formatSaveStatusLabel(saveState: SaveState, lastSavedAt: string | null, language: AppLanguage) {
   const isEnglish = language === "en";
@@ -653,7 +550,7 @@ export function ApplicantApplicationForm({
   const staticSectionTitles: Record<string, string> = isEnglish ? SECTION_TITLES_EN : SECTION_TITLES_ES;
 
   const [application, setApplication] = useState<Application | null>(existingApplication);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<NormalizedApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [recommenders, setRecommenders] = useState<RecommenderSummary[]>(initialRecommenders);
   const [recommenderInputs, setRecommenderInputs] = useState<{ mentor: string; friend: string }>({

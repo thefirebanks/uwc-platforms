@@ -5,17 +5,12 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import { useAppLanguage } from "@/components/language-provider";
 import type { SelectionProcess } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
-import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
+import { fetchApi, toNormalizedApiError, type NormalizedApiError } from "@/lib/client/api-client";
 
 type ProcessSummary = SelectionProcess & {
   applicationCount: number;
   primaryStageEditorId?: string | null;
 };
-
-interface ApiError {
-  message: string;
-  errorId?: string;
-}
 
 function formatDate(value: string | null) {
   if (!value) {
@@ -39,7 +34,7 @@ export function AdminProcessesDashboard({
   );
   const [year, setYear] = useState(initialYear);
   const [setAsActive, setSetAsActive] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<NormalizedApiError | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);

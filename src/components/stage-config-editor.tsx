@@ -33,6 +33,7 @@ import {
   fetchApi,
   fetchApiResponse,
   toNormalizedApiError,
+  type NormalizedApiError,
 } from "@/lib/client/api-client";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
 import {
@@ -69,11 +70,6 @@ import {
   validateEligibilityRubricConfig,
 } from "@/lib/rubric/eligibility-rubric";
 import { toDateInputValue } from "@/lib/utils/date-formatters";
-
-interface ApiError {
-  message: string;
-  errorId?: string;
-}
 
 type EditableField = CycleStageField & {
   localId: string;
@@ -828,7 +824,7 @@ export function StageConfigEditor({
     mapAutomationsWithLocalId(initialAutomations),
   );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<NormalizedApiError | null>(null);
   const [rubricFeedback, setRubricFeedback] = useState<{
     type: "success" | "error";
     message: string;

@@ -6,6 +6,7 @@ import {
   fetchApi,
   fetchApiResponse,
   toNormalizedApiError,
+  type NormalizedApiError,
 } from "@/lib/client/api-client";
 
 /* -------------------------------------------------------------------------- */
@@ -56,11 +57,6 @@ type AdminFileEntry = {
   notes: string | null;
   downloadUrl: string | null;
   aiParserEnabled?: boolean;
-};
-
-type ApiError = {
-  message: string;
-  errorId?: string;
 };
 
 type OcrRunResult = {
@@ -188,7 +184,7 @@ export function AdminApplicationViewer({
   const [busyFileKey, setBusyFileKey] = useState<string | null>(null);
   const [busyRecommendationId, setBusyRecommendationId] = useState<string | null>(null);
   const [ocrResultByFileKey, setOcrResultByFileKey] = useState<Record<string, OcrRunResult>>({});
-  const [ocrErrorByFileKey, setOcrErrorByFileKey] = useState<Record<string, ApiError | null>>({});
+  const [ocrErrorByFileKey, setOcrErrorByFileKey] = useState<Record<string, NormalizedApiError | null>>({});
 
   const drawerRef = useRef<HTMLDivElement>(null);
 
