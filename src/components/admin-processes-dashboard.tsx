@@ -5,16 +5,12 @@ import { useMemo, useState, type KeyboardEvent } from "react";
 import { useAppLanguage } from "@/components/language-provider";
 import type { SelectionProcess } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
+import { fetchApi, toNormalizedApiError, type NormalizedApiError } from "@/lib/client/api-client";
 
 type ProcessSummary = SelectionProcess & {
   applicationCount: number;
   primaryStageEditorId?: string | null;
 };
-
-interface ApiError {
-  message: string;
-  errorId?: string;
-}
 
 function formatDate(value: string | null) {
   if (!value) {
@@ -38,7 +34,7 @@ export function AdminProcessesDashboard({
   );
   const [year, setYear] = useState(initialYear);
   const [setAsActive, setSetAsActive] = useState(false);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<NormalizedApiError | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -62,21 +58,14 @@ export function AdminProcessesDashboard({
 
     try {
       const parsedYear = Number.parseInt(year, 10);
-      const response = await fetch("/api/cycles", {
+      const body = await fetchApi<{ cycle: SelectionProcess }>("/api/cycles", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           year: parsedYear,
           isActive: setAsActive,
         }),
       });
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
 
       const created = body.cycle as SelectionProcess;
       setProcesses((current) => [{ ...created, applicationCount: 0 }, ...current]);
@@ -86,6 +75,13 @@ export function AdminProcessesDashboard({
       setSetAsActive(false);
       setShowCreateForm(false);
       router.refresh();
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "No se pudo crear el proceso de selección.",
+        ),
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -95,28 +91,32 @@ export function AdminProcessesDashboard({
     setError(null);
     setStatusMessage(null);
 
-    const response = await fetch(`/api/cycles/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ isActive: true }),
-    });
-    const body = await response.json();
-
-    if (!response.ok) {
-      setError(body);
-      return;
+    try {
+      const body = await fetchApi<{ cycle: SelectionProcess }>(
+        `/api/cycles/${id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ isActive: true }),
+        },
+      );
+      const updated = body.cycle as SelectionProcess;
+      setProcesses((current) =>
+        current.map((process) =>
+          process.id === id
+            ? { ...process, is_active: true }
+            : { ...process, is_active: false },
+        ),
+      );
+      setStatusMessage(t("adminProcesses.updatedActive", { name: updated.name }));
+      router.refresh();
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          "No se pudo activar el proceso seleccionado.",
+        ),
+      );
     }
-
-    const updated = body.cycle as SelectionProcess;
-    setProcesses((current) =>
-      current.map((process) =>
-        process.id === id
-          ? { ...process, is_active: true }
-          : { ...process, is_active: false },
-      ),
-    );
-    setStatusMessage(t("adminProcesses.updatedActive", { name: updated.name }));
-    router.refresh();
   }
 
   function openProcess(id: string, stageId?: string | null) {

@@ -35,7 +35,7 @@ test.describe("Admin stage shell integration", () => {
     await expect(page.getByText(/Paso inicial: Instrucciones/i)).not.toBeVisible();
 
     await page.getByRole("button", { name: /^Ajustes y Reglas$/i }).click();
-    await expect(page.getByLabel(/Instrucciones de la etapa \(Markdown\)/i)).toBeVisible();
+    await expect(page.getByLabel(/Instrucciones de la etapa/i)).toBeVisible();
     await expect(page.getByLabel(/Prompt OCR de la etapa/i)).toHaveCount(0);
 
     await page.getByRole("button", { name: /^Prompt Studio$/i }).click();

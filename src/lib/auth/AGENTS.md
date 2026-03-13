@@ -20,7 +20,7 @@ Google OAuth authentication.
 2. Callback at `src/app/auth/callback/route.ts` exchanges code for session
 3. Profile auto-created if new user (via Supabase trigger)
 4. Role assigned: email in ADMIN_EMAIL_ALLOWLIST → admin, otherwise → applicant
-5. Middleware (`src/middleware.ts`) redirects users to role-appropriate dashboard
+5. Proxy (`src/proxy.ts`) redirects users to role-appropriate dashboard
 6. Every API call validates session via `requireAuth(["admin"])` etc.
 
 ## Roles
@@ -30,5 +30,5 @@ Google OAuth authentication.
 
 ## How to extend
 - **New role**: update `role-resolution.ts`, add to `requireAuth()` role arrays,
-  add RLS policies in Supabase, add middleware redirect in `src/middleware.ts`
+  add RLS policies in Supabase, add proxy redirect in `src/proxy.ts`
 - **New permission**: update `src/lib/server/permissions-service.ts`

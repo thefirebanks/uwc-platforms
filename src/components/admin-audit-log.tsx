@@ -4,12 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { AuditEventListItem } from "@/lib/server/audit-service";
 import { ErrorCallout } from "@/components/error-callout";
 import { useAppLanguage } from "@/components/language-provider";
-import { fetchApi, ApiRequestError } from "@/lib/client/api-client";
-
-interface ApiError {
-  message: string;
-  errorId?: string;
-}
+import { fetchApi, ApiRequestError, type NormalizedApiError } from "@/lib/client/api-client";
 
 type AuditFiltersForm = {
   action: string;
@@ -112,7 +107,7 @@ export function AdminAuditLog() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<NormalizedApiError | null>(null);
 
   const listQuery = useMemo(() => buildQuery(applied, true), [applied]);
   const exportQuery = useMemo(() => buildQuery(applied, false), [applied]);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { fetchApi, fetchApiResponse, toNormalizedApiError } from "@/lib/client/api-client";
 
 type Reviewer = {
   id: string;
@@ -34,16 +35,15 @@ export function AdminReviewerManagement() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/reviewers");
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setError(json.userMessage ?? "Error al cargar los revisores.");
-        return;
-      }
-      const json = (await res.json()) as { reviewers: Reviewer[] };
+      const json = await fetchApi<{ reviewers: Reviewer[] }>(
+        "/api/admin/reviewers",
+      );
       setReviewers(json.reviewers);
-    } catch {
-      setError("Error de conexión. Intenta nuevamente.");
+    } catch (error) {
+      setError(
+        toNormalizedApiError(error, "Error de conexión. Intenta nuevamente.")
+          .message,
+      );
     } finally {
       setLoading(false);
     }
@@ -62,27 +62,25 @@ export function AdminReviewerManagement() {
     setPromoteSuccess(null);
 
     try {
-      const res = await fetch("/api/admin/reviewers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: promoteEmail.trim() }),
-      });
-
-      const json = (await res.json()) as { reviewer?: Reviewer; userMessage?: string };
-
-      if (!res.ok) {
-        setPromoteError(json.userMessage ?? "Error al agregar revisor.");
-        return;
-      }
+      const json = await fetchApi<{ reviewer: Reviewer }>(
+        "/api/admin/reviewers",
+        {
+          method: "POST",
+          body: JSON.stringify({ email: promoteEmail.trim() }),
+        },
+      );
 
       setPromoteSuccess(
-        `${formatName(json.reviewer!)} ha sido agregado como revisor.`,
+        `${formatName(json.reviewer)} ha sido agregado como revisor.`,
       );
       setPromoteEmail("");
       emailInputRef.current?.focus();
       await loadReviewers();
-    } catch {
-      setPromoteError("Error de conexión. Intenta nuevamente.");
+    } catch (error) {
+      setPromoteError(
+        toNormalizedApiError(error, "Error de conexión. Intenta nuevamente.")
+          .message,
+      );
     } finally {
       setPromoting(false);
     }
@@ -93,24 +91,18 @@ export function AdminReviewerManagement() {
     setDemoteError((prev) => ({ ...prev, [reviewer.id]: "" }));
 
     try {
-      const res = await fetch(`/api/admin/reviewers/${reviewer.id}`, {
+      await fetchApiResponse(`/api/admin/reviewers/${reviewer.id}`, {
         method: "DELETE",
       });
 
-      if (!res.ok) {
-        const json = (await res.json()) as { userMessage?: string };
-        setDemoteError((prev) => ({
-          ...prev,
-          [reviewer.id]: json.userMessage ?? "Error al revocar revisor.",
-        }));
-        return;
-      }
-
       await loadReviewers();
-    } catch {
+    } catch (error) {
       setDemoteError((prev) => ({
         ...prev,
-        [reviewer.id]: "Error de conexión. Intenta nuevamente.",
+        [reviewer.id]: toNormalizedApiError(
+          error,
+          "Error de conexión. Intenta nuevamente.",
+        ).message,
       }));
     } finally {
       setDemotingId(null);

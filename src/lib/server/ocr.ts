@@ -571,7 +571,8 @@ export async function runOcrCheck({
     text: contract.userPrompt,
   });
 
-  const response = await fetch(`${modelUrl}?key=${apiKey}`, {
+  // Authenticate via header only — avoid leaking API key in URL/logs.
+  const response = await fetch(modelUrl, {
     method: "POST",
     headers: {
       "x-goog-api-key": apiKey,

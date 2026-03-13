@@ -2,6 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ExportCatalogField, ExportPresetSummary } from "@/lib/server/exports-service";
+import {
+  fetchApi,
+  fetchApiResponse,
+  toNormalizedApiError,
+} from "@/lib/client/api-client";
 
 type ExportFormat = "csv" | "xlsx";
 type EligibilityFilter = "all" | "eligible" | "ineligible" | "pending" | "advanced";
@@ -30,7 +35,6 @@ type PreviewResponse = {
   totalFiltered?: number;
   exportedApplicants?: number;
   sheetCount?: number;
-  userMessage?: string;
 };
 
 function groupFields(fields: ExportCatalogField[]) {
@@ -122,16 +126,10 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
     setCatalogError(null);
 
     try {
-      const response = await fetch(`/api/exports?catalog=1&cycleId=${cycleId}`);
-      const body = (await response.json()) as {
+      const body = await fetchApi<{
         fields?: ExportCatalogField[];
         presets?: ExportPresetSummary[];
-        userMessage?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(body.userMessage ?? "No se pudo cargar el catalogo.");
-      }
+      }>(`/api/exports?catalog=1&cycleId=${cycleId}`);
 
       const nextFields = body.fields ?? [];
       const nextPresets = body.presets ?? [];
@@ -149,8 +147,10 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
         if (!currentId && nextPresets.length > 0) return nextPresets[0].id;
         return currentId;
       });
-    } catch (error) {
-      setCatalogError(error instanceof Error ? error.message : "Error desconocido.");
+    } catch (requestError) {
+      setCatalogError(
+        toNormalizedApiError(requestError, "No se pudo cargar el catalogo.").message,
+      );
     } finally {
       setLoadingCatalog(false);
     }
@@ -208,21 +208,19 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
 
     void (async () => {
       try {
-        const response = await fetch(`/api/applications/search?${params.toString()}`, {
+        const body = await fetchApi<{
+          rows?: ManualCandidateRow[];
+        }>(`/api/applications/search?${params.toString()}`, {
           signal: controller.signal,
         });
-        const body = (await response.json()) as {
-          rows?: ManualCandidateRow[];
-          userMessage?: string;
-        };
-        if (!response.ok) {
-          throw new Error(body.userMessage ?? "No se pudo cargar la lista de postulantes.");
-        }
         setManualCandidates(body.rows ?? []);
-      } catch (error) {
-        if (error instanceof Error && error.name === "AbortError") return;
+      } catch (requestError) {
+        if (requestError instanceof Error && requestError.name === "AbortError") return;
         setManualCandidatesError(
-          error instanceof Error ? error.message : "Error cargando postulantes.",
+          toNormalizedApiError(
+            requestError,
+            "No se pudo cargar la lista de postulantes.",
+          ).message,
         );
       } finally {
         setManualCandidatesLoading(false);
@@ -298,9 +296,10 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
 
     setIsSavingPreset(true);
     try {
-      const response = await fetch("/api/exports", {
+      const body = await fetchApi<{
+        preset?: ExportPresetSummary;
+      }>("/api/exports", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           cycleId,
           presetId: activePresetId,
@@ -308,19 +307,16 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
           selectedFields,
         }),
       });
-      const body = (await response.json()) as {
-        preset?: ExportPresetSummary;
-        userMessage?: string;
-      };
-
-      if (!response.ok || !body.preset) {
-        throw new Error(body.userMessage ?? "No se pudo guardar el preset.");
+      if (!body.preset) {
+        throw new Error("No se pudo guardar el preset.");
       }
 
       await loadCatalog();
       setActivePresetId(body.preset.id);
-    } catch (error) {
-      setDownloadError(error instanceof Error ? error.message : "Error desconocido.");
+    } catch (requestError) {
+      setDownloadError(
+        toNormalizedApiError(requestError, "No se pudo guardar el preset.").message,
+      );
     } finally {
       setIsSavingPreset(false);
     }
@@ -363,15 +359,10 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
     setPreviewError(null);
 
     try {
-      const response = await fetch("/api/exports", {
+      const body = await fetchApi<PreviewResponse>("/api/exports", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildExportPayload("preview")),
       });
-      const body = (await response.json()) as PreviewResponse;
-      if (!response.ok) {
-        throw new Error(body.userMessage ?? "No se pudo generar la vista previa.");
-      }
 
       setPreviewData(body.preview ?? null);
       setPreviewMeta({
@@ -379,8 +370,10 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
         exportedApplicants: body.exportedApplicants ?? 0,
         sheetCount: body.sheetCount ?? 0,
       });
-    } catch (error) {
-      setPreviewError(error instanceof Error ? error.message : "Error desconocido.");
+    } catch (requestError) {
+      setPreviewError(
+        toNormalizedApiError(requestError, "No se pudo generar la vista previa.").message,
+      );
     } finally {
       setIsPreviewing(false);
     }
@@ -393,16 +386,10 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
     setDownloadError(null);
 
     try {
-      const response = await fetch("/api/exports", {
+      const response = await fetchApiResponse("/api/exports", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(buildExportPayload("download")),
       });
-
-      if (!response.ok) {
-        const body = (await response.json().catch(() => null)) as { userMessage?: string } | null;
-        throw new Error(body?.userMessage ?? "No se pudo descargar la exportacion.");
-      }
 
       const blob = await response.blob();
       const disposition = response.headers.get("Content-Disposition") ?? "";
@@ -420,8 +407,10 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
       anchor.download = fileName;
       anchor.click();
       URL.revokeObjectURL(objectUrl);
-    } catch (error) {
-      setDownloadError(error instanceof Error ? error.message : "Error desconocido.");
+    } catch (requestError) {
+      setDownloadError(
+        toNormalizedApiError(requestError, "No se pudo descargar la exportacion.").message,
+      );
     } finally {
       setIsDownloading(false);
     }

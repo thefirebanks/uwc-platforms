@@ -6,6 +6,9 @@ import { getSupabaseEnv } from "@/lib/supabase/env";
 /**
  * Middleware: redirect users who land on a path that doesn't match their role.
  *
+ * Note: Next.js 16 renamed this convention to "proxy", but @opennextjs/cloudflare
+ * does not yet support Node.js proxy. Keep as middleware until the adapter catches up.
+ *
  * Roles → home paths:
  *   admin     → /admin
  *   reviewer  → /reviewer

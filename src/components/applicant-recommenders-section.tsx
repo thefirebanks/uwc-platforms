@@ -12,6 +12,7 @@ import {
 import type { AppLanguage } from "@/lib/i18n/messages";
 import type { RecommendationStatus, RecommenderRole } from "@/types/domain";
 import { roleLabel } from "@/lib/utils/domain-labels";
+import { normalizeEmailAddress, statusTone, APPLICANT_TEXT_FIELD_SX } from "@/lib/client/applicant-utils";
 
 type RecommenderSummary = {
   id: string;
@@ -27,76 +28,6 @@ type RecommenderSummary = {
   invalidatedAt: string | null;
   createdAt: string;
 };
-
-function normalizeEmailAddress(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
-
-function statusTone(status: RecommendationStatus, language: AppLanguage) {
-  const isEnglish = language === "en";
-  if (status === "submitted") {
-    return { label: isEnglish ? "Submitted" : "Enviado", color: "#166534", bg: "#DCFCE7" };
-  }
-  if (status === "in_progress") {
-    return { label: isEnglish ? "In progress" : "En progreso", color: "#92400E", bg: "#FEF3C7" };
-  }
-  if (status === "opened") {
-    return { label: isEnglish ? "Opened" : "Abierto", color: "#1D4ED8", bg: "#DBEAFE" };
-  }
-  if (status === "sent") {
-    return { label: isEnglish ? "Invite sent" : "Invitación enviada", color: "#0F766E", bg: "#CCFBF1" };
-  }
-  if (status === "expired") {
-    return { label: isEnglish ? "Expired" : "Vencido", color: "#991B1B", bg: "#FEE2E2" };
-  }
-  if (status === "invalidated") {
-    return { label: isEnglish ? "Replaced" : "Reemplazado", color: "#6B7280", bg: "#F3F4F6" };
-  }
-  return { label: isEnglish ? "Pending" : "Pendiente", color: "#6B7280", bg: "#F3F4F6" };
-}
-
-const APPLICANT_TEXT_FIELD_SX = {
-  "& .MuiOutlinedInput-root": {
-    backgroundColor: "var(--surface, #fff)",
-    borderRadius: "var(--radius)",
-    fontSize: "0.85rem",
-    color: "var(--ink)",
-    minHeight: 40,
-    "& fieldset": {
-      borderColor: "var(--sand)",
-      borderWidth: "1.5px",
-      transition: "border-color 0.15s ease, box-shadow 0.15s ease",
-    },
-    "&:hover fieldset": {
-      borderColor: "var(--muted)",
-    },
-    "&.Mui-focused fieldset": {
-      borderColor: "var(--uwc-maroon)",
-      boxShadow: "0 0 0 3px rgba(154, 37, 69, 0.08)",
-    },
-    "&.Mui-disabled": {
-      backgroundColor: "var(--surface, #fff)",
-    },
-    "&.Mui-disabled fieldset": {
-      borderColor: "var(--sand)",
-      borderWidth: "1.5px",
-    },
-  },
-  "& .MuiOutlinedInput-input": {
-    padding: "9px 12px",
-    lineHeight: 1.35,
-    fontSize: "0.85rem",
-    fontFamily: "var(--font-body), 'DM Sans', sans-serif",
-  },
-  "& .MuiOutlinedInput-input::placeholder": {
-    color: "var(--muted)",
-    opacity: 1,
-    fontWeight: 300,
-  },
-  "& .MuiOutlinedInput-input.Mui-disabled": {
-    WebkitTextFillColor: "var(--muted)",
-  },
-} as const;
 
 interface ApplicantRecommendersSectionProps {
   /** Optional metadata fields rendered above the recommender cards */

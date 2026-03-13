@@ -208,28 +208,32 @@ describe("AdminExportBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Vista previa" }));
 
     await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/exports",
-        expect.objectContaining({
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "preview",
-            cycleId: CYCLE_ID,
-            stageCode: "documents",
-            status: null,
-            eligibility: "all",
-            query: null,
-            selectedFields: ["payload.essay", "applicantEmail"],
-            format: "xlsx",
-            targetMode: "filtered",
-            selectedApplicationIds: undefined,
-            groupAssignments: undefined,
-            randomSample: undefined,
-            groupedExportMode: "single-sheet",
-          }),
-        }),
-      );
+      const previewCall = fetchMock.mock.calls.find(([url, init]) => {
+        if (String(url) !== "/api/exports") return false;
+        const body = JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")) as {
+          action?: string;
+        };
+        return body.action === "preview";
+      });
+      expect(previewCall).toBeDefined();
+      const init = previewCall?.[1] as RequestInit | undefined;
+      expect(init?.method).toBe("POST");
+      expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        action: "preview",
+        cycleId: CYCLE_ID,
+        stageCode: "documents",
+        status: null,
+        eligibility: "all",
+        query: null,
+        selectedFields: ["payload.essay", "applicantEmail"],
+        format: "xlsx",
+        targetMode: "filtered",
+        selectedApplicationIds: undefined,
+        groupAssignments: undefined,
+        randomSample: undefined,
+        groupedExportMode: "single-sheet",
+      });
     });
 
     expect(await screen.findByRole("heading", { name: "Vista previa" })).toBeInTheDocument();
@@ -480,19 +484,23 @@ describe("AdminExportBuilder", () => {
 
     await waitFor(() => {
       expect(promptMock).toHaveBeenCalled();
-      expect(fetchMock).toHaveBeenCalledWith(
-        "/api/exports",
-        expect.objectContaining({
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            cycleId: CYCLE_ID,
-            presetId: null,
-            name: "Preset equipo",
-            selectedFields: ["applicantEmail", "applicantName"],
-          }),
-        }),
-      );
+      const saveCall = fetchMock.mock.calls.find(([url, init]) => {
+        if (String(url) !== "/api/exports") return false;
+        const body = JSON.parse(String((init as RequestInit | undefined)?.body ?? "{}")) as {
+          name?: string;
+        };
+        return body.name === "Preset equipo";
+      });
+      expect(saveCall).toBeDefined();
+      const init = saveCall?.[1] as RequestInit | undefined;
+      expect(init?.method).toBe("POST");
+      expect(new Headers(init?.headers).get("Content-Type")).toBe("application/json");
+      expect(JSON.parse(String(init?.body))).toEqual({
+        cycleId: CYCLE_ID,
+        presetId: null,
+        name: "Preset equipo",
+        selectedFields: ["applicantEmail", "applicantName"],
+      });
     });
 
     // Preset pill appears in topbar after save

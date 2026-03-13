@@ -31,11 +31,17 @@ import {
 } from "@/lib/stages/applicant-sections";
 import { isBooleanField, getBooleanFieldLabels } from "@/lib/stages/field-sub-groups";
 import { roleLabel } from "@/lib/utils/domain-labels";
-
-interface ApiError {
-  message: string;
-  errorId?: string;
-}
+import {
+  fetchApi,
+  toNormalizedApiError,
+  type NormalizedApiError,
+} from "@/lib/client/api-client";
+import {
+  normalizeEmailAddress,
+  parseFileEntry,
+  APPLICANT_TEXT_FIELD_SX,
+  type ApplicationFileValue,
+} from "@/lib/client/applicant-utils";
 
 type RecommenderSummary = {
   id: string;
@@ -51,17 +57,6 @@ type RecommenderSummary = {
   invalidatedAt: string | null;
   createdAt: string;
 };
-
-type ApplicationFileValue =
-  | string
-  | {
-      path: string;
-      title?: string;
-      original_name?: string;
-      mime_type?: string;
-      size_bytes?: number;
-      uploaded_at?: string;
-    };
 
 const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
 type ProgressState = "complete" | "in_progress" | "not_started";
@@ -150,10 +145,6 @@ const SPANISH_FIELD_PLACEHOLDER_BY_KEY: Partial<Record<string, string>> = {
   mentorRecommenderName: "Nombre completo",
   friendRecommenderName: "Nombre completo",
 };
-
-function normalizeEmailAddress(value: string | null | undefined) {
-  return (value ?? "").trim().toLowerCase();
-}
 
 const HIDDEN_FIELD_HELP_TEXT_KEYS = new Set([
   "fullName",
@@ -341,66 +332,6 @@ function getApplicantSelectOptions(fieldKey: string, language: AppLanguage) {
   return null;
 }
 
-const APPLICANT_TEXT_FIELD_SX = {
-  "& .MuiOutlinedInput-root": {
-    backgroundColor: "var(--surface, #fff)",
-    borderRadius: "var(--radius)",
-    fontSize: "0.85rem",
-    color: "var(--ink)",
-    minHeight: 40,
-    "& fieldset": {
-      borderColor: "var(--sand)",
-      borderWidth: "1.5px",
-      transition: "border-color 0.15s ease, box-shadow 0.15s ease",
-    },
-    "&:hover fieldset": {
-      borderColor: "var(--muted)",
-    },
-    "&.Mui-focused fieldset": {
-      borderColor: "var(--uwc-maroon)",
-      boxShadow: "0 0 0 3px rgba(154, 37, 69, 0.08)",
-    },
-    "&.Mui-disabled": {
-      backgroundColor: "var(--surface, #fff)",
-    },
-    "&.Mui-disabled fieldset": {
-      borderColor: "var(--sand)",
-      borderWidth: "1.5px",
-    },
-    "&.MuiInputBase-multiline": {
-      alignItems: "flex-start",
-      padding: 0,
-    },
-  },
-  "& .MuiOutlinedInput-input": {
-    padding: "9px 12px",
-    lineHeight: 1.35,
-    fontSize: "0.85rem",
-    fontFamily: "var(--font-body), 'DM Sans', sans-serif",
-  },
-  "& .MuiOutlinedInput-input::placeholder": {
-    color: "var(--muted)",
-    opacity: 1,
-    fontWeight: 300,
-  },
-  "& .MuiOutlinedInput-input.Mui-disabled": {
-    WebkitTextFillColor: "var(--muted)",
-  },
-  "& .MuiOutlinedInput-input[type='number']": {
-    MozAppearance: "textfield",
-  },
-  "& .MuiOutlinedInput-input::-webkit-outer-spin-button, & .MuiOutlinedInput-input::-webkit-inner-spin-button": {
-    WebkitAppearance: "none",
-    margin: 0,
-  },
-  "& .MuiOutlinedInput-inputMultiline, & .MuiInputBase-inputMultiline": {
-    padding: "9px 12px",
-    lineHeight: 1.5,
-    minHeight: "84px !important",
-    fontFamily: "var(--font-body), 'DM Sans', sans-serif",
-  },
-} as const;
-
 function getPayloadValue(payload: Application["payload"], key: string) {
   const raw = payload?.[key];
   if (raw === null || raw === undefined) {
@@ -446,36 +377,6 @@ function getStepState({
 
   return "not_started";
 }
-
-function parseFileEntry(value: ApplicationFileValue | undefined | null) {
-  if (!value) {
-    return null;
-  }
-
-  if (typeof value === "string") {
-    const inferredName = value.split("/").at(-1)?.replace(/^\d+-/, "") ?? value;
-    return {
-      path: value,
-      title: inferredName,
-      original_name: inferredName,
-      mime_type: "application/octet-stream",
-      size_bytes: 0,
-      uploaded_at: null as string | null,
-    };
-  }
-
-  return {
-    path: value.path,
-    title: value.title ?? value.original_name ?? value.path,
-    original_name: value.original_name ?? value.path.split("/").at(-1) ?? value.path,
-    mime_type: value.mime_type ?? "application/octet-stream",
-    size_bytes: value.size_bytes ?? 0,
-    uploaded_at: value.uploaded_at ?? null,
-  };
-}
-
-
-
 
 function formatSaveStatusLabel(saveState: SaveState, lastSavedAt: string | null, language: AppLanguage) {
   const isEnglish = language === "en";
@@ -649,7 +550,7 @@ export function ApplicantApplicationForm({
   const staticSectionTitles: Record<string, string> = isEnglish ? SECTION_TITLES_EN : SECTION_TITLES_ES;
 
   const [application, setApplication] = useState<Application | null>(existingApplication);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<NormalizedApiError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [recommenders, setRecommenders] = useState<RecommenderSummary[]>(initialRecommenders);
   const [recommenderInputs, setRecommenderInputs] = useState<{ mentor: string; friend: string }>({
@@ -699,27 +600,25 @@ export function ApplicantApplicationForm({
   const refreshApplicationSnapshot = useCallback(
     async ({ includeRecommenders = true }: { includeRecommenders?: boolean } = {}) => {
       const [applicationResponse, recommenderResponse] = await Promise.all([
-        fetch(`/api/applications?cycleId=${cycleId}`),
+        fetchApi<{ application?: Application | null }>(`/api/applications?cycleId=${cycleId}`).catch(
+          () => null,
+        ),
         includeRecommenders && application?.id
-          ? fetch(`/api/recommendations?applicationId=${application.id}`)
+          ? fetchApi<{ recommenders?: RecommenderSummary[] }>(
+            `/api/recommendations?applicationId=${application.id}`,
+          ).catch(() => null)
           : Promise.resolve(null),
       ]);
 
-      if (applicationResponse.ok) {
-        const body = (await applicationResponse.json()) as { application?: Application | null };
-        if (body.application) {
-          startTransition(() => {
-            setApplication(body.application ?? null);
-            setLastSavedAt(body.application?.updated_at ?? null);
-          });
-        }
+      if (applicationResponse?.application) {
+        startTransition(() => {
+          setApplication(applicationResponse.application ?? null);
+          setLastSavedAt(applicationResponse.application?.updated_at ?? null);
+        });
       }
 
-      if (recommenderResponse?.ok) {
-        const body = (await recommenderResponse.json()) as {
-          recommenders?: RecommenderSummary[];
-        };
-        const rows = body.recommenders ?? [];
+      if (recommenderResponse) {
+        const rows = recommenderResponse.recommenders ?? [];
         startTransition(() => {
           setRecommenders(rows);
           setRecommenderInputs({
@@ -1151,12 +1050,11 @@ export function ApplicantApplicationForm({
       setLoadingRecommenders(true);
 
       try {
-        const response = await fetch(`/api/recommendations?applicationId=${applicationId}`);
-        const body = (await response.json()) as {
-          recommenders?: RecommenderSummary[];
-        };
+        const body = await fetchApi<{ recommenders?: RecommenderSummary[] }>(
+          `/api/recommendations?applicationId=${applicationId}`,
+        );
 
-        if (!isMounted || !response.ok) {
+        if (!isMounted) {
           return;
         }
 
@@ -1253,25 +1151,14 @@ export function ApplicantApplicationForm({
       setSaveState("saving");
 
       try {
-        const response = await fetch("/api/applications", {
+        const body = await fetchApi<{ application: Application }>("/api/applications", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             cycleId,
             payload: validation.normalizedPayload,
             allowPartial: true,
           }),
         });
-
-        const body = await response.json();
-
-        if (!response.ok) {
-          setSaveState("error");
-          if (!silent) {
-            setError(body);
-          }
-          return false;
-        }
 
         const completedAt = new Date().toISOString();
         const hasNewerLocalEdits = localEditRevisionRef.current !== requestedRevision;
@@ -1295,6 +1182,20 @@ export function ApplicantApplicationForm({
           setSaveState("saved");
         }
         return true;
+      } catch (requestError) {
+        setSaveState("error");
+        if (!silent) {
+          setError(
+            toNormalizedApiError(
+              requestError,
+              copy(
+                "No se pudo guardar el borrador.",
+                "Could not save your draft.",
+              ),
+            ),
+          );
+        }
+        return false;
       } finally {
         isSavingDraftRef.current = false;
         setIsSavingDraft(false);
@@ -1804,21 +1705,30 @@ export function ApplicantApplicationForm({
       return;
     }
 
-    const response = await fetch(`/api/applications/${application.id}/submit`, {
-      method: "POST",
-    });
-    const body = await response.json();
+    try {
+      const body = await fetchApi<{ application: Application }>(
+        `/api/applications/${application.id}/submit`,
+        {
+          method: "POST",
+        },
+      );
 
-    if (!response.ok) {
-      setError(body);
-      return;
+      setApplication(body.application);
+      void refreshApplicationSnapshot({
+        includeRecommenders: true,
+      });
+      setSuccessMessage(copy("Postulación enviada. El comité revisará tu información.", "Application submitted. The committee will review your information."));
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          copy(
+            "No se pudo enviar la postulación.",
+            "Could not submit your application.",
+          ),
+        ),
+      );
     }
-
-    setApplication(body.application);
-    void refreshApplicationSnapshot({
-      includeRecommenders: true,
-    });
-    setSuccessMessage(copy("Postulación enviada. El comité revisará tu información.", "Application submitted. The committee will review your information."));
   }
 
   async function saveRecommender(role: RecommenderRole) {
@@ -1865,20 +1775,18 @@ export function ApplicantApplicationForm({
 
     setSavingRecommenderRole(role);
     try {
-      const response = await fetch("/api/recommendations", {
+      const body = await fetchApi<{
+        recommenders?: RecommenderSummary[];
+        createdCount?: number;
+        replacedCount?: number;
+        failedEmailCount?: number;
+      }>("/api/recommendations", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           applicationId: application.id,
           recommenders: [{ role, email }],
         }),
       });
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
 
       const rows = (body.recommenders as RecommenderSummary[] | undefined) ?? [];
       setRecommenders(rows);
@@ -1926,6 +1834,16 @@ export function ApplicantApplicationForm({
       }
 
       setSuccessMessage(chunks.length > 0 ? chunks.join(" ") : copy("Recomendador actualizado.", "Recommender updated."));
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          copy(
+            "No se pudo registrar el recomendador.",
+            "Could not save the recommender.",
+          ),
+        ),
+      );
     } finally {
       setSavingRecommenderRole(null);
     }
@@ -1937,15 +1855,12 @@ export function ApplicantApplicationForm({
     setRemindingId(recommendationId);
 
     try {
-      const response = await fetch(`/api/recommendations/${recommendationId}/remind`, {
+      const body = await fetchApi<{ recommender: RecommenderSummary }>(
+        `/api/recommendations/${recommendationId}/remind`,
+        {
         method: "POST",
-      });
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return;
-      }
+        },
+      );
 
       const updated = body.recommender as RecommenderSummary;
       setRecommenders((current) =>
@@ -1955,6 +1870,16 @@ export function ApplicantApplicationForm({
         includeRecommenders: true,
       });
       setSuccessMessage(copy("Recordatorio enviado al recomendador.", "Reminder sent to recommender."));
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          copy(
+            "No se pudo enviar el recordatorio.",
+            "Could not send the reminder.",
+          ),
+        ),
+      );
     } finally {
       setRemindingId(null);
     }
@@ -1983,20 +1908,16 @@ export function ApplicantApplicationForm({
     const isReplacingExistingFile = Boolean(application.files?.[fieldKey]);
 
     try {
-      const signedUrlResponse = await fetch(`/api/applications/${application.id}/upload-url`, {
+      const signedUrlBody = await fetchApi<{ signedUrl: string; path: string }>(
+        `/api/applications/${application.id}/upload-url`,
+        {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fileName: file.name,
           mimeType: file.type || "application/octet-stream",
         }),
-      });
-      const signedUrlBody = await signedUrlResponse.json();
-
-      if (!signedUrlResponse.ok) {
-        setError(signedUrlBody);
-        return;
-      }
+        },
+      );
 
       const uploadResponse = await fetch(signedUrlBody.signedUrl, {
         method: "PUT",
@@ -2011,9 +1932,10 @@ export function ApplicantApplicationForm({
         return;
       }
 
-      const associateResponse = await fetch(`/api/applications/${application.id}/files`, {
+      const associateBody = await fetchApi<{ application: Application }>(
+        `/api/applications/${application.id}/files`,
+        {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           key: fieldKey,
           path: signedUrlBody.path,
@@ -2023,13 +1945,8 @@ export function ApplicantApplicationForm({
           sizeBytes: file.size,
           uploadedAt: new Date().toISOString(),
         }),
-      });
-      const associateBody = await associateResponse.json();
-
-      if (!associateResponse.ok) {
-        setError(associateBody);
-        return;
-      }
+        },
+      );
 
       setApplication(associateBody.application);
       void refreshApplicationSnapshot({
@@ -2049,13 +1966,16 @@ export function ApplicantApplicationForm({
             : "Document uploaded successfully.",
           ),
       );
-    } catch {
-      setError({
-        message: copy(
-          "No se pudo completar la subida del archivo. Intenta nuevamente.",
-          "Could not complete the file upload. Please try again.",
+    } catch (requestError) {
+      setError(
+        toNormalizedApiError(
+          requestError,
+          copy(
+            "No se pudo completar la subida del archivo. Intenta nuevamente.",
+            "Could not complete the file upload. Please try again.",
+          ),
         ),
-      });
+      );
     } finally {
       setUploadingFieldKey(null);
     }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
 
 type AssignmentApplication = {
   id: string;
@@ -69,16 +70,15 @@ export function ReviewerDashboard() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch("/api/reviewer/assignments");
-        if (!res.ok) {
-          const json = (await res.json()) as { userMessage?: string };
-          setError(json.userMessage ?? "Error al cargar las asignaciones.");
-          return;
-        }
-        const json = (await res.json()) as { assignments: Assignment[] };
+        const json = await fetchApi<{ assignments: Assignment[] }>(
+          "/api/reviewer/assignments",
+        );
         setAssignments(json.assignments);
-      } catch {
-        setError("Error de conexión. Intenta nuevamente.");
+      } catch (error) {
+        setError(
+          toNormalizedApiError(error, "Error de conexión. Intenta nuevamente.")
+            .message,
+        );
       } finally {
         setLoading(false);
       }

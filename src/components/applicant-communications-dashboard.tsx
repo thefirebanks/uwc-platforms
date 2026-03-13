@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
 
 type CommLog = {
   id: string;
@@ -45,35 +46,35 @@ export function ApplicantCommunicationsDashboard({
   useEffect(() => {
     let cancelled = false;
 
-    Promise.resolve()
-      .then(() => {
-        if (!cancelled) {
-          setLoading(true);
-          setError(null);
-        }
+    async function loadCommunications() {
+      if (!cancelled) {
+        setLoading(true);
+        setError(null);
+      }
+
+      try {
         const query = applicationId ? `?applicationId=${applicationId}` : "";
-        return fetch(`/api/applicant/communications${query}`);
-      })
-      .then(async (res) => {
-        if (!res.ok) {
-          const json = (await res.json()) as { userMessage?: string };
-          throw new Error(json.userMessage ?? "Error al cargar notificaciones.");
-        }
-        return res.json() as Promise<{ communications: CommLog[] }>;
-      })
-      .then((json) => {
+        const json = await fetchApi<{ communications: CommLog[] }>(
+          `/api/applicant/communications${query}`,
+        );
         if (!cancelled) {
           setComms(json.communications);
         }
-      })
-      .catch((err: unknown) => {
+      } catch (error) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Error al cargar notificaciones.");
+          setError(
+            toNormalizedApiError(error, "Error al cargar notificaciones.")
+              .message,
+          );
         }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadCommunications();
 
     return () => {
       cancelled = true;

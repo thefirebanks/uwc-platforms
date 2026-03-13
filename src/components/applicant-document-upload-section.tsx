@@ -5,44 +5,7 @@ import { Box, Stack, Typography } from "@mui/material";
 import { UploadZone } from "@/components/upload-zone";
 import type { AppLanguage } from "@/lib/i18n/messages";
 import type { CycleStageField } from "@/types/domain";
-
-type ApplicationFileValue =
-  | string
-  | {
-      path: string;
-      title?: string;
-      original_name?: string;
-      mime_type?: string;
-      size_bytes?: number;
-      uploaded_at?: string;
-    };
-
-function parseFileEntry(value: ApplicationFileValue | undefined | null) {
-  if (!value) {
-    return null;
-  }
-
-  if (typeof value === "string") {
-    const inferredName = value.split("/").at(-1)?.replace(/^\d+-/, "") ?? value;
-    return {
-      path: value,
-      title: inferredName,
-      original_name: inferredName,
-      mime_type: "application/octet-stream",
-      size_bytes: 0,
-      uploaded_at: null as string | null,
-    };
-  }
-
-  return {
-    path: value.path,
-    title: value.title ?? value.original_name ?? value.path,
-    original_name: value.original_name ?? value.path.split("/").at(-1) ?? value.path,
-    mime_type: value.mime_type ?? "application/octet-stream",
-    size_bytes: value.size_bytes ?? 0,
-    uploaded_at: value.uploaded_at ?? null,
-  };
-}
+import { parseFileEntry, type ApplicationFileValue } from "@/lib/client/applicant-utils";
 
 interface ApplicantDocumentUploadSectionProps {
   /** Optional metadata fields rendered above the upload zones (via parent's renderEditableFields) */

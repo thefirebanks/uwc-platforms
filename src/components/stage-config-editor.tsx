@@ -29,6 +29,12 @@ import { AdminOcrTestbed } from "@/components/admin-ocr-testbed";
 import { StageStatsPanel } from "@/components/stage-stats-panel";
 import { StageAutomationManager } from "@/components/stage-automation-manager";
 import { FieldHint } from "@/components/field-hint";
+import {
+  fetchApi,
+  fetchApiResponse,
+  toNormalizedApiError,
+  type NormalizedApiError,
+} from "@/lib/client/api-client";
 import { normalizeFieldKey } from "@/lib/stages/form-schema";
 import {
   OCR_EXPECTED_OUTPUT_TYPES,
@@ -64,11 +70,6 @@ import {
   validateEligibilityRubricConfig,
 } from "@/lib/rubric/eligibility-rubric";
 import { toDateInputValue } from "@/lib/utils/date-formatters";
-
-interface ApiError {
-  message: string;
-  errorId?: string;
-}
 
 type EditableField = CycleStageField & {
   localId: string;
@@ -194,14 +195,6 @@ function formatFileSize(bytes: number | null | undefined) {
     return `${bytes} B`;
   }
   return `${(bytes / 1024).toFixed(0)} KB`;
-}
-
-async function readJsonSafely(response: Response) {
-  try {
-    return (await response.json()) as unknown;
-  } catch {
-    return null;
-  }
 }
 
 function parseCommaSeparatedNumbers(raw: string) {
@@ -831,7 +824,7 @@ export function StageConfigEditor({
     mapAutomationsWithLocalId(initialAutomations),
   );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<NormalizedApiError | null>(null);
   const [rubricFeedback, setRubricFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -974,33 +967,20 @@ export function StageConfigEditor({
         formData.append("files", file);
       }
 
-      const response = await fetch(
+      const response = await fetchApiResponse(
         `/api/cycles/${cycleId}/stages/${stageId}/ai-reference-files`,
         {
           method: "POST",
           body: formData,
         },
       );
-      const body = await readJsonSafely(response);
-
-      if (!response.ok) {
-        const message =
-          body &&
-          typeof body === "object" &&
-          typeof (body as { message?: unknown }).message === "string"
-            ? (body as { message: string }).message
-            : "No se pudieron subir los archivos de referencia.";
-        throw new Error(message);
-      }
+      const body = (await response.json()) as
+        | { referenceFiles?: FieldAiReferenceFile[] }
+        | null;
 
       const uploadedReferenceFiles =
-        body &&
-        typeof body === "object" &&
-        Array.isArray((body as { referenceFiles?: unknown }).referenceFiles)
-          ? normalizeFieldAiReferenceFiles(
-              (body as { referenceFiles: FieldAiReferenceFile[] })
-                .referenceFiles,
-            )
+        body && Array.isArray(body.referenceFiles)
+          ? normalizeFieldAiReferenceFiles(body.referenceFiles)
           : [];
 
       updateFieldAiParserConfig(localId, (currentConfig) => ({
@@ -1020,10 +1000,10 @@ export function StageConfigEditor({
         ...current,
         [localId]: {
           isUploading: false,
-          error:
-            uploadError instanceof Error
-              ? uploadError.message
-              : "No se pudieron subir los archivos de referencia.",
+          error: toNormalizedApiError(
+            uploadError,
+            "No se pudieron subir los archivos de referencia.",
+          ).message,
         },
       }));
     }
@@ -1437,11 +1417,26 @@ export function StageConfigEditor({
     }
 
     try {
-      const response = await fetch(
+      const body = await fetchApi<{
+        fields?: CycleStageField[];
+        sections?: StageSection[];
+        automations?: StageAutomationTemplate[];
+        ocrPromptTemplate?: string | null;
+        settings?: {
+          stageName?: string;
+          description?: string;
+          openDate?: string | null;
+          closeDate?: string | null;
+          previousStageRequirement?: string;
+          blockIfPreviousNotMet?: boolean;
+          eligibilityRubric?: unknown;
+          rubricBlueprintV1?: unknown;
+          rubricMeta?: unknown;
+        };
+      }>(
         `/api/cycles/${cycleId}/stages/${stageId}/config`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             fields: fields.map((field, index) => ({
               id: isUuid(field.id) ? field.id : undefined,
@@ -1494,12 +1489,6 @@ export function StageConfigEditor({
           }),
         },
       );
-      const body = await response.json();
-
-      if (!response.ok) {
-        setError(body);
-        return false;
-      }
 
       const nextSavedSections = Array.isArray(body.sections)
         ? (body.sections as StageSection[])
@@ -1580,6 +1569,14 @@ export function StageConfigEditor({
         serializeSettingsDraft(nextSavedSettings);
       setLastSavedAtIso(new Date().toISOString());
       didSave = true;
+    } catch (saveError) {
+      setError(
+        toNormalizedApiError(
+          saveError,
+          "No se pudo guardar la configuración.",
+        ),
+      );
+      return false;
     } finally {
       setIsSaving(false);
     }
