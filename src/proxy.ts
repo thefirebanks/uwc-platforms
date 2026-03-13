@@ -3,6 +3,8 @@ import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
+export const runtime = "edge";
+
 /**
  * Proxy: redirect users who land on a path that doesn't match their role.
  *
