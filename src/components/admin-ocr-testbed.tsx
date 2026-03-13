@@ -6,10 +6,10 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
 } from "react";
 import { ErrorCallout } from "@/components/error-callout";
 import { FieldHint } from "@/components/field-hint";
+import { OcrTestRunPanel } from "@/components/ocr-test-run-panel";
 import { OCR_REFERENCE_FILE_LIMIT } from "@/lib/ocr/field-ai-parser";
 import {
   fetchApi,
@@ -19,8 +19,18 @@ import {
 } from "@/lib/client/api-client";
 import { DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
 import type { OcrTestRun } from "@/types/domain";
-
-type ModelOption = { id: string; name: string };
+import {
+  formatDate,
+  formatDuration,
+  formatFileSize,
+  getInjectionSignals,
+  getRequestConfig,
+  getSchemaValidation,
+} from "@/components/admin-ocr-testbed-types";
+import type {
+  EditorSection,
+  ModelOption,
+} from "@/components/admin-ocr-testbed-types";
 
 type Props = {
   cycleId?: string | null;
@@ -31,77 +41,6 @@ type Props = {
   defaultExtractionInstructions?: string;
   defaultSchemaTemplate?: string;
 };
-
-type OcrSchemaValidation = {
-  valid?: boolean;
-  errors?: string[];
-};
-
-type OcrRequestConfig = {
-  systemPrompt?: string | null;
-  extractionInstructions?: string | null;
-  expectedSchemaTemplate?: string | null;
-  referenceFiles?: Array<{
-    fileName?: string | null;
-    mimeType?: string | null;
-    sizeBytes?: number | null;
-  }>;
-  temperature?: number;
-  topP?: number;
-  maxTokens?: number;
-  strictSchema?: boolean;
-};
-
-
-type EditorSection = "context" | "prompts" | "schema";
-
-function formatDate(value: string) {
-  return new Date(value).toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-function formatDuration(ms: number | null) {
-  if (ms === null) return "—";
-  return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
-}
-
-function formatFileSize(bytes: number) {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(0)} KB`;
-}
-
-function confidenceColor(confidence: number | null) {
-  if (confidence === null) return "var(--muted)";
-  if (confidence >= 0.75) return "var(--success, #1e7e34)";
-  if (confidence >= 0.5) return "var(--warning, #856404)";
-  return "var(--danger, #c0392b)";
-}
-
-function getSchemaValidation(run: OcrTestRun): OcrSchemaValidation | null {
-  const candidate = run.raw_response?.schemaValidation;
-  return candidate && typeof candidate === "object" && !Array.isArray(candidate)
-    ? (candidate as OcrSchemaValidation)
-    : null;
-}
-
-function getInjectionSignals(run: OcrTestRun) {
-  const candidate = run.raw_response?.injectionSignals;
-  return Array.isArray(candidate)
-    ? candidate.filter((item): item is string => typeof item === "string")
-    : [];
-}
-
-function getRequestConfig(run: OcrTestRun): OcrRequestConfig | null {
-  const candidate = run.raw_response?.requestConfig;
-  return candidate && typeof candidate === "object" && !Array.isArray(candidate)
-    ? (candidate as OcrRequestConfig)
-    : null;
-}
 
 export function AdminOcrTestbed({
   cycleId,
@@ -340,109 +279,6 @@ export function AdminOcrTestbed({
 
   function handleDragOver(event: React.DragEvent) {
     event.preventDefault();
-  }
-
-  function renderRunPanel(run: OcrTestRun, title: string) {
-    const schemaValidation = getSchemaValidation(run);
-    const injectionSignals = getInjectionSignals(run);
-    const requestConfig = getRequestConfig(run);
-    const requestReferenceFiles = requestConfig?.referenceFiles ?? [];
-
-    return (
-      <div className="ocr-testbed__result card">
-        <div className="ocr-testbed__result-header">
-          <h4>{title}</h4>
-          <div className="ocr-testbed__meta">
-            <span
-              className="badge ocr-testbed__confidence-badge"
-              style={
-                {
-                  "--confidence-color": confidenceColor(run.confidence),
-                } as CSSProperties
-              }
-            >
-              Confianza:{" "}
-              {run.confidence !== null
-                ? `${(run.confidence * 100).toFixed(0)}%`
-                : "N/A"}
-            </span>
-            <span className="ocr-testbed__duration">
-              ⏱ {formatDuration(run.duration_ms)}
-            </span>
-            <span className="ocr-testbed__model-badge">
-              {modelNameById.get(run.model_id) ?? run.model_id}
-            </span>
-          </div>
-        </div>
-
-        <p className="ocr-testbed__summary">{run.summary}</p>
-
-        <div className="admin-chip-row ocr-testbed__chip-row">
-          <span
-            className={`status-pill ${schemaValidation?.valid ? "complete" : "rejected"}`}
-          >
-            {schemaValidation?.valid ? "Schema OK" : "Schema inválido"}
-          </span>
-          <span className="status-pill admin-chip-neutral">
-            {injectionSignals.length} señal(es) de prompt injection
-          </span>
-          <span className="status-pill admin-chip-neutral">
-            {requestConfig?.strictSchema ? "Strict schema" : "Schema flexible"}
-          </span>
-          <span className="status-pill admin-chip-neutral">
-            Referencias: {requestReferenceFiles.length}
-          </span>
-        </div>
-
-        {schemaValidation?.errors && schemaValidation.errors.length > 0 ? (
-          <div className="ocr-testbed__notes">
-            {schemaValidation.errors.map((errorText, index) => (
-              <div
-                key={`${run.id}-schema-${index}`}
-                className="form-hint ocr-testbed__note"
-              >
-                {errorText}
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {injectionSignals.length > 0 ? (
-          <div className="ocr-testbed__notes">
-            {injectionSignals.map((signal, index) => (
-              <div
-                key={`${run.id}-signal-${index}`}
-                className="form-hint ocr-testbed__note"
-              >
-                {signal}
-              </div>
-            ))}
-          </div>
-        ) : null}
-
-        {requestConfig ? (
-          <div className="form-hint ocr-testbed__request-meta">
-            Temp {requestConfig.temperature ?? "—"} | Top-P{" "}
-            {requestConfig.topP ?? "—"} | Max tokens{" "}
-            {requestConfig.maxTokens ?? "—"} | Refs{" "}
-            {requestReferenceFiles.length}
-          </div>
-        ) : null}
-
-        <button
-          className="btn btn-ghost btn-sm"
-          onClick={() => setShowRaw((value) => !value)}
-        >
-          {showRaw ? "Ocultar JSON completo" : "Ver JSON completo"}
-        </button>
-
-        {showRaw ? (
-          <pre className="ocr-testbed__raw">
-            {JSON.stringify(run.raw_response, null, 2)}
-          </pre>
-        ) : null}
-      </div>
-    );
   }
 
   const confidenceDelta =
@@ -826,8 +662,22 @@ export function AdminOcrTestbed({
             comparisonRun ? " ocr-testbed__result-grid--comparison" : ""
           }`}
         >
-          {renderRunPanel(result, "Resultado actual")}
-          {comparisonRun ? renderRunPanel(comparisonRun, "Comparación") : null}
+          <OcrTestRunPanel
+            run={result}
+            title="Resultado actual"
+            modelNameById={modelNameById}
+            showRaw={showRaw}
+            onToggleRaw={() => setShowRaw((value) => !value)}
+          />
+          {comparisonRun ? (
+            <OcrTestRunPanel
+              run={comparisonRun}
+              title="Comparación"
+              modelNameById={modelNameById}
+              showRaw={showRaw}
+              onToggleRaw={() => setShowRaw((value) => !value)}
+            />
+          ) : null}
         </div>
       ) : null}
 
