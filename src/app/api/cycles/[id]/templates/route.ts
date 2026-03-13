@@ -3,11 +3,15 @@ import { z } from "zod";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
-import type { Database } from "@/types/supabase";
 import { recordAuditEvent } from "@/lib/logging/audit";
+import { ensureCycleExists } from "@/lib/server/cycles-service";
+import {
+  listCycleTemplates,
+  updateCycleTemplates,
+  createCycleTemplate,
+} from "@/lib/server/template-service";
 
-type CycleTemplateRow = Database["public"]["Tables"]["cycle_stage_templates"]["Row"];
-type CycleTemplateInsert = Database["public"]["Tables"]["cycle_stage_templates"]["Insert"];
+const cycleIdSchema = z.string().uuid();
 
 const patchTemplatesSchema = z.object({
   templates: z
@@ -22,7 +26,7 @@ const patchTemplatesSchema = z.object({
     )
     .min(1),
 });
-const cycleIdSchema = z.string().uuid();
+
 const createTemplateSchema = z
   .object({
     stageLabel: z.string().min(3).max(120).optional(),
@@ -30,23 +34,16 @@ const createTemplateSchema = z
   })
   .optional();
 
-async function ensureCycleExists({
-  cycleId,
-  supabase,
-}: {
-  cycleId: string;
-  supabase: Awaited<ReturnType<typeof requireAuth>>["supabase"];
-}) {
-  const { data, error } = await supabase.from("cycles").select("id").eq("id", cycleId).maybeSingle();
-
-  if (error || !data) {
+function parseCycleId(rawId: string) {
+  const result = cycleIdSchema.safeParse(rawId);
+  if (!result.success) {
     throw new AppError({
-      message: "Cycle not found",
-      userMessage: "No se encontró el proceso de selección.",
-      status: 404,
-      details: error,
+      message: "Invalid cycle id",
+      userMessage: "El proceso seleccionado no es válido.",
+      status: 400,
     });
   }
+  return result.data;
 }
 
 export async function GET(
@@ -55,40 +52,11 @@ export async function GET(
 ) {
   return withErrorHandling(async () => {
     const { supabase } = await requireAuth(["admin", "applicant"]);
-    const { id: rawId } = await context.params;
-    const idParsed = cycleIdSchema.safeParse(rawId);
+    const cycleId = parseCycleId((await context.params).id);
+    await ensureCycleExists(supabase, cycleId);
 
-    if (!idParsed.success) {
-      throw new AppError({
-        message: "Invalid cycle id",
-        userMessage: "El proceso seleccionado no es válido.",
-        status: 400,
-      });
-    }
-    const id = idParsed.data;
-
-    await ensureCycleExists({ cycleId: id, supabase });
-
-    const { data, error } = await supabase
-      .from("cycle_stage_templates")
-      .select("*")
-      .eq("cycle_id", id)
-      .order("sort_order", { ascending: true });
-
-    if (error) {
-      throw new AppError({
-        message: "Failed loading cycle templates",
-        userMessage: "No se pudieron cargar las etapas del proceso.",
-        status: 500,
-        details: error,
-      });
-    }
-
-    return NextResponse.json({
-      templates: ((data as CycleTemplateRow[] | null) ?? []).sort(
-        (a, b) => a.sort_order - b.sort_order,
-      ),
-    });
+    const templates = await listCycleTemplates(supabase, cycleId);
+    return NextResponse.json({ templates });
   }, { operation: "cycles.templates.list" });
 }
 
@@ -98,17 +66,7 @@ export async function PATCH(
 ) {
   return withErrorHandling(async (requestId) => {
     const { profile, supabase } = await requireAuth(["admin"]);
-    const { id: rawId } = await context.params;
-    const idParsed = cycleIdSchema.safeParse(rawId);
-
-    if (!idParsed.success) {
-      throw new AppError({
-        message: "Invalid cycle id",
-        userMessage: "El proceso seleccionado no es válido.",
-        status: 400,
-      });
-    }
-    const id = idParsed.data;
+    const cycleId = parseCycleId((await context.params).id);
     const body = await request.json();
     const parsed = patchTemplatesSchema.safeParse(body);
 
@@ -121,52 +79,22 @@ export async function PATCH(
       });
     }
 
-    await ensureCycleExists({ cycleId: id, supabase });
-
-    const updatedTemplates: CycleTemplateRow[] = [];
-
-    for (const template of parsed.data.templates) {
-      const { data, error } = await supabase
-        .from("cycle_stage_templates")
-        .update({
-          stage_label: template.stageLabel,
-          milestone_label: template.milestoneLabel,
-          due_at: template.dueAt ?? null,
-          sort_order: template.sortOrder,
-        })
-        .eq("id", template.id)
-        .eq("cycle_id", id)
-        .select("*")
-        .single();
-
-      const updated = (data as CycleTemplateRow | null) ?? null;
-
-      if (error || !updated) {
-        throw new AppError({
-          message: "Failed updating cycle stage template",
-          userMessage: "No se pudieron guardar las plantillas de etapa.",
-          status: 500,
-          details: error,
-        });
-      }
-
-      updatedTemplates.push(updated);
-    }
+    await ensureCycleExists(supabase, cycleId);
+    const templates = await updateCycleTemplates(
+      supabase,
+      cycleId,
+      parsed.data.templates,
+    );
 
     await recordAuditEvent({
       supabase,
       actorId: profile.id,
       action: "cycle.templates_updated",
-      metadata: {
-        cycleId: id,
-        updatedCount: updatedTemplates.length,
-      },
+      metadata: { cycleId, updatedCount: templates.length },
       requestId,
     });
 
-    return NextResponse.json({
-      templates: updatedTemplates.sort((a, b) => a.sort_order - b.sort_order),
-    });
+    return NextResponse.json({ templates });
   }, { operation: "cycles.templates.update" });
 }
 
@@ -176,19 +104,8 @@ export async function POST(
 ) {
   return withErrorHandling(async (requestId) => {
     const { profile, supabase } = await requireAuth(["admin"]);
-    const { id: rawId } = await context.params;
-    const idParsed = cycleIdSchema.safeParse(rawId);
-
-    if (!idParsed.success) {
-      throw new AppError({
-        message: "Invalid cycle id",
-        userMessage: "El proceso seleccionado no es válido.",
-        status: 400,
-      });
-    }
-
-    const cycleId = idParsed.data;
-    await ensureCycleExists({ cycleId, supabase });
+    const cycleId = parseCycleId((await context.params).id);
+    await ensureCycleExists(supabase, cycleId);
 
     const body = request.headers.get("content-length")
       ? await request.json().catch(() => ({}))
@@ -204,62 +121,11 @@ export async function POST(
       });
     }
 
-    const { data: existingRows, error: existingRowsError } = await supabase
-      .from("cycle_stage_templates")
-      .select("sort_order, stage_code")
-      .eq("cycle_id", cycleId)
-      .order("sort_order", { ascending: true });
-
-    if (existingRowsError) {
-      throw new AppError({
-        message: "Failed loading existing templates before create",
-        userMessage: "No se pudo crear la nueva etapa.",
-        status: 500,
-        details: existingRowsError,
-      });
-    }
-
-    const existingTemplates = (existingRows as Pick<CycleTemplateRow, "sort_order" | "stage_code">[] | null) ?? [];
-    const nextTemplateOrdinal = existingTemplates.length + 1;
-    const nextDisplayStageNumber = existingTemplates.length + 1;
-    const nextSortOrder =
-      existingTemplates.length === 0
-        ? 1
-        : Math.max(...existingTemplates.map((row) => row.sort_order)) + 1;
-
-    const existingCodes = new Set(existingTemplates.map((row) => row.stage_code));
-    let candidateCode = `custom_stage_${nextTemplateOrdinal}`;
-    while (existingCodes.has(candidateCode)) {
-      candidateCode = `custom_stage_${nextTemplateOrdinal}_${Math.random().toString(36).slice(2, 6)}`;
-    }
-
-    const insertRow: CycleTemplateInsert = {
-      cycle_id: cycleId,
-      stage_code: candidateCode,
-      stage_label: parsedBody.data?.stageLabel ?? `Stage ${nextDisplayStageNumber}: Nueva etapa`,
-      milestone_label:
-        parsedBody.data?.milestoneLabel ?? "Configura objetivo y criterios de esta etapa",
-      due_at: null,
-      ocr_prompt_template: null,
-      sort_order: nextSortOrder,
-    };
-
-    const { data: createdData, error: createError } = await supabase
-      .from("cycle_stage_templates")
-      .insert(insertRow)
-      .select("*")
-      .single();
-
-    const createdTemplate = (createdData as CycleTemplateRow | null) ?? null;
-
-    if (createError || !createdTemplate) {
-      throw new AppError({
-        message: "Failed creating cycle stage template",
-        userMessage: "No se pudo crear la nueva etapa.",
-        status: 500,
-        details: createError,
-      });
-    }
+    const template = await createCycleTemplate(
+      supabase,
+      cycleId,
+      parsedBody.data ?? undefined,
+    );
 
     await recordAuditEvent({
       supabase,
@@ -267,12 +133,12 @@ export async function POST(
       action: "cycle.template_created",
       metadata: {
         cycleId,
-        templateId: createdTemplate.id,
-        stageCode: createdTemplate.stage_code,
+        templateId: template.id,
+        stageCode: template.stage_code,
       },
       requestId,
     });
 
-    return NextResponse.json({ template: createdTemplate }, { status: 201 });
+    return NextResponse.json({ template }, { status: 201 });
   }, { operation: "cycles.templates.create" });
 }

@@ -18,6 +18,30 @@ type ApplicationSummaryRow = Pick<
 >;
 
 // ---------------------------------------------------------------------------
+// ENSURE EXISTS (shared guard used by template-service and route handlers)
+// ---------------------------------------------------------------------------
+
+export async function ensureCycleExists(
+  supabase: SupabaseClient<Database>,
+  cycleId: string,
+) {
+  const { data, error } = await supabase
+    .from("cycles")
+    .select("id")
+    .eq("id", cycleId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new AppError({
+      message: "Cycle not found",
+      userMessage: "No se encontró el proceso de selección.",
+      status: 404,
+      details: error,
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LIST
 // ---------------------------------------------------------------------------
 
