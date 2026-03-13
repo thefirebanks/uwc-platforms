@@ -1156,3 +1156,56 @@ export async function sendTestEmail({
     };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Queue by template key (legacy path — inserts communication_logs for all
+// applications matching a given template key)
+// ---------------------------------------------------------------------------
+
+export async function queueByTemplateKey(
+  supabase: SupabaseClient<Database>,
+  params: { templateKey: string; sentBy: string },
+): Promise<{ sent: number }> {
+  const { data: applications, error } = await supabase
+    .from("applications")
+    .select("id, applicant_id, status");
+
+  if (error) {
+    throw new AppError({
+      message: "Failed loading applications for communications",
+      userMessage: "No se pudo generar la lista de correos.",
+      status: 500,
+      details: error,
+    });
+  }
+
+  let sent = 0;
+
+  for (const application of applications ?? []) {
+    const { data: profileRow } = await supabase
+      .from("profiles")
+      .select("email")
+      .eq("id", application.applicant_id)
+      .maybeSingle();
+
+    if (!profileRow) {
+      continue;
+    }
+
+    const { error: insertError } = await supabase.from("communication_logs").insert({
+      application_id: application.id,
+      template_key: params.templateKey,
+      subject: "Actualización de postulación UWC Perú",
+      body: `Notificación automática para plantilla ${params.templateKey}.`,
+      recipient_email: profileRow.email,
+      status: "queued",
+      sent_by: params.sentBy,
+    });
+
+    if (!insertError) {
+      sent += 1;
+    }
+  }
+
+  return { sent };
+}

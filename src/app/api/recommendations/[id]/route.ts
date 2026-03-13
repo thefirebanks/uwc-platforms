@@ -4,11 +4,12 @@ import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { AppError } from "@/lib/errors/app-error";
 import { requireAuth } from "@/lib/server/auth";
 import {
+  getRecommendationApplicationId,
   markRecommendationReceivedByAdmin,
   updateRecommendationByAdmin,
+  uploadRecommendationAttachment,
 } from "@/lib/server/recommendations-service";
 import { recordAuditEvent } from "@/lib/logging/audit";
-import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 
 const patchSchema = z.object({
   recommenderName: z.string().max(180).nullable().optional(),
@@ -16,26 +17,6 @@ const patchSchema = z.object({
   adminNotes: z.string().max(500).nullable().optional(),
   reason: z.string().min(4).max(300),
 });
-
-async function loadRecommendationContext(recommendationId: string) {
-  const adminSupabase = getSupabaseAdminClient();
-  const { data, error } = await adminSupabase
-    .from("recommendation_requests")
-    .select("id, application_id")
-    .eq("id", recommendationId)
-    .maybeSingle();
-
-  if (error || !data) {
-    throw new AppError({
-      message: "Recommendation not found",
-      userMessage: "No se encontró la recomendación.",
-      status: 404,
-      details: error,
-    });
-  }
-
-  return data;
-}
 
 export async function PATCH(
   request: NextRequest,
@@ -56,7 +37,7 @@ export async function PATCH(
       });
     }
 
-    const recommendationContext = await loadRecommendationContext(id);
+    const applicationId = await getRecommendationApplicationId(id);
     const result = await updateRecommendationByAdmin({
       recommendationId: id,
       actorId: profile.id,
@@ -70,7 +51,7 @@ export async function PATCH(
     await recordAuditEvent({
       supabase,
       actorId: profile.id,
-      applicationId: recommendationContext.application_id,
+      applicationId,
       action: "recommendations.admin_updated",
       metadata: {
         recommendationId: id,
@@ -106,45 +87,12 @@ export async function POST(
       });
     }
 
-    let uploadedFile:
-      | {
-          path: string;
-          originalName: string;
-          mimeType: string;
-          sizeBytes: number;
-        }
-      | null = null;
-
+    let uploadedFile: Awaited<ReturnType<typeof uploadRecommendationAttachment>> | null = null;
     if (maybeFile instanceof File && maybeFile.size > 0) {
-      const safeName = maybeFile.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "adjunto";
-      const storagePath = `recommendations/${id}/manual/${Date.now()}-${safeName}`;
-      const fileBuffer = await maybeFile.arrayBuffer();
-      const adminSupabase = getSupabaseAdminClient();
-      const { error: uploadError } = await adminSupabase.storage
-        .from("application-documents")
-        .upload(storagePath, fileBuffer, {
-          contentType: maybeFile.type || "application/octet-stream",
-          upsert: true,
-        });
-
-      if (uploadError) {
-        throw new AppError({
-          message: "Failed uploading manual recommendation attachment",
-          userMessage: "No se pudo subir el adjunto de la recomendación.",
-          status: 500,
-          details: uploadError,
-        });
-      }
-
-      uploadedFile = {
-        path: storagePath,
-        originalName: maybeFile.name,
-        mimeType: maybeFile.type || "application/octet-stream",
-        sizeBytes: maybeFile.size,
-      };
+      uploadedFile = await uploadRecommendationAttachment(id, maybeFile);
     }
 
-    const recommendationContext = await loadRecommendationContext(id);
+    const applicationId = await getRecommendationApplicationId(id);
     const recommendation = await markRecommendationReceivedByAdmin({
       recommendationId: id,
       actorId: profile.id,
@@ -157,7 +105,7 @@ export async function POST(
     await recordAuditEvent({
       supabase,
       actorId: profile.id,
-      applicationId: recommendationContext.application_id,
+      applicationId,
       action: "recommendations.admin_marked_received",
       metadata: {
         recommendationId: id,

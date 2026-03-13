@@ -714,6 +714,77 @@ export async function sendRecommendationReminder({
   return asSummary(updatedData as RecommendationRow);
 }
 
+// ---------------------------------------------------------------------------
+// Admin helpers — shared by PATCH / POST route handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the application_id for a recommendation (used for audit events).
+ */
+export async function getRecommendationApplicationId(
+  recommendationId: string,
+): Promise<string> {
+  const adminSupabase = getSupabaseAdminClient();
+  const { data, error } = await adminSupabase
+    .from("recommendation_requests")
+    .select("id, application_id")
+    .eq("id", recommendationId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new AppError({
+      message: "Recommendation not found",
+      userMessage: "No se encontró la recomendación.",
+      status: 404,
+      details: error,
+    });
+  }
+
+  return data.application_id;
+}
+
+/**
+ * Upload a recommendation attachment to Supabase storage and return the
+ * metadata required by `markRecommendationReceivedByAdmin`.
+ */
+export async function uploadRecommendationAttachment(
+  recommendationId: string,
+  file: File,
+): Promise<{
+  path: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+}> {
+  const safeName =
+    file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "adjunto";
+  const storagePath = `recommendations/${recommendationId}/manual/${Date.now()}-${safeName}`;
+  const fileBuffer = await file.arrayBuffer();
+  const adminSupabase = getSupabaseAdminClient();
+  const { error: uploadError } = await adminSupabase.storage
+    .from("application-documents")
+    .upload(storagePath, fileBuffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw new AppError({
+      message: "Failed uploading manual recommendation attachment",
+      userMessage: "No se pudo subir el adjunto de la recomendación.",
+      status: 500,
+      details: uploadError,
+    });
+  }
+
+  return {
+    path: storagePath,
+    originalName: file.name,
+    mimeType: file.type || "application/octet-stream",
+    sizeBytes: file.size,
+  };
+}
+
 export async function listAdminRecommendations({
   applicationId,
 }: {
