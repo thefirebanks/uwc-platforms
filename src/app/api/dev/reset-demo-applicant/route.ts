@@ -4,6 +4,7 @@ import { AppError } from "@/lib/errors/app-error";
 import { withErrorHandling } from "@/lib/errors/with-error-handling";
 import { getSupabaseAdminClient } from "@/lib/supabase/admin";
 import type { Json } from "@/types/supabase";
+import { collectStoredFilePaths } from "@/lib/server/demo-seed-service";
 
 const deploymentEnvironment = (
   process.env.VERCEL_ENV ??
@@ -27,21 +28,6 @@ type ApplicationRowForReset = {
   id: string;
   files: Json;
 };
-
-function collectStoredFilePaths(files: Json): string[] {
-  if (!files || typeof files !== "object" || Array.isArray(files)) {
-    return [];
-  }
-
-  return Object.values(files as Record<string, Json>).flatMap((entry) => {
-    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-      return [];
-    }
-
-    const path = (entry as Record<string, Json>).path;
-    return typeof path === "string" && path.trim() ? [path.trim()] : [];
-  });
-}
 
 export async function POST(request: Request) {
   return withErrorHandling(async () => {
