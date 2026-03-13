@@ -271,21 +271,28 @@ export async function listApplicantRecommendations({
   return ((data as RecommendationRow[] | null) ?? []).map(asSummary);
 }
 
-export async function upsertApplicantRecommendations({
-  supabase,
-  applicationId,
-  applicantId,
-  applicantEmail,
+type NormalizedRecommender = { role: RecommenderRole; email: string };
+
+type EmailDeliveryResult = {
+  id: string;
+  role: RecommenderRole;
+  email: string;
+  sent: boolean;
+  providerMessageId: string | null;
+  errorMessage: string | null;
+};
+
+/**
+ * Validate and normalize recommender input: deduplicate emails, prevent
+ * self-registration, and reject duplicate roles.
+ */
+function validateRecommenderInput({
   recommenders,
-  origin,
+  applicantEmail,
 }: {
-  supabase: SupabaseClient<Database>;
-  applicationId: string;
-  applicantId: string;
-  applicantEmail: string | null;
   recommenders: Array<{ role: RecommenderRole; email: string }>;
-  origin: string;
-}) {
+  applicantEmail: string | null;
+}): NormalizedRecommender[] {
   const normalized = recommenders.map((item) => ({
     role: item.role,
     email: normalizeEmail(item.email),
@@ -321,6 +328,26 @@ export async function upsertApplicantRecommendations({
     });
   }
 
+  return normalized;
+}
+
+/**
+ * Load the application, verify ownership, assert the cycle is still editable,
+ * and return the cycle name + expiry date for new tokens.
+ */
+async function loadOwnershipAndCycleContext({
+  supabase,
+  applicationId,
+  applicantId,
+}: {
+  supabase: SupabaseClient<Database>;
+  applicationId: string;
+  applicantId: string;
+}): Promise<{
+  cycleId: string;
+  cycleName: string;
+  recommendedExpiry: string;
+}> {
   const application = await loadApplicationOwnership({
     supabase,
     applicationId,
@@ -336,9 +363,22 @@ export async function upsertApplicantRecommendations({
     .select("name, stage1_close_at")
     .eq("id", application.cycle_id)
     .maybeSingle();
-  const cycleName = cycle?.name ?? "Proceso UWC";
 
-  const adminSupabase = getSupabaseAdminClient();
+  return {
+    cycleId: application.cycle_id,
+    cycleName: cycle?.name ?? "Proceso UWC",
+    recommendedExpiry: cycle?.stage1_close_at ?? toIso(Date.now() + 45 * 24 * 60 * 60 * 1000),
+  };
+}
+
+/**
+ * Load active (non-invalidated) recommendation rows for the application,
+ * keyed by role.
+ */
+async function loadActiveRecommendationsByRole(
+  adminSupabase: SupabaseClient<Database>,
+  applicationId: string,
+): Promise<Map<RecommenderRole, RecommendationRow>> {
   const { data: existingRows, error: existingRowsError } = await adminSupabase
     .from("recommendation_requests")
     .select("*")
@@ -361,9 +401,29 @@ export async function upsertApplicantRecommendations({
       activeByRole.set(row.role, row);
     }
   }
+  return activeByRole;
+}
 
-  const nowIso = new Date().toISOString();
-  const recommendedExpiry = cycle?.stage1_close_at ?? toIso(Date.now() + 45 * 24 * 60 * 60 * 1000);
+/**
+ * Compare incoming slots against existing active recommendations.
+ * Returns rows to insert and IDs to invalidate.
+ */
+function diffRecommenderSlots({
+  normalized,
+  activeByRole,
+  applicationId,
+  applicantId,
+  recommendedExpiry,
+}: {
+  normalized: NormalizedRecommender[];
+  activeByRole: Map<RecommenderRole, RecommendationRow>;
+  applicationId: string;
+  applicantId: string;
+  recommendedExpiry: string;
+}): {
+  rowsToInsert: RecommendationInsert[];
+  idsToInvalidate: string[];
+} {
   const rowsToInsert: RecommendationInsert[] = [];
   const idsToInvalidate: string[] = [];
 
@@ -383,9 +443,6 @@ export async function upsertApplicantRecommendations({
     }
 
     if (current.recommender_email === slot.email) {
-      if (current.status === "submitted") {
-        continue;
-      }
       continue;
     }
 
@@ -410,53 +467,79 @@ export async function upsertApplicantRecommendations({
     });
   }
 
-  if (idsToInvalidate.length > 0) {
-    const { error: invalidateError } = await adminSupabase
-      .from("recommendation_requests")
-      .update({
-        status: "invalidated",
-        invalidated_at: nowIso,
-        invalidation_reason: "replaced_by_applicant",
-      })
-      .in("id", idsToInvalidate)
-      .is("invalidated_at", null);
+  return { rowsToInsert, idsToInvalidate };
+}
 
-    if (invalidateError) {
-      throw new AppError({
-        message: "Failed invalidating replaced recommender rows",
-        userMessage: "No se pudo reemplazar el recomendador. Intenta nuevamente.",
-        status: 500,
-        details: invalidateError,
-      });
-    }
+/** Mark replaced recommender rows as invalidated. */
+async function invalidateReplacedRecommenders(
+  adminSupabase: SupabaseClient<Database>,
+  idsToInvalidate: string[],
+  nowIso: string,
+): Promise<void> {
+  if (idsToInvalidate.length === 0) return;
+
+  const { error: invalidateError } = await adminSupabase
+    .from("recommendation_requests")
+    .update({
+      status: "invalidated",
+      invalidated_at: nowIso,
+      invalidation_reason: "replaced_by_applicant",
+    })
+    .in("id", idsToInvalidate)
+    .is("invalidated_at", null);
+
+  if (invalidateError) {
+    throw new AppError({
+      message: "Failed invalidating replaced recommender rows",
+      userMessage: "No se pudo reemplazar el recomendador. Intenta nuevamente.",
+      status: 500,
+      details: invalidateError,
+    });
   }
+}
 
-  let insertedRows: RecommendationRow[] = [];
-  if (rowsToInsert.length > 0) {
-    const { data: insertedData, error: insertError } = await adminSupabase
-      .from("recommendation_requests")
-      .insert(rowsToInsert)
-      .select("*");
+/** Insert new recommendation_requests rows and return the created rows. */
+async function insertNewRecommenderRows(
+  adminSupabase: SupabaseClient<Database>,
+  rowsToInsert: RecommendationInsert[],
+): Promise<RecommendationRow[]> {
+  if (rowsToInsert.length === 0) return [];
 
-    if (insertError || !insertedData) {
-      throw new AppError({
-        message: "Failed creating recommender rows",
-        userMessage: "No se pudieron registrar los recomendadores.",
-        status: 500,
-        details: insertError,
-      });
-    }
-    insertedRows = insertedData as RecommendationRow[];
+  const { data: insertedData, error: insertError } = await adminSupabase
+    .from("recommendation_requests")
+    .insert(rowsToInsert)
+    .select("*");
+
+  if (insertError || !insertedData) {
+    throw new AppError({
+      message: "Failed creating recommender rows",
+      userMessage: "No se pudieron registrar los recomendadores.",
+      status: 500,
+      details: insertError,
+    });
   }
+  return insertedData as RecommendationRow[];
+}
 
-  const emailResults: Array<{
-    id: string;
-    role: RecommenderRole;
-    email: string;
-    sent: boolean;
-    providerMessageId: string | null;
-    errorMessage: string | null;
-  }> = [];
+/**
+ * Send invite emails for newly-created recommender rows and update their
+ * status to "sent". Returns delivery results per row.
+ */
+async function sendInviteEmails({
+  adminSupabase,
+  insertedRows,
+  cycleName,
+  origin,
+  nowIso,
+}: {
+  adminSupabase: SupabaseClient<Database>;
+  insertedRows: RecommendationRow[];
+  cycleName: string;
+  origin: string;
+  nowIso: string;
+}): Promise<EmailDeliveryResult[]> {
+  const emailResults: EmailDeliveryResult[] = [];
+
   for (const row of insertedRows) {
     const accessUrl = getRecommendationAccessUrl({
       token: row.token,
@@ -532,6 +615,14 @@ export async function upsertApplicantRecommendations({
     }
   }
 
+  return emailResults;
+}
+
+/** Reload all recommendation rows for the application after mutations. */
+async function reloadFinalState(
+  adminSupabase: SupabaseClient<Database>,
+  applicationId: string,
+): Promise<RecommendationSummary[]> {
   const { data: finalRowsData, error: finalRowsError } = await adminSupabase
     .from("recommendation_requests")
     .select("*")
@@ -547,10 +638,66 @@ export async function upsertApplicantRecommendations({
     });
   }
 
-  const finalSummaries = ((finalRowsData as RecommendationRow[] | null) ?? []).map(asSummary);
+  return ((finalRowsData as RecommendationRow[] | null) ?? []).map(asSummary);
+}
+
+export async function upsertApplicantRecommendations({
+  supabase,
+  applicationId,
+  applicantId,
+  applicantEmail,
+  recommenders,
+  origin,
+}: {
+  supabase: SupabaseClient<Database>;
+  applicationId: string;
+  applicantId: string;
+  applicantEmail: string | null;
+  recommenders: Array<{ role: RecommenderRole; email: string }>;
+  origin: string;
+}) {
+  // 1. Validate and normalize input
+  const normalized = validateRecommenderInput({ recommenders, applicantEmail });
+
+  // 2. Verify ownership and load cycle context
+  const { cycleName, recommendedExpiry } = await loadOwnershipAndCycleContext({
+    supabase,
+    applicationId,
+    applicantId,
+  });
+
+  // 3. Load existing active recommendations
+  const adminSupabase = getSupabaseAdminClient();
+  const activeByRole = await loadActiveRecommendationsByRole(adminSupabase, applicationId);
+
+  // 4. Diff incoming slots against existing rows
+  const { rowsToInsert, idsToInvalidate } = diffRecommenderSlots({
+    normalized,
+    activeByRole,
+    applicationId,
+    applicantId,
+    recommendedExpiry,
+  });
+
+  // 5. Invalidate replaced rows + insert new rows
+  const nowIso = new Date().toISOString();
+  await invalidateReplacedRecommenders(adminSupabase, idsToInvalidate, nowIso);
+  const insertedRows = await insertNewRecommenderRows(adminSupabase, rowsToInsert);
+
+  // 6. Send invite emails
+  const emailResults = await sendInviteEmails({
+    adminSupabase,
+    insertedRows,
+    cycleName,
+    origin,
+    nowIso,
+  });
+
+  // 7. Reload and return final state
+  const rows = await reloadFinalState(adminSupabase, applicationId);
 
   return {
-    rows: finalSummaries,
+    rows,
     createdCount: insertedRows.length,
     replacedCount: idsToInvalidate.length,
     failedEmailCount: emailResults.filter((result) => !result.sent).length,
@@ -712,6 +859,77 @@ export async function sendRecommendationReminder({
   }
 
   return asSummary(updatedData as RecommendationRow);
+}
+
+// ---------------------------------------------------------------------------
+// Admin helpers — shared by PATCH / POST route handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve the application_id for a recommendation (used for audit events).
+ */
+export async function getRecommendationApplicationId(
+  recommendationId: string,
+): Promise<string> {
+  const adminSupabase = getSupabaseAdminClient();
+  const { data, error } = await adminSupabase
+    .from("recommendation_requests")
+    .select("id, application_id")
+    .eq("id", recommendationId)
+    .maybeSingle();
+
+  if (error || !data) {
+    throw new AppError({
+      message: "Recommendation not found",
+      userMessage: "No se encontró la recomendación.",
+      status: 404,
+      details: error,
+    });
+  }
+
+  return data.application_id;
+}
+
+/**
+ * Upload a recommendation attachment to Supabase storage and return the
+ * metadata required by `markRecommendationReceivedByAdmin`.
+ */
+export async function uploadRecommendationAttachment(
+  recommendationId: string,
+  file: File,
+): Promise<{
+  path: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
+}> {
+  const safeName =
+    file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 180) || "adjunto";
+  const storagePath = `recommendations/${recommendationId}/manual/${Date.now()}-${safeName}`;
+  const fileBuffer = await file.arrayBuffer();
+  const adminSupabase = getSupabaseAdminClient();
+  const { error: uploadError } = await adminSupabase.storage
+    .from("application-documents")
+    .upload(storagePath, fileBuffer, {
+      contentType: file.type || "application/octet-stream",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    throw new AppError({
+      message: "Failed uploading manual recommendation attachment",
+      userMessage: "No se pudo subir el adjunto de la recomendación.",
+      status: 500,
+      details: uploadError,
+    });
+  }
+
+  return {
+    path: storagePath,
+    originalName: file.name,
+    mimeType: file.type || "application/octet-stream",
+    sizeBytes: file.size,
+  };
 }
 
 export async function listAdminRecommendations({

@@ -8,6 +8,7 @@ import { queueStageResultAutomations } from "@/lib/server/automation-service";
 import {
   queueBroadcastCampaign,
   sendDirectCommunication,
+  queueByTemplateKey,
 } from "@/lib/server/communications-service";
 
 const schema = z.object({
@@ -146,46 +147,10 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const { data: applications, error } = await supabase
-      .from("applications")
-      .select("id, applicant_id, status");
-
-    if (error) {
-      throw new AppError({
-        message: "Failed loading applications for communications",
-        userMessage: "No se pudo generar la lista de correos.",
-        status: 500,
-        details: error,
-      });
-    }
-
-    let sent = 0;
-
-    for (const application of applications ?? []) {
-      const { data: profileRow } = await supabase
-        .from("profiles")
-        .select("email")
-        .eq("id", application.applicant_id)
-        .maybeSingle();
-
-      if (!profileRow) {
-        continue;
-      }
-
-      const { error: insertError } = await supabase.from("communication_logs").insert({
-        application_id: application.id,
-        template_key: parsed.data.templateKey,
-        subject: "Actualización de postulación UWC Perú",
-        body: `Notificación automática para plantilla ${parsed.data.templateKey}.`,
-        recipient_email: profileRow.email,
-        status: "queued",
-        sent_by: profile.id,
-      });
-
-      if (!insertError) {
-        sent += 1;
-      }
-    }
+    const { sent } = await queueByTemplateKey(supabase, {
+      templateKey: parsed.data.templateKey,
+      sentBy: profile.id,
+    });
 
     await recordAuditEvent({
       supabase,
