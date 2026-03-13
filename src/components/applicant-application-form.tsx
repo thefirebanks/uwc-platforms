@@ -4,32 +4,27 @@ import { startTransition, type ChangeEvent, useCallback, useEffect, useMemo, use
 import {
   Box,
   IconButton,
-  MenuItem,
-  TextField,
   Typography,
 } from "@mui/material";
+import { ApplicantFormFields } from "@/components/applicant-form-fields";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useAppLanguage } from "@/components/language-provider";
 import { ApplicantSidebar, type SidebarStep } from "@/components/applicant-sidebar";
 import { ApplicantMobileProgress } from "@/components/applicant-mobile-progress";
 import { ApplicantActionBar } from "@/components/applicant-action-bar";
 import { ApplicantTopNav } from "@/components/applicant-top-nav";
-import { TogglePill } from "@/components/toggle-pill";
-import { GradesTable, isGradeField } from "@/components/grades-table";
-import type { AppLanguage } from "@/lib/i18n/messages";
-import type { Application, CycleStageField, RecommendationStatus, RecommenderRole, StageSection } from "@/types/domain";
+import type { Application, CycleStageField, RecommenderRole, StageSection } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 import { ApplicantPreparationChecklist } from "@/components/applicant-preparation-checklist";
 import { ApplicantReviewSubmit } from "@/components/applicant-review-submit";
 import { ApplicantDocumentUploadSection } from "@/components/applicant-document-upload-section";
-import { ApplicantRecommendersSection } from "@/components/applicant-recommenders-section";
+import { ApplicantRecommendersSection, type RecommenderSummary } from "@/components/applicant-recommenders-section";
 import { validateStagePayload } from "@/lib/stages/form-schema";
 import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
 import {
   groupFieldsBySections,
   type ResolvedSection,
 } from "@/lib/stages/applicant-sections";
-import { isBooleanField, getBooleanFieldLabels } from "@/lib/stages/field-sub-groups";
 import { roleLabel } from "@/lib/utils/domain-labels";
 import {
   fetchApi,
@@ -39,482 +34,29 @@ import {
 import {
   normalizeEmailAddress,
   parseFileEntry,
-  APPLICANT_TEXT_FIELD_SX,
   type ApplicationFileValue,
 } from "@/lib/client/applicant-utils";
-
-type RecommenderSummary = {
-  id: string;
-  role: RecommenderRole;
-  email: string;
-  status: RecommendationStatus;
-  submittedAt: string | null;
-  inviteSentAt: string | null;
-  openedAt: string | null;
-  startedAt: string | null;
-  reminderCount: number;
-  lastReminderAt: string | null;
-  invalidatedAt: string | null;
-  createdAt: string;
-};
-
-const EMPTY_STAGE_FIELDS: CycleStageField[] = [];
-type ProgressState = "complete" | "in_progress" | "not_started";
-type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
-type StaticWizardSectionId =
-  | "prep_intro"
-  | "documents_uploads"
-  | "recommenders_flow"
-  | "review_submit";
-type WizardSectionId = StaticWizardSectionId | string;
-
-const PREP_SECTION_ID = "prep_intro" as const;
-const SIDEBAR_VISIBILITY_STORAGE_KEY = "uwc:applicant-sidebar-hidden";
-
-const SECTION_TITLES_ES: Record<StaticWizardSectionId, string> = {
-  prep_intro: "Instrucciones",
-  documents_uploads: "Documentos",
-  recommenders_flow: "Recomendadores",
-  review_submit: "Revisión y envío",
-};
-
-const SECTION_TITLES_EN: Record<StaticWizardSectionId, string> = {
-  prep_intro: "Instructions",
-  documents_uploads: "Documents",
-  recommenders_flow: "Recommenders",
-  review_submit: "Review and submit",
-};
-
-const FIELD_LABEL_PREFIX_BY_SECTION: Partial<Record<string, string[]>> = {
-  eligibility: ["Cumplimiento de requisitos - "],
-  identity: ["Información personal - "],
-  family: ["Información familiar y apoderados - "],
-  school: ["Información del colegio - "],
-  motivation: ["Hoja de vida e interés en UWC - ", "Hoja de vida - "],
-  documents: ["Documentos - ", "Pago - ", "Documento - "],
-};
-
-const ENGLISH_FIELD_LABEL_BY_KEY: Record<string, string> = {
-  eligibilityBirthYear: "Birth year",
-  eligibilityCountryOfBirth: "Country of birth",
-  eligibilityCountryOfResidence: "Country of residence",
-  secondNationality: "Second nationality",
-  secondaryYear2025: "School year attended in 2025",
-  isUpperThird: "Are you in the top third?",
-  hasMinimumAverage14: "Do you have at least 14 or a B average?",
-  hasStudiedIb: "Have you studied IB?",
-  ibInstructionYear: "IB instruction year",
-  priorUwcPeruSelectionParticipation: "Previously participated in UWC Peru selection?",
-  otherCountrySelection2025: "Participated in another country's selection in 2025?",
-  uwcDiscoveryChannel: "How did you first hear about UWC?",
-};
-
-const ENGLISH_FIELD_PLACEHOLDER_BY_KEY: Record<string, string> = {
-  eligibilityBirthYear: "2008 / 2009 / 2010",
-  eligibilityCountryOfBirth: "Peru",
-  eligibilityCountryOfResidence: "Peru",
-  secondNationality: "Optional",
-  secondaryYear2025: "4th or 5th year of secondary school",
-  isUpperThird: "Yes / No",
-  hasMinimumAverage14: "Yes / No",
-  hasStudiedIb: "Yes / No",
-  ibInstructionYear: "Example: First year of IB",
-  priorUwcPeruSelectionParticipation: "Yes / No",
-  otherCountrySelection2025: "Yes / No",
-  uwcDiscoveryChannel: "Main source",
-};
-
-const SPANISH_FIELD_PLACEHOLDER_BY_KEY: Partial<Record<string, string>> = {
-  documentNumber: "Número",
-  guardian1Email: "correo@ejemplo.com",
-  guardian2Email: "correo@ejemplo.com",
-  guardian1MobilePhone: "+51 ...",
-  guardian2MobilePhone: "+51 ...",
-  schoolDirectorName: "Director/a",
-  schoolAddressLine: "Dirección completa",
-  officialGradesComments: "Si hay discrepancias entre tus notas o usas una escala diferente, explica aquí...",
-  essay: "Cuenta con tus propias palabras qué te motiva...",
-  whyShouldBeSelected: "Describe qué te hace único/a...",
-  preferredUwcColleges: "Puedes nombrar hasta 3 colegios y por qué...",
-  activityOne: "Describe brevemente...",
-  recognition: "Logro, premio, o reconocimiento...",
-  favoriteKnowledgeArea: "Tema o curso que más disfrutas...",
-  freeTimeActivities: "¿Qué haces en tu tiempo libre?...",
-  selfDescriptionThreeWords: "Tres palabras y un ejemplo...",
-  paymentOperationNumber: "Solo si corresponde pago regular",
-  mentorRecommenderName: "Nombre completo",
-  friendRecommenderName: "Nombre completo",
-};
-
-const HIDDEN_FIELD_HELP_TEXT_KEYS = new Set([
-  "fullName",
-  "dateOfBirth",
-  "maternalLastName",
-  "mobilePhone",
-  "landlineOrAlternativePhone",
-  "hasDisability",
-  "guardian2FullName",
-  "guardian2HasLegalCustody",
-  "guardian2Email",
-  "guardian2MobilePhone",
-  "officialGradesComments",
-  "paymentOperationNumber",
-]);
-
-const LONG_TEXT_ROWS_BY_KEY: Partial<Record<string, number>> = {
-  officialGradesComments: 2,
-  essay: 4,
-  whyShouldBeSelected: 4,
-  preferredUwcColleges: 2,
-  activityOne: 2,
-  recognition: 2,
-  favoriteKnowledgeArea: 2,
-  freeTimeActivities: 2,
-  selfDescriptionThreeWords: 2,
-};
-
-const ENGLISH_FIELD_HELP_BY_KEY: Record<string, string> = {
-  secondNationality: "Only if applicable.",
-  isUpperThird: "Enter the answer as text.",
-  ibInstructionYear: "Only if you answered yes to studying/studied IB.",
-};
-
-const SECTION_DESCRIPTIONS_EN: Record<string, string> = {
-  eligibility: "Validate baseline eligibility criteria for the 2026 process.",
-  identity: "Identity, contact, and personal context information.",
-  family: "Parent/guardian and legal custody details.",
-  school: "School details and official grades by year.",
-  motivation: "Personal responses about interests and purpose.",
-  recommenders: "Reference details to coordinate recommendations.",
-  documents: "Payment and required document information.",
-  other: "Active custom fields outside the base schema.",
-};
-
-function getDisplayFieldLabel({
-  sectionId,
-  fieldLabel,
-}: {
-  sectionId: string;
-  fieldLabel: string;
-}) {
-  const prefixes = FIELD_LABEL_PREFIX_BY_SECTION[sectionId];
-  if (!prefixes || prefixes.length === 0) {
-    return fieldLabel;
-  }
-
-  for (const prefix of prefixes) {
-    if (fieldLabel.startsWith(prefix)) {
-      return fieldLabel.slice(prefix.length).trim();
-    }
-  }
-
-  return fieldLabel;
-}
-
-function toEnglishTitleCase(value: string) {
-  return value
-    .split(" ")
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ")
-    .replace(/\bIb\b/g, "IB")
-    .replace(/\bUwc\b/g, "UWC")
-    .replace(/\bId\b/g, "ID");
-}
-
-function humanizeFieldKey(fieldKey: string) {
-  if (fieldKey.startsWith("officialGradeAverage_")) {
-    const grade = fieldKey.replace("officialGradeAverage_", "");
-    return `Official Grade Average ${grade.toUpperCase()}`;
-  }
-
-  if (fieldKey.startsWith("officialGrade_")) {
-    const [, grade, ...subjectParts] = fieldKey.split("_");
-    const subjectRaw = subjectParts.join("_").replace(/([a-z])([A-Z])/g, "$1 $2");
-    return `Official Grade ${grade.toUpperCase()} - ${toEnglishTitleCase(subjectRaw.replace(/_/g, " "))}`;
-  }
-
-  const normalized = fieldKey
-    .replace(/^eligibility/, "")
-    .replace(/^guardian/, "guardian")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/_/g, " ")
-    .trim();
-
-  return normalized.length > 0 ? toEnglishTitleCase(normalized) : fieldKey;
-}
-
-function getLocalizedDisplayFieldLabel({
-  sectionId,
-  field,
-  language,
-}: {
-  sectionId: string;
-  field: CycleStageField;
-  language: AppLanguage;
-}) {
-  const displayLabel = getDisplayFieldLabel({
-    sectionId,
-    fieldLabel: field.field_label,
-  });
-
-  if (language === "es") {
-    // Respect admin-edited labels in Spanish (live form config should be source of truth).
-    return displayLabel;
-  }
-
-  return ENGLISH_FIELD_LABEL_BY_KEY[field.field_key] ?? humanizeFieldKey(field.field_key);
-}
-
-function getLocalizedFieldPlaceholder(field: CycleStageField, language: AppLanguage) {
-  if (language === "es") {
-    // Respect admin-edited placeholders when present.
-    return field.placeholder ?? SPANISH_FIELD_PLACEHOLDER_BY_KEY[field.field_key] ?? undefined;
-  }
-
-  return ENGLISH_FIELD_PLACEHOLDER_BY_KEY[field.field_key];
-}
-
-function getLocalizedFieldHelpText(field: CycleStageField, language: AppLanguage) {
-  if (language === "es") {
-    if (HIDDEN_FIELD_HELP_TEXT_KEYS.has(field.field_key)) {
-      return undefined;
-    }
-    return field.help_text ?? undefined;
-  }
-
-  return ENGLISH_FIELD_HELP_BY_KEY[field.field_key];
-}
-
-function shouldUseWideFieldLayout({
-  field,
-  displayLabel,
-}: {
-  field: CycleStageField;
-  displayLabel: string;
-}) {
-  if (field.field_type === "long_text") {
-    return true;
-  }
-
-  if (displayLabel.length >= 34) {
-    return true;
-  }
-
-  return Boolean(field.help_text && field.help_text.length > 90);
-}
-
-function getFieldMaxWidth(fieldKey: string) {
-  if (fieldKey === "ageAtEndOf2025") {
-    return { xs: "100%", md: 160 };
-  }
-
-  if (fieldKey === "guardianCivilStatus") {
-    return { xs: "100%", md: 340 };
-  }
-
-  return null;
-}
-
-function getApplicantSelectOptions(fieldKey: string, language: AppLanguage) {
-  if (fieldKey === "documentType") {
-    return language === "en"
-      ? ["DNI", "Passport", "Foreigner ID card"]
-      : ["DNI", "Pasaporte", "Carnet de Extranjería"];
-  }
-
-  if (fieldKey === "guardianCivilStatus") {
-    return language === "en"
-      ? ["Married", "Divorced", "Separated", "Partners", "Other"]
-      : ["Casados", "Divorciados", "Separados", "Convivientes", "Otro"];
-  }
-
-  return null;
-}
-
-function getPayloadValue(payload: Application["payload"], key: string) {
-  const raw = payload?.[key];
-  if (raw === null || raw === undefined) {
-    return "";
-  }
-  return String(raw);
-}
-
-function isMeaningfulValue(value: unknown) {
-  if (value === null || value === undefined) {
-    return false;
-  }
-
-  if (typeof value === "string") {
-    return value.trim().length > 0;
-  }
-
-  if (typeof value === "number") {
-    return Number.isFinite(value);
-  }
-
-  if (typeof value === "boolean") {
-    return true;
-  }
-
-  return false;
-}
-
-function getStepState({
-  complete,
-  inProgress,
-}: {
-  complete: boolean;
-  inProgress: boolean;
-}): ProgressState {
-  if (complete) {
-    return "complete";
-  }
-
-  if (inProgress) {
-    return "in_progress";
-  }
-
-  return "not_started";
-}
-
-function formatSaveStatusLabel(saveState: SaveState, lastSavedAt: string | null, language: AppLanguage) {
-  const isEnglish = language === "en";
-  if (saveState === "saving") {
-    return isEnglish ? "Saving draft..." : "Guardando borrador...";
-  }
-
-  if (saveState === "dirty") {
-    return isEnglish ? "Pending changes" : "Cambios pendientes";
-  }
-
-  if (saveState === "error") {
-    return isEnglish ? "Error saving draft" : "Error al guardar borrador";
-  }
-
-  if (saveState === "saved" && lastSavedAt) {
-    const timestamp = new Date(lastSavedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return isEnglish ? `Draft saved ${timestamp}` : `Borrador guardado ${timestamp}`;
-  }
-
-  return isEnglish ? "Draft ready" : "Borrador listo";
-}
-
-function getSectionFieldStatus({
-  fields,
-  payload,
-}: {
-  fields: CycleStageField[];
-  payload: Application["payload"];
-}): ProgressState {
-  const requiredFields = fields.filter((field) => field.is_required);
-  const completedRequired = requiredFields.filter((field) =>
-    isMeaningfulValue((payload as Record<string, unknown>)[field.field_key]),
-  ).length;
-  const hasAnyValue = fields.some((field) => isMeaningfulValue((payload as Record<string, unknown>)[field.field_key]));
-
-  return getStepState({
-    complete:
-      requiredFields.length > 0
-        ? completedRequired === requiredFields.length
-        : hasAnyValue,
-    inProgress: hasAnyValue,
-  });
-}
-
-function isDocumentsStageCode(stageCode?: string) {
-  return !stageCode || stageCode === "documents";
-}
-
-function getInitialActiveSectionId({
-  cycleId,
-  stageCode,
-  stageFields,
-  sections,
-}: {
-  cycleId: string;
-  stageCode?: string;
-  stageFields?: CycleStageField[];
-  sections?: StageSection[];
-}): WizardSectionId {
-  if (isDocumentsStageCode(stageCode)) {
-    return PREP_SECTION_ID;
-  }
-
-  const effectiveStageFields =
-    stageFields && stageFields.length > 0 ? stageFields : buildFallbackStageFields(cycleId);
-  const orderedStageFields = [...effectiveStageFields].sort(
-    (a, b) => a.sort_order - b.sort_order,
-  );
-  const formStageFields = orderedStageFields.filter(
-    (field) => field.is_active && field.field_type !== "file",
-  );
-  const fileStageFields = orderedStageFields.filter(
-    (field) => field.is_active && field.field_type === "file",
-  );
-  const groupedSections = groupFieldsBySections(formStageFields, sections ?? [], {
-    includeInactive: false,
-    includeFileFields: false,
-  });
-
-  const firstFormSection = groupedSections.find(
-    (section) => section.sectionKey !== "documents" && section.sectionKey !== "recommenders",
-  );
-  if (firstFormSection) {
-    return firstFormSection.sectionKey as WizardSectionId;
-  }
-
-  const hasDocumentStep =
-    fileStageFields.length > 0 ||
-    groupedSections.some((section) => section.sectionKey === "documents");
-  if (hasDocumentStep) {
-    return "documents_uploads";
-  }
-
-  return "review_submit";
-}
-
-function isCurrentStageReadOnly({
-  application,
-  stageCode,
-}: {
-  application: Application | null;
-  stageCode?: string;
-}) {
-  if (!application) {
-    return false;
-  }
-
-  if (application.status === "submitted" || application.status === "ineligible") {
-    return true;
-  }
-
-  return (
-    isDocumentsStageCode(stageCode) &&
-    (application.status === "eligible" || application.status === "advanced")
-  );
-}
-
-function isCurrentStageSubmissionComplete({
-  application,
-  stageCode,
-}: {
-  application: Application | null;
-  stageCode?: string;
-}) {
-  if (!application) {
-    return false;
-  }
-
-  if (application.status === "submitted" || application.status === "ineligible") {
-    return true;
-  }
-
-  return (
-    isDocumentsStageCode(stageCode) &&
-    (application.status === "eligible" || application.status === "advanced")
-  );
-}
+import {
+  EMPTY_STAGE_FIELDS,
+  PREP_SECTION_ID,
+  SIDEBAR_VISIBILITY_STORAGE_KEY,
+  SECTION_TITLES_ES,
+  SECTION_TITLES_EN,
+  SECTION_DESCRIPTIONS_EN,
+  getLocalizedDisplayFieldLabel,
+  getLocalizedFieldHelpText,
+  getPayloadValue,
+  isMeaningfulValue,
+  getStepState,
+  formatSaveStatusLabel,
+  getSectionFieldStatus,
+  getInitialActiveSectionId,
+  isCurrentStageReadOnly,
+  isCurrentStageSubmissionComplete,
+  type ProgressState,
+  type SaveState,
+  type WizardSectionId,
+} from "@/lib/client/applicant-form-helpers";
 
 export function ApplicantApplicationForm({
   existingApplication,
@@ -1247,443 +789,9 @@ export function ApplicantApplicationForm({
     setActiveSectionId(sectionId);
   }
 
-  function renderSingleField(field: CycleStageField, sectionId: string) {
-    const displayLabel = getLocalizedDisplayFieldLabel({
-      sectionId,
-      field,
-      language,
-    });
-
-    // Boolean fields → toggle pill
-    if (isBooleanField(field.field_key)) {
-      return (
-        <Box sx={{ display: "flex", flexDirection: "column" }}>
-          <Typography
-            sx={{
-              fontSize: "0.78rem",
-              fontWeight: 500,
-              color: "var(--ink)",
-              mb: "5px",
-              lineHeight: 1.35,
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            {displayLabel}
-            {field.is_required ? (
-              <Typography component="span" sx={{ color: "var(--uwc-maroon)", fontWeight: 400, fontSize: "inherit" }}>*</Typography>
-            ) : null}
-          </Typography>
-          <TogglePill
-            value={formValues[field.field_key] ?? ""}
-            onChange={(next) => {
-              setFormValues((current) => ({ ...current, [field.field_key]: next }));
-              markFieldDirty();
-            }}
-            yesLabel={getBooleanFieldLabels(field.field_key, language)?.yes ?? (isEnglish ? "Yes" : "S\u00ed")}
-            noLabel={getBooleanFieldLabels(field.field_key, language)?.no ?? "No"}
-            disabled={!isEditingEnabled}
-          />
-          {fieldErrors[field.field_key] ? (
-            <Typography sx={{ fontSize: "0.7rem", color: "error.main", mt: "3px" }}>
-              {fieldErrors[field.field_key]}
-            </Typography>
-          ) : null}
-          {!fieldErrors[field.field_key] && getLocalizedFieldHelpText(field, language) ? (
-            <Typography sx={{ fontSize: "0.7rem", color: "var(--muted)", mt: "3px" }}>
-              {getLocalizedFieldHelpText(field, language)}
-            </Typography>
-          ) : null}
-        </Box>
-      );
-    }
-
-    // Standard text/number/date/email fields — label above input (mockup style)
-    const errorMsg = fieldErrors[field.field_key];
-    const helpMsg = getLocalizedFieldHelpText(field, language);
-    const isCompactSchoolComments = field.field_key === "officialGradesComments";
-    const selectOptions = getApplicantSelectOptions(field.field_key, language);
-    const hasStudiedIbValue = (formValues.hasStudiedIb ?? "").trim().toLowerCase();
-    const isIbYearFieldTemporarilyDisabled =
-      field.field_key === "ibInstructionYear" &&
-      !["si", "sí", "yes"].includes(hasStudiedIbValue);
-    const fieldIsDisabled = !isEditingEnabled || isIbYearFieldTemporarilyDisabled;
-    const applyDimmedDependentFieldStyle = isIbYearFieldTemporarilyDisabled && isEditingEnabled;
-
-    const longTextRows = field.field_type === "long_text"
-      ? LONG_TEXT_ROWS_BY_KEY[field.field_key] ?? 3
-      : undefined;
-    const isLongTextField = field.field_type === "long_text";
-
-    return (
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: "column",
-          ...(applyDimmedDependentFieldStyle ? { opacity: 0.45 } : null),
-        }}
-      >
-        <Typography
-          component="label"
-          sx={{
-            fontSize: "0.78rem",
-            fontWeight: 500,
-            color: "var(--ink)",
-            mb: "5px",
-            lineHeight: 1.35,
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          {displayLabel}
-          {field.is_required ? (
-            <Typography component="span" sx={{ color: "var(--uwc-maroon)", fontWeight: 400, fontSize: "inherit" }}>*</Typography>
-          ) : null}
-        </Typography>
-        {isLongTextField ? (
-          <Box
-            component="textarea"
-            value={formValues[field.field_key] ?? ""}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
-              const nextValue = event.target.value;
-              setFormValues((current) => ({
-                ...current,
-                [field.field_key]: nextValue,
-              }));
-              markFieldDirty();
-            }}
-            rows={isCompactSchoolComments ? 2 : longTextRows}
-            disabled={fieldIsDisabled}
-            aria-label={displayLabel}
-            placeholder={getLocalizedFieldPlaceholder(field, language)}
-            sx={{
-              width: "100%",
-              padding: "9px 12px",
-              fontFamily: "var(--font-body), 'DM Sans', sans-serif",
-              fontSize: "0.85rem",
-              lineHeight: 1.5,
-              color: "var(--ink)",
-              background: "var(--surface, #fff)",
-              border: "1.5px solid var(--sand)",
-              borderColor: errorMsg ? "#DC2626" : "var(--sand)",
-              borderRadius: "var(--radius)",
-              outline: "none",
-              resize: "vertical",
-              minHeight: isCompactSchoolComments ? 72 : undefined,
-              transition: "border-color 0.15s ease, box-shadow 0.15s ease",
-              "&::placeholder": {
-                color: "var(--muted)",
-                opacity: 1,
-                fontWeight: 300,
-              },
-              "&:hover": {
-                borderColor: errorMsg ? "#DC2626" : "var(--muted)",
-              },
-              "&:focus": {
-                borderColor: errorMsg ? "#DC2626" : "var(--uwc-maroon)",
-                boxShadow: errorMsg
-                  ? "0 0 0 3px rgba(220, 38, 38, 0.08)"
-                  : "0 0 0 3px rgba(154, 37, 69, 0.08)",
-              },
-              "&:disabled": {
-                color: "var(--muted)",
-                background: "var(--surface, #fff)",
-                WebkitTextFillColor: "var(--muted)",
-                cursor: "not-allowed",
-              },
-            }}
-          />
-        ) : (
-          <TextField
-            hiddenLabel
-            value={formValues[field.field_key] ?? ""}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setFormValues((current) => ({
-                ...current,
-                [field.field_key]: nextValue,
-              }));
-              markFieldDirty();
-            }}
-            type={
-              field.field_type === "date"
-                ? "date"
-                : field.field_type === "number"
-                  ? "number"
-                  : field.field_type === "email"
-                    ? "email"
-                    : "text"
-            }
-            fullWidth
-            disabled={fieldIsDisabled}
-            select={Boolean(selectOptions)}
-            placeholder={getLocalizedFieldPlaceholder(field, language)}
-            error={Boolean(errorMsg)}
-            sx={APPLICANT_TEXT_FIELD_SX}
-            slotProps={{
-              htmlInput: {
-                "aria-label": displayLabel,
-                step:
-                  field.field_key === "gradeAverage"
-                    ? "0.1"
-                    : field.field_type === "number"
-                      ? "1"
-                      : undefined,
-              },
-            }}
-          >
-            {selectOptions?.map((option) => (
-              <MenuItem key={option} value={option}>
-                {option}
-              </MenuItem>
-            ))}
-          </TextField>
-        )}
-        {errorMsg ? (
-          <Typography sx={{ fontSize: "0.7rem", color: "error.main", mt: "3px" }}>
-            {errorMsg}
-          </Typography>
-        ) : helpMsg ? (
-          <Typography sx={{ fontSize: "0.7rem", color: "var(--muted)", mt: "3px" }}>
-            {helpMsg}
-          </Typography>
-        ) : null}
-      </Box>
-    );
-  }
-
-  function renderFieldGrid(fields: CycleStageField[], sectionId: string) {
-    return (
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "14px 18px",
-          "@media (max-width: 768px)": {
-            gridTemplateColumns: "1fr",
-          },
-        }}
-      >
-        {fields.map((field) => {
-          const displayLabel = getLocalizedDisplayFieldLabel({
-            sectionId,
-            field,
-            language,
-          });
-          const isWide = shouldUseWideFieldLayout({ field, displayLabel });
-          const maxWidth = getFieldMaxWidth(field.field_key);
-
-          return (
-            <Box
-              key={field.id}
-              sx={{
-                ...(isWide ? { gridColumn: "1 / -1" } : null),
-                ...(maxWidth ? { maxWidth } : null),
-              }}
-            >
-              {renderSingleField(field, sectionId)}
-            </Box>
-          );
-        })}
-      </Box>
-    );
-  }
-
-  function renderEditableFields({
-    fields,
-    sectionId,
-  }: {
-    fields: CycleStageField[];
-    sectionId: string;
-  }) {
-    // Separate grade fields for the school section
-    const gradeFields = sectionId === "school" ? fields.filter((f) => isGradeField(f.field_key)) : [];
-    const allNonGradeFields = sectionId === "school" ? fields.filter((f) => !isGradeField(f.field_key)) : fields;
-
-    // Hide school address sub-fields and school type details that are not in the mockup design
-    const HIDDEN_FIELDS_BY_SECTION: Partial<Record<string, Set<string>>> = {
-      identity: new Set([
-        "fullName",
-        "countryOfBirth",
-        "countryOfResidence",
-      ]),
-      school: new Set([
-        "schoolAddressNumber",
-        "schoolDistrict",
-        "schoolProvince",
-        "schoolRegion",
-        "schoolCountry",
-        "schoolTypeDetails",
-      ]),
-      recommenders: new Set([
-        "recommenderRequestMessage",
-      ]),
-    };
-    const hiddenFieldKeys = HIDDEN_FIELDS_BY_SECTION[sectionId] ?? null;
-    const nonGradeFields = hiddenFieldKeys
-      ? allNonGradeFields.filter((f) => !hiddenFieldKeys.has(f.field_key))
-      : allNonGradeFields;
-
-    // Keep the school comments textarea after the primary school fields and grades table
-    // to preserve the mockup flow (school info first, comments later).
-    const DEFERRED_SCHOOL_FIELDS = new Set(["officialGradesComments"]);
-    const deferredSchoolFields =
-      sectionId === "school"
-        ? nonGradeFields.filter((f) => DEFERRED_SCHOOL_FIELDS.has(f.field_key))
-        : [];
-    const topNonGradeFields =
-      sectionId === "school"
-        ? nonGradeFields.filter((f) => !DEFERRED_SCHOOL_FIELDS.has(f.field_key))
-        : nonGradeFields;
-
-    const customGroupedFieldNames = Array.from(
-      new Set(
-        topNonGradeFields
-          .map((field) => field.group_name?.trim() ?? "")
-          .filter((groupName) => groupName.length > 0),
-      ),
-    );
-    const hasCustomFieldGroups = customGroupedFieldNames.length > 0;
-
-    if (hasCustomFieldGroups) {
-      const fieldsByCustomGroup = new Map<string, CycleStageField[]>();
-      for (const groupName of customGroupedFieldNames) {
-        fieldsByCustomGroup.set(groupName, []);
-      }
-      const ungroupedFields = topNonGradeFields.filter((field) => {
-        const groupName = field.group_name?.trim() ?? "";
-        if (!groupName) {
-          return true;
-        }
-        fieldsByCustomGroup.get(groupName)?.push(field);
-        return false;
-      });
-
-      return (
-        <Box>
-          {ungroupedFields.length > 0 ? (
-            <Box sx={{ mb: "28px", animation: "fadeUp 0.35s ease", animationFillMode: "backwards" }}>
-              {renderFieldGrid(ungroupedFields, sectionId)}
-            </Box>
-          ) : null}
-
-          {customGroupedFieldNames.map((groupName, idx) => {
-            const groupedFields = fieldsByCustomGroup.get(groupName) ?? [];
-            if (groupedFields.length === 0) {
-              return null;
-            }
-            return (
-              <Box
-                key={`${sectionId}-${groupName}`}
-                sx={{
-                  mb: "28px",
-                  animation: "fadeUp 0.35s ease",
-                  animationFillMode: "backwards",
-                  animationDelay: `${(idx + 1) * 0.05}s`,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: "0.68rem",
-                    fontWeight: 600,
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                    color: "var(--muted)",
-                    mb: "14px",
-                    pb: 1,
-                    borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-                  }}
-                >
-                  {groupName}
-                </Typography>
-                {renderFieldGrid(groupedFields, sectionId)}
-              </Box>
-            );
-          })}
-
-          {gradeFields.length > 0 ? (
-            <Box sx={{ mt: 1 }}>
-              <Typography
-                sx={{
-                  fontSize: "0.68rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                  mb: "14px",
-                  pb: 1,
-                  borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-                }}
-              >
-                {isEnglish ? "Official grades by year" : "Notas oficiales por año"}
-              </Typography>
-              <GradesTable
-                fields={gradeFields}
-                formValues={formValues}
-                onFieldChange={(key, value) => {
-                  setFormValues((current) => ({ ...current, [key]: value }));
-                  markFieldDirty();
-                }}
-                onFieldBlur={() => {}}
-                disabled={!isEditingEnabled}
-                language={language}
-              />
-            </Box>
-          ) : null}
-
-          {deferredSchoolFields.length > 0 ? (
-            <Box sx={{ mt: 3 }}>
-              {renderFieldGrid(deferredSchoolFields, sectionId)}
-            </Box>
-          ) : null}
-        </Box>
-      );
-    }
-
-    return (
-      <Box>
-        {renderFieldGrid(topNonGradeFields, sectionId)}
-
-        {/* Grades table for school section */}
-        {gradeFields.length > 0 ? (
-          <Box sx={{ mt: 1 }}>
-            <Typography
-              sx={{
-                fontSize: "0.68rem",
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-                mb: "14px",
-                pb: 1,
-                borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-              }}
-              >
-              {isEnglish ? "Official grades by year" : "Notas oficiales por año"}
-            </Typography>
-            <GradesTable
-              fields={gradeFields}
-              formValues={formValues}
-              onFieldChange={(key, value) => {
-                setFormValues((current) => ({ ...current, [key]: value }));
-                markFieldDirty();
-              }}
-              onFieldBlur={() => {}}
-              disabled={!isEditingEnabled}
-              language={language}
-            />
-          </Box>
-        ) : null}
-
-        {deferredSchoolFields.length > 0 ? (
-          <Box sx={{ mt: gradeFields.length > 0 ? 3 : 0 }}>
-            {renderFieldGrid(deferredSchoolFields, sectionId)}
-          </Box>
-        ) : null}
-      </Box>
-    );
+  function handleFieldChange(fieldKey: string, value: string) {
+    setFormValues((current) => ({ ...current, [fieldKey]: value }));
+    markFieldDirty();
   }
 
   async function submitApplication() {
@@ -2200,10 +1308,15 @@ export function ApplicantApplicationForm({
           {currentSection && currentSection.formSection && currentSection.id !== "documents_uploads" && currentSection.id !== "recommenders_flow" && currentSection.id !== "review_submit" ? (
             <Box>
               {currentFormSectionId
-                ? renderEditableFields({
-                    fields: currentSection.formSection.fields,
-                    sectionId: currentFormSectionId,
-                  })
+                ? <ApplicantFormFields
+                    fields={currentSection.formSection.fields}
+                    sectionId={currentFormSectionId}
+                    formValues={formValues}
+                    fieldErrors={fieldErrors}
+                    isEditingEnabled={isEditingEnabled}
+                    language={language}
+                    onFieldChange={handleFieldChange}
+                  />
                 : null}
             </Box>
           ) : null}
@@ -2212,10 +1325,15 @@ export function ApplicantApplicationForm({
             <ApplicantDocumentUploadSection
               metadataContent={
                 currentSection.formSection?.fields.length
-                  ? renderEditableFields({
-                      fields: currentSection.formSection.fields,
-                      sectionId: "documents",
-                    })
+                  ? <ApplicantFormFields
+                      fields={currentSection.formSection.fields}
+                      sectionId="documents"
+                      formValues={formValues}
+                      fieldErrors={fieldErrors}
+                      isEditingEnabled={isEditingEnabled}
+                      language={language}
+                      onFieldChange={handleFieldChange}
+                    />
                   : undefined
               }
               fileStageFields={fileStageFields}
@@ -2235,10 +1353,15 @@ export function ApplicantApplicationForm({
             <ApplicantRecommendersSection
               metadataContent={
                 currentSection.formSection?.fields.length
-                  ? renderEditableFields({
-                      fields: currentSection.formSection.fields,
-                      sectionId: "recommenders",
-                    })
+                  ? <ApplicantFormFields
+                      fields={currentSection.formSection.fields}
+                      sectionId="recommenders"
+                      formValues={formValues}
+                      fieldErrors={fieldErrors}
+                      isEditingEnabled={isEditingEnabled}
+                      language={language}
+                      onFieldChange={handleFieldChange}
+                    />
                   : undefined
               }
               activeRecommendersByRole={activeRecommendersByRole}

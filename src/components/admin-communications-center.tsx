@@ -6,26 +6,10 @@ import { ErrorCallout } from "@/components/error-callout";
 import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
 import { FieldHint } from "@/components/field-hint";
 import { fetchApi, toNormalizedApiError, type NormalizedApiError } from "@/lib/client/api-client";
-
-type CommunicationCampaignSummary = {
-  id: string;
-  name: string;
-  subject: string;
-  status: string;
-  createdAt: string;
-  sentAt: string | null;
-  recipientCount: number;
-  sentCount: number;
-  failedCount: number;
-};
-
-const EMPTY_COMMUNICATION_SUMMARY = {
-  queued: 0,
-  processing: 0,
-  sent: 0,
-  failed: 0,
-  total: 0,
-};
+import {
+  EMPTY_COMMUNICATION_SUMMARY,
+  type CommunicationCampaignSummary,
+} from "@/components/admin-communications-center-types";
 
 export function AdminCommunicationsCenter({
   cycleId,

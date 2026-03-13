@@ -7,52 +7,23 @@ import {
   fetchApiResponse,
   toNormalizedApiError,
 } from "@/lib/client/api-client";
-
-type ExportFormat = "csv" | "xlsx";
-type EligibilityFilter = "all" | "eligible" | "ineligible" | "pending" | "advanced";
-type ExportTargetMode = "filtered" | "manual" | "randomSample";
-type GroupedExportMode = "single-sheet" | "multi-sheet" | "separate-files";
+import {
+  groupFields,
+  filterGroupedFields,
+} from "@/components/admin-export-builder-types";
+import type {
+  ExportFormat,
+  EligibilityFilter,
+  ExportTargetMode,
+  GroupedExportMode,
+  ManualCandidateRow,
+  PreviewResponse,
+} from "@/components/admin-export-builder-types";
 
 type Props = {
   cycleId?: string | null;
   stageCode?: string | null;
 };
-
-type ManualCandidateRow = {
-  id: string;
-  candidateName: string;
-  candidateEmail: string;
-  stageCode: string;
-  status: string;
-};
-
-type PreviewResponse = {
-  preview?: {
-    sheetName: string;
-    applicantHeaders: string[];
-    rows: Array<{ label: string; values: string[] }>;
-  };
-  totalFiltered?: number;
-  exportedApplicants?: number;
-  sheetCount?: number;
-};
-
-function groupFields(fields: ExportCatalogField[]) {
-  const groups = new Map<string, { label: string; fields: ExportCatalogField[] }>();
-
-  for (const field of fields) {
-    if (!groups.has(field.groupKey)) {
-      groups.set(field.groupKey, { label: field.groupLabel, fields: [] });
-    }
-    groups.get(field.groupKey)?.fields.push(field);
-  }
-
-  return Array.from(groups.entries()).map(([key, value]) => ({
-    key,
-    label: value.label,
-    fields: value.fields,
-  }));
-}
 
 export function AdminExportBuilder({ cycleId, stageCode }: Props) {
   const [catalogFields, setCatalogFields] = useState<ExportCatalogField[]>([]);
@@ -100,16 +71,10 @@ export function AdminExportBuilder({ cycleId, stageCode }: Props) {
 
   const groupedFields = useMemo(() => groupFields(catalogFields), [catalogFields]);
 
-  const filteredGroupedFields = useMemo(() => {
-    if (!catalogSearch.trim()) return groupedFields;
-    const q = catalogSearch.trim().toLowerCase();
-    return groupedFields
-      .map((group) => ({
-        ...group,
-        fields: group.fields.filter((f) => f.label.toLowerCase().includes(q)),
-      }))
-      .filter((group) => group.fields.length > 0);
-  }, [groupedFields, catalogSearch]);
+  const filteredGroupedFields = useMemo(
+    () => filterGroupedFields(groupedFields, catalogSearch),
+    [groupedFields, catalogSearch],
+  );
 
   const exportModeUsesGrouping =
     targetMode === "randomSample" || (targetMode === "manual" && manualGroupCount > 1);
