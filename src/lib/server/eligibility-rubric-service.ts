@@ -707,18 +707,21 @@ function mapOutcomeToApplicationStatus(outcome: EligibilityOutcome): Application
   return "submitted";
 }
 
-export async function runEligibilityRubricEvaluation({
+/** Load the rubric config from the stage template and validate it is enabled. */
+async function loadAndValidateRubric({
   supabase,
-  input,
+  cycleId,
+  stageCode,
 }: {
   supabase: SupabaseClient<Database>;
-  input: RunEligibilityRubricInput;
-}): Promise<RunEligibilityRubricResult> {
+  cycleId: string;
+  stageCode: string;
+}): Promise<EligibilityRubricConfig> {
   const { data: template, error: templateError } = await supabase
     .from("cycle_stage_templates")
     .select("id, admin_config")
-    .eq("cycle_id", input.cycleId)
-    .eq("stage_code", input.stageCode)
+    .eq("cycle_id", cycleId)
+    .eq("stage_code", stageCode)
     .maybeSingle();
 
   if (templateError || !template) {
@@ -741,6 +744,27 @@ export async function runEligibilityRubricEvaluation({
     });
   }
 
+  return rubric;
+}
+
+/**
+ * Load applications eligible for rubric evaluation, fetch their
+ * recommendations and OCR checks, then evaluate each application.
+ * Returns null (with an early-return result) when no applications exist.
+ */
+async function loadAndEvaluateApplications({
+  supabase,
+  input,
+  rubric,
+}: {
+  supabase: SupabaseClient<Database>;
+  input: RunEligibilityRubricInput;
+  rubric: EligibilityRubricConfig;
+}): Promise<{
+  results: RubricEvaluationResult[];
+  applicationRows: Array<Pick<ApplicationRow, "id" | "cycle_id" | "stage_code" | "status" | "payload" | "files">>;
+  evaluatedAt: string;
+} | null> {
   const { data: applications, error: applicationsError } = await supabase
     .from("applications")
     .select("id, cycle_id, stage_code, status, payload, files")
@@ -762,21 +786,7 @@ export async function runEligibilityRubricEvaluation({
   >;
 
   if (applicationRows.length === 0) {
-    return {
-      cycleId: input.cycleId,
-      stageCode: input.stageCode,
-      evaluated: 0,
-      outcomes: {
-        eligible: 0,
-        not_eligible: 0,
-        needs_review: 0,
-      },
-      statusUpdates: {
-        eligible: 0,
-        ineligible: 0,
-        submitted: 0,
-      },
-    };
+    return null;
   }
 
   const applicationIds = applicationRows.map((application) => application.id);
@@ -832,6 +842,25 @@ export async function runEligibilityRubricEvaluation({
     });
   });
 
+  return { results, applicationRows, evaluatedAt };
+}
+
+/**
+ * Persist evaluation rows and sync application statuses to match rubric
+ * outcomes, then return the summary counts.
+ */
+async function persistAndSyncStatuses({
+  supabase,
+  input,
+  results,
+  evaluatedAt,
+}: {
+  supabase: SupabaseClient<Database>;
+  input: RunEligibilityRubricInput;
+  results: RubricEvaluationResult[];
+  evaluatedAt: string;
+}): Promise<RunEligibilityRubricResult> {
+  // 1. Upsert evaluation rows
   const evaluationRows: Database["public"]["Tables"]["application_stage_evaluations"]["Insert"][] =
     results.map((result) => ({
       application_id: result.applicationId,
@@ -860,6 +889,7 @@ export async function runEligibilityRubricEvaluation({
     });
   }
 
+  // 2. Group application IDs by their next status
   const nextStatusIds: Record<ApplicationStatus, string[]> = {
     draft: [],
     submitted: [],
@@ -873,6 +903,7 @@ export async function runEligibilityRubricEvaluation({
     nextStatusIds[nextStatus].push(result.applicationId);
   }
 
+  // 3. Batch-update application statuses in parallel
   const [markEligible, markIneligible, markSubmitted] = await Promise.all([
     nextStatusIds.eligible.length > 0
       ? supabase
@@ -904,6 +935,7 @@ export async function runEligibilityRubricEvaluation({
     });
   }
 
+  // 4. Build outcome summary
   const outcomes: Record<EligibilityOutcome, number> = {
     eligible: 0,
     not_eligible: 0,
@@ -925,6 +957,42 @@ export async function runEligibilityRubricEvaluation({
       submitted: nextStatusIds.submitted.length,
     },
   };
+}
+
+export async function runEligibilityRubricEvaluation({
+  supabase,
+  input,
+}: {
+  supabase: SupabaseClient<Database>;
+  input: RunEligibilityRubricInput;
+}): Promise<RunEligibilityRubricResult> {
+  // 1. Load and validate rubric configuration
+  const rubric = await loadAndValidateRubric({
+    supabase,
+    cycleId: input.cycleId,
+    stageCode: input.stageCode,
+  });
+
+  // 2. Load applications and evaluate each against the rubric
+  const evaluation = await loadAndEvaluateApplications({ supabase, input, rubric });
+
+  if (!evaluation) {
+    return {
+      cycleId: input.cycleId,
+      stageCode: input.stageCode,
+      evaluated: 0,
+      outcomes: { eligible: 0, not_eligible: 0, needs_review: 0 },
+      statusUpdates: { eligible: 0, ineligible: 0, submitted: 0 },
+    };
+  }
+
+  // 3. Persist evaluations and sync application statuses
+  return persistAndSyncStatuses({
+    supabase,
+    input,
+    results: evaluation.results,
+    evaluatedAt: evaluation.evaluatedAt,
+  });
 }
 
 export async function getLatestStageEvaluationsByApplicationId({
