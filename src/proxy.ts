@@ -4,7 +4,7 @@ import type { Database } from "@/types/supabase";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 /**
- * Middleware: redirect users who land on a path that doesn't match their role.
+ * Proxy: redirect users who land on a path that doesn't match their role.
  *
  * Roles → home paths:
  *   admin     → /admin

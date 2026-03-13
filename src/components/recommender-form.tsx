@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { RecommendationStatus, RecommenderRole } from "@/types/domain";
 import { roleLabel, getRecommendationStatusLabel } from "@/lib/utils/domain-labels";
 import {
+  ApiRequestError,
   fetchApi,
   toNormalizedApiError,
 } from "@/lib/client/api-client";
@@ -140,8 +141,15 @@ export function RecommenderForm({ token }: { token: string }) {
               ),
             );
           }
-        } catch {
-          window.localStorage.removeItem(getStorageKey(token));
+        } catch (sessionError) {
+          // Only clear stored session on auth errors (expired/invalid token).
+          // Transient server errors shouldn't force re-authentication.
+          if (
+            sessionError instanceof ApiRequestError &&
+            (sessionError.status === 401 || sessionError.status === 403)
+          ) {
+            window.localStorage.removeItem(getStorageKey(token));
+          }
           return;
         }
       } catch (loadError) {

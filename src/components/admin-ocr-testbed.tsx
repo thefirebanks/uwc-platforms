@@ -15,6 +15,7 @@ import {
   fetchApi,
   fetchApiResponse,
   toNormalizedApiError,
+  type NormalizedApiError,
 } from "@/lib/client/api-client";
 import { DEFAULT_OCR_MAX_TOKENS } from "@/lib/server/ocr";
 import type { OcrTestRun } from "@/types/domain";
@@ -51,10 +52,6 @@ type OcrRequestConfig = {
   strictSchema?: boolean;
 };
 
-type ApiError = {
-  message: string;
-  errorId?: string;
-};
 
 type EditorSection = "context" | "prompts" | "schema";
 
@@ -137,12 +134,12 @@ export function AdminOcrTestbed({
 
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<OcrTestRun | null>(null);
-  const [runError, setRunError] = useState<ApiError | null>(null);
+  const [runError, setRunError] = useState<NormalizedApiError | null>(null);
   const [showRaw, setShowRaw] = useState(false);
 
   const [history, setHistory] = useState<OcrTestRun[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
-  const [historyError, setHistoryError] = useState<ApiError | null>(null);
+  const [historyError, setHistoryError] = useState<NormalizedApiError | null>(null);
   const [comparisonRunId, setComparisonRunId] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {

@@ -5,12 +5,7 @@ import type { Application, CommunicationLog, StageCode } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 import { EmailTemplateVariableHintContent } from "@/components/email-template-variable-guide";
 import { FieldHint } from "@/components/field-hint";
-import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
-
-interface ApiError {
-  message: string;
-  errorId?: string;
-}
+import { fetchApi, toNormalizedApiError, type NormalizedApiError } from "@/lib/client/api-client";
 
 type CommunicationCampaignSummary = {
   id: string;
@@ -40,7 +35,7 @@ export function AdminCommunicationsCenter({
   defaultStageCode?: StageCode;
 }) {
   const campaignFieldIdPrefix = `campaign-${cycleId}`;
-  const [error, setError] = useState<ApiError | null>(null);
+  const [error, setError] = useState<NormalizedApiError | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [communications, setCommunications] = useState<CommunicationLog[]>([]);
   const [campaigns, setCampaigns] = useState<CommunicationCampaignSummary[]>([]);

@@ -41,7 +41,10 @@ export async function POST(
       }
 
       /* ---- Upload file to Supabase storage ---- */
-      const storagePath = `${applicationId}/${fileKey}/${file.name}`;
+      const sanitizedName = file.name
+        .replace(/[^a-zA-Z0-9._-]/g, "_")
+        .slice(0, 180);
+      const storagePath = `${applicationId}/${fileKey}/${sanitizedName}`;
       const fileBuffer = await file.arrayBuffer();
 
       const { error: uploadError } = await supabase.storage

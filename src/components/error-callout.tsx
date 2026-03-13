@@ -38,6 +38,8 @@ export function ErrorCallout({
         body: JSON.stringify({ errorId, context, notes }),
       });
       setSubmitted(true);
+    } catch {
+      // Silently ignore — the error report itself failed, nothing useful to show
     } finally {
       setIsSubmitting(false);
     }
