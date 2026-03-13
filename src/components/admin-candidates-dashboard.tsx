@@ -3,110 +3,24 @@
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { AdminExportBuilder } from "./admin-export-builder";
 import { AdminApplicationViewer } from "./admin-application-viewer";
-import {
-  getStageLabel,
-  getApplicationStatusLabel,
-} from "@/lib/utils/domain-labels";
+import { getStageLabel } from "@/lib/utils/domain-labels";
 import { fetchApi, toNormalizedApiError } from "@/lib/client/api-client";
-
-/* -------------------------------------------------------------------------- */
-/*  Types                                                                     */
-/* -------------------------------------------------------------------------- */
-
-type AdminCandidateRow = {
-  id: string;
-  cycleId: string;
-  cycleName: string;
-  applicantId: string;
-  candidateName: string;
-  candidateEmail: string;
-  region: string;
-  stageCode: string;
-  status: "draft" | "submitted" | "eligible" | "ineligible" | "advanced";
-  reviewOutcome: "eligible" | "not_eligible" | "needs_review" | null;
-  reviewEvaluatedAt: string | null;
-  updatedAt: string;
-};
-
-type CycleOption = {
-  id: string;
-  name: string;
-  isActive: boolean;
-};
-
-type CandidatesView = "list" | "export";
-
-type SearchResult = {
-  rows: AdminCandidateRow[];
-  total: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-};
-
-type Stage1Blocker = {
-  code: string;
-  label: string;
-  detail: string;
-  count: number;
-};
-
-type Stage1FunnelApplication = {
-  applicationId: string;
-  status: AdminCandidateRow["status"];
-  blockers: Stage1Blocker[];
-  blockerCodes: string[];
-  isReadyForReview: boolean;
-};
-
-type Stage1FunnelSummary = {
-  totalApplications: number;
-  readyForReview: number;
-  blocked: number;
-  notSubmitted: number;
-  missingRequiredFields: number;
-  missingRequiredFiles: number;
-  recommendationsNotRequested: number;
-  recommendationsPending: number;
-};
-
-/* -------------------------------------------------------------------------- */
-/*  Helpers                                                                   */
-/* -------------------------------------------------------------------------- */
-
-// Use centralized version
-const getStatusLabel = getApplicationStatusLabel;
-
-function getStatusClass(status: AdminCandidateRow["status"]) {
-  if (status === "ineligible") return "status-pill rejected";
-  if (status === "draft") return "status-pill progress";
-  return "status-pill complete";
-}
-
-function getReviewOutcomeLabel(outcome: AdminCandidateRow["reviewOutcome"]) {
-  if (outcome === "eligible") return "Elegible";
-  if (outcome === "not_eligible") return "No elegible";
-  if (outcome === "needs_review") return "Revisión manual";
-  return "Sin dictamen";
-}
-
-function getReviewOutcomeClass(outcome: AdminCandidateRow["reviewOutcome"]) {
-  if (outcome === "eligible") return "status-pill complete";
-  if (outcome === "not_eligible") return "status-pill rejected";
-  if (outcome === "needs_review") return "status-pill progress";
-  return "status-pill admin-chip-neutral";
-}
-
-function getAvatarTone(index: number) {
-  if (index % 3 === 0) return "tone-blue";
-  if (index % 3 === 1) return "tone-maroon";
-  return "tone-green";
-}
-
-function getInitials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  return (parts[0]?.[0] ?? "A") + (parts[1]?.[0] ?? "");
-}
+import {
+  getAvatarTone,
+  getInitials,
+  getReviewOutcomeClass,
+  getReviewOutcomeLabel,
+  getStatusClass,
+  getStatusLabel,
+} from "@/components/admin-candidates-dashboard-types";
+import type {
+  AdminCandidateRow,
+  CandidatesView,
+  CycleOption,
+  SearchResult,
+  Stage1FunnelApplication,
+  Stage1FunnelSummary,
+} from "@/components/admin-candidates-dashboard-types";
 
 /* -------------------------------------------------------------------------- */
 /*  Sort icon                                                                 */
@@ -862,4 +776,4 @@ export function AdminCandidatesDashboard({
   );
 }
 
-export type { AdminCandidateRow, CycleOption };
+export type { AdminCandidateRow, CycleOption } from "@/components/admin-candidates-dashboard-types";
