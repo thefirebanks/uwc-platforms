@@ -511,71 +511,58 @@ export async function getCycleStageConfig({
   };
 }
 
-export async function patchCycleStageConfig({
-  supabase,
-  cycleId,
-  stageIdentifier,
-  body,
-  actorId,
-  requestId,
-}: {
-  supabase: StageConfigSupabase;
-  cycleId: string;
-  stageIdentifier: string;
-  body: unknown;
-  actorId: string;
-  requestId: string;
-}): Promise<CycleStageConfigResult> {
-  const parsed = stageConfigPatchSchema.safeParse(body);
-  if (!parsed.success) {
-    throw new AppError({
-      message: "Invalid stage config payload",
-      userMessage: describePatchValidationError(parsed.error),
-      status: 400,
-      details: parsed.error.flatten(),
-    });
+/* ---------------------------------------------------------------------------
+ * Private sub-functions for patchCycleStageConfig
+ * --------------------------------------------------------------------------- */
+
+type ResolvedSettings = {
+  stageName: string;
+  description: string;
+  openDate: string | null;
+  closeDate: string | null;
+  previousStageRequirement: string;
+  blockIfPreviousNotMet: boolean;
+  eligibilityRubric: ReturnType<typeof parseEligibilityRubricConfig>;
+  rubricBlueprintV1: ReturnType<typeof parseRubricBlueprintV1>;
+  rubricMeta: Record<string, Json> | null;
+};
+
+function resolveIncomingSettings(
+  settings: z.infer<typeof settingsSchema> | undefined,
+  stageTemplate: StageTemplateRow,
+  existingConfig: ReturnType<typeof parseStageAdminConfig>,
+): ResolvedSettings {
+  if (settings) {
+    return {
+      stageName: settings.stageName.trim(),
+      description: (settings.description ?? "").trim(),
+      openDate: settings.openDate ?? null,
+      closeDate: settings.closeDate ?? null,
+      previousStageRequirement: settings.previousStageRequirement,
+      blockIfPreviousNotMet: settings.blockIfPreviousNotMet,
+      eligibilityRubric: settings.eligibilityRubric ?? null,
+      rubricBlueprintV1: settings.rubricBlueprintV1 ?? null,
+      rubricMeta: settings.rubricMeta ?? null,
+    };
   }
+  return {
+    stageName: stageTemplate.stage_label,
+    description: existingConfig.description ?? "",
+    openDate: existingConfig.openDate ?? null,
+    closeDate: existingConfig.closeDate ?? null,
+    previousStageRequirement:
+      existingConfig.previousStageRequirement ?? "none",
+    blockIfPreviousNotMet: existingConfig.blockIfPreviousNotMet ?? false,
+    eligibilityRubric: existingConfig.eligibilityRubric ?? null,
+    rubricBlueprintV1: existingConfig.rubricBlueprintV1 ?? null,
+    rubricMeta: existingConfig.rubricMeta ?? null,
+  };
+}
 
-  await ensureCycleExists({ cycleId, supabase });
-  const stageTemplate = await resolveTemplateByIdentifier({
-    cycleId,
-    stageIdentifier,
-    supabase,
-  });
-  const stageCode = stageTemplate.stage_code;
-  const parsedExistingAdminConfig = parseStageAdminConfig(
-    stageTemplate.admin_config ?? null,
-  );
-  const incomingSettings = parsed.data.settings
-    ? {
-        stageName: parsed.data.settings.stageName.trim(),
-        description: (parsed.data.settings.description ?? "").trim(),
-        openDate: parsed.data.settings.openDate ?? null,
-        closeDate: parsed.data.settings.closeDate ?? null,
-        previousStageRequirement: parsed.data.settings.previousStageRequirement,
-        blockIfPreviousNotMet: parsed.data.settings.blockIfPreviousNotMet,
-        eligibilityRubric: parsed.data.settings.eligibilityRubric ?? null,
-        rubricBlueprintV1: parsed.data.settings.rubricBlueprintV1 ?? null,
-        rubricMeta: parsed.data.settings.rubricMeta ?? null,
-      }
-    : {
-        stageName: stageTemplate.stage_label,
-        description: parsedExistingAdminConfig.description ?? "",
-        openDate: parsedExistingAdminConfig.openDate ?? null,
-        closeDate: parsedExistingAdminConfig.closeDate ?? null,
-        previousStageRequirement:
-          parsedExistingAdminConfig.previousStageRequirement ?? "none",
-        blockIfPreviousNotMet:
-          parsedExistingAdminConfig.blockIfPreviousNotMet ?? false,
-        eligibilityRubric: parsedExistingAdminConfig.eligibilityRubric ?? null,
-        rubricBlueprintV1:
-          parsedExistingAdminConfig.rubricBlueprintV1 ?? null,
-        rubricMeta: parsedExistingAdminConfig.rubricMeta ?? null,
-      };
-
-  const normalizedKeys = parsed.data.fields.map((field) =>
-    field.fieldKey.trim(),
-  );
+function validateUniqueFieldKeys(
+  fields: z.infer<typeof fieldSchema>[],
+): void {
+  const normalizedKeys = fields.map((f) => f.fieldKey.trim());
   if (new Set(normalizedKeys).size !== normalizedKeys.length) {
     const duplicateKeys = Array.from(
       normalizedKeys.reduce((map, key) => {
@@ -593,18 +580,27 @@ export async function patchCycleStageConfig({
       details: { duplicateKeys },
     });
   }
+}
 
-  const automationKeys = parsed.data.automations.map(
-    (automation) => `${automation.triggerEvent}:${automation.channel}`,
-  );
-  if (new Set(automationKeys).size !== automationKeys.length) {
+function validateUniqueAutomations(
+  automations: z.infer<typeof automationSchema>[],
+): void {
+  const keys = automations.map((a) => `${a.triggerEvent}:${a.channel}`);
+  if (new Set(keys).size !== keys.length) {
     throw new AppError({
       message: "Duplicate automation trigger/channel",
       userMessage: "No puedes repetir automatizaciones para el mismo evento.",
       status: 400,
     });
   }
+}
 
+async function syncStageSections(
+  supabase: StageConfigSupabase,
+  cycleId: string,
+  stageCode: string,
+  incomingSections: z.infer<typeof sectionSchema>[] | undefined,
+): Promise<Map<string, string>> {
   const { data: existingSectionsData } = await supabase
     .from("stage_sections")
     .select("id, section_key")
@@ -615,33 +611,32 @@ export async function patchCycleStageConfig({
     section_key: string;
   }>;
 
-  if (parsed.data.sections) {
-    const incomingSectionKeys = new Set(
-      parsed.data.sections.map((section) => section.sectionKey.trim()),
+  if (incomingSections) {
+    const incomingKeys = new Set(
+      incomingSections.map((s) => s.sectionKey.trim()),
     );
-    const sectionKeysToDelete = existingSections
-      .filter((section) => !incomingSectionKeys.has(section.section_key))
-      .map((section) => section.id);
+    const idsToDelete = existingSections
+      .filter((s) => !incomingKeys.has(s.section_key))
+      .map((s) => s.id);
 
-    if (sectionKeysToDelete.length > 0) {
-      const { error: deleteSectionsError } = await supabase
+    if (idsToDelete.length > 0) {
+      const { error } = await supabase
         .from("stage_sections")
         .delete()
-        .in("id", sectionKeysToDelete);
-      if (deleteSectionsError) {
+        .in("id", idsToDelete);
+      if (error) {
         throw new AppError({
           message: "Failed deleting removed sections",
           userMessage: "No se pudieron guardar las secciones de la etapa.",
           status: 500,
-          details: deleteSectionsError,
+          details: error,
         });
       }
     }
 
-    const sectionRows = parsed.data.sections.map((section) => {
+    const rows = incomingSections.map((section) => {
       const normalizedKey = section.sectionKey.trim();
       const normalizedTitle = section.title.trim();
-
       return {
         cycle_id: cycleId,
         stage_code: stageCode,
@@ -655,39 +650,42 @@ export async function patchCycleStageConfig({
       };
     });
 
-    if (sectionRows.length > 0) {
-      const { error: upsertSectionsError } = await supabase
-        .from("stage_sections")
-        .upsert(sectionRows, {
-          onConflict: "cycle_id,stage_code,section_key",
-        });
-
-      if (upsertSectionsError) {
+    if (rows.length > 0) {
+      const { error } = await supabase.from("stage_sections").upsert(rows, {
+        onConflict: "cycle_id,stage_code,section_key",
+      });
+      if (error) {
         throw new AppError({
           message: "Failed upserting sections",
           userMessage: "No se pudieron guardar las secciones de la etapa.",
           status: 500,
-          details: upsertSectionsError,
+          details: error,
         });
       }
     }
   }
 
-  const { data: refreshedSectionsData } = await supabase
+  const { data: refreshed } = await supabase
     .from("stage_sections")
     .select("id, section_key")
     .eq("cycle_id", cycleId)
     .eq("stage_code", stageCode);
 
-  const sectionKeyToId = new Map(
+  return new Map(
     (
-      (refreshedSectionsData ?? []) as Array<{
-        id: string;
-        section_key: string;
-      }>
-    ).map((section) => [section.section_key, section.id]),
+      (refreshed ?? []) as Array<{ id: string; section_key: string }>
+    ).map((s) => [s.section_key, s.id]),
   );
+}
 
+async function syncStageFieldsAndAutomations(
+  supabase: StageConfigSupabase,
+  cycleId: string,
+  stageCode: string,
+  fields: z.infer<typeof fieldSchema>[],
+  automations: z.infer<typeof automationSchema>[],
+  sectionKeyToId: Map<string, string>,
+): Promise<void> {
   const [{ data: existingFieldsData }, { data: existingAutomationsData }] =
     await Promise.all([
       supabase
@@ -703,19 +701,20 @@ export async function patchCycleStageConfig({
     ]);
 
   const incomingFieldIds = new Set(
-    parsed.data.fields.map((field) => field.id).filter(Boolean),
+    fields.map((f) => f.id).filter(Boolean),
   );
   const incomingAutomationIds = new Set(
-    parsed.data.automations.map((automation) => automation.id).filter(Boolean),
+    automations.map((a) => a.id).filter(Boolean),
   );
 
   const fieldIdsToDelete = (existingFieldsData ?? [])
-    .map((row) => row.id)
+    .map((r) => r.id)
     .filter((id) => !incomingFieldIds.has(id));
   const automationIdsToDelete = (existingAutomationsData ?? [])
-    .map((row) => row.id)
+    .map((r) => r.id)
     .filter((id) => !incomingAutomationIds.has(id));
 
+  // Delete removed rows
   const [deleteFieldsResult, deleteAutomationsResult] = await Promise.all([
     fieldIdsToDelete.length > 0
       ? supabase.from("cycle_stage_fields").delete().in("id", fieldIdsToDelete)
@@ -736,7 +735,6 @@ export async function patchCycleStageConfig({
       details: deleteFieldsResult.error,
     });
   }
-
   if (deleteAutomationsResult.error) {
     throw new AppError({
       message: "Failed deleting removed stage automations",
@@ -746,7 +744,8 @@ export async function patchCycleStageConfig({
     });
   }
 
-  const fieldRows = parsed.data.fields.map((field) => {
+  // Build rows
+  const fieldRows = fields.map((field) => {
     const resolvedSectionId = field.sectionKey
       ? (sectionKeyToId.get(field.sectionKey.trim()) ?? null)
       : null;
@@ -755,7 +754,6 @@ export async function patchCycleStageConfig({
       aiParser: field.aiParser,
       fieldLabel: field.fieldLabel.trim(),
     });
-
     return {
       ...(field.id ? { id: field.id } : {}),
       cycle_id: cycleId,
@@ -774,130 +772,158 @@ export async function patchCycleStageConfig({
     };
   });
 
-  const automationRows = parsed.data.automations.map((automation) => ({
-    ...(automation.id ? { id: automation.id } : {}),
+  const automationRows = automations.map((a) => ({
+    ...(a.id ? { id: a.id } : {}),
     cycle_id: cycleId,
     stage_code: stageCode,
-    trigger_event: automation.triggerEvent,
-    channel: automation.channel,
-    is_enabled: automation.isEnabled,
-    template_subject: automation.templateSubject,
-    template_body: automation.templateBody,
+    trigger_event: a.triggerEvent,
+    channel: a.channel,
+    is_enabled: a.isEnabled,
+    template_subject: a.templateSubject,
+    template_body: a.templateBody,
     updated_at: new Date().toISOString(),
   }));
 
-  const { inserts: fieldRowsToInsert, updates: fieldRowsToUpdate } =
+  // Partition and upsert
+  const { inserts: fieldInserts, updates: fieldUpdates } =
     partitionConfigRowsById(fieldRows);
-  const { inserts: automationRowsToInsert, updates: automationRowsToUpdate } =
+  const { inserts: automationInserts, updates: automationUpdates } =
     partitionConfigRowsById(automationRows);
 
-  const [
-    updateFieldsResult,
-    insertFieldsResult,
-    updateAutomationsResult,
-    insertAutomationsResult,
-  ] = await Promise.all([
-    fieldRowsToUpdate.length > 0
-      ? supabase.from("cycle_stage_fields").upsert(fieldRowsToUpdate, {
-          onConflict: "id",
-        })
+  const [uF, iF, uA, iA] = await Promise.all([
+    fieldUpdates.length > 0
+      ? supabase
+          .from("cycle_stage_fields")
+          .upsert(fieldUpdates, { onConflict: "id" })
       : Promise.resolve({ error: null }),
-    fieldRowsToInsert.length > 0
-      ? supabase.from("cycle_stage_fields").insert(fieldRowsToInsert)
+    fieldInserts.length > 0
+      ? supabase.from("cycle_stage_fields").insert(fieldInserts)
       : Promise.resolve({ error: null }),
-    automationRowsToUpdate.length > 0
+    automationUpdates.length > 0
       ? supabase
           .from("stage_automation_templates")
-          .upsert(automationRowsToUpdate, { onConflict: "id" })
+          .upsert(automationUpdates, { onConflict: "id" })
       : Promise.resolve({ error: null }),
-    automationRowsToInsert.length > 0
-      ? supabase
-          .from("stage_automation_templates")
-          .insert(automationRowsToInsert)
+    automationInserts.length > 0
+      ? supabase.from("stage_automation_templates").insert(automationInserts)
       : Promise.resolve({ error: null }),
   ]);
 
-  if (updateFieldsResult.error || insertFieldsResult.error) {
+  if (uF.error || iF.error) {
     throw new AppError({
       message: "Failed upserting stage fields",
       userMessage: "No se pudieron guardar los campos de la etapa.",
       status: 500,
-      details: updateFieldsResult.error ?? insertFieldsResult.error,
+      details: uF.error ?? iF.error,
     });
   }
-
-  if (updateAutomationsResult.error || insertAutomationsResult.error) {
+  if (uA.error || iA.error) {
     throw new AppError({
       message: "Failed upserting stage automations",
       userMessage: "No se pudieron guardar las automatizaciones de la etapa.",
       status: 500,
-      details: updateAutomationsResult.error ?? insertAutomationsResult.error,
+      details: uA.error ?? iA.error,
+    });
+  }
+}
+
+async function syncCycleStageDates(
+  supabase: StageConfigSupabase,
+  cycleId: string,
+  stageCode: string,
+  settings: ResolvedSettings,
+  hasIncomingSettings: boolean,
+): Promise<{ openDate: string | null; closeDate: string | null }> {
+  if (
+    !hasIncomingSettings ||
+    (stageCode !== "documents" && stageCode !== "exam_placeholder")
+  ) {
+    return { openDate: settings.openDate, closeDate: settings.closeDate };
+  }
+
+  const cycleDatePatch =
+    stageCode === "documents"
+      ? {
+          stage1_open_at: toIsoDateBoundary(settings.openDate),
+          stage1_close_at: toIsoDateBoundary(settings.closeDate),
+        }
+      : {
+          stage2_open_at: toIsoDateBoundary(settings.openDate),
+          stage2_close_at: toIsoDateBoundary(settings.closeDate),
+        };
+
+  const { data, error } = await supabase
+    .from("cycles")
+    .update(cycleDatePatch)
+    .eq("id", cycleId)
+    .select(
+      "stage1_open_at, stage1_close_at, stage2_open_at, stage2_close_at",
+    )
+    .maybeSingle();
+
+  if (error) {
+    throw new AppError({
+      message: "Failed saving cycle stage dates",
+      userMessage: "No se pudieron guardar las fechas de la etapa.",
+      status: 500,
+      details: error,
     });
   }
 
-  let savedCycleOpenDate: string | null = incomingSettings.openDate;
-  let savedCycleCloseDate: string | null = incomingSettings.closeDate;
-  if (
-    parsed.data.settings &&
-    (stageCode === "documents" || stageCode === "exam_placeholder")
-  ) {
-    const cycleDatePatch =
-      stageCode === "documents"
-        ? {
-            stage1_open_at: toIsoDateBoundary(incomingSettings.openDate),
-            stage1_close_at: toIsoDateBoundary(incomingSettings.closeDate),
-          }
-        : {
-            stage2_open_at: toIsoDateBoundary(incomingSettings.openDate),
-            stage2_close_at: toIsoDateBoundary(incomingSettings.closeDate),
-          };
-
-    const { data: savedCycleData, error: savedCycleError } = await supabase
-      .from("cycles")
-      .update(cycleDatePatch)
-      .eq("id", cycleId)
-      .select("stage1_open_at, stage1_close_at, stage2_open_at, stage2_close_at")
-      .maybeSingle();
-
-    if (savedCycleError) {
-      throw new AppError({
-        message: "Failed saving cycle stage dates",
-        userMessage: "No se pudieron guardar las fechas de la etapa.",
-        status: 500,
-        details: savedCycleError,
-      });
-    }
-
-    if (savedCycleData) {
-      savedCycleOpenDate =
-        stageCode === "documents"
-          ? (savedCycleData.stage1_open_at?.slice(0, 10) ?? null)
-          : (savedCycleData.stage2_open_at?.slice(0, 10) ?? null);
-      savedCycleCloseDate =
-        stageCode === "documents"
-          ? (savedCycleData.stage1_close_at?.slice(0, 10) ?? null)
-          : (savedCycleData.stage2_close_at?.slice(0, 10) ?? null);
-    }
+  if (!data) {
+    return { openDate: settings.openDate, closeDate: settings.closeDate };
   }
 
-  const nextAdminConfig: Record<string, Json> = {
+  return {
+    openDate:
+      stageCode === "documents"
+        ? (data.stage1_open_at?.slice(0, 10) ?? null)
+        : (data.stage2_open_at?.slice(0, 10) ?? null),
+    closeDate:
+      stageCode === "documents"
+        ? (data.stage1_close_at?.slice(0, 10) ?? null)
+        : (data.stage2_close_at?.slice(0, 10) ?? null),
+  };
+}
+
+function buildAdminConfig(
+  incomingSettings: ResolvedSettings,
+  existingConfig: ReturnType<typeof parseStageAdminConfig>,
+  hasIncomingSettings: boolean,
+): Record<string, Json> {
+  return {
     stageName: incomingSettings.stageName,
     description: incomingSettings.description,
     openDate:
-      (parsed.data.settings
+      (hasIncomingSettings
         ? incomingSettings.openDate
-        : parsedExistingAdminConfig.openDate) ?? null,
+        : existingConfig.openDate) ?? null,
     closeDate:
-      (parsed.data.settings
+      (hasIncomingSettings
         ? incomingSettings.closeDate
-        : parsedExistingAdminConfig.closeDate) ?? null,
+        : existingConfig.closeDate) ?? null,
     previousStageRequirement: incomingSettings.previousStageRequirement,
     blockIfPreviousNotMet: incomingSettings.blockIfPreviousNotMet,
     eligibilityRubric: (incomingSettings.eligibilityRubric ?? null) as Json,
     rubricBlueprintV1: (incomingSettings.rubricBlueprintV1 ?? null) as Json,
     rubricMeta: (incomingSettings.rubricMeta ?? null) as Json,
   };
+}
 
+async function reloadAndSaveTemplate(
+  supabase: StageConfigSupabase,
+  cycleId: string,
+  stageCode: string,
+  stageTemplate: StageTemplateRow,
+  incomingSettings: ResolvedSettings,
+  adminConfig: Record<string, Json>,
+  ocrPromptTemplate: string | null | undefined,
+  hasIncomingSettings: boolean,
+  cycleDates: { openDate: string | null; closeDate: string | null },
+  actorId: string,
+  stageIdentifier: string,
+  requestId: string,
+): Promise<CycleStageConfigResult> {
   const [
     { data: savedFieldsData, error: savedFieldsError },
     { data: savedAutomationsData, error: savedAutomationsError },
@@ -923,21 +949,22 @@ export async function patchCycleStageConfig({
       .order("sort_order", { ascending: true }),
   ]);
 
+  const trimmedOcr =
+    ocrPromptTemplate && ocrPromptTemplate.trim().length > 0
+      ? ocrPromptTemplate.trim()
+      : null;
+
   const { data: savedTemplateData, error: savedTemplateError } = await supabase
     .from("cycle_stage_templates")
     .update({
-      stage_label: parsed.data.settings
+      stage_label: hasIncomingSettings
         ? incomingSettings.stageName
         : stageTemplate.stage_label,
-      due_at: parsed.data.settings
+      due_at: hasIncomingSettings
         ? toIsoDateBoundary(incomingSettings.closeDate)
         : stageTemplate.due_at,
-      ocr_prompt_template:
-        parsed.data.ocrPromptTemplate &&
-        parsed.data.ocrPromptTemplate.trim().length > 0
-          ? parsed.data.ocrPromptTemplate.trim()
-          : null,
-      admin_config: nextAdminConfig,
+      ocr_prompt_template: trimmedOcr,
+      admin_config: adminConfig,
     })
     .eq("cycle_id", cycleId)
     .eq("id", stageTemplate.id)
@@ -952,7 +979,6 @@ export async function patchCycleStageConfig({
       details: savedFieldsError,
     });
   }
-
   if (savedAutomationsError) {
     throw new AppError({
       message: "Failed loading saved stage automations",
@@ -961,7 +987,6 @@ export async function patchCycleStageConfig({
       details: savedAutomationsError,
     });
   }
-
   if (savedSectionsError) {
     throw new AppError({
       message: "Failed loading saved stage sections",
@@ -970,7 +995,6 @@ export async function patchCycleStageConfig({
       details: savedSectionsError,
     });
   }
-
   if (savedTemplateError) {
     throw new AppError({
       message: "Failed saving OCR prompt template",
@@ -983,8 +1007,11 @@ export async function patchCycleStageConfig({
   const savedFields = (savedFieldsData as StageFieldRow[] | null) ?? [];
   const savedAutomations =
     (savedAutomationsData as StageAutomationRow[] | null) ?? [];
-  const savedTemplate = (savedTemplateData as StageTemplateConfigRow | null) ?? null;
-  const savedAdminConfig = parseStageAdminConfig(savedTemplate?.admin_config ?? null);
+  const savedTemplate =
+    (savedTemplateData as StageTemplateConfigRow | null) ?? null;
+  const savedAdminConfig = parseStageAdminConfig(
+    savedTemplate?.admin_config ?? null,
+  );
 
   await recordAuditEvent({
     supabase,
@@ -997,7 +1024,7 @@ export async function patchCycleStageConfig({
       fieldsSaved: savedFields.length,
       automationsSaved: savedAutomations.length,
       sectionsSaved: (savedSectionsData ?? []).length,
-      stageSettingsSaved: Boolean(parsed.data.settings),
+      stageSettingsSaved: hasIncomingSettings,
       hasOcrPromptTemplate: Boolean(savedTemplate?.ocr_prompt_template),
     },
     requestId,
@@ -1016,11 +1043,11 @@ export async function patchCycleStageConfig({
       description: savedAdminConfig.description ?? "",
       openDate:
         (stageCode === "documents" || stageCode === "exam_placeholder"
-          ? savedCycleOpenDate
+          ? cycleDates.openDate
           : (savedAdminConfig.openDate ?? incomingSettings.openDate)) ?? null,
       closeDate:
         (stageCode === "documents" || stageCode === "exam_placeholder"
-          ? savedCycleCloseDate
+          ? cycleDates.closeDate
           : (savedAdminConfig.closeDate ?? incomingSettings.closeDate)) ?? null,
       previousStageRequirement:
         savedAdminConfig.previousStageRequirement ??
@@ -1042,4 +1069,108 @@ export async function patchCycleStageConfig({
           null) as Json,
     },
   };
+}
+
+/* ---------------------------------------------------------------------------
+ * Main orchestrator — now delegates to focused sub-functions above
+ * --------------------------------------------------------------------------- */
+
+export async function patchCycleStageConfig({
+  supabase,
+  cycleId,
+  stageIdentifier,
+  body,
+  actorId,
+  requestId,
+}: {
+  supabase: StageConfigSupabase;
+  cycleId: string;
+  stageIdentifier: string;
+  body: unknown;
+  actorId: string;
+  requestId: string;
+}): Promise<CycleStageConfigResult> {
+  // 1. Validate input
+  const parsed = stageConfigPatchSchema.safeParse(body);
+  if (!parsed.success) {
+    throw new AppError({
+      message: "Invalid stage config payload",
+      userMessage: describePatchValidationError(parsed.error),
+      status: 400,
+      details: parsed.error.flatten(),
+    });
+  }
+
+  // 2. Resolve stage template
+  await ensureCycleExists({ cycleId, supabase });
+  const stageTemplate = await resolveTemplateByIdentifier({
+    cycleId,
+    stageIdentifier,
+    supabase,
+  });
+  const stageCode = stageTemplate.stage_code;
+  const existingConfig = parseStageAdminConfig(
+    stageTemplate.admin_config ?? null,
+  );
+
+  // 3. Resolve settings (incoming or existing defaults)
+  const incomingSettings = resolveIncomingSettings(
+    parsed.data.settings,
+    stageTemplate,
+    existingConfig,
+  );
+
+  // 4. Validate uniqueness constraints
+  validateUniqueFieldKeys(parsed.data.fields);
+  validateUniqueAutomations(parsed.data.automations);
+
+  // 5. Sync sections → get sectionKey-to-ID map
+  const sectionKeyToId = await syncStageSections(
+    supabase,
+    cycleId,
+    stageCode,
+    parsed.data.sections,
+  );
+
+  // 6. Sync fields + automations (delete/upsert)
+  await syncStageFieldsAndAutomations(
+    supabase,
+    cycleId,
+    stageCode,
+    parsed.data.fields,
+    parsed.data.automations,
+    sectionKeyToId,
+  );
+
+  // 7. Sync cycle-level dates for special stages
+  const cycleDates = await syncCycleStageDates(
+    supabase,
+    cycleId,
+    stageCode,
+    incomingSettings,
+    Boolean(parsed.data.settings),
+  );
+
+  // 8. Build admin config JSON
+  const adminConfig = buildAdminConfig(
+    incomingSettings,
+    existingConfig,
+    Boolean(parsed.data.settings),
+  );
+
+  // 9. Reload all saved rows, save template, audit, and return
+  return reloadAndSaveTemplate(
+    supabase,
+    cycleId,
+    stageCode,
+    stageTemplate,
+    incomingSettings,
+    adminConfig,
+    parsed.data.ocrPromptTemplate,
+    Boolean(parsed.data.settings),
+    cycleDates,
+    actorId,
+    stageIdentifier,
+    requestId,
+  );
 }
