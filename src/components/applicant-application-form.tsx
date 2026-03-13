@@ -13,12 +13,12 @@ import { ApplicantSidebar, type SidebarStep } from "@/components/applicant-sideb
 import { ApplicantMobileProgress } from "@/components/applicant-mobile-progress";
 import { ApplicantActionBar } from "@/components/applicant-action-bar";
 import { ApplicantTopNav } from "@/components/applicant-top-nav";
-import type { Application, CycleStageField, RecommendationStatus, RecommenderRole, StageSection } from "@/types/domain";
+import type { Application, CycleStageField, RecommenderRole, StageSection } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 import { ApplicantPreparationChecklist } from "@/components/applicant-preparation-checklist";
 import { ApplicantReviewSubmit } from "@/components/applicant-review-submit";
 import { ApplicantDocumentUploadSection } from "@/components/applicant-document-upload-section";
-import { ApplicantRecommendersSection } from "@/components/applicant-recommenders-section";
+import { ApplicantRecommendersSection, type RecommenderSummary } from "@/components/applicant-recommenders-section";
 import { validateStagePayload } from "@/lib/stages/form-schema";
 import { buildFallbackStageFields } from "@/lib/stages/stage-field-fallback";
 import {
@@ -57,21 +57,6 @@ import {
   type SaveState,
   type WizardSectionId,
 } from "@/lib/client/applicant-form-helpers";
-
-type RecommenderSummary = {
-  id: string;
-  role: RecommenderRole;
-  email: string;
-  status: RecommendationStatus;
-  submittedAt: string | null;
-  inviteSentAt: string | null;
-  openedAt: string | null;
-  startedAt: string | null;
-  reminderCount: number;
-  lastReminderAt: string | null;
-  invalidatedAt: string | null;
-  createdAt: string;
-};
 
 export function ApplicantApplicationForm({
   existingApplication,

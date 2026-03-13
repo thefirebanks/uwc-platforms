@@ -60,6 +60,7 @@ dashboards. Server components are only used in `page.tsx` files.
 - State management: local useState/useEffect (no global store)
 - Component tests in `tests/components/<name>.test.tsx`
 
-## Monolithic components (scheduled for split)
-- `stage-config-editor.tsx` — extracting: StageFieldEditor, StageAutomationManager, StageStatsPanel
-- `applicant-application-form.tsx` — extracting: FormFieldsSection, RecommendersSection, DocumentUploadSection
+## Decomposed components
+- `stage-config-editor.tsx` — split into: types, utils, `StageSettingsPanel`, `StageFieldEditor`
+- `applicant-application-form.tsx` — split into: `applicant-form-helpers.ts`, `ApplicantFormFields`, `ApplicantRecommendersSection`, `ApplicantDocumentUploadSection`
+- `admin-application-viewer.tsx` — split into: types, `ViewerDatosTab`, `ViewerArchivosTab`, `ViewerRecomendacionesTab`, `ViewerDictamenTab`, `ViewerHistorialTab`
