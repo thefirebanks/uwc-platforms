@@ -3,17 +3,18 @@ import { createServerClient } from "@supabase/ssr";
 import type { Database } from "@/types/supabase";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
-export const runtime = "edge";
-
 /**
- * Proxy: redirect users who land on a path that doesn't match their role.
+ * Middleware: redirect users who land on a path that doesn't match their role.
+ *
+ * Note: Next.js 16 renamed this convention to "proxy", but @opennextjs/cloudflare
+ * does not yet support Node.js proxy. Keep as middleware until the adapter catches up.
  *
  * Roles → home paths:
  *   admin     → /admin
  *   reviewer  → /reviewer
  *   applicant → /applicant
  */
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Only guard dashboard paths
