@@ -4,18 +4,15 @@ import { startTransition, type ChangeEvent, useCallback, useEffect, useMemo, use
 import {
   Box,
   IconButton,
-  MenuItem,
-  TextField,
   Typography,
 } from "@mui/material";
+import { ApplicantFormFields } from "@/components/applicant-form-fields";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useAppLanguage } from "@/components/language-provider";
 import { ApplicantSidebar, type SidebarStep } from "@/components/applicant-sidebar";
 import { ApplicantMobileProgress } from "@/components/applicant-mobile-progress";
 import { ApplicantActionBar } from "@/components/applicant-action-bar";
 import { ApplicantTopNav } from "@/components/applicant-top-nav";
-import { TogglePill } from "@/components/toggle-pill";
-import { GradesTable, isGradeField } from "@/components/grades-table";
 import type { Application, CycleStageField, RecommendationStatus, RecommenderRole, StageSection } from "@/types/domain";
 import { ErrorCallout } from "@/components/error-callout";
 import { ApplicantPreparationChecklist } from "@/components/applicant-preparation-checklist";
@@ -28,7 +25,6 @@ import {
   groupFieldsBySections,
   type ResolvedSection,
 } from "@/lib/stages/applicant-sections";
-import { isBooleanField, getBooleanFieldLabels } from "@/lib/stages/field-sub-groups";
 import { roleLabel } from "@/lib/utils/domain-labels";
 import {
   fetchApi,
@@ -38,7 +34,6 @@ import {
 import {
   normalizeEmailAddress,
   parseFileEntry,
-  APPLICANT_TEXT_FIELD_SX,
   type ApplicationFileValue,
 } from "@/lib/client/applicant-utils";
 import {
@@ -48,14 +43,8 @@ import {
   SECTION_TITLES_ES,
   SECTION_TITLES_EN,
   SECTION_DESCRIPTIONS_EN,
-  LONG_TEXT_ROWS_BY_KEY,
-  getDisplayFieldLabel,
   getLocalizedDisplayFieldLabel,
-  getLocalizedFieldPlaceholder,
   getLocalizedFieldHelpText,
-  shouldUseWideFieldLayout,
-  getFieldMaxWidth,
-  getApplicantSelectOptions,
   getPayloadValue,
   isMeaningfulValue,
   getStepState,
@@ -815,443 +804,9 @@ export function ApplicantApplicationForm({
     setActiveSectionId(sectionId);
   }
 
-  function renderSingleField(field: CycleStageField, sectionId: string) {
-    const displayLabel = getLocalizedDisplayFieldLabel({
-      sectionId,
-      field,
-      language,
-    });
-
-    // Boolean fields → toggle pill
-    if (isBooleanField(field.field_key)) {
-      return (
-        <Box sx={{ display: "flex", flexDirection: "column" }}>
-          <Typography
-            sx={{
-              fontSize: "0.78rem",
-              fontWeight: 500,
-              color: "var(--ink)",
-              mb: "5px",
-              lineHeight: 1.35,
-              display: "flex",
-              alignItems: "center",
-              gap: "4px",
-            }}
-          >
-            {displayLabel}
-            {field.is_required ? (
-              <Typography component="span" sx={{ color: "var(--uwc-maroon)", fontWeight: 400, fontSize: "inherit" }}>*</Typography>
-            ) : null}
-          </Typography>
-          <TogglePill
-            value={formValues[field.field_key] ?? ""}
-            onChange={(next) => {
-              setFormValues((current) => ({ ...current, [field.field_key]: next }));
-              markFieldDirty();
-            }}
-            yesLabel={getBooleanFieldLabels(field.field_key, language)?.yes ?? (isEnglish ? "Yes" : "S\u00ed")}
-            noLabel={getBooleanFieldLabels(field.field_key, language)?.no ?? "No"}
-            disabled={!isEditingEnabled}
-          />
-          {fieldErrors[field.field_key] ? (
-            <Typography sx={{ fontSize: "0.7rem", color: "error.main", mt: "3px" }}>
-              {fieldErrors[field.field_key]}
-            </Typography>
-          ) : null}
-          {!fieldErrors[field.field_key] && getLocalizedFieldHelpText(field, language) ? (
-            <Typography sx={{ fontSize: "0.7rem", color: "var(--muted)", mt: "3px" }}>
-              {getLocalizedFieldHelpText(field, language)}
-            </Typography>
-          ) : null}
-        </Box>
-      );
-    }
-
-    // Standard text/number/date/email fields — label above input (mockup style)
-    const errorMsg = fieldErrors[field.field_key];
-    const helpMsg = getLocalizedFieldHelpText(field, language);
-    const isCompactSchoolComments = field.field_key === "officialGradesComments";
-    const selectOptions = getApplicantSelectOptions(field.field_key, language);
-    const hasStudiedIbValue = (formValues.hasStudiedIb ?? "").trim().toLowerCase();
-    const isIbYearFieldTemporarilyDisabled =
-      field.field_key === "ibInstructionYear" &&
-      !["si", "sí", "yes"].includes(hasStudiedIbValue);
-    const fieldIsDisabled = !isEditingEnabled || isIbYearFieldTemporarilyDisabled;
-    const applyDimmedDependentFieldStyle = isIbYearFieldTemporarilyDisabled && isEditingEnabled;
-
-    const longTextRows = field.field_type === "long_text"
-      ? LONG_TEXT_ROWS_BY_KEY[field.field_key] ?? 3
-      : undefined;
-    const isLongTextField = field.field_type === "long_text";
-
-    return (
-      <Box
-        sx={{
-          display: "flex",
-          flexDirection: "column",
-          ...(applyDimmedDependentFieldStyle ? { opacity: 0.45 } : null),
-        }}
-      >
-        <Typography
-          component="label"
-          sx={{
-            fontSize: "0.78rem",
-            fontWeight: 500,
-            color: "var(--ink)",
-            mb: "5px",
-            lineHeight: 1.35,
-            display: "flex",
-            alignItems: "center",
-            gap: "4px",
-          }}
-        >
-          {displayLabel}
-          {field.is_required ? (
-            <Typography component="span" sx={{ color: "var(--uwc-maroon)", fontWeight: 400, fontSize: "inherit" }}>*</Typography>
-          ) : null}
-        </Typography>
-        {isLongTextField ? (
-          <Box
-            component="textarea"
-            value={formValues[field.field_key] ?? ""}
-            onChange={(event: ChangeEvent<HTMLTextAreaElement>) => {
-              const nextValue = event.target.value;
-              setFormValues((current) => ({
-                ...current,
-                [field.field_key]: nextValue,
-              }));
-              markFieldDirty();
-            }}
-            rows={isCompactSchoolComments ? 2 : longTextRows}
-            disabled={fieldIsDisabled}
-            aria-label={displayLabel}
-            placeholder={getLocalizedFieldPlaceholder(field, language)}
-            sx={{
-              width: "100%",
-              padding: "9px 12px",
-              fontFamily: "var(--font-body), 'DM Sans', sans-serif",
-              fontSize: "0.85rem",
-              lineHeight: 1.5,
-              color: "var(--ink)",
-              background: "var(--surface, #fff)",
-              border: "1.5px solid var(--sand)",
-              borderColor: errorMsg ? "#DC2626" : "var(--sand)",
-              borderRadius: "var(--radius)",
-              outline: "none",
-              resize: "vertical",
-              minHeight: isCompactSchoolComments ? 72 : undefined,
-              transition: "border-color 0.15s ease, box-shadow 0.15s ease",
-              "&::placeholder": {
-                color: "var(--muted)",
-                opacity: 1,
-                fontWeight: 300,
-              },
-              "&:hover": {
-                borderColor: errorMsg ? "#DC2626" : "var(--muted)",
-              },
-              "&:focus": {
-                borderColor: errorMsg ? "#DC2626" : "var(--uwc-maroon)",
-                boxShadow: errorMsg
-                  ? "0 0 0 3px rgba(220, 38, 38, 0.08)"
-                  : "0 0 0 3px rgba(154, 37, 69, 0.08)",
-              },
-              "&:disabled": {
-                color: "var(--muted)",
-                background: "var(--surface, #fff)",
-                WebkitTextFillColor: "var(--muted)",
-                cursor: "not-allowed",
-              },
-            }}
-          />
-        ) : (
-          <TextField
-            hiddenLabel
-            value={formValues[field.field_key] ?? ""}
-            onChange={(event) => {
-              const nextValue = event.target.value;
-              setFormValues((current) => ({
-                ...current,
-                [field.field_key]: nextValue,
-              }));
-              markFieldDirty();
-            }}
-            type={
-              field.field_type === "date"
-                ? "date"
-                : field.field_type === "number"
-                  ? "number"
-                  : field.field_type === "email"
-                    ? "email"
-                    : "text"
-            }
-            fullWidth
-            disabled={fieldIsDisabled}
-            select={Boolean(selectOptions)}
-            placeholder={getLocalizedFieldPlaceholder(field, language)}
-            error={Boolean(errorMsg)}
-            sx={APPLICANT_TEXT_FIELD_SX}
-            slotProps={{
-              htmlInput: {
-                "aria-label": displayLabel,
-                step:
-                  field.field_key === "gradeAverage"
-                    ? "0.1"
-                    : field.field_type === "number"
-                      ? "1"
-                      : undefined,
-              },
-            }}
-          >
-            {selectOptions?.map((option) => (
-              <MenuItem key={option} value={option}>
-                {option}
-              </MenuItem>
-            ))}
-          </TextField>
-        )}
-        {errorMsg ? (
-          <Typography sx={{ fontSize: "0.7rem", color: "error.main", mt: "3px" }}>
-            {errorMsg}
-          </Typography>
-        ) : helpMsg ? (
-          <Typography sx={{ fontSize: "0.7rem", color: "var(--muted)", mt: "3px" }}>
-            {helpMsg}
-          </Typography>
-        ) : null}
-      </Box>
-    );
-  }
-
-  function renderFieldGrid(fields: CycleStageField[], sectionId: string) {
-    return (
-      <Box
-        sx={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gap: "14px 18px",
-          "@media (max-width: 768px)": {
-            gridTemplateColumns: "1fr",
-          },
-        }}
-      >
-        {fields.map((field) => {
-          const displayLabel = getLocalizedDisplayFieldLabel({
-            sectionId,
-            field,
-            language,
-          });
-          const isWide = shouldUseWideFieldLayout({ field, displayLabel });
-          const maxWidth = getFieldMaxWidth(field.field_key);
-
-          return (
-            <Box
-              key={field.id}
-              sx={{
-                ...(isWide ? { gridColumn: "1 / -1" } : null),
-                ...(maxWidth ? { maxWidth } : null),
-              }}
-            >
-              {renderSingleField(field, sectionId)}
-            </Box>
-          );
-        })}
-      </Box>
-    );
-  }
-
-  function renderEditableFields({
-    fields,
-    sectionId,
-  }: {
-    fields: CycleStageField[];
-    sectionId: string;
-  }) {
-    // Separate grade fields for the school section
-    const gradeFields = sectionId === "school" ? fields.filter((f) => isGradeField(f.field_key)) : [];
-    const allNonGradeFields = sectionId === "school" ? fields.filter((f) => !isGradeField(f.field_key)) : fields;
-
-    // Hide school address sub-fields and school type details that are not in the mockup design
-    const HIDDEN_FIELDS_BY_SECTION: Partial<Record<string, Set<string>>> = {
-      identity: new Set([
-        "fullName",
-        "countryOfBirth",
-        "countryOfResidence",
-      ]),
-      school: new Set([
-        "schoolAddressNumber",
-        "schoolDistrict",
-        "schoolProvince",
-        "schoolRegion",
-        "schoolCountry",
-        "schoolTypeDetails",
-      ]),
-      recommenders: new Set([
-        "recommenderRequestMessage",
-      ]),
-    };
-    const hiddenFieldKeys = HIDDEN_FIELDS_BY_SECTION[sectionId] ?? null;
-    const nonGradeFields = hiddenFieldKeys
-      ? allNonGradeFields.filter((f) => !hiddenFieldKeys.has(f.field_key))
-      : allNonGradeFields;
-
-    // Keep the school comments textarea after the primary school fields and grades table
-    // to preserve the mockup flow (school info first, comments later).
-    const DEFERRED_SCHOOL_FIELDS = new Set(["officialGradesComments"]);
-    const deferredSchoolFields =
-      sectionId === "school"
-        ? nonGradeFields.filter((f) => DEFERRED_SCHOOL_FIELDS.has(f.field_key))
-        : [];
-    const topNonGradeFields =
-      sectionId === "school"
-        ? nonGradeFields.filter((f) => !DEFERRED_SCHOOL_FIELDS.has(f.field_key))
-        : nonGradeFields;
-
-    const customGroupedFieldNames = Array.from(
-      new Set(
-        topNonGradeFields
-          .map((field) => field.group_name?.trim() ?? "")
-          .filter((groupName) => groupName.length > 0),
-      ),
-    );
-    const hasCustomFieldGroups = customGroupedFieldNames.length > 0;
-
-    if (hasCustomFieldGroups) {
-      const fieldsByCustomGroup = new Map<string, CycleStageField[]>();
-      for (const groupName of customGroupedFieldNames) {
-        fieldsByCustomGroup.set(groupName, []);
-      }
-      const ungroupedFields = topNonGradeFields.filter((field) => {
-        const groupName = field.group_name?.trim() ?? "";
-        if (!groupName) {
-          return true;
-        }
-        fieldsByCustomGroup.get(groupName)?.push(field);
-        return false;
-      });
-
-      return (
-        <Box>
-          {ungroupedFields.length > 0 ? (
-            <Box sx={{ mb: "28px", animation: "fadeUp 0.35s ease", animationFillMode: "backwards" }}>
-              {renderFieldGrid(ungroupedFields, sectionId)}
-            </Box>
-          ) : null}
-
-          {customGroupedFieldNames.map((groupName, idx) => {
-            const groupedFields = fieldsByCustomGroup.get(groupName) ?? [];
-            if (groupedFields.length === 0) {
-              return null;
-            }
-            return (
-              <Box
-                key={`${sectionId}-${groupName}`}
-                sx={{
-                  mb: "28px",
-                  animation: "fadeUp 0.35s ease",
-                  animationFillMode: "backwards",
-                  animationDelay: `${(idx + 1) * 0.05}s`,
-                }}
-              >
-                <Typography
-                  sx={{
-                    fontSize: "0.68rem",
-                    fontWeight: 600,
-                    letterSpacing: "0.06em",
-                    textTransform: "uppercase",
-                    color: "var(--muted)",
-                    mb: "14px",
-                    pb: 1,
-                    borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-                  }}
-                >
-                  {groupName}
-                </Typography>
-                {renderFieldGrid(groupedFields, sectionId)}
-              </Box>
-            );
-          })}
-
-          {gradeFields.length > 0 ? (
-            <Box sx={{ mt: 1 }}>
-              <Typography
-                sx={{
-                  fontSize: "0.68rem",
-                  fontWeight: 600,
-                  letterSpacing: "0.06em",
-                  textTransform: "uppercase",
-                  color: "var(--muted)",
-                  mb: "14px",
-                  pb: 1,
-                  borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-                }}
-              >
-                {isEnglish ? "Official grades by year" : "Notas oficiales por año"}
-              </Typography>
-              <GradesTable
-                fields={gradeFields}
-                formValues={formValues}
-                onFieldChange={(key, value) => {
-                  setFormValues((current) => ({ ...current, [key]: value }));
-                  markFieldDirty();
-                }}
-                onFieldBlur={() => {}}
-                disabled={!isEditingEnabled}
-                language={language}
-              />
-            </Box>
-          ) : null}
-
-          {deferredSchoolFields.length > 0 ? (
-            <Box sx={{ mt: 3 }}>
-              {renderFieldGrid(deferredSchoolFields, sectionId)}
-            </Box>
-          ) : null}
-        </Box>
-      );
-    }
-
-    return (
-      <Box>
-        {renderFieldGrid(topNonGradeFields, sectionId)}
-
-        {/* Grades table for school section */}
-        {gradeFields.length > 0 ? (
-          <Box sx={{ mt: 1 }}>
-            <Typography
-              sx={{
-                fontSize: "0.68rem",
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "var(--muted)",
-                mb: "14px",
-                pb: 1,
-                borderBottom: "1px solid var(--sand-light, #F3EFEB)",
-              }}
-              >
-              {isEnglish ? "Official grades by year" : "Notas oficiales por año"}
-            </Typography>
-            <GradesTable
-              fields={gradeFields}
-              formValues={formValues}
-              onFieldChange={(key, value) => {
-                setFormValues((current) => ({ ...current, [key]: value }));
-                markFieldDirty();
-              }}
-              onFieldBlur={() => {}}
-              disabled={!isEditingEnabled}
-              language={language}
-            />
-          </Box>
-        ) : null}
-
-        {deferredSchoolFields.length > 0 ? (
-          <Box sx={{ mt: gradeFields.length > 0 ? 3 : 0 }}>
-            {renderFieldGrid(deferredSchoolFields, sectionId)}
-          </Box>
-        ) : null}
-      </Box>
-    );
+  function handleFieldChange(fieldKey: string, value: string) {
+    setFormValues((current) => ({ ...current, [fieldKey]: value }));
+    markFieldDirty();
   }
 
   async function submitApplication() {
@@ -1768,10 +1323,15 @@ export function ApplicantApplicationForm({
           {currentSection && currentSection.formSection && currentSection.id !== "documents_uploads" && currentSection.id !== "recommenders_flow" && currentSection.id !== "review_submit" ? (
             <Box>
               {currentFormSectionId
-                ? renderEditableFields({
-                    fields: currentSection.formSection.fields,
-                    sectionId: currentFormSectionId,
-                  })
+                ? <ApplicantFormFields
+                    fields={currentSection.formSection.fields}
+                    sectionId={currentFormSectionId}
+                    formValues={formValues}
+                    fieldErrors={fieldErrors}
+                    isEditingEnabled={isEditingEnabled}
+                    language={language}
+                    onFieldChange={handleFieldChange}
+                  />
                 : null}
             </Box>
           ) : null}
@@ -1780,10 +1340,15 @@ export function ApplicantApplicationForm({
             <ApplicantDocumentUploadSection
               metadataContent={
                 currentSection.formSection?.fields.length
-                  ? renderEditableFields({
-                      fields: currentSection.formSection.fields,
-                      sectionId: "documents",
-                    })
+                  ? <ApplicantFormFields
+                      fields={currentSection.formSection.fields}
+                      sectionId="documents"
+                      formValues={formValues}
+                      fieldErrors={fieldErrors}
+                      isEditingEnabled={isEditingEnabled}
+                      language={language}
+                      onFieldChange={handleFieldChange}
+                    />
                   : undefined
               }
               fileStageFields={fileStageFields}
@@ -1803,10 +1368,15 @@ export function ApplicantApplicationForm({
             <ApplicantRecommendersSection
               metadataContent={
                 currentSection.formSection?.fields.length
-                  ? renderEditableFields({
-                      fields: currentSection.formSection.fields,
-                      sectionId: "recommenders",
-                    })
+                  ? <ApplicantFormFields
+                      fields={currentSection.formSection.fields}
+                      sectionId="recommenders"
+                      formValues={formValues}
+                      fieldErrors={fieldErrors}
+                      isEditingEnabled={isEditingEnabled}
+                      language={language}
+                      onFieldChange={handleFieldChange}
+                    />
                   : undefined
               }
               activeRecommendersByRole={activeRecommendersByRole}
