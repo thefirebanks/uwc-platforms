@@ -1,6 +1,6 @@
 # UWC Peru Selection Platform
 
-Web platform for UWC Peru selection management.
+Applicant Tracking System similar to Survey Monkey Apply - Web platform for UWC Peru selection management.
 
 Core product areas:
 - Applicant flow (application + documents)
